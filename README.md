@@ -19,7 +19,7 @@ Graph, Open Citations, ORCID, Scopus, Unpaywall and Web of Science.
 
 | Telescope Workflow  | Description |
 | ------------- | ------------- |
-| <div style="width:200px">![Crossref Events](docs/logos/crossref-events.svg)</div> |   |
+| <img src="docs/logos/crossref-events.svg" alt="Crossref Events" width="200"> |   |
 | <div style="width:200px">![Crossref Funder Registry](docs/logos/crossref-funder-registry.svg)</div>  |   |
 | <div style="width:200px">![Crossref Metadata](docs/logos/crossref-metadata.svg)</div>  |   |
 | <div style="width:200px">![Geonames](docs/logos/geonames.png)</div>  |   |
