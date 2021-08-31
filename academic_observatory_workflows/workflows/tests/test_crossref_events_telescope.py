@@ -18,17 +18,11 @@ import os
 from datetime import timedelta
 from unittest.mock import patch
 
+import jsonlines
 import pendulum
 import vcr
 from airflow.exceptions import AirflowSkipException
 from click.testing import CliRunner
-
-from academic_observatory_workflows.config import test_fixtures_folder
-from academic_observatory_workflows.workflows.crossref_events_telescope import (
-    CrossrefEventsRelease,
-    CrossrefEventsTelescope,
-    parse_event_url,
-)
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
@@ -36,6 +30,13 @@ from observatory.platform.utils.test_utils import (
 )
 from observatory.platform.utils.url_utils import get_user_agent
 from observatory.platform.utils.workflow_utils import blob_name
+
+from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.workflows.crossref_events_telescope import (
+    CrossrefEventsRelease,
+    CrossrefEventsTelescope,
+    parse_event_url,
+)
 
 
 class TestCrossrefEventsTelescope(ObservatoryTestCase):
@@ -112,6 +113,7 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
 
         # Setup Telescope
         telescope = CrossrefEventsTelescope(dataset_id=dataset_id)
+        telescope.max_threads = 1
         telescope.max_processes = 1
         dag = telescope.make_dag()
 
@@ -396,18 +398,19 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
             mock_download_events.assert_not_called()
             os.remove(events_path)
 
-    @patch.object(CrossrefEventsRelease, "transform_batch")
     @patch("observatory.platform.utils.workflow_utils.AirflowVariable.get")
-    def test_transform(self, mock_variable_get, mock_transform_batch):
+    def test_transform(self, mock_variable_get):
         """Test the transform method of the release in parallel mode
         :return: None.
         """
-        mock_variable_get.return_value = "data"
-        with CliRunner().isolated_filesystem():
+
+        with CliRunner().isolated_filesystem() as t:
+            mock_variable_get.return_value = os.path.join(t, "data")
+
             # Create fake download files
             events_path = os.path.join(self.release.download_folder, "events.jsonl")
-            with open(events_path, "w") as f:
-                f.write("[{'test': 'test'}]\n")
+            with jsonlines.open(events_path, mode="w") as writer:
+                writer.write_all([{"name": "Hello"}, {"name": "World"}])
 
             self.release.transform()
-            self.assertEqual(len(self.release.download_files), mock_transform_batch.call_count)
+            self.assertEqual(len(self.release.download_files), len(self.release.transform_files))

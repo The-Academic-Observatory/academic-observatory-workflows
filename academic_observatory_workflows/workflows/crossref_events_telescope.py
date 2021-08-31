@@ -179,27 +179,31 @@ class CrossrefEventsRelease(StreamRelease):
         with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
             futures = []
             for file in self.download_files:
-                futures.append(executor.submit(self.transform_batch, file))
+                futures.append(executor.submit(transform_batch, file, self.transform_folder))
             for future in as_completed(futures):
                 future.result()
 
-    def transform_batch(self, download_path: str):
-        """Transform one day of events.
 
-        :param download_path: The path to the downloaded file.
-        :return: None.
-        """
-        file_name = os.path.basename(download_path)
-        transform_path = os.path.join(self.transform_folder, file_name)
+def transform_batch(download_path: str, transform_folder: str):
+    """Transform one day of events.
 
-        logging.info(f"Transforming file: {file_name}")
-        with jsonlines.open(download_path, "r") as reader:
-            with jsonlines.open(transform_path, "w") as writer:
-                for event in reader:
-                    event = transform_events(event)
-                    writer.write(event)
+    :param download_path: The path to the downloaded file.
+    :param transform_folder: the transform folder.
+    :return: None.
+    """
 
-        logging.info(f"Finished: {file_name}")
+    file_name = os.path.basename(download_path)
+    transform_path = os.path.join(transform_folder, file_name)
+
+    logging.info(f"Transforming file: {download_path}")
+    logging.info(f"Saving to: {transform_path}")
+    with jsonlines.open(download_path, "r") as reader:
+        with jsonlines.open(transform_path, "w") as writer:
+            for event in reader:
+                event = transform_events(event)
+                writer.write(event)
+
+    logging.info(f"Finished: {file_name}")
 
 
 class CrossrefEventsTelescope(StreamTelescope):
