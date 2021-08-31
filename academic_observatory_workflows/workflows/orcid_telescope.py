@@ -214,62 +214,15 @@ class OrcidRelease(StreamRelease):
 
         # Loop through directories with individual files, concatenate files in each directory into 1 gzipped file.
         logging.info("Finished transforming individual files, concatenating & compressing files")
-        logging.info("Finished transforming individual files, concatenating & compressing files")
         for root, dirs, files in os.walk(self.transform_folder):
             if root == self.transform_folder:
                 continue
             file_dir = os.path.basename(root)
             transform_path = os.path.join(self.transform_folder, file_dir + ".jsonl.gz")
-            transform_path = os.path.join(self.transform_folder, file_dir + ".jsonl.gz")
             with gzip.GzipFile(transform_path, mode="wb") as f_out:
                 for name in files:
                     with open(os.path.join(root, name), "rb") as f_in:
-                        with open(os.path.join(root, name), "rb") as f_in:
-                            shutil.copyfileobj(f_in, f_out)
-
-    def transform_single_file(self, download_path: str):
-        """Transform a single ORCID file/record.
-        The xml file is turned into a dictionary, a record should have either a valid 'record' section or an 'error'
-        section. The keys of the dictionary are slightly changed so they are valid BigQuery fields.
-        The dictionary is appended to a jsonl file
-
-        :param download_path: The path to the file with the ORCID record.
-        :return: None.
-        """
-        file_name = os.path.basename(download_path)
-        file_dir = os.path.join(self.transform_folder, file_name[-7:-4])  # last three digits are used for subdir
-
-        # Create subdirectory if it does not exist yet, even with if statement it will still raise FileExistsError
-        # sometimes
-        if not os.path.exists(file_dir):
-            try:
-                os.mkdir(file_dir)
-            except FileExistsError:
-                pass
-
-        transform_path = os.path.join(file_dir, os.path.splitext(file_name)[0] + ".jsonl")
-        # Skip if file already exists
-        if os.path.exists(transform_path):
-            return
-
-        # Create dict of data from summary xml file
-        with open(download_path, "r") as f:
-            orcid_dict = xmltodict.parse(f.read())
-
-        # Get record
-        orcid_record = orcid_dict.get("record:record")
-
-        # Some records do not have a 'record', but only 'error', this will be stored in the BQ table.
-        if not orcid_record:
-            orcid_record = orcid_dict.get("error:error")
-        if not orcid_record:
-            raise AirflowException(f"Key error for file: {download_path}")
-
-        orcid_record = change_keys(orcid_record, convert)
-
-        with jsonlines.open(transform_path, "w") as writer:
-            writer.write(orcid_record)
-        return
+                        shutil.copyfileobj(f_in, f_out)
 
 
 class OrcidTelescope(StreamTelescope):
