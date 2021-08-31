@@ -27,9 +27,6 @@ from airflow.models.connection import Connection
 from airflow.models.variable import Variable
 from botocore.response import StreamingBody
 from click.testing import CliRunner
-
-from academic_observatory_workflows.config import test_fixtures_folder
-from academic_observatory_workflows.workflows.orcid_telescope import OrcidRelease, OrcidTelescope
 from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars, BaseHook
 from observatory.platform.utils.gc_utils import (
     upload_file_to_cloud_storage,
@@ -41,6 +38,9 @@ from observatory.platform.utils.test_utils import (
     module_file_path,
 )
 from observatory.platform.utils.workflow_utils import blob_name
+
+from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.workflows.orcid_telescope import OrcidRelease, OrcidTelescope, transform_single_file
 
 
 class TestOrcidTelescope(ObservatoryTestCase):
@@ -515,10 +515,11 @@ class TestOrcidTelescope(ObservatoryTestCase):
 
         :return: None.
         """
-        with CliRunner().isolated_filesystem():
-            mock_variable_get.return_value = os.path.join(os.getcwd(), "data")
+        with CliRunner().isolated_filesystem() as t:
+            mock_variable_get.return_value = os.path.join(t, "data")
 
             file_name = "0000-0002-9228-8514.xml"
+            transform_folder = self.release.transform_folder
             file_dir = os.path.join(self.release.transform_folder, file_name[-7:-4])
             transform_path = os.path.join(file_dir, os.path.splitext(file_name)[0] + ".jsonl")
 
@@ -532,11 +533,11 @@ class TestOrcidTelescope(ObservatoryTestCase):
                     "</common:orcid-identifier>"
                     "</record:record>"
                 )
-            self.release.transform_single_file(file_name)
+            transform_single_file(file_name, transform_folder)
             self.assert_file_integrity(transform_path, "6d7dbc0fc69db96025b82c018b3d6305", "md5")
 
             # Test transform standard record is skipped, because file already exists
-            self.release.transform_single_file(file_name)
+            transform_single_file(file_name, transform_folder)
             self.assert_file_integrity(transform_path, "6d7dbc0fc69db96025b82c018b3d6305", "md5")
             os.remove(transform_path)
 
@@ -550,7 +551,7 @@ class TestOrcidTelescope(ObservatoryTestCase):
                     "</common:orcid-identifier>"
                     "</error:error>"
                 )
-            self.release.transform_single_file(file_name)
+            transform_single_file(file_name, transform_folder)
             self.assert_file_integrity(transform_path, "6d7dbc0fc69db96025b82c018b3d6305", "md5")
             os.remove(transform_path)
 
@@ -562,7 +563,7 @@ class TestOrcidTelescope(ObservatoryTestCase):
                     "</invalid:invalid>"
                 )
             with self.assertRaises(AirflowException):
-                self.release.transform_single_file(file_name)
+                transform_single_file(file_name, transform_folder)
 
     @patch("academic_observatory_workflows.workflows.orcid_telescope.Variable.get")
     @patch.object(BaseHook, "get_connection")
