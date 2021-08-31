@@ -22,7 +22,7 @@ Graph, Open Citations, ORCID, Scopus, Unpaywall and Web of Science.
 | <img src="docs/logos/crossref-events.svg" alt="Crossref Events" width="200" /> |   |
 | <img src="docs/logos/crossref-funder-registry.svg" alt="Crossref Funder Registry" width="200" />  |   |
 | <img src="docs/logos/crossref-metadata.svg" alt="Crossref Metadata" width="200" />  |   |
-| <img src="docs/logos/geonames.pn" alt="Geonames" width="200" />  |   |
+| <img src="docs/logos/geonames.png" alt="Geonames" width="200" />  |   |
 | <img src="docs/logos/grid.svg" alt="GRID" width="200" />  |   |
 | <img src="docs/logos/mag.png" alt="Microsoft Academic Graph" width="200" />  |   |
 | <img src="docs/logos/open-citations.png" alt="Open Citations" width="200" />  |   |
