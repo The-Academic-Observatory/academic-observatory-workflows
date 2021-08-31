@@ -19,17 +19,17 @@ Graph, Open Citations, ORCID, Scopus, Unpaywall and Web of Science.
 
 | Telescope Workflow  | Description |
 | ------------- | ------------- |
-| <img src="docs/logos/crossref-events.svg" alt="Crossref Events" width="200" /> |   |
-| <img src="docs/logos/crossref-funder-registry.svg" alt="Crossref Funder Registry" width="200" />  |   |
-| <img src="docs/logos/crossref-metadata.svg" alt="Crossref Metadata" width="200" />  |   |
-| <img src="docs/logos/geonames.png" alt="Geonames" width="200" />  |   |
-| <img src="docs/logos/grid.svg" alt="GRID" width="200" />  |   |
-| <img src="docs/logos/mag.png" alt="Microsoft Academic Graph" width="200" />  |   |
-| <img src="docs/logos/open-citations.png" alt="Open Citations" width="200" />  |   |
-| <img src="docs/logos/orcid.svg" alt="ORCID" width="200" />  |   |
-| <img src="docs/logos/scopus.svg" alt="Scopus" width="200" />  |   |
-| <img src="docs/logos/unpaywall.png" alt="Unpaywall" width="200" />  |   |
-| <img src="docs/logos/wos.svg" alt="Web of Science" width="200" />  |   |
+| <img src="docs/logos/crossref-events.svg" alt="Crossref Events" width="150" /> |   |
+| <img src="docs/logos/crossref-funder-registry.svg" alt="Crossref Funder Registry" width="150" />  |   |
+| <img src="docs/logos/crossref-metadata.svg" alt="Crossref Metadata" width="150" />  |   |
+| <img src="docs/logos/geonames.png" alt="Geonames" width="150" />  |   |
+| <img src="docs/logos/grid.svg" alt="GRID" width="150" />  |   |
+| <img src="docs/logos/mag.png" alt="Microsoft Academic Graph" width="150" />  |   |
+| <img src="docs/logos/open-citations.png" alt="Open Citations" width="150" />  |   |
+| <img src="docs/logos/orcid.svg" alt="ORCID" width="150" />  |   |
+| <img src="docs/logos/scopus.svg" alt="Scopus" width="150" />  |   |
+| <img src="docs/logos/unpaywall.png" alt="Unpaywall" width="150" />  |   |
+| <img src="docs/logos/wos.svg" alt="Web of Science" width="150" />  |   |
 
 ## Documentation
 For detailed documentation about the Academic Observatory see the Read the Docs website [https://academic-observatory-workflows.readthedocs.io](https://academic-observatory-workflows.readthedocs.io)
