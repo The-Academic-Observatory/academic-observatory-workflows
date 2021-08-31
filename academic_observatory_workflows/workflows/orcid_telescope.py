@@ -17,11 +17,12 @@
 
 import gzip
 import logging
+import math
 import os
 import shutil
 import subprocess
 import tarfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed, ProcessPoolExecutor
 from io import BytesIO
 from subprocess import Popen
 from typing import List
@@ -32,10 +33,7 @@ import pendulum
 import xmltodict
 from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.hooks.base_hook import BaseHook
-from airflow.models import Variable
 from airflow.models.taskinstance import TaskInstance
-
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowConns
 from observatory.platform.utils.airflow_utils import AirflowVariable as Variable
 from observatory.platform.utils.airflow_utils import AirflowVars
@@ -49,6 +47,8 @@ from observatory.platform.workflows.stream_telescope import (
     StreamTelescope,
 )
 
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
+
 
 class OrcidRelease(StreamRelease):
     def __init__(
@@ -58,14 +58,18 @@ class OrcidRelease(StreamRelease):
         end_date: pendulum.DateTime,
         first_release: bool,
         max_processes: int,
+        batch_size: int = 500,
+        log_count: int = 5000,
     ):
         """Construct an OrcidRelease instance
 
         :param dag_id: the id of the DAG.
         :param start_date: the start_date of the release.
         :param end_date: the end_date of the release.
-        :param first_release: whether this is the first release that is processed for this DAG
-        :param max_processes: Max processes used for parallel downloading
+        :param first_release: whether this is the first release that is processed for this DAG.
+        :param max_processes: Max processes used for transforming files.
+        :param batch_size: the size of batches used when transforming files.
+        :param log_count: after how many iterations to print transform log update.
         """
         download_files_regex = r".*.xml$"
         transform_files_regex = r".*.jsonl.gz"
@@ -78,6 +82,8 @@ class OrcidRelease(StreamRelease):
             transform_files_regex=transform_files_regex,
         )
         self.max_processes = max_processes
+        self.batch_size = batch_size
+        self.log_count = log_count
 
     @property
     def modified_records_path(self) -> str:
@@ -112,7 +118,7 @@ class OrcidRelease(StreamRelease):
                 include_prefixes=[],
                 gc_project_id=gc_project_id,
                 gc_bucket=gc_download_bucket,
-                description="Transfer ORCID data from " "airflow telescope",
+                description="Transfer ORCID data from airflow telescope",
                 last_modified_since=last_modified_since,
             )
             total_count += objects_count
@@ -185,25 +191,41 @@ class OrcidRelease(StreamRelease):
         """
         logging.info(f"Using {self.max_processes} workers for multithreading")
         count = 0
-        with ThreadPoolExecutor(max_workers=self.max_processes) as executor:
-            futures = [executor.submit(self.transform_single_file, file) for file in self.download_files]
-            for future in as_completed(futures):
-                future.result()
-                count += 1
-                if count % 1000 == 0:
-                    logging.info(f"Transformed {count} files")
+        files_to_process = self.download_files
+        num_batches = math.ceil(len(files_to_process) / self.batch_size)
+
+        # Process the files in batches because there are so many and we don't get feedback when
+        for b in range(num_batches):
+            logging.info(f"Transforming batch: {b}")
+            index = b * self.batch_size
+            batch_files = files_to_process[index : index + self.batch_size]
+
+            with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
+                futures = list()
+                for file_path in batch_files:
+                    future = executor.submit(transform_single_file, file_path, self.transform_folder)
+                    futures.append(future)
+
+                for future in as_completed(futures):
+                    future.result()
+                    count += 1
+                    if count % self.log_count == 0:
+                        logging.info(f"Transformed {count} files")
 
         # Loop through directories with individual files, concatenate files in each directory into 1 gzipped file.
+        logging.info("Finished transforming individual files, concatenating & compressing files")
         logging.info("Finished transforming individual files, concatenating & compressing files")
         for root, dirs, files in os.walk(self.transform_folder):
             if root == self.transform_folder:
                 continue
             file_dir = os.path.basename(root)
             transform_path = os.path.join(self.transform_folder, file_dir + ".jsonl.gz")
+            transform_path = os.path.join(self.transform_folder, file_dir + ".jsonl.gz")
             with gzip.GzipFile(transform_path, mode="wb") as f_out:
                 for name in files:
                     with open(os.path.join(root, name), "rb") as f_in:
-                        shutil.copyfileobj(f_in, f_out)
+                        with open(os.path.join(root, name), "rb") as f_in:
+                            shutil.copyfileobj(f_in, f_out)
 
     def transform_single_file(self, download_path: str):
         """Transform a single ORCID file/record.
@@ -268,6 +290,7 @@ class OrcidTelescope(StreamTelescope):
         dataset_id: str = "orcid",
         dataset_description: str = "",
         table_descriptions: dict = None,
+        queue: str = "remote_queue",
         merge_partition_field: str = "orcid_identifier.uri",
         bq_merge_days: int = 7,
         schema_folder: str = default_schema_folder(),
@@ -283,6 +306,7 @@ class OrcidTelescope(StreamTelescope):
         :param schedule_interval: the schedule interval of the DAG.
         :param dataset_id: the dataset id.
         :param dataset_description: the dataset description.
+        :param queue: the queue that the telescope should run on.
         :param table_descriptions: a dictionary with table ids and corresponding table descriptions.
         :param merge_partition_field: the BigQuery field used to match partitions for a merge
         :param bq_merge_days: how often partitions should be merged (every x days)
@@ -290,7 +314,7 @@ class OrcidTelescope(StreamTelescope):
         :param batch_load: whether all files in the transform folder are loaded into 1 table at once
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
         :param airflow_conns: list of airflow connection keys, for each connection it is checked if it exists in airflow
-        :param max_processes: Max processes used for parallel downloading
+        :param max_processes: Max processes used for parallel transforming.
         """
         if table_descriptions is None:
             table_descriptions = {
@@ -320,6 +344,7 @@ class OrcidTelescope(StreamTelescope):
             schema_folder,
             dataset_description=dataset_description,
             table_descriptions=table_descriptions,
+            queue=queue,
             airflow_vars=airflow_vars,
             airflow_conns=airflow_conns,
             batch_load=batch_load,
@@ -397,6 +422,53 @@ def get_aws_conn_info() -> (str, str):
     secret_access_key = conn.password
 
     return access_key_id, secret_access_key
+
+
+def transform_single_file(download_path: str, transform_folder: str):
+    """ Transform a single ORCID file/record.
+    The xml file is turned into a dictionary, a record should have either a valid 'record' section or an 'error'
+    section. The keys of the dictionary are slightly changed so they are valid BigQuery fields.
+    The dictionary is appended to a jsonl file
+    :param download_path: The path to the file with the ORCID record.
+    :param transform_folder: The path where transformed files will be saved.
+    :return: None.
+    """
+
+    file_name = os.path.basename(download_path)
+    file_dir = os.path.join(transform_folder, file_name[-7:-4])  # last three digits are used for subdir
+
+    # Create subdirectory if it does not exist yet, even with if statement it will still raise FileExistsError
+    # sometimes
+    if not os.path.exists(file_dir):
+        try:
+            os.mkdir(file_dir)
+        except FileExistsError:
+            pass
+
+    transform_path = os.path.join(file_dir, os.path.splitext(file_name)[0] + ".jsonl")
+    # Skip if file already exists
+    if os.path.exists(transform_path):
+        return
+
+    # Create dict of data from summary xml file
+    with open(download_path, "r") as f:
+        orcid_dict = xmltodict.parse(f.read())
+
+    # Get record
+    orcid_record = orcid_dict.get("record:record")
+
+    # Some records do not have a 'record', but only 'error', this will be stored in the BQ table.
+    if not orcid_record:
+        orcid_record = orcid_dict.get("error:error")
+    if not orcid_record:
+        raise AirflowException(f"Key error for file: {download_path}")
+
+    orcid_record = change_keys(orcid_record, convert)
+    with jsonlines.open(transform_path, "w") as writer:
+        writer.write(orcid_record)
+
+    del orcid_dict
+    del orcid_record
 
 
 def run_subprocess_cmd(proc: Popen, args: list):
