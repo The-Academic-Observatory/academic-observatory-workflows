@@ -60,7 +60,13 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
         self.start_date = pendulum.datetime(2021, 5, 6)
         self.end_date = pendulum.datetime(2021, 5, 12)
         self.release = CrossrefEventsRelease(
-            CrossrefEventsTelescope.DAG_ID, self.start_date, self.end_date, False, "mailto", 21
+            CrossrefEventsTelescope.DAG_ID,
+            self.start_date,
+            self.end_date,
+            False,
+            "mailto",
+            max_threads=21,
+            max_processes=1,
         )
 
     def test_dag_structure(self):
@@ -133,7 +139,13 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
 
                 # use release info for other tasks
                 release = CrossrefEventsRelease(
-                    telescope.dag_id, start_date, end_date, first_release, telescope.mailto, telescope.max_processes
+                    telescope.dag_id,
+                    start_date,
+                    end_date,
+                    first_release,
+                    telescope.mailto,
+                    telescope.max_threads,
+                    telescope.max_processes,
                 )
 
                 # Test download task
@@ -211,7 +223,13 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
 
                 # use release info for other tasks
                 release = CrossrefEventsRelease(
-                    telescope.dag_id, start_date, end_date, first_release, telescope.mailto, telescope.max_processes
+                    telescope.dag_id,
+                    start_date,
+                    end_date,
+                    first_release,
+                    telescope.mailto,
+                    telescope.max_threads,
+                    telescope.max_processes,
                 )
 
                 # Test download task
