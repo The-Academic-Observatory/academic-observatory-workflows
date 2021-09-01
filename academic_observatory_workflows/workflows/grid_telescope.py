@@ -25,11 +25,10 @@ from typing import List
 from zipfile import BadZipFile, ZipFile
 
 import pendulum
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from airflow.exceptions import AirflowException
 from airflow.models.taskinstance import TaskInstance
 from google.cloud.bigquery import SourceFormat
-
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.data_utils import get_file
 from observatory.platform.utils.file_utils import list_to_jsonl_gz
@@ -182,7 +181,7 @@ def list_grid_records(
             date_matches = re.search("([0-9]{4}\-[0-9]{2}\-[0-9]{2})", title)
             if date_matches is None:
                 raise ValueError(f"No release date found in GRID title: {title}")
-            release_date = pendulum.parse(date_matches[0])
+            release_date = date_matches[0]
 
             try:
                 release_articles[release_date].append(article_id)
@@ -284,7 +283,7 @@ class GridTelescope(SnapshotTelescope):
             article_ids = record["article_ids"]
             release_date = record["release_date"]
 
-            releases.append(GridRelease(self.dag_id, article_ids, release_date))
+            releases.append(GridRelease(self.dag_id, article_ids, pendulum.parse(release_date)))
         return releases
 
     def list_releases(self, **kwargs):
