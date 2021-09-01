@@ -296,7 +296,7 @@ class TestGridTelescopeDag(ObservatoryTestCase):
         self.data_location = os.environ["TEST_GCP_DATA_LOCATION"]
 
         # Paths
-        self.vcr_cassettes_path = os.path.join(test_fixtures_folder(), "vcr_cassettes")
+        self.vcr_cassettes_path = os.path.join(test_fixtures_folder(), "grid")
         self.list_grid_records_path = os.path.join(self.vcr_cassettes_path, "list_grid_releases.yaml")
         self.grid_path = os.path.join(self.vcr_cassettes_path, "grid_2015-09-22.yaml")
 
