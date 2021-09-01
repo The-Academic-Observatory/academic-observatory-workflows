@@ -37,15 +37,8 @@ from academic_observatory_workflows.config import schema_folder as default_schem
 from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
 from observatory.platform.utils.proc_utils import wait_for_process
 from observatory.platform.utils.url_utils import retry_session
-from observatory.platform.utils.workflow_utils import (
-    blob_name,
-    bq_load_shard,
-    upload_files_from_list,
-)
-from observatory.platform.workflows.snapshot_telescope import (
-    SnapshotRelease,
-    SnapshotTelescope,
-)
+from observatory.platform.utils.workflow_utils import blob_name, bq_load_shard
+from observatory.platform.workflows.snapshot_telescope import SnapshotRelease, SnapshotTelescope
 
 
 class CrossrefMetadataRelease(SnapshotRelease):
@@ -302,16 +295,6 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         for release in releases:
             release.download()
 
-    def upload_downloaded(self, releases: List[CrossrefMetadataRelease], **kwargs):
-        """Task to upload the downloaded CrossrefMetadataRelease release for a given month.
-
-        :param releases: the list of CrossrefMetadataRelease instances.
-        :return: None.
-        """
-
-        for release in releases:
-            upload_files_from_list(release.download_files, release.download_bucket)
-
     def extract(self, releases: List[CrossrefMetadataRelease], **kwargs):
         """Task to extract the CrossrefMetadataRelease release for a given month.
 
@@ -334,7 +317,6 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
 
     def bq_load(self, releases: List[SnapshotRelease], **kwargs):
         """Task to load each transformed release to BigQuery.
-
         The table_id is set to the file name without the extension.
 
         :param releases: a list of releases.

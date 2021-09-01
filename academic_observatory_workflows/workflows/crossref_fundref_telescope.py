@@ -43,7 +43,6 @@ from observatory.platform.utils.gc_utils import (
 )
 from observatory.platform.utils.proc_utils import wait_for_process
 from observatory.platform.utils.url_utils import retry_session
-from observatory.platform.utils.workflow_utils import upload_files_from_list
 from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
@@ -316,15 +315,6 @@ class CrossrefFundrefTelescope(SnapshotTelescope):
         """
         for release in releases:
             release.download()
-
-    def upload_downloaded(self, releases: List[CrossrefFundrefRelease], **kwargs):
-        """Task to upload the downloaded releases.
-
-        :param releases: a list with Crossref Fundref releases.
-        :return: None.
-        """
-        for release in releases:
-            upload_files_from_list(release.download_files, release.download_bucket)
 
     def extract(self, releases: List[CrossrefFundrefRelease], **kwargs):
         """Task to extract the releases.
