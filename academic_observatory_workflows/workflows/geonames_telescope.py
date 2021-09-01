@@ -32,7 +32,6 @@ from google.cloud.bigquery import SourceFormat
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.data_utils import get_file
-from observatory.platform.utils.workflow_utils import upload_files_from_list
 from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
@@ -152,7 +151,7 @@ class GeonamesTelescope(SnapshotTelescope):
         schedule_interval: str = "@weekly",
         dataset_id: str = "geonames",
         schema_folder: str = default_schema_folder(),
-        source_format: str = SourceFormat.CSV,
+        source_format: SourceFormat = SourceFormat.CSV,
         dataset_description: str = "The GeoNames geographical database: https://www.geonames.org/",
         load_bigquery_table_kwargs: Dict = None,
         table_descriptions: Dict = None,
@@ -265,16 +264,6 @@ class GeonamesTelescope(SnapshotTelescope):
         # Download each release
         for release in releases:
             release.download()
-
-    def upload_downloaded(self, releases: List[GeonamesRelease], **kwargs):
-        """Task to upload the downloaded GeonamesRelease release for a given month.
-
-        :param releases: the list of GeonamesRelease instances.
-        :return: None.
-        """
-
-        for release in releases:
-            upload_files_from_list(release.download_files, release.download_bucket)
 
     def extract(self, releases: List[GeonamesRelease], **kwargs):
         """Task to extract the GeonamesRelease release for a given month.
