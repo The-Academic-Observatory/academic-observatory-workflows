@@ -19,15 +19,16 @@
 
 import json
 import os
-from typing import List
+from typing import Callable, Dict, List
 
 from academic_observatory_workflows.config import elastic_mappings_folder
+from observatory.platform.elastic.elastic import KeepInfo, KeepOrder
 from observatory.platform.elastic.kibana import TimeField
 from observatory.platform.utils.jinja2_utils import render_template
 from observatory.platform.utils.workflow_utils import make_dag_id
 from observatory.platform.workflows.elastic_import_workflow import (
-    ElasticImportWorkflow,
     ElasticImportConfig,
+    ElasticImportWorkflow,
     load_elastic_mappings_simple,
 )
 
@@ -38,6 +39,13 @@ DAG_ONIX_WORKFLOW_PREFIX = "onix_workflow"
 DAG_PREFIX = "elastic_import"
 ELASTIC_MAPPINGS_PATH = elastic_mappings_folder()
 AO_KIBANA_TIME_FIELDS = [TimeField("^.*$", "published_year")]
+
+# These can be customised per DAG.  Just using some generic settings for now.
+index_keep_info = {
+    "": KeepInfo(ordering=KeepOrder.newest, num=2),
+    "ao": KeepInfo(ordering=KeepOrder.newest, num=2),
+    "dois-doi": KeepInfo(ordering=KeepOrder.newest, num=1),
+}
 
 
 def load_elastic_mappings_ao(path: str, table_prefix: str, simple_prefixes: List = None):
@@ -79,6 +87,7 @@ configs = [
         elastic_mappings_path=ELASTIC_MAPPINGS_PATH,
         elastic_mappings_func=load_elastic_mappings_ao,
         kibana_time_fields=AO_KIBANA_TIME_FIELDS,
+        index_keep_info=index_keep_info,
     )
 ]
 
@@ -95,5 +104,6 @@ for config in configs:
         elastic_mappings_func=config.elastic_mappings_func,
         kibana_spaces=config.kibana_spaces,
         kibana_time_fields=config.kibana_time_fields,
+        index_keep_info=index_keep_info,
     ).make_dag()
     globals()[dag.dag_id] = dag
