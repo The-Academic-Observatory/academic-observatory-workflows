@@ -31,6 +31,7 @@ import pendulum
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
 from airflow.models.taskinstance import TaskInstance
+from airflow.models.variable import Variable
 from google.cloud import storage
 from google.cloud.bigquery import SourceFormat
 from google.cloud.storage import Blob
@@ -39,7 +40,6 @@ from natsort import natsorted
 
 from academic_observatory_workflows.config import schema_folder
 from observatory.platform.utils.airflow_utils import AirflowConns
-from observatory.platform.utils.airflow_utils import AirflowVariable as Variable
 from observatory.platform.utils.airflow_utils import (
     AirflowVars,
     check_connections,
@@ -60,7 +60,6 @@ from observatory.platform.utils.proc_utils import wait_for_process
 from observatory.platform.utils.workflow_utils import (
     SubFolder,
     workflow_path,
-    test_data_path,
 )
 
 
@@ -285,77 +284,44 @@ class MagTelescope:
         releases = pull_releases(ti)
 
         # Get variables
-        environment = Variable.get(AirflowVars.ENVIRONMENT)
         gcp_project_id = Variable.get(AirflowVars.PROJECT_ID)
         gcp_bucket_name = Variable.get(AirflowVars.DOWNLOAD_BUCKET)
 
-        if environment == "test":
-            # TODO: this is a bit messy. In the future, for the test environment we should just have smaller files at
-            # the MAG endpoint so that the transferring can be tested too
-            mag_zip = os.path.join(test_data_path(), "telescopes", "mag-2020-05-21.zip")
+        # Get Azure connection information
+        connection = BaseHook.get_connection("mag_snapshots_container")
+        azure_account_name = connection.login
+        azure_sas_token = connection.password
 
-            for release in releases:
-                extracted_path = os.path.join("/tmp", release.source_container)
-                os.makedirs(extracted_path, exist_ok=True)
-                with zipfile.ZipFile(mag_zip, "r") as zip_ref:
-                    zip_ref.extractall(extracted_path)
+        # Download and extract each release posted this month
+        azure_container = None
+        row_keys = []
+        include_prefixes = []
 
-                paths = glob.glob(f"{extracted_path}/**/*.*", recursive=True)
-                blob_names = []
-                for path in paths:
-                    file_path = path.replace(f"{extracted_path}/mag-2020-05-21/", "")
-                    blob_name = f"telescopes/{MagTelescope.DAG_ID}/{release.source_container}/{file_path}"
-                    blob_names.append(blob_name)
+        for release in releases:
+            azure_container = release.release_container
+            row_keys.append(release.row_key)
+            include_prefixes.append(release.release_path)
 
-                success = upload_files_to_cloud_storage(
-                    gcp_bucket_name,
-                    blob_names,
-                    paths,
-                    max_processes=MagTelescope.MAX_PROCESSES,
-                    max_connections=MagTelescope.MAX_CONNECTIONS,
-                    retries=MagTelescope.RETRIES,
-                )
-                if success:
-                    logging.info(f"Success uploading develop MAG release to cloud storage: {release}")
-                else:
-                    logging.error(f"Error uploading develop MAG release to cloud storage: {release}")
-                    exit(os.EX_DATAERR)
-        else:
-            # Get Azure connection information
-            connection = BaseHook.get_connection("mag_snapshots_container")
-            azure_account_name = connection.login
-            azure_sas_token = connection.password
-
-            # Download and extract each release posted this month
-            azure_container = None
-            row_keys = []
-            include_prefixes = []
-
-            for release in releases:
-                azure_container = release.release_container
-                row_keys.append(release.row_key)
-                include_prefixes.append(release.release_path)
-
-            if len(row_keys) > 0:
-                description = "Transfer MAG Releases: " + ", ".join(row_keys)
-                logging.info(description)
-                success = azure_to_google_cloud_storage_transfer(
-                    azure_account_name,
-                    azure_sas_token,
-                    azure_container,
-                    include_prefixes,
-                    gcp_project_id,
-                    gcp_bucket_name,
-                    description,
-                )
-                releases_str = ", ".join(row_keys)
-                if success:
-                    logging.info(f"Success transferring MAG releases: {releases_str}")
-                else:
-                    logging.error(f"Error transferring MAG release: {releases_str}")
-                    exit(os.EX_DATAERR)
+        if len(row_keys) > 0:
+            description = "Transfer MAG Releases: " + ", ".join(row_keys)
+            logging.info(description)
+            success = azure_to_google_cloud_storage_transfer(
+                azure_account_name,
+                azure_sas_token,
+                azure_container,
+                include_prefixes,
+                gcp_project_id,
+                gcp_bucket_name,
+                description,
+            )
+            releases_str = ", ".join(row_keys)
+            if success:
+                logging.info(f"Success transferring MAG releases: {releases_str}")
             else:
-                logging.warning("No release to transfer")
+                logging.error(f"Error transferring MAG release: {releases_str}")
+                exit(os.EX_DATAERR)
+        else:
+            logging.warning("No release to transfer")
 
     @staticmethod
     def download(**kwargs):

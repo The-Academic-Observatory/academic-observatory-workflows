@@ -203,7 +203,7 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
                 release.download()
 
     @patch("academic_observatory_workflows.workflows.crossref_metadata_telescope.subprocess.Popen")
-    @patch("observatory.platform.utils.workflow_utils.AirflowVariable.get")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
     def test_extract(self, mock_variable_get, mock_subprocess):
         """Test extract method of release with failing extract command
 

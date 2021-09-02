@@ -34,8 +34,8 @@ import xmltodict
 from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.hooks.base_hook import BaseHook
 from airflow.models.taskinstance import TaskInstance
+from airflow.models.variable import Variable
 from observatory.platform.utils.airflow_utils import AirflowConns
-from observatory.platform.utils.airflow_utils import AirflowVariable as Variable
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.gc_utils import (
     aws_to_google_cloud_storage_transfer,

@@ -35,7 +35,7 @@ from airflow.exceptions import AirflowException
 from airflow.models.taskinstance import TaskInstance
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
-from observatory.platform.utils.airflow_utils import AirflowVariable as Variable
+from airflow.models.variable import Variable
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.gc_utils import (
     bigquery_sharded_table_id,

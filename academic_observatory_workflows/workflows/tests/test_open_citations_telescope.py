@@ -41,7 +41,7 @@ class TestOpenCitationsTelescope(unittest.TestCase):
             "open_citations", "fetch_open_citations_versions.yaml"
         )
 
-    @patch("observatory.platform.utils.workflow_utils.AirflowVariable.get")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
     def test_open_citations_release(self, mock_variable_get):
         """Test that the getter properties in OpenCitationsRelease work as expected.
 

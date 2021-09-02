@@ -26,10 +26,10 @@ from typing import List
 import pendulum
 from airflow.exceptions import AirflowException
 from airflow.models.taskinstance import TaskInstance
+from airflow.models.variable import Variable
 from google.cloud.bigquery import SourceFormat
 
 from academic_observatory_workflows.config import schema_folder
-from observatory.platform.utils.airflow_utils import AirflowVariable as Variable
 from observatory.platform.utils.airflow_utils import AirflowVars, check_variables
 from observatory.platform.utils.config_utils import find_schema
 from observatory.platform.utils.data_utils import get_file
