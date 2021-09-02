@@ -36,6 +36,7 @@ from academic_observatory_workflows.workflows.crossref_events_telescope import (
     CrossrefEventsRelease,
     CrossrefEventsTelescope,
     parse_event_url,
+    transform_batch,
 )
 
 
@@ -399,8 +400,8 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
             os.remove(events_path)
 
     @patch("observatory.platform.utils.workflow_utils.AirflowVariable.get")
-    def test_transform(self, mock_variable_get):
-        """Test the transform method of the release in parallel mode
+    def test_transform_batch(self, mock_variable_get):
+        """Test the transform_batch method of the release
         :return: None.
         """
 
@@ -412,5 +413,6 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
             with jsonlines.open(events_path, mode="w") as writer:
                 writer.write_all([{"name": "Hello"}, {"name": "World"}])
 
-            self.release.transform()
+            # Transform batch
+            transform_batch(events_path, self.release.transform_folder)
             self.assertEqual(len(self.release.download_files), len(self.release.transform_files))
