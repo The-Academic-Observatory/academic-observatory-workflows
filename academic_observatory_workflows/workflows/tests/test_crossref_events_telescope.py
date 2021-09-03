@@ -18,18 +18,10 @@ import os
 from datetime import timedelta
 from unittest.mock import patch
 
-import jsonlines
 import pendulum
 import vcr
 from airflow.exceptions import AirflowSkipException
 from click.testing import CliRunner
-from observatory.platform.utils.test_utils import (
-    ObservatoryEnvironment,
-    ObservatoryTestCase,
-    module_file_path,
-)
-from observatory.platform.utils.url_utils import get_user_agent
-from observatory.platform.utils.workflow_utils import blob_name
 
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.crossref_events_telescope import (
@@ -38,6 +30,13 @@ from academic_observatory_workflows.workflows.crossref_events_telescope import (
     parse_event_url,
     transform_batch,
 )
+from observatory.platform.utils.test_utils import (
+    ObservatoryEnvironment,
+    ObservatoryTestCase,
+    module_file_path,
+)
+from observatory.platform.utils.url_utils import get_user_agent
+from observatory.platform.utils.workflow_utils import blob_name
 
 
 class TestCrossrefEventsTelescope(ObservatoryTestCase):
@@ -53,10 +52,10 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
 
         self.first_execution_date = pendulum.datetime(year=2018, month=5, day=14)
-        self.first_cassette = test_fixtures_folder("crossref_events", "crossref_events1.csv")
+        self.first_cassette = test_fixtures_folder("crossref_events", "crossref_events1.yaml")
 
         self.second_execution_date = pendulum.datetime(year=2018, month=5, day=20)
-        self.second_cassette = test_fixtures_folder("crossref_events", "crossref_events2.csv")
+        self.second_cassette = test_fixtures_folder("crossref_events", "crossref_events2.yaml")
 
         # additional tests setup
         self.start_date = pendulum.datetime(2021, 5, 6)
@@ -408,11 +407,24 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
         with CliRunner().isolated_filesystem() as t:
             mock_variable_get.return_value = os.path.join(t, "data")
 
-            # Create fake download files
-            events_path = os.path.join(self.release.download_folder, "events.jsonl")
-            with jsonlines.open(events_path, mode="w") as writer:
-                writer.write_all([{"name": "Hello"}, {"name": "World"}])
+            # Use release info so that we can download the right data
+            release = CrossrefEventsRelease(
+                "crossref_events",
+                pendulum.datetime(2018, 5, 14),
+                pendulum.datetime(2018, 5, 19),
+                True,
+                "aniek.roelofs@curtin.edu.au",
+                max_threads=1,
+                max_processes=1,
+            )
+
+            # Download files
+            with vcr.use_cassette(self.first_cassette):
+                release.download()
 
             # Transform batch
-            transform_batch(events_path, self.release.transform_folder)
-            self.assertEqual(len(self.release.download_files), len(self.release.transform_files))
+            for file_path in release.download_files:
+                transform_batch(file_path, release.transform_folder)
+
+            # Assert all transformed
+            self.assertEqual(len(release.download_files), len(release.transform_files))
