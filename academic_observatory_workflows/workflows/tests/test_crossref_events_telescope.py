@@ -28,6 +28,7 @@ from academic_observatory_workflows.workflows.crossref_events_telescope import (
     CrossrefEventsRelease,
     CrossrefEventsTelescope,
     parse_event_url,
+    transform_batch,
 )
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
@@ -51,16 +52,22 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
 
         self.first_execution_date = pendulum.datetime(year=2018, month=5, day=14)
-        self.first_cassette = test_fixtures_folder("crossref_events", "crossref_events1.csv")
+        self.first_cassette = test_fixtures_folder("crossref_events", "crossref_events1.yaml")
 
         self.second_execution_date = pendulum.datetime(year=2018, month=5, day=20)
-        self.second_cassette = test_fixtures_folder("crossref_events", "crossref_events2.csv")
+        self.second_cassette = test_fixtures_folder("crossref_events", "crossref_events2.yaml")
 
         # additional tests setup
         self.start_date = pendulum.datetime(2021, 5, 6)
         self.end_date = pendulum.datetime(2021, 5, 12)
         self.release = CrossrefEventsRelease(
-            CrossrefEventsTelescope.DAG_ID, self.start_date, self.end_date, False, "mailto", 21
+            CrossrefEventsTelescope.DAG_ID,
+            self.start_date,
+            self.end_date,
+            False,
+            "mailto",
+            max_threads=21,
+            max_processes=1,
         )
 
     def test_dag_structure(self):
@@ -106,6 +113,7 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
 
         # Setup Telescope
         telescope = CrossrefEventsTelescope(dataset_id=dataset_id)
+        telescope.max_threads = 1
         telescope.max_processes = 1
         dag = telescope.make_dag()
 
@@ -133,7 +141,13 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
 
                 # use release info for other tasks
                 release = CrossrefEventsRelease(
-                    telescope.dag_id, start_date, end_date, first_release, telescope.mailto, telescope.max_processes
+                    telescope.dag_id,
+                    start_date,
+                    end_date,
+                    first_release,
+                    telescope.mailto,
+                    telescope.max_threads,
+                    telescope.max_processes,
                 )
 
                 # Test download task
@@ -211,7 +225,13 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
 
                 # use release info for other tasks
                 release = CrossrefEventsRelease(
-                    telescope.dag_id, start_date, end_date, first_release, telescope.mailto, telescope.max_processes
+                    telescope.dag_id,
+                    start_date,
+                    end_date,
+                    first_release,
+                    telescope.mailto,
+                    telescope.max_threads,
+                    telescope.max_processes,
                 )
 
                 # Test download task
@@ -378,18 +398,33 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
             mock_download_events.assert_not_called()
             os.remove(events_path)
 
-    @patch.object(CrossrefEventsRelease, "transform_batch")
     @patch("observatory.platform.utils.workflow_utils.AirflowVariable.get")
-    def test_transform(self, mock_variable_get, mock_transform_batch):
-        """Test the transform method of the release in parallel mode
+    def test_transform_batch(self, mock_variable_get):
+        """Test the transform_batch method of the release
         :return: None.
         """
-        mock_variable_get.return_value = "data"
-        with CliRunner().isolated_filesystem():
-            # Create fake download files
-            events_path = os.path.join(self.release.download_folder, "events.jsonl")
-            with open(events_path, "w") as f:
-                f.write("[{'test': 'test'}]\n")
 
-            self.release.transform()
-            self.assertEqual(len(self.release.download_files), mock_transform_batch.call_count)
+        with CliRunner().isolated_filesystem() as t:
+            mock_variable_get.return_value = os.path.join(t, "data")
+
+            # Use release info so that we can download the right data
+            release = CrossrefEventsRelease(
+                "crossref_events",
+                pendulum.datetime(2018, 5, 14),
+                pendulum.datetime(2018, 5, 19),
+                True,
+                "aniek.roelofs@curtin.edu.au",
+                max_threads=1,
+                max_processes=1,
+            )
+
+            # Download files
+            with vcr.use_cassette(self.first_cassette):
+                release.download()
+
+            # Transform batch
+            for file_path in release.download_files:
+                transform_batch(file_path, release.transform_folder)
+
+            # Assert all transformed
+            self.assertEqual(len(release.download_files), len(release.transform_files))

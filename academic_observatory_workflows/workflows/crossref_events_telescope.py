@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExecutor
 from typing import List, Tuple, Union
 
 import jsonlines
@@ -27,9 +27,6 @@ import pendulum
 import requests
 from airflow.exceptions import AirflowSkipException
 from airflow.models.taskinstance import TaskInstance
-from tenacity import RetryError, retry, stop_after_attempt, wait_exponential, wait_fixed
-
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.url_utils import get_user_agent
 from observatory.platform.utils.workflow_utils import upload_files_from_list
@@ -37,6 +34,9 @@ from observatory.platform.workflows.stream_telescope import (
     StreamRelease,
     StreamTelescope,
 )
+from tenacity import RetryError, retry, stop_after_attempt, wait_exponential, wait_fixed
+
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 
 
 class CrossrefEventsRelease(StreamRelease):
@@ -47,6 +47,7 @@ class CrossrefEventsRelease(StreamRelease):
         end_date: pendulum.DateTime,
         first_release: bool,
         mailto: str,
+        max_threads: int,
         max_processes: int,
     ):
         """Construct a CrossrefEventsRelease instance
@@ -56,7 +57,8 @@ class CrossrefEventsRelease(StreamRelease):
         :param end_date: the end_date of the release.
         :param first_release: whether this is the first release that is processed for this DAG
         :param mailto: Email address used in the download url
-        :param max_processes: Max processes used for parallel downloading
+        :param max_threads: Max threads used for parallel downloading
+        :param max_processes: max processes for transforming files.
         """
         download_files_regex = r".*.jsonl$"
         transform_files_regex = r".*.jsonl$"
@@ -69,6 +71,7 @@ class CrossrefEventsRelease(StreamRelease):
             transform_files_regex=transform_files_regex,
         )
         self.mailto = mailto
+        self.max_threads = max_threads
         self.max_processes = max_processes
 
     @property
@@ -119,10 +122,10 @@ class CrossrefEventsRelease(StreamRelease):
 
         :return: None.
         """
-        logging.info(f"Downloading events, no. workers: {self.max_processes}")
+        logging.info(f"Downloading events, no. workers: {self.max_threads}")
         logging.info(f"Downloading using these URLs, but with different start and end dates: {self.urls[0]}")
 
-        with ThreadPoolExecutor(max_workers=self.max_processes) as executor:
+        with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
             futures = []
             for i, url in enumerate(self.urls):
                 futures.append(executor.submit(self.download_batch, i, url))
@@ -173,30 +176,34 @@ class CrossrefEventsRelease(StreamRelease):
         """
         logging.info(f"Transforming events, no. workers: {self.max_processes}")
 
-        with ThreadPoolExecutor(max_workers=self.max_processes) as executor:
+        with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
             futures = []
             for file in self.download_files:
-                futures.append(executor.submit(self.transform_batch, file))
+                futures.append(executor.submit(transform_batch, file, self.transform_folder))
             for future in as_completed(futures):
                 future.result()
 
-    def transform_batch(self, download_path: str):
-        """Transform one day of events.
 
-        :param download_path: The path to the downloaded file.
-        :return: None.
-        """
-        file_name = os.path.basename(download_path)
-        transform_path = os.path.join(self.transform_folder, file_name)
+def transform_batch(download_path: str, transform_folder: str):
+    """Transform one day of events.
 
-        logging.info(f"Transforming file: {file_name}")
-        with jsonlines.open(download_path, "r") as reader:
-            with jsonlines.open(transform_path, "w") as writer:
-                for event in reader:
-                    event = transform_events(event)
-                    writer.write(event)
+    :param download_path: The path to the downloaded file.
+    :param transform_folder: the transform folder.
+    :return: None.
+    """
 
-        logging.info(f"Finished: {file_name}")
+    file_name = os.path.basename(download_path)
+    transform_path = os.path.join(transform_folder, file_name)
+
+    logging.info(f"Transforming file: {download_path}")
+    logging.info(f"Saving to: {transform_path}")
+    with jsonlines.open(download_path, "r") as reader:
+        with jsonlines.open(transform_path, "w") as writer:
+            for event in reader:
+                event = transform_events(event)
+                writer.write(event)
+
+    logging.info(f"Finished: {file_name}")
 
 
 class CrossrefEventsTelescope(StreamTelescope):
@@ -211,13 +218,15 @@ class CrossrefEventsTelescope(StreamTelescope):
         schedule_interval: str = "@weekly",
         dataset_id: str = "crossref",
         dataset_description: str = "The Crossref Events dataset: https://www.eventdata.crossref.org/guide/",
+        queue: str = "remote_queue",
         merge_partition_field: str = "id",
         bq_merge_days: int = 7,
         schema_folder: str = default_schema_folder(),
         batch_load: bool = True,
         airflow_vars: List = None,
         mailto: str = "aniek.roelofs@curtin.edu.au",
-        max_processes: int = min(32, os.cpu_count() + 4),
+        max_threads: int = min(32, os.cpu_count() + 4),
+        max_processes: int = os.cpu_count(),
     ):
         """Construct a CrossrefEventsTelescope instance.
 
@@ -226,13 +235,15 @@ class CrossrefEventsTelescope(StreamTelescope):
         :param schedule_interval: the schedule interval of the DAG.
         :param dataset_id: the dataset id.
         :param dataset_description: the dataset description.
+        :param queue: the queue that the tasks should run on.
         :param merge_partition_field: the BigQuery field used to match partitions for a merge
         :param bq_merge_days: how often partitions should be merged (every x days)
         :param schema_folder: the SQL schema path.
         :param batch_load: whether all files in the transform folder are loaded into 1 table at once
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
         :param mailto: Email address used in the download url
-        :param max_processes: Max processes used for parallel downloading, default is based on 7 days x 3 url categories
+        :param max_threads: Max processes used for parallel downloading, default is based on 7 days x 3 url categories
+        :param max_processes: max processes for transforming files.
         """
 
         if airflow_vars is None:
@@ -252,10 +263,12 @@ class CrossrefEventsTelescope(StreamTelescope):
             bq_merge_days,
             schema_folder,
             dataset_description=dataset_description,
+            queue=queue,
             batch_load=batch_load,
             airflow_vars=airflow_vars,
         )
         self.mailto = mailto
+        self.max_threads = max_threads
         self.max_processes = max_processes
 
         self.add_setup_task_chain([self.check_dependencies, self.get_release_info])
@@ -279,7 +292,7 @@ class CrossrefEventsTelescope(StreamTelescope):
         end_date = pendulum.parse(end_date)
 
         release = CrossrefEventsRelease(
-            self.dag_id, start_date, end_date, first_release, self.mailto, self.max_processes
+            self.dag_id, start_date, end_date, first_release, self.mailto, self.max_threads, self.max_processes
         )
         return release
 
@@ -402,6 +415,12 @@ def transform_events(event):
                     v = str(pendulum.parse(v))
                 except ValueError:
                     v = "0001-01-01T00:00:00Z"
+
+            # Replace hyphens with underscores for BigQuery compatibility
             k = k.replace("-", "_")
+
+            # Replace @ symbol in keys left by DataCite between the 15 and 22 March 2019
+            k = k.replace("@", "")
+
             new[k] = transform_events(v)
         return new
