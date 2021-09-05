@@ -20,15 +20,15 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Dict, List, Optional, Tuple
 
 import pendulum
+from academic_observatory_workflows.config import sql_folder
 from airflow.exceptions import AirflowException
 from airflow.models import Variable
-from airflow.sensors.external_task import ExternalTaskSensor
-
-from academic_observatory_workflows.config import sql_folder
 from observatory.platform.utils.airflow_utils import AirflowVars, set_task_state
+from observatory.platform.utils.dag_run_sensor import DagRunSensor
 from observatory.platform.utils.gc_utils import (
     bigquery_sharded_table_id,
     copy_bigquery_table,
@@ -213,24 +213,44 @@ def make_elastic_tables(
         )
     if relate_to_countries:
         tables.append(
-            {"file_name": DoiWorkflow.EXPORT_RELATIONS_FILENAME, "aggregate": aggregate_table_id, "facet": "countries",}
+            {
+                "file_name": DoiWorkflow.EXPORT_RELATIONS_FILENAME,
+                "aggregate": aggregate_table_id,
+                "facet": "countries",
+            }
         )
     if relate_to_groups:
         tables.append(
-            {"file_name": DoiWorkflow.EXPORT_RELATIONS_FILENAME, "aggregate": aggregate_table_id, "facet": "groupings",}
+            {
+                "file_name": DoiWorkflow.EXPORT_RELATIONS_FILENAME,
+                "aggregate": aggregate_table_id,
+                "facet": "groupings",
+            }
         )
     if relate_to_members:
         tables.append(
-            {"file_name": DoiWorkflow.EXPORT_RELATIONS_FILENAME, "aggregate": aggregate_table_id, "facet": "members",}
+            {
+                "file_name": DoiWorkflow.EXPORT_RELATIONS_FILENAME,
+                "aggregate": aggregate_table_id,
+                "facet": "members",
+            }
         )
     if relate_to_journals:
         tables.append(
-            {"file_name": DoiWorkflow.EXPORT_RELATIONS_FILENAME, "aggregate": aggregate_table_id, "facet": "journals",}
+            {
+                "file_name": DoiWorkflow.EXPORT_RELATIONS_FILENAME,
+                "aggregate": aggregate_table_id,
+                "facet": "journals",
+            }
         )
 
     if relate_to_funders:
         tables.append(
-            {"file_name": DoiWorkflow.EXPORT_RELATIONS_FILENAME, "aggregate": aggregate_table_id, "facet": "funders",}
+            {
+                "file_name": DoiWorkflow.EXPORT_RELATIONS_FILENAME,
+                "aggregate": aggregate_table_id,
+                "facet": "funders",
+            }
         )
 
     if relate_to_publishers:
@@ -405,7 +425,14 @@ class DoiWorkflow(Workflow):
     def create_tasks(self):
         # Add sensors
         for ext_dag_id in self.SENSOR_DAG_IDS:
-            sensor = ExternalTaskSensor(task_id=f"{ext_dag_id}_sensor", external_dag_id=ext_dag_id, mode="reschedule")
+            sensor = DagRunSensor(
+                task_id=f"{ext_dag_id}_sensor",
+                external_dag_id=ext_dag_id,
+                mode="reschedule",
+                duration=timedelta(days=7),  # Look back up to 7 days from execution date
+                poke_interval=int(timedelta(hours=1).total_seconds()),  # Check at this interval if dag run is ready
+                timeout=int(timedelta(days=2).total_seconds()),  # Sensor will fail after 2 days of waiting
+            )
             self.add_sensor(sensor)
 
         # Setup tasks
@@ -628,7 +655,10 @@ class ObservatoryRelease:
 
         for dataset_id, description in datasets:
             create_bigquery_dataset(
-                self.project_id, dataset_id, self.data_location, description=description,
+                self.project_id,
+                dataset_id,
+                self.data_location,
+                description=description,
             )
 
     def create_intermediate_table(
@@ -667,9 +697,7 @@ class ObservatoryRelease:
                 table.release_date = get_release_date(table.dataset_id, table.table_id)
 
         # Create processed table
-        template_path = os.path.join(
-            sql_folder(), make_sql_jinja2_filename(f"create_{output_table_id}")
-        )
+        template_path = os.path.join(sql_folder(), make_sql_jinja2_filename(f"create_{output_table_id}"))
         sql = render_template(template_path, project_id=self.project_id, release_date=self.release_date, **inputs)
 
         output_table_id_sharded = bigquery_sharded_table_id(output_table_id, self.release_date)
