@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Author: Aniek Roelofs, James Diprose
+
 # Crossref Metadata (pigz mawk), Unpaywall (unzip), Open Citations (unzip)
 apt-get install pigz mawk unzip -y
 
