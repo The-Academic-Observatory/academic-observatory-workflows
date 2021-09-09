@@ -36,7 +36,6 @@ from google.cloud.bigquery import SourceFormat, WriteDisposition
 from ratelimit import limits, sleep_and_retry
 
 from academic_observatory_workflows.config import schema_folder
-from observatory.platform.utils.airflow_utils import AirflowVariable as Variable
 from observatory.platform.utils.airflow_utils import AirflowVars, check_variables
 from observatory.platform.utils.config_utils import find_schema
 from observatory.platform.utils.file_utils import write_to_file, zip_files

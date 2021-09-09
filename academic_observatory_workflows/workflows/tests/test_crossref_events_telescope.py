@@ -341,7 +341,7 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
             self.assertEqual(expected_url, url)
 
     @patch.object(CrossrefEventsRelease, "download_batch")
-    @patch("observatory.platform.utils.workflow_utils.AirflowVariable.get")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
     def test_download(self, mock_variable_get, mock_download_batch):
         """Test the download method of the release in parallel mode
         :return: None.
@@ -362,7 +362,7 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
             self.assertEqual(len(self.release.urls), mock_download_batch.call_count)
 
     @patch("academic_observatory_workflows.workflows.crossref_events_telescope.download_events")
-    @patch("observatory.platform.utils.workflow_utils.AirflowVariable.get")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
     def test_download_batch(self, mock_variable_get, mock_download_events):
         """Test download_batch function
         :return: None.
@@ -398,7 +398,7 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
             mock_download_events.assert_not_called()
             os.remove(events_path)
 
-    @patch("observatory.platform.utils.workflow_utils.AirflowVariable.get")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
     def test_transform_batch(self, mock_variable_get):
         """Test the transform_batch method of the release
         :return: None.

@@ -30,7 +30,6 @@ from airflow.models.taskinstance import TaskInstance
 from google.cloud.bigquery import SourceFormat
 
 from academic_observatory_workflows.config import schema_folder
-from observatory.platform.utils.airflow_utils import AirflowVariable as Variable
 from observatory.platform.utils.airflow_utils import AirflowVars, check_variables
 from observatory.platform.utils.config_utils import find_schema
 from observatory.platform.utils.data_utils import get_file
@@ -46,7 +45,6 @@ from observatory.platform.utils.url_utils import retry_session
 from observatory.platform.utils.workflow_utils import (
     SubFolder,
     workflow_path,
-    test_data_path,
 )
 
 
@@ -328,16 +326,9 @@ class UnpaywallTelescope:
         ti: TaskInstance = kwargs["ti"]
         releases_list = pull_releases(ti)
 
-        # Get variables
-        environment = Variable.get(AirflowVars.ENVIRONMENT)
-
         # Download each release
         for release in releases_list:
-            if environment == "test":
-                debug_file_path = os.path.join(test_data_path(), "telescopes", "unpaywall.jsonl.gz")
-                shutil.copy(debug_file_path, release.filepath_download)
-            else:
-                download_release(release)
+            download_release(release)
 
     @staticmethod
     def upload_downloaded(**kwargs):
