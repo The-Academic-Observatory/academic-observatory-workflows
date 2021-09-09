@@ -22,7 +22,6 @@ import logging
 import os
 import shutil
 import subprocess
-import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from subprocess import Popen
 from typing import Dict, List
@@ -31,6 +30,7 @@ import pendulum
 import requests
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
+from bs4 import BeautifulSoup
 from natsort import natsorted
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
@@ -263,10 +263,10 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         logging.info(f"Listing available releases since start date ({self.start_date}):")
         for dt in pendulum.period(pendulum.instance(self.start_date), pendulum.today("UTC")).range("years"):
             response = requests.get(f"https://api.crossref.org/snapshots/monthly/{dt.year}")
-            root = ET.fromstring(response.content)
-            for child in root.iter("a"):
-                href = child.attrib["href"]
-                logging.info(href)
+            soup = BeautifulSoup(response.text)
+            hrefs = soup.find_all("a", href=True)
+            for href in hrefs:
+                logging.info(href["href"])
 
         # Construct the release for the execution date and check if it exists.
         # The release release for a given execution_date is added on the 5th day of the following month.
