@@ -33,6 +33,7 @@ from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.data_utils import get_file
 from observatory.platform.utils.file_utils import list_to_jsonl_gz
 from observatory.platform.utils.url_utils import retry_session
+from observatory.platform.utils.workflow_utils import upload_files_from_list
 from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
@@ -212,7 +213,7 @@ class GridTelescope(SnapshotTelescope):
         schedule_interval: str = "@weekly",
         dataset_id: str = DATASET_ID,
         schema_folder: str = default_schema_folder(),
-        source_format: SourceFormat = SourceFormat.NEWLINE_DELIMITED_JSON,
+        source_format: str = SourceFormat.NEWLINE_DELIMITED_JSON,
         dataset_description: str = "Datasets provided by Digital Science: https://www.digital-science.com/",
         catchup: bool = True,
         airflow_vars: List = None,
@@ -317,6 +318,17 @@ class GridTelescope(SnapshotTelescope):
         # Download each release
         for release in releases:
             release.download()
+
+    def upload_downloaded(self, releases: List[GridRelease], **kwargs):
+        """Task to upload the downloaded GRID releases for a given month.
+
+        :param releases: a list of GRID releases.
+        :return: None.
+        """
+
+        # Upload each downloaded release
+        for release in releases:
+            upload_files_from_list(release.download_files, release.download_bucket)
 
     def extract(self, releases: List[GridRelease], **kwargs):
         """Task to extract the GRID releases for a given month.
