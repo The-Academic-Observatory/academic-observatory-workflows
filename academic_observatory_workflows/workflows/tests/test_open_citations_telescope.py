@@ -27,7 +27,6 @@ from academic_observatory_workflows.workflows.open_citations_telescope import (
     fetch_open_citations_versions,
     list_open_citations_releases,
 )
-from observatory.platform.utils.workflow_utils import reset_variables
 
 
 class TestOpenCitationsTelescope(unittest.TestCase):
@@ -49,7 +48,6 @@ class TestOpenCitationsTelescope(unittest.TestCase):
         """
 
         # Mock data variable
-        reset_variables()
         data_path = "data"
         mock_variable_get.return_value = data_path
 
