@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from typing import Dict, List
 from unittest.mock import patch
 
@@ -201,15 +202,11 @@ class TestDoiWorkflow(ObservatoryTestCase):
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "doi_workflow.py")
             self.assert_dag_load("doi", dag_file)
 
-    @patch("academic_observatory_workflows.workflows.doi_workflow.DagRunSensor.check_dag_exists")
-    def test_telescope(self, m_dr_sensor_dag_check):
+    def test_telescope(self):
         """Test the DOI telescope end to end.
 
         :return: None.
         """
-
-        # Disable dag check on dag run sensor
-        m_dr_sensor_dag_check.return_value = True
 
         # Create datasets
         env = ObservatoryEnvironment(
@@ -240,14 +237,21 @@ class TestDoiWorkflow(ObservatoryTestCase):
         with env.create(task_logging=True):
             # Make dag
             start_date = pendulum.datetime(year=2021, month=5, day=9)
-            doi_dag = DoiWorkflow(
+            workflow = DoiWorkflow(
                 intermediate_dataset_id=intermediate_dataset_id,
                 dashboards_dataset_id=dashboards_dataset_id,
                 observatory_dataset_id=observatory_dataset_id,
                 elastic_dataset_id=elastic_dataset_id,
                 transforms=dataset_transforms,
                 start_date=start_date,
-            ).make_dag()
+            )
+
+            # Disable dag check on dag run sensor
+            for sensor in workflow.sensors:
+                sensor.check_exists = False
+                sensor.grace_period = timedelta(seconds=1)
+
+            doi_dag = workflow.make_dag()
 
             # If there is no dag run for the DAG being monitored, the sensor will pass.  This is so we can
             # skip waiting on weeks when the DAG being waited on is not scheduled to run.
