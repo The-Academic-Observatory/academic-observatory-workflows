@@ -17,33 +17,37 @@
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from typing import Dict, List
+from unittest.mock import patch
 
 import pendulum
-from airflow.exceptions import AirflowException
-
 from academic_observatory_workflows.model import (
-    bq_load_observatory_dataset,
-    make_observatory_dataset,
     Institution,
-    make_doi_table,
+    bq_load_observatory_dataset,
     make_country_table,
+    make_doi_table,
+    make_observatory_dataset,
     sort_events,
 )
-from academic_observatory_workflows.workflows.doi_workflow import DoiWorkflow, make_dataset_transforms, \
-    make_elastic_tables
+from academic_observatory_workflows.workflows.doi_workflow import (
+    DoiWorkflow,
+    make_dataset_transforms,
+    make_elastic_tables,
+)
+from airflow.exceptions import AirflowException
 from observatory.platform.utils.airflow_utils import set_task_state
 from observatory.platform.utils.gc_utils import run_bigquery_query
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
-    module_file_path,
     make_dummy_dag,
+    module_file_path,
 )
 
 
 class TestDoiWorkflow(ObservatoryTestCase):
-    """ Tests for the functions used by the Doi workflow """
+    """Tests for the functions used by the Doi workflow"""
 
     def __init__(self, *args, **kwargs):
         super(TestDoiWorkflow, self).__init__(*args, **kwargs)
@@ -233,18 +237,25 @@ class TestDoiWorkflow(ObservatoryTestCase):
         with env.create(task_logging=True):
             # Make dag
             start_date = pendulum.datetime(year=2021, month=5, day=9)
-            doi_dag = DoiWorkflow(
+            workflow = DoiWorkflow(
                 intermediate_dataset_id=intermediate_dataset_id,
                 dashboards_dataset_id=dashboards_dataset_id,
                 observatory_dataset_id=observatory_dataset_id,
                 elastic_dataset_id=elastic_dataset_id,
                 transforms=dataset_transforms,
                 start_date=start_date,
-            ).make_dag()
+            )
 
-            # Test that sensors do go into the 'up_for_reschedule' state as the DAGs that they wait for haven't run
-            # execution_date = pendulum.datetime(year=2021, month=5, day=9)
-            expected_state = "up_for_reschedule"
+            # Disable dag check on dag run sensor
+            for sensor in workflow.sensors:
+                sensor.check_exists = False
+                sensor.grace_period = timedelta(seconds=1)
+
+            doi_dag = workflow.make_dag()
+
+            # If there is no dag run for the DAG being monitored, the sensor will pass.  This is so we can
+            # skip waiting on weeks when the DAG being waited on is not scheduled to run.
+            expected_state = "success"
             with env.create_dag_run(doi_dag, start_date):
                 for task_id in DoiWorkflow.SENSOR_DAG_IDS:
                     ti = env.run_task(f"{task_id}_sensor", doi_dag, execution_date=start_date)
