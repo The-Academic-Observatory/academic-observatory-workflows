@@ -13,6 +13,36 @@ hybrid, and bronze."
 ” _- source: [Unpaywall](https://unpaywall.org/)_ 
 and [data details](https://unpaywall.org/data-format)
 
+The Unpaywall snapshot dataset information can be found on the [product page](https://unpaywall.org/products/snapshot).  Users are required to fill in a form to get their download link. The link can be found on the bottom of the [product page](https://unpaywall.org/products/snapshot).
+
+ ```eval_rst
++------------------------------+--------------------------------------+
+| Summary                      |                                      |
++==============================+======================================+
+| Average runtime              |  ?  min                              |
++------------------------------+--------------------------------------+
+| Average download size        |  >16 GB                              |
++------------------------------+--------------------------------------+
+| Harvest Type                 | URL                                  |
++------------------------------+--------------------------------------+
+| Harvest Frequency            | Daily/Weekly/Monthly/Other           |
++------------------------------+--------------------------------------+
+| Runs on remote worker        | True/False                           |
++------------------------------+--------------------------------------+
+| Catchup missed runs          | True/False                           |
++------------------------------+--------------------------------------+
+| Table Write Disposition      | Truncate                             |
++------------------------------+--------------------------------------+
+| Update Frequency             | Daily/Weekly/Monthly/Other           |
++------------------------------+--------------------------------------+
+| Credentials Required         | No                                   |
++------------------------------+--------------------------------------+
+| Uses Workflow Template       | Snapshot                             |
++------------------------------+--------------------------------------+
+| Each shard includes all data | Yes                                  |
++------------------------------+--------------------------------------+
+```
+
 ## Latest schema
 ``` eval_rst
 .. csv-table::
