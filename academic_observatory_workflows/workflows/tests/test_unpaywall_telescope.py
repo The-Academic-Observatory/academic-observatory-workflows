@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Aniek Roelofs
+# Author: Aniek Roelofs, Tuan Chien
 
+import datetime
 import logging
 import os
 import shutil
@@ -23,21 +24,28 @@ from unittest.mock import patch
 
 import pendulum
 import vcr
-from click.testing import CliRunner
-
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.unpaywall_telescope import (
     UnpaywallRelease,
     UnpaywallTelescope,
-    extract_release,
-    list_releases,
-    transform_release,
 )
+from airflow.exceptions import AirflowException
+from airflow.utils.state import State
+from click.testing import CliRunner
 from observatory.platform.utils.file_utils import _hash_file
-from observatory.platform.utils.workflow_utils import SubFolder, workflow_path
+from observatory.platform.utils.test_utils import (
+    HttpServer,
+    ObservatoryEnvironment,
+    ObservatoryTestCase,
+    module_file_path,
+)
+from observatory.platform.utils.workflow_utils import (
+    bigquery_sharded_table_id,
+    blob_name,
+)
 
 
-class TestUnpaywallTelescope(unittest.TestCase):
+class TestUnpaywallRelease(unittest.TestCase):
     """Tests for the functions used by the unpaywall telescope"""
 
     def __init__(self, *args, **kwargs):
@@ -47,50 +55,19 @@ class TestUnpaywallTelescope(unittest.TestCase):
         :param kwargs: keyword arguments.
         """
 
-        super(TestUnpaywallTelescope, self).__init__(*args, **kwargs)
-
-        # Unpaywall releases list
-        self.list_unpaywall_releases_path = test_fixtures_folder("unpaywall", "list_unpaywall_releases.yaml")
-        self.list_unpaywall_releases_hash = "78d1a129cb0aba072ca49e2599f60c10"
+        super().__init__(*args, **kwargs)
 
         # Unpaywall test release
         self.unpaywall_test_path = test_fixtures_folder("unpaywall", "unpaywall.jsonl.gz")
-        self.unpaywall_test_file = "unpaywall_snapshot_3000-01-27T153236.jsonl.gz"
-        self.unpaywall_test_url = (
-            "https://unpaywall-data-snapshots.s3-us-west-2.amazonaws.com"
-            "/unpaywall_snapshot_3000-01-27T153236.jsonl.gz"
-        )
+        self.unpaywall_test_file = "unpaywall_3000-01-27T153236.jsonl.gz"
+        self.unpaywall_test_url = "http://localhost/unpaywall_3000-01-27T153236.jsonl.gz"
         self.unpaywall_test_date = pendulum.datetime(year=3000, month=1, day=27)
-        self.unpaywall_test_download_file_name = "unpaywall_3000_01_27.jsonl.gz"
-        self.unpaywall_test_decompress_file_name = "unpaywall_3000_01_27.jsonl"
-        self.unpaywall_test_transform_file_name = "unpaywall_3000_01_27.jsonl"
-        self.unpaywall_test_download_hash = "90051478f7b6689838d58edfc2450cb3"
         self.unpaywall_test_decompress_hash = "fe4e72ce54c4bb236802ddbb3dbee905"
         self.unpaywall_test_transform_hash = "62cbb5af5a78d2e0769a28d976971cba"
-        self.start_date = pendulum.datetime(year=2018, month=3, day=29)
-        self.end_date = pendulum.datetime(year=2020, month=4, day=29)
 
         # Turn logging to warning because vcr prints too much at info level
         logging.basicConfig()
         logging.getLogger().setLevel(logging.WARNING)
-
-    @patch("observatory.platform.utils.workflow_utils.Variable.get")
-    def test_list_releases(self, mock_variable_get):
-        """Test that list releases returns a list of string with urls.
-
-        :return: None.
-        """
-
-        data_path = "data"
-        mock_variable_get.return_value = data_path
-
-        with CliRunner().isolated_filesystem():
-            with vcr.use_cassette(self.list_unpaywall_releases_path):
-                releases = list_releases(self.start_date, self.end_date)
-                self.assertIsInstance(releases, List)
-                for release in releases:
-                    self.assertIsInstance(release, UnpaywallRelease)
-                self.assertEqual(13, len(releases))
 
     def test_parse_release_date(self):
         """Test that date obtained from url is string and in correct format.
@@ -101,58 +78,7 @@ class TestUnpaywallTelescope(unittest.TestCase):
         release_date = UnpaywallRelease.parse_release_date(self.unpaywall_test_file)
         self.assertEqual(self.unpaywall_test_date, release_date)
 
-    @patch("observatory.platform.utils.workflow_utils.Variable.get")
-    def test_filepath_download(self, mock_variable_get):
-        """Test that path of downloaded file is correct for given url.
-
-        :param home_mock: Mock observatory home path
-        :return: None.
-        """
-
-        # Create data path and mock getting data path
-        data_path = "data"
-        mock_variable_get.return_value = data_path
-
-        with CliRunner().isolated_filesystem():
-            release = UnpaywallRelease(self.unpaywall_test_file, self.unpaywall_test_date, self.unpaywall_test_date)
-            path = workflow_path(SubFolder.downloaded, UnpaywallTelescope.DAG_ID)
-            self.assertEqual(os.path.join(path, self.unpaywall_test_download_file_name), release.filepath_download)
-
-    @patch("observatory.platform.utils.workflow_utils.Variable.get")
-    def test_filepath_extract(self, mock_variable_get):
-        """Test that path of decompressed/extracted file is correct for given url.
-
-        :param home_mock: Mock observatory home path
-        :return: None.
-        """
-
-        # Create data path and mock getting data path
-        data_path = "data"
-        mock_variable_get.return_value = data_path
-
-        with CliRunner().isolated_filesystem():
-            release = UnpaywallRelease(self.unpaywall_test_file, self.unpaywall_test_date, self.unpaywall_test_date)
-            path = workflow_path(SubFolder.extracted, UnpaywallTelescope.DAG_ID)
-            self.assertEqual(os.path.join(path, self.unpaywall_test_decompress_file_name), release.filepath_extract)
-
-    @patch("observatory.platform.utils.workflow_utils.Variable.get")
-    def test_filepath_transform(self, mock_variable_get):
-        """Test that path of transformed file is correct for given url.
-
-        :param home_mock: Mock observatory home path
-        :return: None.
-        """
-
-        # Create data path and mock getting data path
-        data_path = "data"
-        mock_variable_get.return_value = data_path
-
-        with CliRunner().isolated_filesystem():
-            release = UnpaywallRelease(self.unpaywall_test_file, self.unpaywall_test_date, self.unpaywall_test_date)
-            path = workflow_path(SubFolder.transformed, UnpaywallTelescope.DAG_ID)
-            self.assertEqual(os.path.join(path, self.unpaywall_test_transform_file_name), release.filepath_transform)
-
-    @patch("observatory.platform.utils.workflow_utils.Variable.get")
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.Variable.get")
     def test_extract_release(self, mock_variable_get):
         """Test that the release is decompressed as expected.
 
@@ -164,36 +90,389 @@ class TestUnpaywallTelescope(unittest.TestCase):
         mock_variable_get.return_value = data_path
 
         with CliRunner().isolated_filesystem():
-            release = UnpaywallRelease(self.unpaywall_test_file, self.unpaywall_test_date, self.unpaywall_test_date)
+            release = UnpaywallRelease(
+                dag_id="test", release_date=self.unpaywall_test_date, file_name=self.unpaywall_test_file
+            )
+
             # 'download' release
-            shutil.copyfile(self.unpaywall_test_path, release.filepath_download)
+            shutil.copyfile(self.unpaywall_test_path, release.download_path)
 
-            decompress_file_path = extract_release(release)
-            decompress_file_name = os.path.basename(decompress_file_path)
+            release.extract()
+            self.assertEqual(len(release.extract_files), 1)
+            self.assertEqual(self.unpaywall_test_decompress_hash, _hash_file(release.extract_path, algorithm="md5"))
 
-            self.assertTrue(os.path.exists(decompress_file_path))
-            self.assertEqual(self.unpaywall_test_decompress_file_name, decompress_file_name)
-            self.assertEqual(self.unpaywall_test_decompress_hash, _hash_file(decompress_file_path, algorithm="md5"))
-
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
     @patch("observatory.platform.utils.workflow_utils.Variable.get")
-    def test_transform_release(self, mock_variable_get):
+    def test_transform_release(self, mock_variable_get, m_get_conn):
         """Test that the release is transformed as expected.
 
         :return: None.
         """
+
+        m_get_conn.return_value = "http://localhost/"
 
         # Create data path and mock getting data path
         data_path = "data"
         mock_variable_get.return_value = data_path
 
         with CliRunner().isolated_filesystem():
-            release = UnpaywallRelease(self.unpaywall_test_file, self.unpaywall_test_date, self.unpaywall_test_date)
-            shutil.copyfile(self.unpaywall_test_path, release.filepath_download)
+            release = UnpaywallRelease(
+                dag_id="test", release_date=self.unpaywall_test_date, file_name=self.unpaywall_test_file
+            )
+            shutil.copyfile(self.unpaywall_test_path, release.download_path)
 
-            extract_release(release)
-            transform_file_path = transform_release(release)
-            transform_file_name = os.path.basename(transform_file_path)
+            release.extract()
+            release.transform()
+            self.assertEqual(len(release.transform_files), 1)
+            self.assertEqual(self.unpaywall_test_transform_hash, _hash_file(release.transform_path, algorithm="md5"))
 
-            self.assertTrue(os.path.exists(transform_file_path))
-            self.assertEqual(self.unpaywall_test_transform_file_name, transform_file_name)
-            self.assertEqual(self.unpaywall_test_transform_hash, _hash_file(transform_file_path, algorithm="md5"))
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.Variable.get")
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.AsyncHttpFileDownloader.download_file")
+    def test_download(self, m_download_files, m_varget, m_get_conn):
+        release = UnpaywallRelease(
+            dag_id="test", release_date=self.unpaywall_test_date, file_name=self.unpaywall_test_file
+        )
+
+        # Setup mocks
+        data_path = "data"
+        m_varget.return_value = data_path
+        m_get_conn.return_value = "http://localhost/"
+
+        release.download()
+        _, call_args = m_download_files.call_args
+
+        self.assertEqual(
+            call_args["url"],
+            "http://localhost/unpaywall_3000-01-27T153236.jsonl.gz",
+        )
+        self.assertEqual(call_args["filename"], "data/telescopes/download/test/test_3000_01_27/unpaywall.jsonl.gz")
+
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.Variable.get")
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.wait_for_process")
+    def test_extract_outputs(self, m_wait_for_process, m_variable_get, m_get_conn):
+        # Create data path and mock getting data path
+        data_path = "data"
+        m_variable_get.return_value = data_path
+        m_get_conn.return_value = "http://localhost/"
+
+        with CliRunner().isolated_filesystem():
+            release = UnpaywallRelease(
+                dag_id="test", release_date=self.unpaywall_test_date, file_name=self.unpaywall_test_file
+            )
+            shutil.copyfile(self.unpaywall_test_path, release.download_path)
+
+            m_wait_for_process.return_value = ("stdout stuff", None)
+
+            with patch("academic_observatory_workflows.workflows.unpaywall_telescope.logging.info") as m_log:
+                release.extract()
+                self.assertEqual(m_log.call_count, 5)
+
+            m_wait_for_process.return_value = (None, "error")
+            self.assertRaises(AirflowException, release.extract)
+
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.Variable.get")
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.wait_for_process")
+    def test_transform_outputs(self, m_wait_for_process, m_variable_get, m_get_conn):
+        # Create data path and mock getting data path
+        data_path = "data"
+        m_variable_get.return_value = data_path
+        m_get_conn.return_value = "http://localhost/"
+
+        with CliRunner().isolated_filesystem():
+            release = UnpaywallRelease(
+                dag_id="test", release_date=self.unpaywall_test_date, file_name=self.unpaywall_test_file
+            )
+            shutil.copyfile(self.unpaywall_test_path, release.download_path)
+
+            m_wait_for_process.return_value = (None, None)
+            release.extract()
+
+            m_wait_for_process.return_value = ("out", None)
+
+            with patch("academic_observatory_workflows.workflows.unpaywall_telescope.logging.info") as m_log:
+                release.transform()
+                self.assertEqual(m_log.call_count, 4)
+
+            m_wait_for_process.return_value = (None, "error")
+            self.assertRaises(AirflowException, release.transform)
+
+
+class TestUnpaywallTelescope(ObservatoryTestCase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Unpaywall releases list
+        self.list_unpaywall_releases_path = test_fixtures_folder("unpaywall", "list_unpaywall_releases.yaml")
+        self.list_unpaywall_releases_hash = "78d1a129cb0aba072ca49e2599f60c10"
+
+        self.start_date = pendulum.datetime(year=2018, month=3, day=29)
+        self.end_date = pendulum.datetime(year=2020, month=4, day=29)
+
+        self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
+        self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
+        self.unpaywall_test_path = test_fixtures_folder("unpaywall", "unpaywall.jsonl.gz")
+
+    def test_ctor(self):
+        # set table description
+        telescope = UnpaywallTelescope(table_descriptions="something")
+        self.assertEqual(telescope.table_descriptions, "something")
+
+        # set airflow_vars
+        telescope = UnpaywallTelescope(airflow_vars=[])
+        self.assertEqual(telescope.airflow_vars, ["transform_bucket"])
+
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
+    def test_list_releases(self, mock_variable_get, m_get_conn):
+        """Test that list releases returns a list of string with urls.
+
+        :return: None.
+        """
+
+        data_path = "data"
+        mock_variable_get.return_value = data_path
+        m_get_conn.return_value = "http://localhost/"
+
+        telescope = UnpaywallTelescope()
+
+        with CliRunner().isolated_filesystem():
+            with vcr.use_cassette(self.list_unpaywall_releases_path):
+                releases = UnpaywallTelescope.list_releases(self.start_date, self.end_date)
+                self.assertIsInstance(releases, List)
+                for release in releases:
+                    self.assertIsInstance(release, dict)
+                self.assertEqual(13, len(releases))
+
+    class MockSession:
+        def __init__(self, return_value):
+            self.return_value = return_value
+
+        def get(self, _):
+            return self.return_value
+
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.retry_session")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
+    def test_list_releases_fail(self, m_get, m_session, m_get_conn):
+        data_path = "data"
+        m_get.return_value = data_path
+        m_get_conn.return_value = "http://localhost/"
+
+        telescope = UnpaywallTelescope()
+
+        # None returned
+        m_session = TestUnpaywallTelescope.MockSession(return_value=None)
+        self.assertRaises(ConnectionError, UnpaywallTelescope.list_releases, self.start_date, self.end_date)
+
+        # Not HTTP OK
+        m_session = TestUnpaywallTelescope.MockSession(return_value=404)
+        self.assertRaises(ConnectionError, UnpaywallTelescope.list_releases, self.start_date, self.end_date)
+
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.xmltodict.parse")
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.retry_session")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
+    def test_list_releases_date_out_of_range(self, m_get, m_session, m_parse, m_get_conn):
+        data_path = "data"
+        m_get.return_value = data_path
+        m_get_conn.return_value = "http://localhost/"
+
+        telescope = UnpaywallTelescope()
+
+        class MockResponse:
+            def __init__(self):
+                self.text = ""
+                self.status_code = 200
+
+        m_session.return_value = TestUnpaywallTelescope.MockSession(return_value=MockResponse())
+
+        m_parse.return_value = {
+            "ListBucketResult": {
+                "Contents": [
+                    {"Key": "unpaywall_2018-03-29T113154.jsonl.gz", "LastModified": "2000-04-28T17:28:55.000Z"}
+                ]
+            }  # Outside range
+        }
+
+        releases = UnpaywallTelescope.list_releases(self.start_date, self.end_date)
+        self.assertEqual(len(releases), 0)
+
+    class MockTI:
+        def xcom_push(self, *args):
+            pass
+
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.bigquery_table_exists")
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.UnpaywallTelescope.list_releases")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
+    def test_get_release_info(self, m_get, m_releases, m_bq_table_exist):
+        m_get.return_value = "projectid"
+
+        # No release
+        m_releases.return_value = []
+        m_bq_table_exist.return_value = True
+        telescope = UnpaywallTelescope()
+        continue_dag = telescope.get_release_info(
+            **{
+                "ti": TestUnpaywallTelescope.MockTI(),
+                "execution_date": datetime.datetime(2021, 1, 1),
+                "next_execution_date": datetime.datetime(2021, 2, 1),
+            }
+        )
+
+        self.assertEqual(continue_dag, False)
+
+        # Single release exists
+        m_releases.return_value = [{"date": "20210101", "file_name": "some file"}]
+        m_bq_table_exist.return_value = True
+        continue_dag = telescope.get_release_info(
+            **{
+                "ti": TestUnpaywallTelescope.MockTI(),
+                "execution_date": datetime.datetime(2021, 1, 1),
+                "next_execution_date": datetime.datetime(2021, 2, 1),
+            }
+        )
+        self.assertEqual(continue_dag, False)
+
+        # Single release, not exist
+        m_releases.return_value = [{"date": "20210101", "file_name": "some file"}]
+        m_bq_table_exist.return_value = False
+        continue_dag = telescope.get_release_info(
+            **{
+                "ti": TestUnpaywallTelescope.MockTI(),
+                "execution_date": datetime.datetime(2021, 1, 1),
+                "next_execution_date": datetime.datetime(2021, 2, 1),
+            }
+        )
+        self.assertEqual(continue_dag, True)
+
+    def test_dag_structure(self):
+        """Test that the Crossref Events DAG has the correct structure."""
+
+        dag = UnpaywallTelescope().make_dag()
+        self.assert_dag_structure(
+            {
+                "check_dependencies": ["get_release_info"],
+                "get_release_info": ["download"],
+                "download": ["upload_downloaded"],
+                "upload_downloaded": ["extract"],
+                "extract": ["transform"],
+                "transform": ["upload_transformed"],
+                "upload_transformed": ["bq_load"],
+                "bq_load": ["cleanup"],
+                "cleanup": [],
+            },
+            dag,
+        )
+
+    def test_dag_load(self):
+        """Test that the DAG can be loaded from a DAG bag."""
+
+        with ObservatoryEnvironment().create():
+            dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "unpaywall_telescope.py")
+            self.assert_dag_load("unpaywall", dag_file)
+
+    def setup_observatory_env(self):
+        env = ObservatoryEnvironment(self.project_id, self.data_location)
+        self.dataset_id = env.add_dataset()
+        return env
+
+    @patch("airflow.hooks.base.BaseHook.get_connection")
+    def test_telescope(self, m_base_get_con):
+        """Test the Telescope end to end."""
+
+        m_base_get_con.return_value = "http://localhost"
+
+        # Setup http server to serve files
+        httpserver = HttpServer(directory=test_fixtures_folder("unpaywall"))
+        with httpserver.create():
+            with patch(
+                "academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url"
+            ) as m_get_conns:
+                # Mock out unpaywall connection url
+                mock_url = f"http://{httpserver.host}:{httpserver.port}/"
+                m_get_conns.return_value = mock_url
+
+                env = self.setup_observatory_env()
+
+                execution_date = pendulum.datetime(2021, 6, 1)
+                release_date_str = "20210101"
+                release_date = pendulum.parse(release_date_str)
+                file_name = "unpaywall.jsonl.gz"
+
+                with env.create():
+                    telescope = UnpaywallTelescope(dataset_id=self.dataset_id)
+                    dag = telescope.make_dag()
+
+                    release = UnpaywallRelease(dag_id=dag.dag_id, release_date=release_date, file_name=file_name)
+
+                    with env.create_dag_run(dag, execution_date):
+                        # check dependencies
+                        ti = env.run_task(telescope.check_dependencies.__name__, dag, execution_date)
+                        self.assertEqual(ti.state, State.SUCCESS)
+
+                        # get release info
+                        with patch(
+                            "academic_observatory_workflows.workflows.unpaywall_telescope.UnpaywallTelescope.list_releases"
+                        ) as m_list_releases:
+
+                            m_list_releases.return_value = [
+                                {
+                                    "date": release_date_str,
+                                    "file_name": file_name,
+                                }
+                            ]
+                            ti = env.run_task(telescope.get_release_info.__name__, dag, execution_date)
+                        self.assertEqual(ti.state, State.SUCCESS)
+
+                        # download
+                        ti = env.run_task(telescope.download.__name__, dag, execution_date)
+                        self.assertEqual(ti.state, State.SUCCESS)
+
+                        # Check file was downloaded
+                        self.assertEqual(len(release.download_files), 1)
+
+                        # upload_downloaded
+                        ti = env.run_task(telescope.upload_downloaded.__name__, dag, execution_date)
+                        self.assertEqual(ti.state, State.SUCCESS)
+                        self.assert_blob_integrity(
+                            env.download_bucket, blob_name(release.download_path), release.download_path
+                        )
+
+                        # extract
+                        ti = env.run_task(telescope.extract.__name__, dag, execution_date)
+                        self.assertEqual(ti.state, State.SUCCESS)
+
+                        # transform
+                        ti = env.run_task(telescope.transform.__name__, dag, execution_date)
+                        self.assertEqual(ti.state, State.SUCCESS)
+
+                        # upload_transformed
+                        ti = env.run_task(telescope.upload_transformed.__name__, dag, execution_date)
+                        self.assertEqual(ti.state, State.SUCCESS)
+                        self.assert_blob_integrity(
+                            env.transform_bucket, blob_name(release.transform_path), release.transform_path
+                        )
+
+                        # bq_load
+                        ti = env.run_task(telescope.bq_load.__name__, dag, execution_date)
+                        self.assertEqual(ti.state, State.SUCCESS)
+
+                        table_id = (
+                            f"{self.project_id}.{self.dataset_id}."
+                            f"{bigquery_sharded_table_id(telescope.dag_id, release.release_date)}"
+                        )
+                        expected_rows = 100
+                        self.assert_table_integrity(table_id, expected_rows)
+
+                        # cleanup
+                        download_folder, extract_folder, transform_folder = (
+                            release.download_folder,
+                            release.extract_folder,
+                            release.transform_folder,
+                        )
+                        env.run_task(telescope.cleanup.__name__, dag, execution_date)
+                        self.assertEqual(ti.state, State.SUCCESS)
+                        self.assert_cleanup(download_folder, extract_folder, transform_folder)

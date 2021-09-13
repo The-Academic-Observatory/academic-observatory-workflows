@@ -14,8 +14,10 @@
 
 # Author: Aniek Roelofs, James Diprose
 
-"""
-A DAG that harvests the Unpaywall database: https://unpaywall.org/
+# The keywords airflow and DAG are required to load the DAGs from this file, see bullet 2 in the Apache Airflow FAQ:
+# https://airflow.apache.org/docs/stable/faq.html
+
+""" A DAG that harvests the Unpaywall database: https://unpaywall.org/
 
 Saved to the BigQuery table: <project_id>.our_research.unpaywallYYYYMMDD
 
@@ -26,88 +28,9 @@ Does not work with the following releases:
 * 2018-03-29, 2018-04-28, 2018-06-21, 2018-09-02, 2018-09-06
 """
 
-import pendulum
-from airflow import DAG
-from airflow.operators.python import PythonOperator, ShortCircuitOperator
-from academic_observatory_workflows.workflows.unpaywall_telescope import UnpaywallTelescope
+from academic_observatory_workflows.workflows.unpaywall_telescope import (
+    UnpaywallTelescope,
+)
 
-default_args = {"owner": "airflow", "start_date": pendulum.datetime(2018, 9, 7)}
-
-with DAG(dag_id="unpaywall", schedule_interval="@weekly", default_args=default_args) as dag:
-    # Check that variables exist
-    check = PythonOperator(
-        task_id=UnpaywallTelescope.TASK_ID_CHECK_DEPENDENCIES,
-        python_callable=UnpaywallTelescope.check_dependencies,
-        queue=UnpaywallTelescope.QUEUE,
-    )
-
-    # List releases and skip all subsequent tasks if there is no release to process
-    list_releases = ShortCircuitOperator(
-        task_id=UnpaywallTelescope.TASK_ID_LIST,
-        python_callable=UnpaywallTelescope.list_releases,
-        queue=UnpaywallTelescope.QUEUE,
-    )
-
-    # Downloads snapshot from url
-    download = PythonOperator(
-        task_id=UnpaywallTelescope.TASK_ID_DOWNLOAD,
-        python_callable=UnpaywallTelescope.download,
-        queue=UnpaywallTelescope.QUEUE,
-        retries=UnpaywallTelescope.RETRIES,
-    )
-
-    # Upload downloaded files for safekeeping
-    upload_downloaded = PythonOperator(
-        task_id=UnpaywallTelescope.TASK_ID_UPLOAD_DOWNLOADED,
-        python_callable=UnpaywallTelescope.upload_downloaded,
-        queue=UnpaywallTelescope.QUEUE,
-        retries=UnpaywallTelescope.RETRIES,
-    )
-
-    # Decompresses download
-    extract = PythonOperator(
-        task_id=UnpaywallTelescope.TASK_ID_EXTRACT,
-        python_callable=UnpaywallTelescope.extract,
-        queue=UnpaywallTelescope.QUEUE,
-    )
-
-    # Transforms download
-    transform = PythonOperator(
-        task_id=UnpaywallTelescope.TASK_ID_TRANSFORM,
-        python_callable=UnpaywallTelescope.transform,
-        queue=UnpaywallTelescope.QUEUE,
-    )
-
-    # Upload download to gcs bucket
-    upload_transformed = PythonOperator(
-        task_id=UnpaywallTelescope.TASK_ID_UPLOAD_TRANSFORMED,
-        python_callable=UnpaywallTelescope.upload_transformed,
-        queue=UnpaywallTelescope.QUEUE,
-        retries=UnpaywallTelescope.RETRIES,
-    )
-
-    # Upload download to BigQuery table
-    bq_load = PythonOperator(
-        task_id=UnpaywallTelescope.TASK_ID_BQ_LOAD,
-        python_callable=UnpaywallTelescope.load_to_bq,
-        queue=UnpaywallTelescope.QUEUE,
-    )
-
-    # Delete locally stored files
-    cleanup = PythonOperator(
-        task_id=UnpaywallTelescope.TASK_ID_CLEANUP,
-        python_callable=UnpaywallTelescope.cleanup,
-        queue=UnpaywallTelescope.QUEUE,
-    )
-
-    (
-        check
-        >> list_releases
-        >> download
-        >> upload_downloaded
-        >> extract
-        >> transform
-        >> upload_transformed
-        >> bq_load
-        >> cleanup
-    )
+telescope = UnpaywallTelescope()
+globals()[telescope.dag_id] = telescope.make_dag()
