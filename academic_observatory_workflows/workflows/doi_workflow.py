@@ -24,9 +24,10 @@ from datetime import timedelta
 from typing import Dict, List, Optional, Tuple
 
 import pendulum
-from academic_observatory_workflows.config import sql_folder
 from airflow.exceptions import AirflowException
 from airflow.models import Variable
+
+from academic_observatory_workflows.config import sql_folder
 from observatory.platform.utils.airflow_utils import AirflowVars, set_task_state
 from observatory.platform.utils.dag_run_sensor import DagRunSensor
 from observatory.platform.utils.gc_utils import (
@@ -41,6 +42,7 @@ from observatory.platform.utils.jinja2_utils import (
     make_sql_jinja2_filename,
     render_template,
 )
+from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.workflow import Workflow
 
 MAX_QUERIES = 100
@@ -491,7 +493,7 @@ class DoiWorkflow(Workflow):
         :return: A release instance or list of release instances
         """
 
-        release_date = kwargs["next_execution_date"].subtract(microseconds=1).date()
+        release_date = make_release_date(**kwargs)
         project_id = Variable.get(AirflowVars.PROJECT_ID)
         data_location = Variable.get(AirflowVars.DATA_LOCATION)
 

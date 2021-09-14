@@ -64,6 +64,12 @@ class CrossrefMetadataRelease(SnapshotRelease):
         self.url = CrossrefMetadataTelescope.TELESCOPE_URL.format(year=release_date.year, month=release_date.month)
 
     @property
+    def api_key(self):
+        """ Return API token """
+        connection = BaseHook.get_connection(AirflowConns.CROSSREF)
+        return connection.password
+
+    @property
     def download_path(self) -> str:
         """Get the path to the downloaded file.
 
@@ -81,9 +87,7 @@ class CrossrefMetadataRelease(SnapshotRelease):
         logging.info(f"Downloading from url: {self.url}")
 
         # Set API token header
-        connection = BaseHook.get_connection(AirflowConns.CROSSREF)
-        api_token = connection.password
-        header = {"Crossref-Plus-API-Token": f"Bearer {api_token}"}
+        header = {"Crossref-Plus-API-Token": f"Bearer {self.api_key}"}
 
         # Download release
         with requests.get(self.url, headers=header, stream=True) as response:
@@ -276,7 +280,10 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         url = CrossrefMetadataTelescope.TELESCOPE_URL.format(year=execution_date.year, month=execution_date.month)
         logging.info(f"Checking if available release exists for {execution_date.year}-{execution_date.month}")
 
-        response = retry_session().head(url)
+        # Get API key: it is required to check the head now
+        connection = BaseHook.get_connection(AirflowConns.CROSSREF)
+        api_key = connection.password
+        response = retry_session().head(url, headers={"Crossref-Plus-API-Token": f"Bearer {api_key}"})
         if response.status_code == 302:
             logging.info(f"Snapshot exists at url: {url}, response code: {response.status_code}")
             return True
