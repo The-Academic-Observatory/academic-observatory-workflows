@@ -221,11 +221,16 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
         with self.assertRaises(AirflowException):
             release.extract()
 
-    def test_check_release_exists(self):
+    @patch("academic_observatory_workflows.workflows.crossref_metadata_telescope.BaseHook.get_connection")
+    def test_check_release_exists(self, mock_get_connection):
         """Test the 'check_release_exists' task with different responses.
 
         :return: None.
         """
+
+        # Mock getting Crossref Metadata Connection
+        mock_get_connection.return_value = Connection(password="crossref-token")
+
         release = self.release
         telescope = CrossrefMetadataTelescope()
         with httpretty.enabled():
