@@ -91,7 +91,9 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
         """
 
         with ObservatoryEnvironment().create():
-            dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "crossref_fundref_telescope.py")
+            dag_file = os.path.join(
+                module_file_path("academic_observatory_workflows.dags"), "crossref_fundref_telescope.py"
+            )
             self.assert_dag_load("crossref_fundref", dag_file)
 
     def test_telescope(self):
@@ -123,7 +125,9 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
                         "date": pendulum.parse("2021-05-19T09:34:09.898000+00:00"),
                     }
                 ]
-                with patch("academic_observatory_workflows.workflows.crossref_fundref_telescope.list_releases") as mock_list_releases:
+                with patch(
+                    "academic_observatory_workflows.workflows.crossref_fundref_telescope.list_releases"
+                ) as mock_list_releases:
                     mock_list_releases.return_value = release_info
                     ti = env.run_task(telescope.get_release_info.__name__, dag, execution_date)
 

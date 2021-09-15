@@ -38,7 +38,7 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
     "autoapi.extension",
-    "recommonmark"
+    "recommonmark",
 ]
 
 # Auto API settings: https://github.com/readthedocs/sphinx-autoapi
@@ -63,8 +63,8 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 html_theme = "sphinx_rtd_theme"
 html_logo = "logo.png"
 html_theme_options = {
-    'logo_only': True,
-    'display_version': False,
+    "logo_only": True,
+    "display_version": False,
 }
 
 # Add any paths that contain custom static files (such as style sheets) here,
@@ -77,6 +77,7 @@ html_static_path = ["static"]
 def setup(app):
     app.add_config_value("recommonmark_config", {"enable_eval_rst": True, "auto_toc_tree_section": "Contents"}, True)
     app.add_transform(AutoStructify)
+
 
 generate_csv(schema_dir="../academic_observatory_workflows/database/schema")
 generate_latest_files()

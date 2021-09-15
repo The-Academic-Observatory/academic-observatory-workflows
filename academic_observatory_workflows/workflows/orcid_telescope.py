@@ -378,7 +378,7 @@ def get_aws_conn_info() -> (str, str):
 
 
 def transform_single_file(download_path: str, transform_folder: str):
-    """ Transform a single ORCID file/record.
+    """Transform a single ORCID file/record.
     The xml file is turned into a dictionary, a record should have either a valid 'record' section or an 'error'
     section. The keys of the dictionary are slightly changed so they are valid BigQuery fields.
     The dictionary is appended to a jsonl file

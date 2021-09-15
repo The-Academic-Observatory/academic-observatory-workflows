@@ -102,7 +102,9 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
         """
 
         with ObservatoryEnvironment().create():
-            dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "crossref_metadata_telescope.py")
+            dag_file = os.path.join(
+                module_file_path("academic_observatory_workflows.dags"), "crossref_metadata_telescope.py"
+            )
             self.assert_dag_load("crossref_metadata", dag_file)
 
     def test_telescope(self):

@@ -53,7 +53,7 @@ def extract_mag_release(file_path: str, unzip_path: str):
 
 
 class TestMagTelescope(unittest.TestCase):
-    """ Tests for the functions used by the MAG telescope """
+    """Tests for the functions used by the MAG telescope"""
 
     def __init__(self, *args, **kwargs):
         """Constructor which sets up variables used by tests.

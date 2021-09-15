@@ -325,7 +325,8 @@ class CrossrefEventsTelescope(StreamTelescope):
 
 
 @retry(
-    stop=stop_after_attempt(3), wait=wait_fixed(20) + wait_exponential(multiplier=10, exp_base=3, max=60 * 10),
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(20) + wait_exponential(multiplier=10, exp_base=3, max=60 * 10),
 )
 def get_response(url: str, headers: dict):
     """Get response from the url with given headers and retry for certain status codes.

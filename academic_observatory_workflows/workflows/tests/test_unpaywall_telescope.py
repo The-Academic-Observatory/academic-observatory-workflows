@@ -38,7 +38,7 @@ from observatory.platform.utils.workflow_utils import SubFolder, workflow_path
 
 
 class TestUnpaywallTelescope(unittest.TestCase):
-    """ Tests for the functions used by the unpaywall telescope """
+    """Tests for the functions used by the unpaywall telescope"""
 
     def __init__(self, *args, **kwargs):
         """Constructor which sets up variables used by tests.
