@@ -36,6 +36,7 @@ from observatory.platform.utils.gc_utils import (
 )
 from observatory.platform.utils.proc_utils import wait_for_process
 from observatory.platform.utils.url_utils import (
+    get_http_response_xml_to_dict,
     get_observatory_http_header,
     retry_session,
 )
@@ -250,29 +251,24 @@ class UnpaywallTelescope(SnapshotTelescope):
 
         # Request releases page
         dataset_url = get_airflow_connection_url(UnpaywallRelease.AIRFLOW_CONNECTION)
-        response = retry_session().get(dataset_url)
+        response = get_http_response_xml_to_dict(dataset_url)
 
-        http_ok = 200
-        if response is not None and response.status_code == http_ok:
-            # Parse releases
-            items = xmltodict.parse(response.text)["ListBucketResult"]["Contents"]
-            for item in items:
-                # Get filename and parse dates
-                file_name = item["Key"]
-                last_modified = pendulum.parse(item["LastModified"])
-                release_date = UnpaywallRelease.parse_release_date(file_name)
+        items = response["ListBucketResult"]["Contents"]
+        for item in items:
+            # Get filename and parse dates
+            file_name = item["Key"]
+            last_modified = pendulum.parse(item["LastModified"])
+            release_date = UnpaywallRelease.parse_release_date(file_name)
 
-                # Only include release if last modified date is within start and end date.
-                # Last modified date is used rather than release date because if release date is used then releases will
-                # be missed.
-                if start_date <= last_modified < end_date:
-                    release = {
-                        "date": release_date.format("YYYYMMDD"),
-                        "file_name": file_name,
-                    }
-                    releases_list.append(release)
-        else:
-            raise ConnectionError(f"Error requesting url: {dataset_url}")
+            # Only include release if last modified date is within start and end date.
+            # Last modified date is used rather than release date because if release date is used then releases will
+            # be missed.
+            if start_date <= last_modified < end_date:
+                release = {
+                    "date": release_date.format("YYYYMMDD"),
+                    "file_name": file_name,
+                }
+                releases_list.append(release)
 
         return releases_list
 
@@ -338,27 +334,3 @@ class UnpaywallTelescope(SnapshotTelescope):
             releases.append(release)
 
         return releases
-
-    def download(self, releases: List[UnpaywallRelease], **kwargs):
-        """Task to download the Unpaywall"""
-
-        for release in releases:
-            release.download()
-
-    def extract(self, releases: List[UnpaywallRelease], **kwargs):
-        """Task to extract the releases.
-
-        :param releases: A list of UnpaywallRelease objects.
-        :return: None.
-        """
-        for release in releases:
-            release.extract()
-
-    def transform(self, releases: List[UnpaywallRelease], **kwargs):
-        """Task to transform the releases.
-
-        :param releases: A list of UnpaywallRelease objects.
-        :return: None.
-        """
-        for release in releases:
-            release.transform()

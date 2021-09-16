@@ -20,7 +20,7 @@ import os
 import shutil
 import unittest
 from typing import List
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pendulum
 import vcr
@@ -246,50 +246,30 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                     self.assertIsInstance(release, dict)
                 self.assertEqual(13, len(releases))
 
-    class MockSession:
-        def __init__(self, return_value):
-            self.return_value = return_value
-
-        def get(self, _):
-            return self.return_value
-
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_http_response_xml_to_dict")
     @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
-    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.retry_session")
     @patch("observatory.platform.utils.workflow_utils.Variable.get")
-    def test_list_releases_fail(self, m_get, m_session, m_get_conn):
+    def test_list_releases_fail(self, m_get, m_get_conn, m_get_xml_dict):
+        data_path = "data"
+        m_get.return_value = data_path
+        m_get_conn.return_value = "http://localhost/"
+        m_get_xml_dict.side_effect = ConnectionError("Test")
+        telescope = UnpaywallTelescope()
+
+        # Fetch error
+        self.assertRaises(ConnectionError, UnpaywallTelescope.list_releases, self.start_date, self.end_date)
+
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_http_response_xml_to_dict")
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
+    def test_list_releases_date_out_of_range(self, m_get, m_get_conn, m_get_xmldict):
         data_path = "data"
         m_get.return_value = data_path
         m_get_conn.return_value = "http://localhost/"
 
         telescope = UnpaywallTelescope()
 
-        # None returned
-        m_session = TestUnpaywallTelescope.MockSession(return_value=None)
-        self.assertRaises(ConnectionError, UnpaywallTelescope.list_releases, self.start_date, self.end_date)
-
-        # Not HTTP OK
-        m_session = TestUnpaywallTelescope.MockSession(return_value=404)
-        self.assertRaises(ConnectionError, UnpaywallTelescope.list_releases, self.start_date, self.end_date)
-
-    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
-    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.xmltodict.parse")
-    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.retry_session")
-    @patch("observatory.platform.utils.workflow_utils.Variable.get")
-    def test_list_releases_date_out_of_range(self, m_get, m_session, m_parse, m_get_conn):
-        data_path = "data"
-        m_get.return_value = data_path
-        m_get_conn.return_value = "http://localhost/"
-
-        telescope = UnpaywallTelescope()
-
-        class MockResponse:
-            def __init__(self):
-                self.text = ""
-                self.status_code = 200
-
-        m_session.return_value = TestUnpaywallTelescope.MockSession(return_value=MockResponse())
-
-        m_parse.return_value = {
+        m_get_xmldict.return_value = {
             "ListBucketResult": {
                 "Contents": [
                     {"Key": "unpaywall_2018-03-29T113154.jsonl.gz", "LastModified": "2000-04-28T17:28:55.000Z"}
