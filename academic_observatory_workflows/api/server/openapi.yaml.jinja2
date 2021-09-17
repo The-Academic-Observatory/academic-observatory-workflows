@@ -1,0 +1,341 @@
+swagger: '2.0'
+info:
+  title: academic-observatory-workflows API
+  description: |
+    The REST API for accessing data from academic-observatory-workflows.
+  version: 1.0.0
+  contact:
+    email: agent@observatory.academy
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+
+{# API Client specific settings #}
+{%- if api_client -%}
+host: api.observatory.academy
+schemes:
+  - https
+produces:
+  - application/json
+securityDefinitions:
+  # This section configures basic authentication with an API key.
+  api_key:
+    type: "apiKey"
+    name: "key"
+    in: "query"
+security:
+  - api_key: []
+{%- endif -%}
+
+{# Cloud Endpoints specific settings #}
+{%- if cloud_endpoints -%}
+host: ${host}
+x-google-backend:
+  address: ${backend_address}
+  protocol: h2
+schemes:
+  - https
+produces:
+  - application/json
+securityDefinitions:
+  # This section configures basic authentication with an API key.
+  api_key:
+    type: "apiKey"
+    name: "key"
+    in: "query"
+security:
+  - api_key: []
+{%- endif -%}
+
+
+{# Tag settings #}
+{%- if api_client -%}
+tags:
+- name: Observatory
+  description: the Observatory API
+{%- set reports_tag="Observatory" -%}
+{% else -%}
+tags:
+- name: Reports
+  description: Test query data to build Open Access reports.
+{%- set reports_tag="Reports" -%}
+{%- endif -%}
+
+{# Operation id namespace #}
+{%- if api_client -%}
+{%- set operation_id_namespace="" -%}
+{% else -%}
+{%- set operation_id_namespace="academic_observatory_workflows.api.server.api." -%}
+{%- endif %}
+
+paths:
+  /v1/{agg}/pit:
+    get:
+      operationId: {{ operation_id_namespace }}pit_id_agg
+      tags:
+        - {{ reports_tag }}
+      parameters:
+      parameters:
+        - $ref: '#/parameters/aggregate'
+        - $ref: '#/parameters/indexDate'
+        - $ref: '#/parameters/keepAlive'
+      responses:
+        200:
+          description: >
+            Create a new pit id for the specified aggregate. When creating a Point In Time the current index state is
+            preserved for a limited time. This specific state can be used by passing on the pit id as a parameter
+            to the search request. Each search request can return a different id; thus always use the most recently
+            received id for the next search request.
+          schema:
+            $ref: '#/definitions/PitResponse'
+        401:
+          $ref: '#/responses/UnauthorizedError'
+  /v1/{agg}:
+    get:
+      operationId: {{ operation_id_namespace }}query_agg
+      tags:
+        - {{ reports_tag }}
+      parameters:
+        - $ref: '#/parameters/aggregate'
+        - $ref: '#/parameters/aggregateId'
+        - $ref: '#/parameters/indexDate'
+        - $ref: '#/parameters/from'
+        - $ref: '#/parameters/to'
+        - $ref: '#/parameters/limit'
+        - $ref: '#/parameters/searchAfter'
+        - $ref: '#/parameters/pit'
+      responses:
+        200:
+          description: Successfully return query results
+          schema:
+            $ref: '#/definitions/QueryResponse'
+        401:
+          $ref: '#/responses/UnauthorizedError'
+      produces:
+        - application/json
+  /v1/{agg}/{subagg}/pit:
+    get:
+      operationId: {{ operation_id_namespace }}pit_id_subagg
+      tags:
+        - {{ reports_tag }}
+      parameters:
+        - $ref: '#/parameters/aggregate'
+        - $ref: '#/parameters/subaggregate'
+        - $ref: '#/parameters/indexDate'
+        - $ref: '#/parameters/keepAlive'
+      responses:
+        200:
+          description: >
+            Create a new pit id for the specified aggregate and subaggregate. When creating a Point In Time the current
+            index state is preserved for a limited time. This specific state can be used by passing on the pit id
+            as a parameter to the search request. Each search request can return a different id; thus always use the
+            most recently received id for the next search request.
+          schema:
+            $ref: '#/definitions/PitResponse'
+        401:
+          $ref: '#/responses/UnauthorizedError'
+      produces:
+        - application/json
+  /v1/{agg}/{subagg}:
+    get:
+      operationId: {{ operation_id_namespace }}query_subagg
+      tags:
+        - {{ reports_tag }}
+      parameters:
+        - $ref: '#/parameters/aggregate'
+        - $ref: '#/parameters/subaggregate'
+        - $ref: '#/parameters/aggregateId'
+        - $ref: '#/parameters/subaggregateId'
+        - $ref: '#/parameters/indexDate'
+        - $ref: '#/parameters/from'
+        - $ref: '#/parameters/to'
+        - $ref: '#/parameters/limit'
+        - $ref: '#/parameters/searchAfter'
+        - $ref: '#/parameters/pit'
+      responses:
+        200:
+          description: Successfully return query results
+          schema:
+            $ref: '#/definitions/QueryResponse'
+        401:
+          $ref: '#/responses/UnauthorizedError'
+      produces:
+        - application/json
+
+parameters:
+  aggregate:
+    in: path
+    name: agg
+    required: true
+    type: string
+    description: The aggregate.
+    enum:
+      - author
+      - country
+      - funder
+      - group
+      - institution
+      - journal
+      - publisher
+      - region
+      - subregion
+      - in: path
+  subaggregate:
+    in: path
+    name: subagg
+    required: true
+    type: string
+    description: The sub-aggregate.
+    enum:
+      - access-types
+      - countries
+      - disciplines
+      - events
+      - funders
+      - groupings
+      - institutions
+      - journals
+      - members
+      - metrics
+      - output-types
+      - publishers
+  aggregateId:
+    in: query
+    name: agg_id
+    required: false
+    type: array
+    items:
+      type: string
+    collectionFormat: multi
+    description: >
+        Filter on aggregates with this id, if multiple values are given the results are filtered on whether there are
+        aggregates with one of the given values.
+  subaggregateId:
+    in: query
+    name: subagg_id
+    required: false
+    type: array
+    items:
+      type: string
+    collectionFormat: multi
+    description: >
+        Filter on subaggregates with this id, if multiple values are given the results are filtered on whether there are
+        subaggregates with one of the given values.
+  indexDate:
+    in: query
+    name: index_date
+    required: false
+    type: string
+    format: date
+    description: Index date, defaults to latest
+  from:
+    in: query
+    name: from
+    required: false
+    type: string
+    format: date
+    pattern: ^([0-9]{4}$)
+    description: Start year (included)
+  to:
+    in: query
+    name: to
+    required: false
+    type: string
+    format: date
+    pattern: ^([0-9]{4}$)
+    description: End year (included)
+  limit:
+    in: query
+    name: limit
+    required: false
+    type: integer
+    minimum: 1
+    maximum: 10000
+    description: Limit number of results (max 10000)
+  searchAfter:
+    in: query
+    name: search_after
+    required: false
+    type: string
+    description: >
+        The sort value of the last item from the previous search, used to paginate. The results are sorted by
+        _shard_doc when a PIT is used and by document id (_id) without a PIT.
+  pit:
+    in: query
+    name: pit
+    required: false
+    type: string
+    description: The pit id
+  keepAlive:
+    in: query
+    name: keep_alive
+    required: false
+    type: integer
+    minimum: 1
+    maximum: 5
+    description: >
+        How long to keep the point in time id alive (in minutes)
+
+definitions:
+  PitResponse:
+    type: object
+    properties:
+      pit_id:
+        type: string
+        description: The pit id
+        example: u5mzAwEeYW8tYXV0aG9yLXVuaXF1ZS1saXN0LTIwMjEwOTExFnllbzRDbnB6UkNhOEh5d1MtWVc0elEAFlhGRUZaY1JFVGpTRWlMV1hsYU9QRFEAAAAAAAADBhcWWHFsZTJQLUVRWEdNa1FSRXJyazBXUQABFnllbzRDbnB6UkNhOEh5d1MtWVc0elEAAA==
+      keep_alive:
+        type: string
+        description: How long to keep the pit id alive
+        example: 1m
+      index:
+        type: string
+        description: The full name of the elasticsearch index that for which the pit id is valid
+        example: ao-author-metrics-20210911
+  QueryResponse:
+    type: object
+    properties:
+      version:
+        type: string
+        description: The API version
+        example: v1
+      index:
+        type: string
+        description: The full name of the elasticsearch index that is searched
+        example: ao-author-metrics-20210911
+      pit:
+        type: string
+        description: >
+            The most recent Point In Time id of the index that is searched, each search request can return a different
+            id; thus always use the most recently received id for the next search request.
+        example: u5mzAwEeYW8tYXV0aG9yLXVuaXF1ZS1saXN0LTIwMjEwOTExFnllbzRDbnB6UkNhOEh5d1MtWVc0elEAFlhGRUZaY1JFVGpTRWlMV1hsYU9QRFEAAAAAAAADBhcWWHFsZTJQLUVRWEdNa1FSRXJyazBXUQABFnllbzRDbnB6UkNhOEh5d1MtWVc0elEAAA==
+      search_after:
+        type: string
+        description: >
+            The sort value of the last item from the previous search, used to paginate. The results are sorted by
+            _shard_doc when a PIT is used and by document id (_id) without a PIT.
+        example: OXny5HsBylPkVeYF2NFk
+      returned_hits:
+        type: integer
+        description: The number of returned hits (can be less than total_hits if a limit is set)
+        example: 10000
+      total_hits:
+        type: integer
+        description: The number of total hits
+        example: 126538
+      schema:
+        type: object
+        description: The schema for an individual hit
+        example: ''
+      results:
+        type: array
+        description: A list of the actual results (one dictionary per hit)
+        items:
+          type: object
+
+responses:
+  UnauthorizedError:
+    description: API key is missing or invalid
+    headers:
+      WWW_Authenticate:
+        type: string
