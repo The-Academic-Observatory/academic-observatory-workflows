@@ -128,7 +128,7 @@ class TestUnpaywallRelease(unittest.TestCase):
 
     @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
     @patch("academic_observatory_workflows.workflows.unpaywall_telescope.Variable.get")
-    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.AsyncHttpFileDownloader.download_file")
+    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.download_file")
     def test_download(self, m_download_files, m_varget, m_get_conn):
         release = UnpaywallRelease(
             dag_id="test", release_date=self.unpaywall_test_date, file_name=self.unpaywall_test_file

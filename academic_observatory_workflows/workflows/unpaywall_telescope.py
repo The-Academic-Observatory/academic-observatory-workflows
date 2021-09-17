@@ -34,13 +34,12 @@ from observatory.platform.utils.gc_utils import (
     bigquery_sharded_table_id,
     bigquery_table_exists,
 )
+from observatory.platform.utils.http_download import download_file
 from observatory.platform.utils.proc_utils import wait_for_process
 from observatory.platform.utils.url_utils import (
     get_http_response_xml_to_dict,
     get_observatory_http_header,
-    retry_session,
 )
-from observatory.platform.utils.workflow_utils import AsyncHttpFileDownloader
 from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
@@ -128,7 +127,7 @@ class UnpaywallRelease(SnapshotRelease):
         """Download an Unpaywall release.  Either from the snapshot or data freed."""
 
         headers = get_observatory_http_header(package_name="academic_observatory_workflows")
-        AsyncHttpFileDownloader.download_file(url=self.url, filename=self.download_path, headers=headers)
+        download_file(url=self.url, filename=self.download_path, headers=headers)
 
     def extract(self):
         """Extract release from gzipped file."""
@@ -179,7 +178,7 @@ class UnpaywallTelescope(SnapshotTelescope):
         *,
         dag_id: str = DAG_ID,
         start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
-        schedule_interval: str = "@weekly",
+        schedule_interval: str = "@monthly",
         dataset_id: str = "our_research",
         queue: str = "remote_queue",
         schema_folder: str = default_schema_folder(),
