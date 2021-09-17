@@ -15,25 +15,23 @@ and [data details](https://unpaywall.org/data-format)
 
 The Unpaywall snapshot dataset information can be found on the [product page](https://unpaywall.org/products/snapshot).  Users are required to fill in a form to get their download link. The link can be found on the bottom of the [product page](https://unpaywall.org/products/snapshot).
 
+To give an estimate of dataset size, the 2021-07-02T151134 snapshot is 26 GiB compressed and 177 GiB uncompressed.
+
  ```eval_rst
 +------------------------------+--------------------------------------+
 | Summary                      |                                      |
 +==============================+======================================+
-| Average runtime              |  ?  min                              |
-+------------------------------+--------------------------------------+
-| Average download size        |  >16 GB                              |
-+------------------------------+--------------------------------------+
 | Harvest Type                 | URL                                  |
 +------------------------------+--------------------------------------+
-| Harvest Frequency            | Daily/Weekly/Monthly/Other           |
+| Harvest frequency            | Default: @monthly                    |
 +------------------------------+--------------------------------------+
-| Runs on remote worker        | True/False                           |
+| Runs on remote worker        | Default: True                        |
 +------------------------------+--------------------------------------+
-| Catchup missed runs          | True/False                           |
+| Catchup missed runs          | Default: True                        |
 +------------------------------+--------------------------------------+
 | Table Write Disposition      | Truncate                             |
 +------------------------------+--------------------------------------+
-| Update Frequency             | Daily/Weekly/Monthly/Other           |
+| Dataset Update Frequency     | Roughly 2-6 monthly                  |
 +------------------------------+--------------------------------------+
 | Credentials Required         | No                                   |
 +------------------------------+--------------------------------------+
