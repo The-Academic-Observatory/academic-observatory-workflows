@@ -150,8 +150,7 @@ class TestUnpaywallRelease(unittest.TestCase):
 
     @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
     @patch("academic_observatory_workflows.workflows.unpaywall_telescope.Variable.get")
-    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.wait_for_process")
-    def test_extract_outputs(self, m_wait_for_process, m_variable_get, m_get_conn):
+    def test_extract_outputs(self, m_variable_get, m_get_conn):
         # Create data path and mock getting data path
         data_path = "data"
         m_variable_get.return_value = data_path
@@ -162,20 +161,12 @@ class TestUnpaywallRelease(unittest.TestCase):
                 dag_id="test", release_date=self.unpaywall_test_date, file_name=self.unpaywall_test_file
             )
             shutil.copyfile(self.unpaywall_test_path, release.download_path)
-
-            m_wait_for_process.return_value = ("stdout stuff", None)
-
-            with patch("academic_observatory_workflows.workflows.unpaywall_telescope.logging.info") as m_log:
-                release.extract()
-                self.assertEqual(m_log.call_count, 5)
-
-            m_wait_for_process.return_value = (None, "error")
-            self.assertRaises(AirflowException, release.extract)
+            release.extract()
+            self.assertEqual(len(release.extract_files), 1)
 
     @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
     @patch("academic_observatory_workflows.workflows.unpaywall_telescope.Variable.get")
-    @patch("academic_observatory_workflows.workflows.unpaywall_telescope.wait_for_process")
-    def test_transform_outputs(self, m_wait_for_process, m_variable_get, m_get_conn):
+    def test_transform_outputs(self, m_variable_get, m_get_conn):
         # Create data path and mock getting data path
         data_path = "data"
         m_variable_get.return_value = data_path
@@ -186,18 +177,9 @@ class TestUnpaywallRelease(unittest.TestCase):
                 dag_id="test", release_date=self.unpaywall_test_date, file_name=self.unpaywall_test_file
             )
             shutil.copyfile(self.unpaywall_test_path, release.download_path)
-
-            m_wait_for_process.return_value = (None, None)
             release.extract()
-
-            m_wait_for_process.return_value = ("out", None)
-
-            with patch("academic_observatory_workflows.workflows.unpaywall_telescope.logging.info") as m_log:
-                release.transform()
-                self.assertEqual(m_log.call_count, 4)
-
-            m_wait_for_process.return_value = (None, "error")
-            self.assertRaises(AirflowException, release.transform)
+            release.transform()
+            self.assertEqual(len(release.transform_files), 1)
 
 
 class TestUnpaywallTelescope(ObservatoryTestCase):

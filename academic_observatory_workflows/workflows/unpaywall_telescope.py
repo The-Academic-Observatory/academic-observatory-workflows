@@ -21,7 +21,6 @@ import subprocess
 from typing import Dict, List, Union
 
 import pendulum
-import xmltodict
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from airflow.exceptions import AirflowException
 from airflow.models import Variable
@@ -30,6 +29,7 @@ from observatory.platform.utils.airflow_utils import (
     AirflowVars,
     get_airflow_connection_url,
 )
+from observatory.platform.utils.file_utils import find_replace_file, unzip_files
 from observatory.platform.utils.gc_utils import (
     bigquery_sharded_table_id,
     bigquery_table_exists,
@@ -64,16 +64,9 @@ class UnpaywallRelease(SnapshotRelease):
         :param file_name: Filename to download.
         """
 
-        download_files_regex = r".*.jsonl.gz$"
-        transform_files_regex = r".*.jsonl$"
-        extract_files_regex = r".*.jsonl$"
-
         super().__init__(
             dag_id=dag_id,
             release_date=release_date,
-            download_files_regex=download_files_regex,
-            transform_files_regex=transform_files_regex,
-            extract_files_regex=extract_files_regex,
         )
 
         self.file_name = file_name
@@ -120,7 +113,6 @@ class UnpaywallRelease(SnapshotRelease):
         """
 
         date = re.search(r"\d{4}-\d{2}-\d{2}", file_name).group()
-
         return pendulum.parse(date)
 
     def download(self):
@@ -132,40 +124,13 @@ class UnpaywallRelease(SnapshotRelease):
     def extract(self):
         """Extract release from gzipped file."""
 
-        download_file = self.download_path
-        extract_file = self.extract_path
-        logging.info(f"Extracting file: {download_file}")
-
-        cmd = f"gunzip -c {download_file} > {extract_file}"
-        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, executable="/bin/bash")
-        stdout, stderr = wait_for_process(p)
-
-        if stdout:
-            logging.info(stdout)
-
-        if stderr:
-            raise AirflowException(f"bash command failed for {self.url}: {stderr}")
-
-        logging.info(f"File extracted to: {extract_file}")
+        unzip_files(file_list=[self.download_path], output_dir=self.extract_folder)
 
     def transform(self):
         """Transforms release by replacing a specific '-' with '_'."""
-
-        extract_file = self.extract_path
-        transform_file = self.transform_path
-
-        cmd = f"sed 's/authenticated-orcid/authenticated_orcid/g' {extract_file} > " f"{transform_file}"
-
-        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, executable="/bin/bash")
-        stdout, stderr = wait_for_process(p)
-
-        if stdout:
-            logging.info(stdout)
-
-        if stderr:
-            raise AirflowException(f"bash command failed for {self.url}: {stderr}")
-
-        logging.info(f"Success transforming release: {self.url}")
+        pattern = "authenticated-orcid"
+        replacement = "authenticated_orcid"
+        find_replace_file(src=self.extract_path, dst=self.transform_path, pattern=pattern, replacement=replacement)
 
 
 class UnpaywallTelescope(SnapshotTelescope):
