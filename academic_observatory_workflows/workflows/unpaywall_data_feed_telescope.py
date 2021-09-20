@@ -25,7 +25,7 @@ from observatory.platform.utils.airflow_utils import (
     AirflowVars,
     get_airflow_connection_password,
 )
-from observatory.platform.utils.file_utils import find_replace_file, unzip_files
+from observatory.platform.utils.file_utils import find_replace_file, gunzip_files
 from observatory.platform.utils.http_download import download_files
 from observatory.platform.utils.json_util import csv_to_jsonlines
 from observatory.platform.utils.url_utils import (
@@ -121,7 +121,7 @@ class UnpaywallDataFeedRelease(StreamRelease):
         download_list = list()
 
         release_info = get_http_response_json(self.data_feed_url)
-        for release in release_info:
+        for release in release_info["list"]:
             release_date = release["date"] if self.update_interval == "day" else release["to_date"]
             release_date = pendulum.parse(release_date)
 
@@ -135,7 +135,7 @@ class UnpaywallDataFeedRelease(StreamRelease):
     def extract(self):
         """Unzip the downloaded files."""
 
-        unzip_files(file_list=self.download_files, output_dir=self.extract_folder)
+        gunzip_files(file_list=self.download_files, output_dir=self.extract_folder)
 
     def transform(self):
         """Convert any CSV to JSONL as needed.  It's unclear if this is still necessary, but there are examples of CSV
@@ -186,10 +186,9 @@ class UnpaywallDataFeedTelescope(StreamTelescope):
         dataset_id: str = "unpaywall_data_feed",
         dataset_description: str = f"Unpaywall Data Feed: {DATAFEED_URL}",
         queue: str = "default",
-        merge_partition_field: str = "id",
+        merge_partition_field: str = "doi",
         bq_merge_days: int = 7,
         schema_folder: str = default_schema_folder(),
-        batch_load: bool = False,
         airflow_vars: List = None,
         max_download_connections: int = 8,
     ):
@@ -204,7 +203,6 @@ class UnpaywallDataFeedTelescope(StreamTelescope):
         :param merge_partition_field: the BigQuery field used to match partitions for a merge
         :param bq_merge_days: how often partitions should be merged (every x days)
         :param schema_folder: the SQL schema path.
-        :param batch_load: whether all files in the transform folder are loaded into 1 table at once
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
         :param max_download_connections: Maximum number of connections allowed for simultaneous downloading of files.
         """
@@ -230,7 +228,7 @@ class UnpaywallDataFeedTelescope(StreamTelescope):
             schema_folder,
             dataset_description=dataset_description,
             queue=queue,
-            batch_load=batch_load,
+            batch_load=True,
             airflow_vars=airflow_vars,
             airflow_conns=airflow_conns,
         )
