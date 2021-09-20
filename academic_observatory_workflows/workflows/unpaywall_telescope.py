@@ -29,7 +29,7 @@ from observatory.platform.utils.airflow_utils import (
     AirflowVars,
     get_airflow_connection_url,
 )
-from observatory.platform.utils.file_utils import find_replace_file, unzip_files
+from observatory.platform.utils.file_utils import find_replace_file, gunzip_files
 from observatory.platform.utils.gc_utils import (
     bigquery_sharded_table_id,
     bigquery_table_exists,
@@ -74,6 +74,7 @@ class UnpaywallRelease(SnapshotRelease):
     @property
     def url(self):
         """Download url."""
+
         dataset_url = get_airflow_connection_url(UnpaywallRelease.AIRFLOW_CONNECTION)
         return f"{dataset_url}{self.file_name}"
 
@@ -124,10 +125,11 @@ class UnpaywallRelease(SnapshotRelease):
     def extract(self):
         """Extract release from gzipped file."""
 
-        unzip_files(file_list=[self.download_path], output_dir=self.extract_folder)
+        gunzip_files(file_list=[self.download_path], output_dir=self.extract_folder)
 
     def transform(self):
         """Transforms release by replacing a specific '-' with '_'."""
+
         pattern = "authenticated-orcid"
         replacement = "authenticated_orcid"
         find_replace_file(src=self.extract_path, dst=self.transform_path, pattern=pattern, replacement=replacement)
