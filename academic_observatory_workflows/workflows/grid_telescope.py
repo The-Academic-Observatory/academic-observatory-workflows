@@ -212,7 +212,7 @@ class GridTelescope(SnapshotTelescope):
         schedule_interval: str = "@weekly",
         dataset_id: str = DATASET_ID,
         schema_folder: str = default_schema_folder(),
-        source_format: SourceFormat = SourceFormat.NEWLINE_DELIMITED_JSON,
+        source_format: str = SourceFormat.NEWLINE_DELIMITED_JSON,
         dataset_description: str = "Datasets provided by Digital Science: https://www.digital-science.com/",
         catchup: bool = True,
         airflow_vars: List = None,

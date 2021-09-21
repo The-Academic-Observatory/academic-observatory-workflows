@@ -151,7 +151,7 @@ class GeonamesTelescope(SnapshotTelescope):
         schedule_interval: str = "@weekly",
         dataset_id: str = "geonames",
         schema_folder: str = default_schema_folder(),
-        source_format: SourceFormat = SourceFormat.CSV,
+        source_format: str = SourceFormat.CSV,
         dataset_description: str = "The GeoNames geographical database: https://www.geonames.org/",
         load_bigquery_table_kwargs: Dict = None,
         table_descriptions: Dict = None,
