@@ -33,7 +33,6 @@ from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.data_utils import get_file
 from observatory.platform.utils.file_utils import list_to_jsonl_gz
 from observatory.platform.utils.url_utils import retry_session
-from observatory.platform.utils.workflow_utils import upload_files_from_list
 from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
@@ -318,17 +317,6 @@ class GridTelescope(SnapshotTelescope):
         # Download each release
         for release in releases:
             release.download()
-
-    def upload_downloaded(self, releases: List[GridRelease], **kwargs):
-        """Task to upload the downloaded GRID releases for a given month.
-
-        :param releases: a list of GRID releases.
-        :return: None.
-        """
-
-        # Upload each downloaded release
-        for release in releases:
-            upload_files_from_list(release.download_files, release.download_bucket)
 
     def extract(self, releases: List[GridRelease], **kwargs):
         """Task to extract the GRID releases for a given month.
