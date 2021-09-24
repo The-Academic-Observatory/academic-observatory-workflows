@@ -17,6 +17,7 @@
 import os
 import shutil
 import unittest
+from datetime import timedelta
 from unittest.mock import patch
 
 import pendulum
@@ -30,41 +31,24 @@ from airflow.models.connection import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
 from observatory.platform.utils.file_utils import validate_file_hash
+from observatory.platform.utils.jinja2_utils import render_template
 from observatory.platform.utils.test_utils import (
     HttpServer,
     ObservatoryEnvironment,
     ObservatoryTestCase,
     module_file_path,
 )
-from observatory.platform.utils.workflow_utils import (
-    bigquery_sharded_table_id,
-    blob_name,
-)
+from observatory.platform.utils.workflow_utils import blob_name
 
 
 class TestUnpaywallDataFeedRelease(unittest.TestCase):
-    def test_ctor(self):
-        # OK
-        release = UnpaywallDataFeedRelease(
-            dag_id="dag",
-            start_date=pendulum.now(),
-            end_date=pendulum.now(),
-            first_release=True,
-            max_download_connections=1,
-            update_interval="day",
-        )
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-        # Invalid update interval
-        self.assertRaises(
-            AirflowException,
-            UnpaywallDataFeedRelease,
-            dag_id="dag",
-            start_date=pendulum.now(),
-            end_date=pendulum.now(),
-            first_release=True,
-            max_download_connections=1,
-            update_interval="invalid",
-        )
+        self.fixture_dir = test_fixtures_folder("unpaywall_data_feed")
+        self.snapshot_file = "unpaywall_snapshot_2021-07-02T151134.jsonl.gz"
+        self.snapshot_path = os.path.join(self.fixture_dir, self.snapshot_file)
+        self.snapshot_hash = "0f1ac32355c4582d82ae4bc76db17c26"  # md5
 
     @patch("academic_observatory_workflows.workflows.unpaywall_data_feed_telescope.get_airflow_connection_password")
     def test_api_key(self, m_pass):
@@ -74,8 +58,6 @@ class TestUnpaywallDataFeedRelease(unittest.TestCase):
             start_date=pendulum.now(),
             end_date=pendulum.now(),
             first_release=True,
-            max_download_connections=1,
-            update_interval="day",
         )
         self.assertEqual(release.api_key, "testpass")
 
@@ -87,8 +69,6 @@ class TestUnpaywallDataFeedRelease(unittest.TestCase):
             start_date=pendulum.now(),
             end_date=pendulum.now(),
             first_release=True,
-            max_download_connections=1,
-            update_interval="day",
         )
         url = "https://api.unpaywall.org/feed/snapshot?api_key=testpass"
         self.assertEqual(release.snapshot_url, url)
@@ -101,14 +81,12 @@ class TestUnpaywallDataFeedRelease(unittest.TestCase):
             start_date=pendulum.now(),
             end_date=pendulum.now(),
             first_release=True,
-            max_download_connections=1,
-            update_interval="day",
         )
         url = "https://api.unpaywall.org/feed/changefiles?interval=day&api_key=testpass"
         self.assertEqual(release.data_feed_url, url)
 
     @patch("academic_observatory_workflows.workflows.unpaywall_data_feed_telescope.get_airflow_connection_password")
-    @patch("academic_observatory_workflows.workflows.unpaywall_data_feed_telescope.download_files")
+    @patch("academic_observatory_workflows.workflows.unpaywall_data_feed_telescope.download_file")
     @patch("academic_observatory_workflows.workflows.unpaywall_data_feed_telescope.get_observatory_http_header")
     @patch("academic_observatory_workflows.workflows.unpaywall_data_feed_telescope.get_http_response_json")
     @patch("airflow.models.variable.Variable.get")
@@ -118,51 +96,96 @@ class TestUnpaywallDataFeedRelease(unittest.TestCase):
         m_header.return_value = {"User-Agent": "custom"}
 
         # Day
-        m_get_response.return_value = [
-            {"date": "2021-01-01", "url": "http://url1", "filename": "file1"},
-            {"date": "2020-01-01", "url": "http://url2", "filename": "file2"},
-        ]
+        m_get_response.return_value = {
+            "list": [
+                {
+                    "url": "http://url1",
+                    "filename": "changed_dois_with_versions_2021-07-02T080001.jsonl.gz",
+                },
+                {
+                    "url": "http://url2",
+                    "filename": "changed_dois_with_versions_2021-07-02T080001.jsonl.gz",
+                },
+            ]
+        }
 
         release = UnpaywallDataFeedRelease(
             dag_id="dag",
-            start_date=pendulum.datetime(2021, 1, 1),
-            end_date=pendulum.datetime(2021, 1, 3),
-            first_release=True,
-            max_download_connections=1,
-            update_interval="day",
+            start_date=pendulum.datetime(2021, 7, 4),
+            end_date=pendulum.datetime(2021, 7, 4),
+            first_release=False,
         )
 
-        release.download_data_feed_()
+        release.download()
         _, call_args = m_download.call_args
-        download_list = call_args["download_list"]
-        self.assertEqual(len(download_list), 1)
-        self.assertEqual(download_list[0]["url"], "http://url1")
-        self.assertEqual(download_list[0]["filename"], "data/telescopes/download/dag/2021_01_01-2021_01_03/file1")
-
-        # Week
-        m_get_response.return_value = [
-            {"to_date": "2021-01-01", "url": "http://url1", "filename": "file1"},
-            {"to_date": "2020-01-01", "url": "http://url2", "filename": "file2"},
-        ]
-
-        release = UnpaywallDataFeedRelease(
-            dag_id="dag",
-            start_date=pendulum.datetime(2021, 1, 1),
-            end_date=pendulum.datetime(2021, 1, 3),
-            first_release=True,
-            max_download_connections=1,
-            update_interval="week",
+        self.assertEqual(call_args["url"], "http://url1")
+        self.assertEqual(
+            call_args["filename"],
+            "data/telescopes/download/dag/2021_07_04-2021_07_04/changed_dois_with_versions_2021-07-02T080001.jsonl.gz",
         )
 
-        release.download_data_feed_()
-        _, call_args = m_download.call_args
-        download_list = call_args["download_list"]
-        self.assertEqual(len(download_list), 1)
-        self.assertEqual(download_list[0]["url"], "http://url1")
-        self.assertEqual(download_list[0]["filename"], "data/telescopes/download/dag/2021_01_01-2021_01_03/file1")
+    @patch("academic_observatory_workflows.workflows.unpaywall_data_feed_telescope.get_observatory_http_header")
+    @patch("academic_observatory_workflows.workflows.unpaywall_data_feed_telescope.get_airflow_connection_password")
+    @patch("academic_observatory_workflows.workflows.unpaywall_data_feed_telescope.download_file")
+    @patch("airflow.models.variable.Variable.get")
+    def test_download_snapshot(self, m_get, m_download, m_pass, m_header):
+        m_get.return_value = "data"
+        m_pass.return_value = "testpass"
+        m_header.return_value = {"User-Agent": "custom"}
 
-    def test_download_snapshot(self):
-        pass
+        fixture_dir = test_fixtures_folder("unpaywall_data_feed")
+
+        with CliRunner().isolated_filesystem():
+            release = UnpaywallDataFeedRelease(
+                dag_id="dag",
+                start_date=pendulum.datetime(2021, 7, 2),
+                end_date=pendulum.datetime(2021, 7, 3),
+                first_release=True,
+            )
+
+            src = self.snapshot_path
+            dst = os.path.join(release.download_folder, self.snapshot_file)
+            shutil.copyfile(src, dst)
+
+            release.download()
+
+        # Bad dates
+        with CliRunner().isolated_filesystem():
+            release = UnpaywallDataFeedRelease(
+                dag_id="dag",
+                start_date=pendulum.datetime(2021, 9, 22),
+                end_date=pendulum.datetime(2021, 1, 3),
+                first_release=True,
+            )
+
+            src = self.snapshot_path
+            dst = os.path.join(release.download_folder, self.snapshot_file)
+            shutil.copyfile(src, dst)
+            self.assertRaises(AirflowException, release.download)
+
+    @patch("academic_observatory_workflows.workflows.unpaywall_data_feed_telescope.get_http_response_json")
+    def test_get_diff_release(self, m_get_json):
+        # No release info
+        m_get_json.return_value = {"list": []}
+
+        result = UnpaywallDataFeedRelease.get_diff_release(feed_url=None, start_date=None)
+
+        self.assertEqual(result, (None, None))
+
+        m_get_json.return_value = {
+            "list": [
+                {"url": "url", "filename": "changed_dois_with_versions_2021-07-02T080001.jsonl.gz"},
+                {"url": "url", "filename": "changed_dois_with_versions_2021-07-02T080001.jsonl.gz"},
+                {"url": "url", "filename": "changed_dois_with_versions_2021-07-02T080001.jsonl.gz"},
+            ]
+        }
+
+        url, filename = UnpaywallDataFeedRelease.get_diff_release(
+            feed_url=None,
+            start_date=pendulum.datetime(2021, 7, 4),
+        )
+
+        self.assertEqual(filename, "changed_dois_with_versions_2021-07-02T080001.jsonl.gz")
 
     @patch("airflow.models.variable.Variable.get")
     def test_extract(self, m_get):
@@ -171,14 +194,12 @@ class TestUnpaywallDataFeedRelease(unittest.TestCase):
         with CliRunner().isolated_filesystem():
             release = UnpaywallDataFeedRelease(
                 dag_id="dag",
-                start_date=pendulum.datetime(2021, 1, 1),
-                end_date=pendulum.datetime(2021, 1, 3),
+                start_date=pendulum.datetime(2021, 7, 4),
+                end_date=pendulum.datetime(2021, 7, 4),
                 first_release=True,
-                max_download_connections=1,
-                update_interval="week",
             )
-            src = os.path.join(fixture_dir, "unpaywall.jsonl.gz")
-            dst = os.path.join(release.download_folder, "unpaywall.jsonl.gz")
+            src = self.snapshot_path
+            dst = os.path.join(release.download_folder, self.snapshot_file)
             shutil.copyfile(src, dst)
             self.assertEqual(len(release.download_files), 1)
             release.extract()
@@ -191,28 +212,19 @@ class TestUnpaywallDataFeedRelease(unittest.TestCase):
         with CliRunner().isolated_filesystem():
             release = UnpaywallDataFeedRelease(
                 dag_id="dag",
-                start_date=pendulum.datetime(2021, 1, 1),
-                end_date=pendulum.datetime(2021, 1, 3),
+                start_date=pendulum.datetime(2021, 7, 4),
+                end_date=pendulum.datetime(2021, 7, 4),
                 first_release=True,
-                max_download_connections=1,
-                update_interval="week",
             )
-            src = os.path.join(fixture_dir, "unpaywall.jsonl.gz")
-            dst = os.path.join(release.download_folder, "unpaywall.jsonl.gz")
-            shutil.copyfile(src, dst)
-            src = os.path.join(fixture_dir, "unpaywall1.csv.gz")
-            dst = os.path.join(release.download_folder, "unpaywall1.csv.gz")
+            src = self.snapshot_path
+            dst = os.path.join(release.download_folder, self.snapshot_file)
             shutil.copyfile(src, dst)
             release.extract()
             release.transform()
-            self.assertEqual(len(release.transform_files), 2)
+            self.assertEqual(len(release.transform_files), 1)
 
-            csv_transformed_hash = "5ec6414a16ce7af18855c146534f80c7"
             json_transformed_hash = "62cbb5af5a78d2e0769a28d976971cba"
-
-            json_transformed = os.path.join(release.transform_folder, "unpaywall.jsonl")
-            csv_transformed = os.path.join(release.transform_folder, "unpaywall1.csv.jsonl")
-            self.assertTrue(validate_file_hash(file_path=csv_transformed, expected_hash=csv_transformed_hash))
+            json_transformed = os.path.join(release.transform_folder, self.snapshot_file[:-3])
             self.assertTrue(validate_file_hash(file_path=json_transformed, expected_hash=json_transformed_hash))
 
 
@@ -222,13 +234,39 @@ class TestUnpaywallDataFeedTelescope(ObservatoryTestCase):
 
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
-        self.first_execution_date = pendulum.datetime(2021, 7, 18)
-        self.second_execution_date = pendulum.datetime(2021, 2, 19)
+
         self.fixture_dir = test_fixtures_folder("unpaywall_data_feed")
+        self.snapshot_file = "unpaywall_snapshot_2021-07-02T151134.jsonl.gz"
+        self.snapshot_path = os.path.join(self.fixture_dir, self.snapshot_file)
+        self.snapshot_hash = "0f1ac32355c4582d82ae4bc76db17c26"  # md5
 
     def test_ctor(self):
         telescope = UnpaywallDataFeedTelescope(airflow_vars=[])
         self.assertEqual(telescope.airflow_vars, ["transform_bucket"])
+
+        self.assertRaises(AirflowException, UnpaywallDataFeedTelescope, schedule_interval="@monthly")
+
+    def test_schedule_days_apart(self):
+        start_date = pendulum.datetime(2021, 1, 9)
+        schedule_interval = timedelta(days=2)
+        days_apart_gen = UnpaywallDataFeedTelescope.schedule_days_apart_(
+            start_date=start_date, schedule_interval=schedule_interval
+        )
+
+        diff = next(days_apart_gen)
+        self.assertEqual(diff, 2)
+        diff = next(days_apart_gen)
+        self.assertEqual(diff, 2)
+
+        schedule_interval = "@weekly"
+        days_apart_gen = UnpaywallDataFeedTelescope.schedule_days_apart_(
+            start_date=start_date, schedule_interval=schedule_interval
+        )
+
+        diff = next(days_apart_gen)
+        self.assertEqual(diff, 1)
+        diff = next(days_apart_gen)
+        self.assertEqual(diff, 7)
 
     def test_dag_structure(self):
         """Test that the Crossref Events DAG has the correct structure."""
@@ -236,8 +274,8 @@ class TestUnpaywallDataFeedTelescope(ObservatoryTestCase):
         dag = UnpaywallDataFeedTelescope().make_dag()
         self.assert_dag_structure(
             {
-                "check_dependencies": ["get_release_info"],
-                "get_release_info": ["download"],
+                "check_dependencies": ["check_releases"],
+                "check_releases": ["download"],
                 "download": ["upload_downloaded"],
                 "upload_downloaded": ["extract"],
                 "extract": ["transform"],
@@ -265,142 +303,252 @@ class TestUnpaywallDataFeedTelescope(ObservatoryTestCase):
         self.dataset_id = env.add_dataset()
         return env
 
-    def test_telescope(self):
+    def create_changefiles(self, host, port):
+        # Daily
+        template_path = os.path.join(self.fixture_dir, "daily-feed", "changefiles.jinja2")
+        changefiles = render_template(template_path, host=host, port=port)
+        dst = os.path.join(self.fixture_dir, "daily-feed", "changefiles")
+        with open(dst, "w") as f:
+            f.write(changefiles)
+
+    def remove_changefiles(self):
+        dst = os.path.join(self.fixture_dir, "daily-feed", "changefiles")
+        os.remove(dst)
+
+    # We want to do 3 dag runs.  First is to load snapshot.
+    # Second is to load day diff 1 day before snapshot date (won't exist, so skip).
+    # Third loads a daily diff on day of snapshot (exists).
+    # Demonstrates that we are looking 2 days back with diff updates.
+    def test_telescope_day(self):
         env = self.setup_observatory_environment()
+
+        first_execution_date = pendulum.datetime(2021, 7, 2)  # Snapshot
+        second_execution_date = pendulum.datetime(2021, 7, 3)  # No update found
+        third_execution_date = pendulum.datetime(2021, 7, 4)  # Update found
 
         with env.create():
             server = HttpServer(directory=self.fixture_dir)
             with server.create():
                 with patch.object(
-                    UnpaywallDataFeedRelease, "SNAPSHOT_URL", f"http://{server.host}:{server.port}/feed/snapshot.json"
+                    UnpaywallDataFeedRelease, "SNAPSHOT_URL", f"http://{server.host}:{server.port}/{self.snapshot_file}"
                 ):
-                    conn = Connection(
-                        conn_id=UnpaywallDataFeedRelease.AIRFLOW_CONNECTION, uri="http://:YOUR_API_KEY@localhost"
-                    )
+                    with patch.object(
+                        UnpaywallDataFeedRelease,
+                        "CHANGEFILES_URL",
+                        f"http://{server.host}:{server.port}/daily-feed/changefiles",
+                    ):
+                        self.create_changefiles(server.host, server.port)
 
-                    env.add_connection(conn)
-
-                    telescope = UnpaywallDataFeedTelescope(dataset_id=self.dataset_id)
-                    dag = telescope.make_dag()
-
-                    # First run
-                    with env.create_dag_run(dag, self.first_execution_date):
-                        release = UnpaywallDataFeedRelease(
-                            dag_id=UnpaywallDataFeedTelescope.DAG_ID,
-                            start_date=pendulum.datetime(2021, 7, 2),
-                            end_date=pendulum.datetime(2021, 7, 18),
-                            first_release=True,
-                            max_download_connections=1,
-                            update_interval="day",
+                        conn = Connection(
+                            conn_id=UnpaywallDataFeedRelease.AIRFLOW_CONNECTION, uri="http://:YOUR_API_KEY@localhost"
                         )
 
-                        # Check dependencies are met
-                        ti = env.run_task(telescope.check_dependencies.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                        env.add_connection(conn)
 
-                        # Get release information
-                        ti = env.run_task(telescope.get_release_info.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                        telescope = UnpaywallDataFeedTelescope(dataset_id=self.dataset_id, bq_merge_days=2)
+                        dag = telescope.make_dag()
 
-                        # Download data
-                        ti = env.run_task(telescope.download.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                        # First run
+                        with env.create_dag_run(dag, first_execution_date):
+                            release = UnpaywallDataFeedRelease(
+                                dag_id=UnpaywallDataFeedTelescope.DAG_ID,
+                                start_date=pendulum.datetime(2021, 7, 2),
+                                end_date=pendulum.datetime(2021, 7, 2),
+                                first_release=True,
+                            )
 
-                        # Upload downloaded data
-                        ti = env.run_task(telescope.upload_downloaded.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Check dependencies are met
+                            ti = env.run_task(telescope.check_dependencies.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
 
-                        # Extract data
-                        ti = env.run_task(telescope.extract.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Check releases
+                            ti = env.run_task(telescope.check_releases.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
 
-                        # Transform data
-                        ti = env.run_task(telescope.transform.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Download data
+                            ti = env.run_task(telescope.download.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
 
-                        # Upload transformed data
-                        ti = env.run_task(telescope.upload_transformed.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Upload downloaded data
+                            ti = env.run_task(telescope.upload_downloaded.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            for file in release.download_files:
+                                self.assert_blob_integrity(env.download_bucket, blob_name(file), file)
 
-                        # Load bq table partitions
-                        ti = env.run_task(telescope.bq_load_partition.__name__)
-                        self.assertEqual(ti.state, State.SKIPPED)
+                            # Extract data
+                            ti = env.run_task(telescope.extract.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
 
-                        # Delete changed data from main table
-                        ti = env.run_task(telescope.bq_delete_old.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Transform data
+                            ti = env.run_task(telescope.transform.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            self.assertEqual(len(release.transform_files), 1)
 
-                        # Add new changes
-                        ti = env.run_task(telescope.bq_append_new.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Upload transformed data
+                            ti = env.run_task(telescope.upload_transformed.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            for file in release.transform_files:
+                                self.assert_blob_integrity(env.transform_bucket, blob_name(file), file)
 
-                        # Cleanup files
-                        download_folder, extract_folder, transform_folder = (
-                            release.download_folder,
-                            release.extract_folder,
-                            release.transform_folder,
-                        )
-                        ti = env.run_task(telescope.cleanup.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
-                        self.assert_cleanup(download_folder, extract_folder, transform_folder)
+                            # Load bq table partitions
+                            ti = env.run_task(telescope.bq_load_partition.__name__)
+                            self.assertEqual(ti.state, State.SKIPPED)
 
-                    # # Second run
-                    with env.create_dag_run(dag, self.second_execution_date):
-                        release = UnpaywallDataFeedRelease(
-                            dag_id=UnpaywallDataFeedTelescope.DAG_ID,
-                            start_date=pendulum.datetime(2021, 7, 19),
-                            end_date=pendulum.datetime(2021, 7, 19),
-                            first_release=False,
-                            max_download_connections=1,
-                            update_interval="day",
-                        )
+                            # Delete changed data from main table
+                            ti = env.run_task(telescope.bq_delete_old.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
 
-                        # Check dependencies are met
-                        ti = env.run_task(telescope.check_dependencies.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Add new changes
+                            ti = env.run_task(telescope.bq_append_new.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            main_table_id, partition_table_id = release.dag_id, f"{release.dag_id}_partitions"
+                            table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
+                            expected_rows = 100
+                            self.assert_table_integrity(table_id, expected_rows)
 
-                        # Get release information
-                        ti = env.run_task(telescope.get_release_info.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Cleanup files
+                            download_folder, extract_folder, transform_folder = (
+                                release.download_folder,
+                                release.extract_folder,
+                                release.transform_folder,
+                            )
+                            ti = env.run_task(telescope.cleanup.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            self.assert_cleanup(download_folder, extract_folder, transform_folder)
 
-                        # Download data
-                        ti = env.run_task(telescope.download.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                        # Second run (skips)  Use dailies
+                        with env.create_dag_run(dag, second_execution_date):
+                            release = UnpaywallDataFeedRelease(
+                                dag_id=UnpaywallDataFeedTelescope.DAG_ID,
+                                start_date=pendulum.datetime(2021, 7, 3),
+                                end_date=pendulum.datetime(2021, 7, 3),
+                                first_release=False,
+                            )
 
-                        # Upload downloaded data
-                        ti = env.run_task(telescope.upload_downloaded.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Check dependencies are met
+                            ti = env.run_task(telescope.check_dependencies.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
 
-                        # Extract data
-                        ti = env.run_task(telescope.extract.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Check releases
+                            ti = env.run_task(telescope.check_releases.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
 
-                        # Transform data
-                        ti = env.run_task(telescope.transform.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Download data
+                            ti = env.run_task(telescope.download.__name__)
+                            self.assertEqual(ti.state, State.SKIPPED)
 
-                        # Upload transformed data
-                        ti = env.run_task(telescope.upload_transformed.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Upload downloaded data
+                            ti = env.run_task(telescope.upload_downloaded.__name__)
+                            self.assertEqual(ti.state, State.SKIPPED)
 
-                        # Load bq table partitions
-                        ti = env.run_task(telescope.bq_load_partition.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Extract data
+                            ti = env.run_task(telescope.extract.__name__)
+                            self.assertEqual(ti.state, State.SKIPPED)
 
-                        # Delete changed data from main table
-                        ti = env.run_task(telescope.bq_delete_old.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Transform data
+                            ti = env.run_task(telescope.transform.__name__)
+                            self.assertEqual(ti.state, State.SKIPPED)
+                            self.assertEqual(len(release.transform_files), 0)
 
-                        # Add new changes
-                        ti = env.run_task(telescope.bq_append_new.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
+                            # Upload transformed data
+                            ti = env.run_task(telescope.upload_transformed.__name__)
+                            self.assertEqual(ti.state, State.SKIPPED)
 
-                        # Cleanup files
-                        download_folder, extract_folder, transform_folder = (
-                            release.download_folder,
-                            release.extract_folder,
-                            release.transform_folder,
-                        )
-                        ti = env.run_task(telescope.cleanup.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
-                        self.assert_cleanup(download_folder, extract_folder, transform_folder)
+                            # Load bq table partitions
+                            ti = env.run_task(telescope.bq_load_partition.__name__)
+                            self.assertEqual(ti.state, State.SKIPPED)
+
+                            # Delete changed data from main table
+                            ti = env.run_task(telescope.bq_delete_old.__name__)
+                            self.assertEqual(ti.state, State.SKIPPED)
+
+                            # Add new changes
+                            ti = env.run_task(telescope.bq_append_new.__name__)
+                            self.assertEqual(ti.state, State.SKIPPED)
+
+                            # Cleanup files
+                            download_folder, extract_folder, transform_folder = (
+                                release.download_folder,
+                                release.extract_folder,
+                                release.transform_folder,
+                            )
+                            ti = env.run_task(telescope.cleanup.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            self.assert_cleanup(download_folder, extract_folder, transform_folder)
+
+                        # Third run (downloads)
+                        with env.create_dag_run(dag, third_execution_date):
+                            release = UnpaywallDataFeedRelease(
+                                dag_id=UnpaywallDataFeedTelescope.DAG_ID,
+                                start_date=pendulum.datetime(2021, 7, 4),
+                                end_date=pendulum.datetime(2021, 7, 4),
+                                first_release=True,
+                            )
+
+                            # Check dependencies are met
+                            ti = env.run_task(telescope.check_dependencies.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+
+                            # Check releases
+                            ti = env.run_task(telescope.check_releases.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+
+                            # Download data
+                            ti = env.run_task(telescope.download.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+
+                            # Upload downloaded data
+                            ti = env.run_task(telescope.upload_downloaded.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            for file in release.download_files:
+                                self.assert_blob_integrity(env.download_bucket, blob_name(file), file)
+
+                            # Extract data
+                            ti = env.run_task(telescope.extract.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+
+                            # Transform data
+                            ti = env.run_task(telescope.transform.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            self.assertEqual(len(release.transform_files), 1)
+
+                            # Upload transformed data
+                            ti = env.run_task(telescope.upload_transformed.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            for file in release.transform_files:
+                                self.assert_blob_integrity(env.transform_bucket, blob_name(file), file)
+
+                            # Load bq table partitions
+                            ti = env.run_task(telescope.bq_load_partition.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            main_table_id, partition_table_id = release.dag_id, f"{release.dag_id}_partitions"
+                            table_id = f'{self.project_id}.{telescope.dataset_id}.{partition_table_id}${pendulum.today().strftime("%Y%m%d")}'
+                            expected_rows = 2
+                            self.assert_table_integrity(table_id, expected_rows)
+
+                            # Delete changed data from main table
+                            ti = env.run_task(telescope.bq_delete_old.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
+                            expected_rows = 99
+                            self.assert_table_integrity(table_id, expected_rows)
+
+                            # Add new changes
+                            ti = env.run_task(telescope.bq_append_new.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
+                            expected_rows = 101
+                            self.assert_table_integrity(table_id, expected_rows)
+
+                            # Cleanup files
+                            download_folder, extract_folder, transform_folder = (
+                                release.download_folder,
+                                release.extract_folder,
+                                release.transform_folder,
+                            )
+                            ti = env.run_task(telescope.cleanup.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            self.assert_cleanup(download_folder, extract_folder, transform_folder)
+
+                        # Clean up template
+                        self.remove_changefiles()
