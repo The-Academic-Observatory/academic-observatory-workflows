@@ -49,7 +49,7 @@ security:
 
 
 {# Tag settings #}
-{%- if api_client -%}
+{% if api_client -%}
 tags:
 - name: Observatory
   description: the Observatory API
@@ -65,7 +65,7 @@ tags:
 {%- if api_client -%}
 {%- set operation_id_namespace="" -%}
 {% else -%}
-{%- set operation_id_namespace="academic_observatory_workflows.api.server.api." -%}
+{%- set operation_id_namespace="academic_observatory_workflows_api.server.api." -%}
 {%- endif %}
 
 paths:
@@ -74,7 +74,6 @@ paths:
       operationId: {{ operation_id_namespace }}pit_id_agg
       tags:
         - {{ reports_tag }}
-      parameters:
       parameters:
         - $ref: '#/parameters/aggregate'
         - $ref: '#/parameters/indexDate'
@@ -179,7 +178,6 @@ parameters:
       - publisher
       - region
       - subregion
-      - in: path
   subaggregate:
     in: path
     name: subagg
