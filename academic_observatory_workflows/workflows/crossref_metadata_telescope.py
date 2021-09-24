@@ -18,25 +18,28 @@
 from __future__ import annotations
 
 import functools
+import json
 import logging
 import os
 import shutil
 import subprocess
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from subprocess import Popen
 from typing import Dict, List
 
+import jsonlines
 import pendulum
 import requests
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
 from bs4 import BeautifulSoup
 from natsort import natsorted
+
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
 from observatory.platform.utils.proc_utils import wait_for_process
 from observatory.platform.utils.url_utils import retry_session
-from observatory.platform.utils.workflow_utils import blob_name, bq_load_shard
+from observatory.platform.utils.workflow_utils import get_chunks, blob_name, bq_load_shard
 from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
@@ -121,35 +124,37 @@ class CrossrefMetadataRelease(SnapshotRelease):
             logging.error(stderr)
             raise AirflowException(f"extract_release error: {self.download_path}")
 
-    def transform(self, max_workers: int):
+    def transform(self, max_processes: int, batch_size: int = 500):
         """Transform the Crossref Metadata release.
         Each extracted file is transformed. This is done in parallel using the ThreadPoolExecutor.
 
-        :param max_workers: the number of processes to use when transforming files (one process per file).
+        :param max_processes: the number of processes to use when transforming files (one process per file).
         :return: whether the transformation was successful or not.
         """
         logging.info(f"Transform input folder: {self.extract_folder}, output folder: {self.transform_folder}")
         finished = 0
-        # Transform each file in parallel
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = []
 
-            # List files and sort so that they are processed in ascending order
-            input_file_paths = natsorted(self.extract_files)
+        # List files and sort so that they are processed in ascending order
+        input_file_paths = natsorted(self.extract_files)
 
-            # Create tasks for each file
-            for input_file in input_file_paths:
-                # The output file will be a json lines file, hence adding the 'l' to the file extension
-                output_file = os.path.join(self.transform_folder, os.path.basename(input_file) + "l")
-                future = executor.submit(transform_file, input_file, output_file)
-                futures.append(future)
+        # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
+        for batch_input_file_paths in get_chunks(input_list=input_file_paths, chunk_size=batch_size):
+            with ProcessPoolExecutor(max_workers=max_processes) as executor:
+                futures = []
 
-            # Wait for completed tasks
-            for future in as_completed(futures):
-                future.result()
-                finished += 1
-                if finished % 1000 == 0:
-                    logging.info(f"Transformed {finished} files")
+                # Create tasks for each file
+                for input_file in batch_input_file_paths:
+                    # The output file will be a json lines file, hence adding the 'l' to the file extension
+                    output_file = os.path.join(self.transform_folder, os.path.basename(input_file) + "l")
+                    future = executor.submit(transform_file, input_file, output_file)
+                    futures.append(future)
+
+                # Wait for completed tasks
+                for future in as_completed(futures):
+                    future.result()
+                    finished += 1
+                    if finished % 1000 == 0:
+                        logging.info(f"Transformed {finished} files")
 
 
 class CrossrefMetadataTelescope(SnapshotTelescope):
@@ -179,7 +184,7 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         airflow_vars: List = None,
         airflow_conns: List = None,
         max_active_runs: int = 1,
-        max_processes: int = min(32, os.cpu_count() + 4),
+        max_processes: int = os.cpu_count(),
     ):
         """The Crossref Metadata telescope
 
@@ -195,7 +200,7 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow.
         :param airflow_conns: list of airflow connection keys, for each connection it is checked if it exists in airflow
         :param max_active_runs: the maximum number of DAG runs that can be run at once.
-        :param max_processes: the number of max workers used in ThreadPoolExecutor to transform files in parallel.
+        :param max_processes: the number of processes used with ProcessPoolExecutor to transform files in parallel.
         """
 
         if table_descriptions is None:
@@ -322,7 +327,7 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         """
 
         for release in releases:
-            release.transform(max_workers=self.max_processes)
+            release.transform(max_processes=self.max_processes)
 
     def bq_load(self, releases: List[SnapshotRelease], **kwargs):
         """Task to load each transformed release to BigQuery.
@@ -360,17 +365,42 @@ def transform_file(input_file_path: str, output_file_path: str):
     :return: None.
     """
 
-    cmd = (
-        'mawk \'BEGIN {FS="\\":";RS=",\\"";OFS=FS;ORS=RS} {for (i=1; i<=NF;i++) if(i != NF) gsub("-", "_", $i)}1\''
-        f" {input_file_path} | "
-        'mawk \'!/^\}$|^\]$|,\\"$/{gsub("\[\[", "[");gsub("]]", "]");gsub(/,[ \\t]*$/,"");'
-        'gsub("\\"timestamp\\":_", "\\"timestamp\\":");gsub("\\"date_parts\\":\[null]", "\\"date_parts\\":[]");'
-        'gsub(/^\{\\"items\\":\[/,"");print}\' > '
-        f"{output_file_path}"
-    )
-    p: Popen = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, executable="/bin/bash")
-    stdout, stderr = wait_for_process(p)
-    if p.returncode != 0:
-        raise AirflowException(
-            f"transform unsuccessful for file: {input_file_path}. " f"stdout: {stdout}, stderr: {stderr}"
-        )
+    # Open json
+    with open(input_file_path, mode="r") as input_file:
+        input_data = json.load(input_file)
+
+    # Transform data
+    output_data = []
+    for item in input_data["items"]:
+        output_data.append(transform_item(item))
+
+    # Save as JSON Lines
+    with jsonlines.open(output_file_path, mode="w", compact=True) as output_file:
+        output_file.write_all(output_data)
+
+
+def transform_item(item):
+    if isinstance(item, dict):
+        new = {}
+        for k, v in item.items():
+            # Replace hyphens with underscores for BigQuery compatibility
+            k = k.replace("-", "_")
+
+            # Get inner array for date parts
+            if k == "date_parts":
+                if None in v:
+                    logging.warning("None in date_parts")
+                    v = []
+                else:
+                    v = v[0]
+            elif k == "timestamp":
+                if isinstance(v, str) and v.startswith("_"):
+                    logging.warning(f"String timestamp: {v}")
+                    v = int(v.replace("_", ""))
+
+            new[k] = transform_item(v)
+        return new
+    elif isinstance(item, list):
+        return [transform_item(i) for i in item]
+    else:
+        return item
