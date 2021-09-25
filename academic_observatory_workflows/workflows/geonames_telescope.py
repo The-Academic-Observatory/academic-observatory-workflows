@@ -30,7 +30,7 @@ from academic_observatory_workflows.config import schema_folder as default_schem
 from airflow.models.taskinstance import TaskInstance
 from google.cloud.bigquery import SourceFormat
 from observatory.platform.utils.airflow_utils import AirflowVars
-from observatory.platform.utils.data_utils import get_file
+from observatory.platform.utils.http_download import download_file
 from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
@@ -108,11 +108,8 @@ class GeonamesRelease(SnapshotRelease):
         :return: None
         """
 
-        file_path, updated = get_file(
-            fname=self.download_path, origin=GeonamesRelease.DOWNLOAD_URL, cache_subdir="", extract=False
-        )
-
-        logging.info(f"Downloaded file: {file_path}")
+        download_file(url=GeonamesRelease.DOWNLOAD_URL, filename=self.download_path)
+        logging.info(f"Downloaded file: {self.download_path}")
 
     def extract(self):
         """Extract a downloaded Geonames release.
