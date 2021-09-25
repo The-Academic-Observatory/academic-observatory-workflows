@@ -30,9 +30,12 @@ from airflow.exceptions import AirflowException
 from airflow.models.taskinstance import TaskInstance
 from google.cloud.bigquery import SourceFormat
 from observatory.platform.utils.airflow_utils import AirflowVars
-from observatory.platform.utils.data_utils import get_file
 from observatory.platform.utils.file_utils import list_to_jsonl_gz
-from observatory.platform.utils.url_utils import retry_session
+from observatory.platform.utils.http_download import download_file
+from observatory.platform.utils.url_utils import (
+    get_observatory_http_header,
+    retry_session,
+)
 from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
@@ -85,13 +88,14 @@ class GridRelease(SnapshotRelease):
 
                 # Download
                 logging.info(f"Downloading file: {real_file_name}, md5: {supplied_md5}, url: {download_url}")
-                file_path, updated = get_file(
-                    f"{self.dag_id}{file_type}",
-                    download_url,
-                    md5_hash=supplied_md5,
-                    cache_subdir="",
-                    cache_dir=self.download_folder,
+                file_path = os.path.join(self.download_folder, f"{self.dag_id}{file_type}")
+                logging.info(f"Saving to {file_path}")
+
+                headers = get_observatory_http_header(package_name="academic_observatory_workflows")
+                download_file(
+                    url=download_url, filename=file_path, hash=supplied_md5, hash_algorithm="md5", headers=headers
                 )
+
                 downloads.append(file_path)
 
         return downloads
