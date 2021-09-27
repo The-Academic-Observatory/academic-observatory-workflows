@@ -287,7 +287,8 @@ class CrossrefFundrefTelescope(SnapshotTelescope):
         # doesn't exist
         releases_list_out = []
         for release in releases_list:
-            table_id = bigquery_sharded_table_id(CrossrefFundrefTelescope.DAG_ID, release["date"])
+            release_date = pendulum.parse(release["date"])
+            table_id = bigquery_sharded_table_id(CrossrefFundrefTelescope.DAG_ID, release_date)
             logging.info("Checking if bigquery table already exists:")
             if bigquery_table_exists(project_id, self.dataset_id, table_id):
                 logging.info(
@@ -295,7 +296,6 @@ class CrossrefFundrefTelescope(SnapshotTelescope):
                 )
             else:
                 logging.info(f"Table does not exist yet, processing {release['url']} in this workflow")
-                release["date"] = release["date"].format("YYYYMMDD")
                 releases_list_out.append(release)
 
         # If releases_list_out contains items then the DAG will continue (return True) otherwise it will
