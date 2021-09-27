@@ -18,21 +18,19 @@ import datetime
 import logging
 import os
 import shutil
-import unittest
 from typing import List
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pendulum
 import vcr
+from airflow.utils.state import State
+from click.testing import CliRunner
+
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.unpaywall_telescope import (
     UnpaywallRelease,
     UnpaywallTelescope,
 )
-from airflow.exceptions import AirflowException
-from airflow.utils.state import State
-from click.testing import CliRunner
-from observatory.platform.utils.file_utils import _hash_file
 from observatory.platform.utils.test_utils import (
     HttpServer,
     ObservatoryEnvironment,
@@ -45,7 +43,7 @@ from observatory.platform.utils.workflow_utils import (
 )
 
 
-class TestUnpaywallRelease(unittest.TestCase):
+class TestUnpaywallRelease(ObservatoryTestCase):
     """Tests for the functions used by the unpaywall telescope"""
 
     def __init__(self, *args, **kwargs):
@@ -99,7 +97,7 @@ class TestUnpaywallRelease(unittest.TestCase):
 
             release.extract()
             self.assertEqual(len(release.extract_files), 1)
-            self.assertEqual(self.unpaywall_test_decompress_hash, _hash_file(release.extract_path, algorithm="md5"))
+            self.assert_file_integrity(release.extract_path, self.unpaywall_test_decompress_hash, "md5")
 
     @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
     @patch("observatory.platform.utils.workflow_utils.Variable.get")
@@ -124,7 +122,7 @@ class TestUnpaywallRelease(unittest.TestCase):
             release.extract()
             release.transform()
             self.assertEqual(len(release.transform_files), 1)
-            self.assertEqual(self.unpaywall_test_transform_hash, _hash_file(release.transform_path, algorithm="md5"))
+            self.assert_file_integrity(release.transform_path, self.unpaywall_test_transform_hash, "md5")
 
     @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_url")
     @patch("academic_observatory_workflows.workflows.unpaywall_telescope.Variable.get")

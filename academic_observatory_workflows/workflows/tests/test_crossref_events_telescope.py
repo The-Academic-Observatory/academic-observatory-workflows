@@ -20,6 +20,9 @@ from unittest.mock import patch
 
 import pendulum
 import vcr
+from airflow.exceptions import AirflowSkipException
+from click.testing import CliRunner
+
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.crossref_events_telescope import (
     CrossrefEventsRelease,
@@ -27,8 +30,6 @@ from academic_observatory_workflows.workflows.crossref_events_telescope import (
     parse_event_url,
     transform_batch,
 )
-from airflow.exceptions import AirflowSkipException
-from click.testing import CliRunner
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,

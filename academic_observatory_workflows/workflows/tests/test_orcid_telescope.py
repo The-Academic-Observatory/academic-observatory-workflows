@@ -22,17 +22,18 @@ from types import SimpleNamespace
 from unittest.mock import ANY, patch
 
 import pendulum
+from airflow.exceptions import AirflowException, AirflowSkipException
+from airflow.models.connection import Connection
+from airflow.models.variable import Variable
+from botocore.response import StreamingBody
+from click.testing import CliRunner
+
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.orcid_telescope import (
     OrcidRelease,
     OrcidTelescope,
     transform_single_file,
 )
-from airflow.exceptions import AirflowException, AirflowSkipException
-from airflow.models.connection import Connection
-from airflow.models.variable import Variable
-from botocore.response import StreamingBody
-from click.testing import CliRunner
 from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars, BaseHook
 from observatory.platform.utils.gc_utils import (
     upload_file_to_cloud_storage,

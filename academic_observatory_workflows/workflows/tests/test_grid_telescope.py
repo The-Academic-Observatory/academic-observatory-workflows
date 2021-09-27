@@ -22,14 +22,15 @@ from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pendulum
+from airflow.exceptions import AirflowException
+from click.testing import CliRunner
+
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.grid_telescope import (
     GridRelease,
     GridTelescope,
     list_grid_records,
 )
-from airflow.exceptions import AirflowException
-from click.testing import CliRunner
 from observatory.platform.utils.file_utils import get_file_hash, gzip_file_crc
 from observatory.platform.utils.test_utils import (
     HttpServer,

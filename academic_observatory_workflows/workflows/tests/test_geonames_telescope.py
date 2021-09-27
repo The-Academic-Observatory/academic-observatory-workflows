@@ -18,6 +18,7 @@ import os
 from unittest.mock import patch
 
 import pendulum
+
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.geonames_telescope import (
     GeonamesRelease,

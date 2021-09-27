@@ -19,18 +19,14 @@ from __future__ import annotations
 import json
 import logging
 import os
-from observatory.platform.elastic.elastic import Elastic
-from observatory.platform.elastic.kibana import Kibana
+
+from academic_observatory_workflows.config import elastic_mappings_folder
+from academic_observatory_workflows.dags.elastic_import_workflow import load_elastic_mappings_ao
 from observatory.platform.utils.config_utils import module_file_path
 from observatory.platform.utils.file_utils import load_file
 from observatory.platform.utils.jinja2_utils import render_template
 from observatory.platform.utils.test_utils import ObservatoryEnvironment, ObservatoryTestCase
 from observatory.platform.utils.workflow_utils import make_dag_id
-from observatory.platform.workflows.elastic_import_workflow import load_elastic_mappings_simple
-from typing import Dict
-
-from academic_observatory_workflows.config import elastic_mappings_folder
-from academic_observatory_workflows.dags.elastic_import_workflow import load_elastic_mappings_ao
 
 
 class TestElasticImportWorkflow(ObservatoryTestCase):
