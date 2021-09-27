@@ -6,6 +6,48 @@
     "description": "Name of work's publisher."
   },
   {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "issue",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "fields": [
+          {
+            "mode": "REPEATED",
+            "name": "date_parts",
+            "type": "INTEGER",
+            "description": "Contains an ordered array of year, month, day of month. Only year is required. Note that the field contains a nested array, e.g. [ [ 2006, 5, 19 ] ] to conform to citeproc JSON dates"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "published_print",
+        "type": "RECORD",
+        "description": "Date on which content was published in print."
+      },
+      {
+        "fields": [
+          {
+            "mode": "REPEATED",
+            "name": "date_parts",
+            "type": "INTEGER",
+            "description": "Contains an ordered array of year, month, day of month. Only year is required. Note that the field contains a nested array, e.g. [ [ 2006, 5, 19 ] ] to conform to citeproc JSON dates"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "published_online",
+        "type": "RECORD",
+        "description": "Date on which content was published online."
+      }
+    ],
+    "mode": "NULLABLE",
+    "name": "journal_issue",
+    "type": "RECORD",
+    "description": ""
+  },
+  {
     "mode": "REPEATED",
     "name": "title",
     "type": "STRING",
@@ -46,6 +88,26 @@
     "name": "is_referenced_by_count",
     "type": "INTEGER",
     "description": "Count of inbound references deposited with Crossref."
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "edition_number",
+    "type": "INTEGER",
+    "description": ""
+  },
+  {
+    "fields": [
+      {
+        "mode": "REPEATED",
+        "name": "date_parts",
+        "type": "INTEGER",
+        "description": "Contains an ordered array of year, month, day of month. Only year is required. Note that the field contains a nested array, e.g. [ [ 2006, 5, 19 ] ] to conform to citeproc JSON dates"
+      }
+    ],
+    "mode": "NULLABLE",
+    "name": "published",
+    "type": "RECORD",
+    "description": "Date on which content was published."
   },
   {
     "mode": "NULLABLE",
@@ -318,6 +380,26 @@
     "description": ""
   },
   {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "value",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "type",
+        "type": "STRING",
+        "description": ""
+      }
+    ],
+    "mode": "REPEATED",
+    "name": "isbn_type",
+    "type": "RECORD",
+    "description": "Date on which content was published."
+  },
+  {
     "mode": "REPEATED",
     "name": "archive",
     "type": "STRING",
@@ -528,11 +610,22 @@
         "mode": "NULLABLE",
         "name": "suffix",
         "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "sequence",
+        "type": "STRING"
       }
     ],
     "mode": "REPEATED",
     "name": "author",
     "type": "RECORD",
+    "description": ""
+  },
+  {
+    "mode": "REPEATED",
+    "name": "institution",
+    "type": "STRING",
     "description": ""
   },
   {
@@ -2121,6 +2214,12 @@
     "mode": "NULLABLE",
     "name": "standards_body",
     "type": "RECORD",
+    "description": ""
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "language",
+    "type": "STRING",
     "description": ""
   }
 ]

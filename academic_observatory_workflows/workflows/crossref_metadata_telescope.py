@@ -39,7 +39,7 @@ from academic_observatory_workflows.config import schema_folder as default_schem
 from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
 from observatory.platform.utils.proc_utils import wait_for_process
 from observatory.platform.utils.url_utils import retry_session
-from observatory.platform.utils.workflow_utils import get_chunks, blob_name, bq_load_shard
+from observatory.platform.utils.workflow_utils import blob_name, bq_load_shard, get_chunks
 from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
@@ -387,16 +387,16 @@ def transform_item(item):
             k = k.replace("-", "_")
 
             # Get inner array for date parts
+            # "date-parts" : [ [ null ] ]
             if k == "date_parts":
+                v = v[0]
                 if None in v:
-                    logging.warning("None in date_parts")
                     v = []
-                else:
-                    v = v[0]
-            elif k == "timestamp":
-                if isinstance(v, str) and v.startswith("_"):
-                    logging.warning(f"String timestamp: {v}")
-                    v = int(v.replace("_", ""))
+
+            # elif k == "timestamp":
+            #     if isinstance(v, str) and v.startswith("_"):
+            #         logging.warning(f"String timestamp: {v}")
+            #         v = int(v.replace("_", ""))
 
             new[k] = transform_item(v)
         return new
