@@ -22,6 +22,12 @@ from types import SimpleNamespace
 from unittest.mock import ANY, patch
 
 import pendulum
+from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.workflows.orcid_telescope import (
+    OrcidRelease,
+    OrcidTelescope,
+    transform_single_file,
+)
 from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.models.connection import Connection
 from airflow.models.variable import Variable
@@ -38,9 +44,6 @@ from observatory.platform.utils.test_utils import (
     module_file_path,
 )
 from observatory.platform.utils.workflow_utils import blob_name
-
-from academic_observatory_workflows.config import test_fixtures_folder
-from academic_observatory_workflows.workflows.orcid_telescope import OrcidRelease, OrcidTelescope, transform_single_file
 
 
 class TestOrcidTelescope(ObservatoryTestCase):
@@ -81,8 +84,7 @@ class TestOrcidTelescope(ObservatoryTestCase):
         dag = OrcidTelescope().make_dag()
         self.assert_dag_structure(
             {
-                "check_dependencies": ["get_release_info"],
-                "get_release_info": ["transfer"],
+                "check_dependencies": ["transfer"],
                 "transfer": ["download_transferred"],
                 "download_transferred": ["transform"],
                 "transform": ["upload_transformed"],
@@ -133,26 +135,32 @@ class TestOrcidTelescope(ObservatoryTestCase):
             env.add_variable(var)
 
             # first run
-            with env.create_dag_run(dag, self.first_execution_date):
+            with env.create_dag_run(dag, self.first_execution_date) as dag_run:
                 # Test that all dependencies are specified: no error should be thrown
                 env.run_task(telescope.check_dependencies.__name__)
 
-                # Test list releases task with files available
-                ti = env.run_task(telescope.get_release_info.__name__)
-                start_date, end_date, first_release = ti.xcom_pull(
-                    key=OrcidTelescope.RELEASE_INFO,
-                    task_ids=telescope.get_release_info.__name__,
-                    include_prior_dates=False,
+                start_date, end_date, first_release = telescope.get_release_info(
+                    execution_date=self.first_execution_date,
+                    dag=dag,
+                    dag_run=dag_run,
+                    next_execution_date=pendulum.datetime(2021, 2, 7),
                 )
-                self.assertEqual(pendulum.parse(start_date), dag.default_args["start_date"])
-                self.assertEqual(pendulum.parse(end_date), pendulum.today("UTC") - timedelta(days=1))
+                # Test list releases task with files available
+                # ti = env.run_task(telescope.get_release_info.__name__)
+                # start_date, end_date, first_release = ti.xcom_pull(
+                #     key=OrcidTelescope.RELEASE_INFO,
+                #     task_ids=telescope.get_release_info.__name__,
+                #     include_prior_dates=False,
+                # )
+                self.assertEqual(start_date, dag.default_args["start_date"])
+                self.assertEqual(end_date, pendulum.today("UTC") - timedelta(days=1))
                 self.assertTrue(first_release)
 
                 # use release info for other tasks
                 release = OrcidRelease(
                     telescope.dag_id,
-                    pendulum.parse(start_date),
-                    pendulum.parse(end_date),
+                    start_date,
+                    end_date,
                     first_release,
                     max_processes=1,
                 )
@@ -237,26 +245,33 @@ class TestOrcidTelescope(ObservatoryTestCase):
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
 
             # second run
-            with env.create_dag_run(dag, self.second_execution_date):
+            with env.create_dag_run(dag, self.second_execution_date) as dag_run:
                 # Test that all dependencies are specified: no error should be thrown
                 env.run_task(telescope.check_dependencies.__name__)
 
-                # Test list releases task with files available
-                ti = env.run_task(telescope.get_release_info.__name__)
-                start_date, end_date, first_release = ti.xcom_pull(
-                    key=OrcidTelescope.RELEASE_INFO,
-                    task_ids=telescope.get_release_info.__name__,
-                    include_prior_dates=False,
+                start_date, end_date, first_release = telescope.get_release_info(
+                    execution_date=self.second_execution_date,
+                    dag=dag,
+                    dag_run=dag_run,
+                    next_execution_date=pendulum.datetime(2021, 3, 7),
                 )
-                self.assertEqual(release.end_date + timedelta(days=1), pendulum.parse(start_date))
-                self.assertEqual(pendulum.today("UTC") - timedelta(days=1), pendulum.parse(end_date))
+
+                # Test list releases task with files available
+                # ti = env.run_task(telescope.get_release_info.__name__)
+                # start_date, end_date, first_release = ti.xcom_pull(
+                #     key=OrcidTelescope.RELEASE_INFO,
+                #     task_ids=telescope.get_release_info.__name__,
+                #     include_prior_dates=False,
+                # )
+                self.assertEqual(release.end_date + timedelta(days=1), start_date)
+                self.assertEqual(pendulum.today("UTC") - timedelta(days=1), end_date)
                 self.assertFalse(first_release)
 
                 # Use release info for other tasks
                 release = OrcidRelease(
                     telescope.dag_id,
-                    pendulum.parse(start_date),
-                    pendulum.parse(end_date),
+                    start_date,
+                    end_date,
                     first_release,
                     max_processes=1,
                 )
