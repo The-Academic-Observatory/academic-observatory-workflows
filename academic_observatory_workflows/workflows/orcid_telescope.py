@@ -304,7 +304,7 @@ class OrcidTelescope(StreamTelescope):
         )
         self.max_processes = max_processes
 
-        self.add_setup_task_chain([self.check_dependencies, self.get_release_info])
+        self.add_setup_task(self.check_dependencies)
         self.add_task_chain(
             [self.transfer, self.download_transferred, self.transform, self.upload_transformed, self.bq_load_partition]
         )
@@ -319,11 +319,11 @@ class OrcidTelescope(StreamTelescope):
         passed to this argument.
         :return: an OrcidRelease instance.
         """
-        ti: TaskInstance = kwargs["ti"]
-        start_date, end_date, first_release = ti.xcom_pull(key=OrcidTelescope.RELEASE_INFO, include_prior_dates=True)
+
+        start_date, end_date, first_release = self.get_release_info(**kwargs)
 
         release = OrcidRelease(
-            self.dag_id, pendulum.parse(start_date), pendulum.parse(end_date), first_release, self.max_processes
+            self.dag_id, start_date, end_date, first_release, self.max_processes
         )
         return release
 

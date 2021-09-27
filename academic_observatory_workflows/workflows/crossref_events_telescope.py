@@ -271,7 +271,7 @@ class CrossrefEventsTelescope(StreamTelescope):
         self.max_threads = max_threads
         self.max_processes = max_processes
 
-        self.add_setup_task_chain([self.check_dependencies, self.get_release_info])
+        self.add_setup_task(self.check_dependencies)
         self.add_task_chain(
             [self.download, self.upload_downloaded, self.transform, self.upload_transformed, self.bq_load_partition]
         )
@@ -283,13 +283,8 @@ class CrossrefEventsTelescope(StreamTelescope):
         :param kwargs: The context passed from the PythonOperator.
         :return: CrossrefEventsRelease
         """
-        ti: TaskInstance = kwargs["ti"]
-        start_date, end_date, first_release = ti.xcom_pull(
-            key=CrossrefEventsTelescope.RELEASE_INFO, include_prior_dates=True
-        )
 
-        start_date = pendulum.parse(start_date)
-        end_date = pendulum.parse(end_date)
+        start_date, end_date, first_release = self.get_release_info(**kwargs)
 
         release = CrossrefEventsRelease(
             self.dag_id, start_date, end_date, first_release, self.mailto, self.max_threads, self.max_processes
