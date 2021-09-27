@@ -380,6 +380,12 @@ def transform_file(input_file_path: str, output_file_path: str):
 
 
 def transform_item(item):
+    """Transform a single Crossref Metadata JSON value.
+
+    :param item: a JSON value.
+    :return: the transformed item.
+    """
+
     if isinstance(item, dict):
         new = {}
         for k, v in item.items():
