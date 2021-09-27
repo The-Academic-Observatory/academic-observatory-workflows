@@ -129,6 +129,7 @@ class CrossrefMetadataRelease(SnapshotRelease):
         Each extracted file is transformed. This is done in parallel using the ThreadPoolExecutor.
 
         :param max_processes: the number of processes to use when transforming files (one process per file).
+        :param batch_size: the number of files to send to ProcessPoolExecutor at one time.
         :return: whether the transformation was successful or not.
         """
         logging.info(f"Transform input folder: {self.extract_folder}, output folder: {self.transform_folder}")
