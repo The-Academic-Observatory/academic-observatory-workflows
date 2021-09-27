@@ -387,16 +387,11 @@ def transform_item(item):
             k = k.replace("-", "_")
 
             # Get inner array for date parts
-            # "date-parts" : [ [ null ] ]
             if k == "date_parts":
                 v = v[0]
                 if None in v:
+                    # "date-parts" : [ [ null ] ]
                     v = []
-
-            # elif k == "timestamp":
-            #     if isinstance(v, str) and v.startswith("_"):
-            #         logging.warning(f"String timestamp: {v}")
-            #         v = int(v.replace("_", ""))
 
             new[k] = transform_item(v)
         return new
