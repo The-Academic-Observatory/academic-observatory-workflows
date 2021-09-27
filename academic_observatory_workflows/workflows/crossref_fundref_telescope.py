@@ -30,11 +30,10 @@ from typing import Dict, List, Tuple
 import jsonlines
 import pendulum
 import requests
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from airflow.api.common.experimental.pool import create_pool
 from airflow.exceptions import AirflowException
 from airflow.models.taskinstance import TaskInstance
-
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from airflow.models.variable import Variable
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.gc_utils import (

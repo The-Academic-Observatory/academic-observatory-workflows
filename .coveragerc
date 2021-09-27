@@ -13,3 +13,4 @@ exclude_lines =
 ignore_errors = True
 omit =
     */tests*
+    academic_observatory_workflows/dags/*

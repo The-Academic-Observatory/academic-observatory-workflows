@@ -28,17 +28,19 @@ from typing import Dict, List
 
 import pendulum
 import requests
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
 from bs4 import BeautifulSoup
 from natsort import natsorted
-
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
 from observatory.platform.utils.proc_utils import wait_for_process
 from observatory.platform.utils.url_utils import retry_session
 from observatory.platform.utils.workflow_utils import blob_name, bq_load_shard
-from observatory.platform.workflows.snapshot_telescope import SnapshotRelease, SnapshotTelescope
+from observatory.platform.workflows.snapshot_telescope import (
+    SnapshotRelease,
+    SnapshotTelescope,
+)
 
 
 class CrossrefMetadataRelease(SnapshotRelease):
@@ -58,7 +60,7 @@ class CrossrefMetadataRelease(SnapshotRelease):
 
     @property
     def api_key(self):
-        """ Return API token """
+        """Return API token"""
         connection = BaseHook.get_connection(AirflowConns.CROSSREF)
         return connection.password
 

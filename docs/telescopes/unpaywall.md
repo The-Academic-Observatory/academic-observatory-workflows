@@ -13,6 +13,34 @@ hybrid, and bronze."
 ” _- source: [Unpaywall](https://unpaywall.org/)_ 
 and [data details](https://unpaywall.org/data-format)
 
+The Unpaywall snapshot dataset information can be found on the [product page](https://unpaywall.org/products/snapshot).  Users are required to fill in a form to get their download link. The link can be found on the bottom of the [product page](https://unpaywall.org/products/snapshot).
+
+To give an estimate of dataset size, the 2021-07-02T151134 snapshot is 26 GiB compressed and 177 GiB uncompressed.
+
+ ```eval_rst
++------------------------------+--------------------------------------+
+| Summary                      |                                      |
++==============================+======================================+
+| Harvest Type                 | URL                                  |
++------------------------------+--------------------------------------+
+| Harvest frequency            | Default: @monthly                    |
++------------------------------+--------------------------------------+
+| Runs on remote worker        | Default: True                        |
++------------------------------+--------------------------------------+
+| Catchup missed runs          | Default: True                        |
++------------------------------+--------------------------------------+
+| Table Write Disposition      | Truncate                             |
++------------------------------+--------------------------------------+
+| Dataset Update Frequency     | Roughly 2-6 monthly                  |
++------------------------------+--------------------------------------+
+| Credentials Required         | No                                   |
++------------------------------+--------------------------------------+
+| Uses Workflow Template       | Snapshot                             |
++------------------------------+--------------------------------------+
+| Each shard includes all data | Yes                                  |
++------------------------------+--------------------------------------+
+```
+
 ## Latest schema
 ``` eval_rst
 .. csv-table::
