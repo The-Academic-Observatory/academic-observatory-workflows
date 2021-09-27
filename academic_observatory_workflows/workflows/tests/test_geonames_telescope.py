@@ -15,10 +15,9 @@
 # Author: Aniek Roelofs, James Diprose
 
 import os
+from unittest.mock import patch
 
-import httpretty
 import pendulum
-import vcr
 
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.geonames_telescope import (
@@ -27,9 +26,10 @@ from academic_observatory_workflows.workflows.geonames_telescope import (
     fetch_release_date,
     first_sunday_of_month,
 )
-from observatory.platform.utils.file_utils import _hash_file
+from observatory.platform.utils.file_utils import get_file_hash
 from observatory.platform.utils.gc_utils import bigquery_sharded_table_id
 from observatory.platform.utils.test_utils import (
+    HttpServer,
     ObservatoryEnvironment,
     ObservatoryTestCase,
     module_file_path,
@@ -39,6 +39,11 @@ from observatory.platform.utils.workflow_utils import (
     blob_name,
     workflow_path,
 )
+
+
+class MockResponse:
+    def __init__(self, headers):
+        self.headers = headers
 
 
 class TestGeonamesTelescope(ObservatoryTestCase):
@@ -108,15 +113,17 @@ class TestGeonamesTelescope(ObservatoryTestCase):
         actual_datetime = first_sunday_of_month(datetime)
         self.assertEqual(expected_datetime, actual_datetime)
 
-    def test_fetch_release_date(self):
+    @patch("academic_observatory_workflows.workflows.geonames_telescope.requests.head")
+    def test_fetch_release_date(self, m_req):
         """Test fetch_release_date function.
 
         :return: None.
         """
 
-        with vcr.use_cassette(self.fetch_release_date_path):
-            date = fetch_release_date()
-            self.assertEqual(date, pendulum.datetime(year=2020, month=7, day=16, hour=1, minute=22, second=15))
+        m_req.return_value = MockResponse({"Last-Modified": "Thu, 16 Jul 2020 01:22:15 GMT"})
+
+        date = fetch_release_date()
+        self.assertEqual(date, pendulum.datetime(year=2020, month=7, day=16, hour=1, minute=22, second=15))
 
     def test_telescope(self):
         """Test the Geonames telescope end to end.
@@ -147,7 +154,9 @@ class TestGeonamesTelescope(ObservatoryTestCase):
                 env.run_task(telescope.check_dependencies.__name__, dag, execution_date)
 
                 # Test list releases task
-                with vcr.use_cassette(self.list_releases_path):
+                with patch("academic_observatory_workflows.workflows.geonames_telescope.requests.head") as m_req:
+                    m_req.return_value = MockResponse({"Last-Modified": "Fri, 05 Mar 2021 01:34:32 GMT"})
+
                     ti = env.run_task(telescope.fetch_release_date.__name__, dag, execution_date)
 
                 pulled_release_date = ti.xcom_pull(
@@ -159,12 +168,15 @@ class TestGeonamesTelescope(ObservatoryTestCase):
                 self.assertEqual(release_date.date(), pendulum.parse(pulled_release_date).date())
 
                 # Test download task
-                with httpretty.enabled():
-                    self.setup_mock_file_download(GeonamesRelease.DOWNLOAD_URL, self.all_countries_path)
-                    env.run_task(telescope.download.__name__, dag, execution_date)
+                server = HttpServer(test_fixtures_folder("geonames"))
+                with server.create():
+                    with patch.object(
+                        GeonamesRelease, "DOWNLOAD_URL", f"http://{server.host}:{server.port}/allCountries.zip"
+                    ):
+                        env.run_task(telescope.download.__name__, dag, execution_date)
 
                 download_file_path = os.path.join(download_folder, f"{telescope.dag_id}.zip")
-                expected_file_hash = _hash_file(self.all_countries_path, algorithm="md5")
+                expected_file_hash = get_file_hash(file_path=self.all_countries_path, algorithm="md5")
                 self.assert_file_integrity(download_file_path, expected_file_hash, "md5")
 
                 # Test that file uploaded

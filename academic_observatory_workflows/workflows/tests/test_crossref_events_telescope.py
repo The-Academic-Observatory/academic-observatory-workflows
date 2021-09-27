@@ -78,8 +78,7 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
         dag = CrossrefEventsTelescope().make_dag()
         self.assert_dag_structure(
             {
-                "check_dependencies": ["get_release_info"],
-                "get_release_info": ["download"],
+                "check_dependencies": ["download"],
                 "download": ["upload_downloaded"],
                 "upload_downloaded": ["transform"],
                 "transform": ["upload_transformed"],
@@ -120,20 +119,16 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
         # Create the Observatory environment and run tests
         with env.create():
             # first run
-            with env.create_dag_run(dag, self.first_execution_date):
+            with env.create_dag_run(dag, self.first_execution_date) as dag_run:
                 # Test that all dependencies are specified: no error should be thrown
                 env.run_task(telescope.check_dependencies.__name__)
 
-                # Test list releases task with files available
-                ti = env.run_task(telescope.get_release_info.__name__)
-                start_date, end_date, first_release = ti.xcom_pull(
-                    key=CrossrefEventsTelescope.RELEASE_INFO,
-                    task_ids=telescope.get_release_info.__name__,
-                    include_prior_dates=False,
+                start_date, end_date, first_release = telescope.get_release_info(
+                    execution_date=self.first_execution_date,
+                    dag=dag,
+                    dag_run=dag_run,
+                    next_execution_date=pendulum.datetime(2018, 5, 20),
                 )
-
-                start_date = pendulum.parse(start_date)
-                end_date = pendulum.parse(end_date)
 
                 self.assertEqual(start_date, dag.default_args["start_date"])
                 self.assertEqual(end_date, pendulum.today("UTC") - timedelta(days=1))
@@ -206,19 +201,17 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
 
             # second run
-            with env.create_dag_run(dag, self.second_execution_date):
+            with env.create_dag_run(dag, self.second_execution_date) as dag_run:
                 # Test that all dependencies are specified: no error should be thrown
                 env.run_task(telescope.check_dependencies.__name__)
 
-                # Test list releases task with files available
-                ti = env.run_task(telescope.get_release_info.__name__)
-                start_date, end_date, first_release = ti.xcom_pull(
-                    key=CrossrefEventsTelescope.RELEASE_INFO,
-                    task_ids=telescope.get_release_info.__name__,
-                    include_prior_dates=False,
+                start_date, end_date, first_release = telescope.get_release_info(
+                    execution_date=self.second_execution_date,
+                    dag=dag,
+                    dag_run=dag_run,
+                    next_execution_date=pendulum.datetime(2018, 5, 27),
                 )
-                start_date = pendulum.parse(start_date)
-                end_date = pendulum.parse(end_date)
+
                 self.assertEqual(release.end_date + timedelta(days=1), start_date)
                 self.assertEqual(pendulum.today("UTC") - timedelta(days=1), end_date)
                 self.assertFalse(first_release)

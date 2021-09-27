@@ -16,7 +16,6 @@
 
 import glob
 import os
-import unittest
 from typing import List
 from zipfile import ZipFile
 
@@ -34,9 +33,8 @@ from academic_observatory_workflows.workflows.mag_telescope import (
     transform_mag_file,
     transform_mag_release,
 )
-from observatory.platform.utils.file_utils import _hash_file
 from observatory.platform.utils.gc_utils import upload_files_to_cloud_storage
-from observatory.platform.utils.test_utils import random_id
+from observatory.platform.utils.test_utils import random_id, ObservatoryTestCase
 
 
 def extract_mag_release(file_path: str, unzip_path: str):
@@ -52,7 +50,7 @@ def extract_mag_release(file_path: str, unzip_path: str):
         zip_file.extractall(unzip_path)
 
 
-class TestMagTelescope(unittest.TestCase):
+class TestMagTelescope(ObservatoryTestCase):
     """Tests for the functions used by the MAG telescope"""
 
     def __init__(self, *args, **kwargs):
@@ -203,7 +201,7 @@ class TestMagTelescope(unittest.TestCase):
             result = transform_mag_file(input_file_path, output_file_path)
             self.assertTrue(result)
             expected_file_hash = "5570569e573a517587d3d11ec00eebf9"
-            self.assertEqual(expected_file_hash, _hash_file(output_file_path, algorithm="md5"))
+            self.assert_file_integrity(output_file_path, expected_file_hash, "md5")
 
     def test_transform_mag_release(self):
         """Tests that transform_mag_release transforms an entire MAG release.

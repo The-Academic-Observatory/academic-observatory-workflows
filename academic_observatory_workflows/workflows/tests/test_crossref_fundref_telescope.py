@@ -31,7 +31,7 @@ from academic_observatory_workflows.workflows.crossref_fundref_telescope import 
     list_releases,
     strip_whitespace,
 )
-from observatory.platform.utils.file_utils import _hash_file
+from observatory.platform.utils.file_utils import get_file_hash
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
@@ -215,7 +215,7 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
             file_without_space = "file2.txt"
             with open(file_without_space, "w") as f:
                 f.write("test")
-            expected_hash = _hash_file(file_without_space, algorithm="md5")
+            expected_hash = get_file_hash(file_path=file_without_space, algorithm="md5")
 
             # Strip whitespace and check that files are now the same
             strip_whitespace(file_with_space)

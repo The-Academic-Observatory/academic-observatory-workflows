@@ -24,15 +24,13 @@ from dataclasses import dataclass
 from typing import List
 
 import pendulum
+from academic_observatory_workflows.config import schema_folder
 from airflow.exceptions import AirflowException
 from airflow.models.taskinstance import TaskInstance
 from airflow.models.variable import Variable
 from google.cloud.bigquery import SourceFormat
-
-from academic_observatory_workflows.config import schema_folder
 from observatory.platform.utils.airflow_utils import AirflowVars, check_variables
 from observatory.platform.utils.config_utils import find_schema
-from observatory.platform.utils.data_utils import get_file
 from observatory.platform.utils.gc_utils import (
     bigquery_sharded_table_id,
     bigquery_table_exists,
@@ -40,6 +38,7 @@ from observatory.platform.utils.gc_utils import (
     load_bigquery_table,
     upload_files_to_cloud_storage,
 )
+from observatory.platform.utils.http_download import download_file
 from observatory.platform.utils.proc_utils import wait_for_process
 from observatory.platform.utils.url_utils import retry_session
 from observatory.platform.utils.workflow_utils import SubFolder, workflow_path
@@ -233,13 +232,7 @@ class OpenCitationsTelescope:
         for release in releases:
             os.makedirs(release.download_path, exist_ok=True)
             for file in release.files:
-                file_path, updated = get_file(
-                    file.name,
-                    file.download_url,
-                    cache_subdir="",
-                    cache_dir=release.download_path,
-                    md5_hash=file.md5hash,
-                )
+                download_file(url=file.download_url, filename=file.name, hash=file.md5hash, hash_algorithm="md5")
 
     @staticmethod
     def upload_downloaded(**kwargs):
