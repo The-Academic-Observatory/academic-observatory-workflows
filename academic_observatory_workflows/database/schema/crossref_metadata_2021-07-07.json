@@ -1991,7 +1991,7 @@
   {
     "mode": "NULLABLE",
     "name": "score",
-    "type": "NUMERIC",
+    "type": "STRING",
     "description": ""
   },
   {
