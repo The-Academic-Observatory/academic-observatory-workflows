@@ -15,8 +15,8 @@
 
 # Author: Aniek Roelofs, James Diprose
 
-# Crossref Metadata (pigz mawk), Unpaywall (unzip), Open Citations (unzip)
-apt-get install pigz mawk unzip -y
+# Crossref Metadata (pigz), Open Citations (unzip)
+apt-get install pigz unzip -y
 
 # ORCID: install Google Cloud SDK as root user, used in
 echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" | \
