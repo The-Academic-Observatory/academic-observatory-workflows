@@ -14,7 +14,7 @@
 
 # Author: Aniek Roelofs
 
-
+import json
 import os
 from datetime import datetime
 from unittest.mock import patch
@@ -23,15 +23,18 @@ import httpretty
 import pendulum
 from airflow.exceptions import AirflowException
 from airflow.models.connection import Connection
+from click.testing import CliRunner
 from natsort import natsorted
 
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.crossref_metadata_telescope import (
     CrossrefMetadataRelease,
     CrossrefMetadataTelescope,
+    transform_item,
     transform_file,
 )
 from observatory.platform.utils.airflow_utils import AirflowConns
+from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import bigquery_sharded_table_id
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
@@ -254,14 +257,147 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
             with self.assertRaises(AirflowException):
                 telescope.check_release_exists(execution_date=release.release_date)
 
-    @patch("academic_observatory_workflows.workflows.crossref_metadata_telescope.subprocess.Popen")
-    def test_transform_file(self, mock_subprocess):
-        """Test transform_file function with failing transform command.
+    def test_transform_file(self):
+        """Test transform_file."""
 
-        :param mock_subprocess: Mock the subprocess output
-        :return: None.
-        """
-        mock_subprocess().returncode = 1
-        mock_subprocess().communicate.return_value = "stdout".encode(), "stderr".encode()
-        with self.assertRaises(AirflowException):
-            transform_file("input_file_path", "output_file_path")
+        with CliRunner().isolated_filesystem() as t:
+            # Save input file
+            input_file_path = os.path.join(t, "input.json")
+            input_data = {
+                "items": [
+                    {
+                        "indexed": {
+                            "date-parts": [[2019, 11, 19]],
+                            "date-time": "2019-11-19T10:09:18Z",
+                            "timestamp": 1574158158980,
+                        },
+                        "reference-count": 0,
+                        "publisher": "American Medical Association (AMA)",
+                        "issue": "2",
+                        "content-domain": {"domain": [], "crossmark-restriction": False},
+                        "short-container-title": [],
+                        "published-print": {"date-parts": [[1994, 2, 1]]},
+                        "DOI": "10.1001/archderm.130.2.225",
+                        "type": "journal-article",
+                        "created": {
+                            "date-parts": [[2003, 3, 18]],
+                            "date-time": "2003-03-18T21:22:40Z",
+                            "timestamp": 1048022560000,
+                        },
+                        "page": "225-232",
+                        "source": "Crossref",
+                        "is-referenced-by-count": 23,
+                        "title": ["Abnormalities of p53 protein expression in cutaneous disorders"],
+                        "prefix": "10.1001",
+                        "volume": "130",
+                        "author": [{"given": "N. S.", "family": "McNutt", "affiliation": []}],
+                        "member": "10",
+                        "container-title": ["Archives of Dermatology"],
+                        "original-title": [],
+                        "deposited": {
+                            "date-parts": [[2011, 7, 21]],
+                            "date-time": "2011-07-21T07:23:09Z",
+                            "timestamp": 1311232989000,
+                        },
+                        "score": None,
+                        "subtitle": [],
+                        "short-title": [],
+                        "issued": {"date-parts": [[1994, 2, 1]]},
+                        "references-count": 0,
+                        "URL": "http://dx.doi.org/10.1001/archderm.130.2.225",
+                        "relation": {},
+                        "ISSN": ["0003-987X"],
+                        "issn-type": [{"value": "0003-987X", "type": "print"}],
+                    }
+                ]
+            }
+
+            with open(input_file_path, mode="w") as f:
+                json.dump(input_data, f)
+
+            # Load Transform file
+            output_file_path = os.path.join(t, "output.jsonl")
+            transform_file(input_file_path, output_file_path)
+
+            # Check results
+            expected_results = [
+                {
+                    "indexed": {
+                        "date_parts": [2019, 11, 19],
+                        "date_time": "2019-11-19T10:09:18Z",
+                        "timestamp": 1574158158980,
+                    },
+                    "reference_count": 0,
+                    "publisher": "American Medical Association (AMA)",
+                    "issue": "2",
+                    "content_domain": {"domain": [], "crossmark_restriction": False},
+                    "short_container_title": [],
+                    "published_print": {"date_parts": [1994, 2, 1]},
+                    "DOI": "10.1001/archderm.130.2.225",
+                    "type": "journal-article",
+                    "created": {
+                        "date_parts": [2003, 3, 18],
+                        "date_time": "2003-03-18T21:22:40Z",
+                        "timestamp": 1048022560000,
+                    },
+                    "page": "225-232",
+                    "source": "Crossref",
+                    "is_referenced_by_count": 23,
+                    "title": ["Abnormalities of p53 protein expression in cutaneous disorders"],
+                    "prefix": "10.1001",
+                    "volume": "130",
+                    "author": [{"given": "N. S.", "family": "McNutt", "affiliation": []}],
+                    "member": "10",
+                    "container_title": ["Archives of Dermatology"],
+                    "original_title": [],
+                    "deposited": {
+                        "date_parts": [2011, 7, 21],
+                        "date_time": "2011-07-21T07:23:09Z",
+                        "timestamp": 1311232989000,
+                    },
+                    "score": None,
+                    "subtitle": [],
+                    "short_title": [],
+                    "issued": {"date_parts": [1994, 2, 1]},
+                    "references_count": 0,
+                    "URL": "http://dx.doi.org/10.1001/archderm.130.2.225",
+                    "relation": {},
+                    "ISSN": ["0003-987X"],
+                    "issn_type": [{"value": "0003-987X", "type": "print"}],
+                }
+            ]
+            actual_results = load_jsonl(output_file_path)
+            self.assertEqual(expected_results, actual_results)
+
+    def test_transform_item(self):
+        """Test the cases that transform_item transforms"""
+
+        # Replace hyphens with underscores
+        item = {
+            "hello": {},
+            "hello-world": {"hello-world": [{"hello-world": 1}, {"hello-world": 1}, {"hello-world": 1}]},
+        }
+        expected = {
+            "hello": {},
+            "hello_world": {"hello_world": [{"hello_world": 1}, {"hello_world": 1}, {"hello_world": 1}]},
+        }
+        actual = transform_item(item)
+        self.assertEqual(expected, actual)
+
+        # date-parts
+        item = {"date-parts": [[2021, 1, 1]]}
+        expected = {"date_parts": [2021, 1, 1]}
+        actual = transform_item(item)
+        self.assertEqual(expected, actual)
+
+        # date-parts with None inside inner list
+        item = {"date-parts": [[None]]}
+        expected = {"date_parts": []}
+        actual = transform_item(item)
+        self.assertEqual(expected, actual)
+
+        # list with date-parts
+        item = {"hello-world": {"hello-world": [{"date-parts": [[2021, 1, 1]]}, {"date-parts": [[None]]}]}}
+        expected = {"hello_world": {"hello_world": [{"date_parts": [2021, 1, 1]}, {"date_parts": []}]}}
+        actual = transform_item(item)
+        self.assertEqual(expected, actual)
