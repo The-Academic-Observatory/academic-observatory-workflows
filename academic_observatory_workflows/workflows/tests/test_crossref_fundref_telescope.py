@@ -122,7 +122,7 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
                 release_info = [
                     {
                         "url": "https://gitlab.com/crossref/open_funder_registry/-/archive/v1.34/open_funder_registry-v1.34.tar.gz",
-                        "date": pendulum.parse("2021-05-19T09:34:09.898000+00:00"),
+                        "date": "2021-05-19T09:34:09.898000+00:00",
                     }
                 ]
                 with patch(
