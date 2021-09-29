@@ -17,6 +17,18 @@ The Unpaywall snapshot dataset information can be found on the [product page](ht
 
 To give an estimate of dataset size, the 2021-07-02T151134 snapshot is 26 GiB compressed and 177 GiB uncompressed.
 
+## Airflow Connection
+
+The telescope requires an Airflow connection named Airflow http connection named `unpaywall_snapshot` to be set.  The hostname must be set to the URL given to you from Unpaywall for accessing the API to query for snapshot releases (not to be confused with the snapshot download link from the Data Feed service).
+
+For example, the corresponding observatory `config.yaml` entry could be:
+
+```
+unpaywall_snapshot: http://some-valid-unpaywall-snapshot-api.link
+```
+
+The connection must be a valid URI supported by Airflow, but only the hostname is used by this telescope.
+
  ```eval_rst
 +------------------------------+--------------------------------------+
 | Summary                      |                                      |
