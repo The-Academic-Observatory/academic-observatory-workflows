@@ -42,11 +42,6 @@ from observatory.platform.workflows.stream_telescope import (
 )
 
 
-# Replace after other PR merged
-def is_first_dag_run(**kwargs) -> bool:
-    return kwargs["dag_run"].get_previous_dagrun() is None
-
-
 class UnpaywallDataFeedRelease(StreamRelease):
     """Unpaywall Data Feed Release"""
 
