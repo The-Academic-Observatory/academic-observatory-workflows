@@ -31,6 +31,16 @@ Unpaywall recommends applying changefiles starting from a timestamp just before 
 
 The telescope maintains a single updated BigQuery table, that's updated to 2 days before the latest scheduled execution date.
 
+## Airflow Connection
+
+The telescope requires an Airflow connection named `unpaywall_data_feed` with the password set to the API key from Unpaywall for accessing the Data Feed service.  For example, the corresponding observatory `config.yaml` entry could be:
+
+```
+unpaywall_data_feed: http://:API_KEY@localhost
+```
+
+The connection must be a valid URI supported by Airflow, but only the password component (the API key) is used by this telescope.
+
  ```eval_rst
 +------------------------------+--------------------------------------+
 | Summary                      |                                      |
