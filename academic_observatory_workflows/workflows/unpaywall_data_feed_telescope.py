@@ -99,11 +99,11 @@ class UnpaywallDataFeedRelease(StreamRelease):
         """Download the release."""
         # May need to refactor depending on how snapshot looks.
         if self.first_release:
-            self.download_snapshot_()
+            self._download_snapshot()
         else:
-            self.download_data_feed_()
+            self._download_data_feed()
 
-    def download_snapshot_(self):
+    def _download_snapshot(self):
         """Download the most recent Unpaywall snapshot on or before the start date."""
 
         download_file(url=self.snapshot_url, headers=self.http_header, prefix_dir=self.download_folder)
@@ -138,7 +138,7 @@ class UnpaywallDataFeedRelease(StreamRelease):
 
         return (None, None)
 
-    def download_data_feed_(self):
+    def _download_data_feed(self):
         """Download data feed update (diff) that can be applied to the base snapshot.  Can only handle a single download."""
 
         url, filename = self.get_diff_release(
@@ -194,7 +194,7 @@ class UnpaywallDataFeedTelescope(StreamTelescope):
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
         """
 
-        self.validate_schedule_interval_(start_date=start_date, schedule_interval=schedule_interval)
+        self._validate_schedule_interval(start_date=start_date, schedule_interval=schedule_interval)
 
         if airflow_vars is None:
             airflow_vars = [
@@ -233,7 +233,7 @@ class UnpaywallDataFeedTelescope(StreamTelescope):
         self.add_task_chain([self.bq_delete_old, self.bq_append_new, self.cleanup], trigger_rule="none_failed")
 
     @staticmethod
-    def schedule_days_apart_(
+    def _schedule_days_apart(
         *, start_date: pendulum.DateTime, schedule_interval: Union[str, timedelta, relativedelta]
     ) -> Generator:
         """Calculate the scheduled days apart.
@@ -256,7 +256,7 @@ class UnpaywallDataFeedTelescope(StreamTelescope):
             a = b
             yield diff
 
-    def validate_schedule_interval_(self, *, start_date: pendulum.DateTime, schedule_interval: str):
+    def _validate_schedule_interval(self, *, start_date: pendulum.DateTime, schedule_interval: str):
         """Check that the schedule interval gives us 1 or 7 day differences.
         Throws exception on failure.
 
@@ -264,7 +264,7 @@ class UnpaywallDataFeedTelescope(StreamTelescope):
         :param schedule_interval: DAG schedule interval.
         """
 
-        days_apart = UnpaywallDataFeedTelescope.schedule_days_apart_(
+        days_apart = UnpaywallDataFeedTelescope._schedule_days_apart(
             start_date=start_date, schedule_interval=schedule_interval
         )
 
@@ -280,7 +280,7 @@ class UnpaywallDataFeedTelescope(StreamTelescope):
         :return: True to continue, False to skip.
         """
 
-        start_date, first_release = self.get_release_info_(**kwargs)
+        start_date, first_release = self._get_release_info(**kwargs)
 
         # No checks on first release
         if first_release:
@@ -305,7 +305,7 @@ class UnpaywallDataFeedTelescope(StreamTelescope):
         :return: UnpaywallDataFeedRelease
         """
 
-        start_date, first_release = self.get_release_info_(**kwargs)
+        start_date, first_release = self._get_release_info(**kwargs)
         release = UnpaywallDataFeedRelease(
             dag_id=self.dag_id,
             start_date=start_date,
@@ -314,7 +314,7 @@ class UnpaywallDataFeedTelescope(StreamTelescope):
         )
         return release
 
-    def get_release_info_(self, **kwargs) -> Tuple[pendulum.DateTime, bool]:
+    def _get_release_info(self, **kwargs) -> Tuple[pendulum.DateTime, bool]:
         """Get the start, end dates, and whether this is a first release.
 
         :param kwargs: The context passed from the PythonOperator.

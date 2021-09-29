@@ -249,7 +249,7 @@ class TestUnpaywallDataFeedTelescope(ObservatoryTestCase):
     def test_schedule_days_apart(self):
         start_date = pendulum.datetime(2021, 1, 9)
         schedule_interval = timedelta(days=2)
-        days_apart_gen = UnpaywallDataFeedTelescope.schedule_days_apart_(
+        days_apart_gen = UnpaywallDataFeedTelescope._schedule_days_apart(
             start_date=start_date, schedule_interval=schedule_interval
         )
 
@@ -259,7 +259,7 @@ class TestUnpaywallDataFeedTelescope(ObservatoryTestCase):
         self.assertEqual(diff, 2)
 
         schedule_interval = "@weekly"
-        days_apart_gen = UnpaywallDataFeedTelescope.schedule_days_apart_(
+        days_apart_gen = UnpaywallDataFeedTelescope._schedule_days_apart(
             start_date=start_date, schedule_interval=schedule_interval
         )
 
