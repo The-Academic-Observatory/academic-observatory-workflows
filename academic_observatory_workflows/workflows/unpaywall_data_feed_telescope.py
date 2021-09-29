@@ -36,6 +36,7 @@ from observatory.platform.utils.url_utils import (
     get_http_response_json,
     get_observatory_http_header,
 )
+from observatory.platform.utils.workflow_utils import is_first_dag_run
 from observatory.platform.workflows.stream_telescope import (
     StreamRelease,
     StreamTelescope,
