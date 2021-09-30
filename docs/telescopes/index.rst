@@ -14,6 +14,6 @@ output data to other places. Workflows are built on top of Apache Airflow's DAGs
     mag
     orcid
     scopus
+    unpaywall_snapshot
     unpaywall
-    unpaywall_data_feed
     web_of_science
