@@ -944,7 +944,7 @@ def bq_load_observatory_dataset(
             ),
             Table("Papers", True, dataset_id_all, mag.papers, "MagPapers", analysis_schema_path),
             Table("open_citations", True, dataset_id_all, open_citations, "open_citations", analysis_schema_path),
-            Table("unpaywall", True, dataset_id_all, unpaywall, "unpaywall", analysis_schema_path),
+            Table("unpaywall", False, dataset_id_all, unpaywall, "unpaywall", analysis_schema_path),
             Table("grid", True, dataset_id_all, grid, "grid", analysis_schema_path),
             Table(
                 "iso3166_countries_and_regions",
