@@ -12,25 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Aniek Roelofs, James Diprose
+# Author: Tuan Chien
 
 # The keywords airflow and DAG are required to load the DAGs from this file, see bullet 2 in the Apache Airflow FAQ:
 # https://airflow.apache.org/docs/stable/faq.html
 
-""" A DAG that harvests the Unpaywall database: https://unpaywall.org/
-
-Saved to the BigQuery table: <project_id>.our_research.unpaywallYYYYMMDD
-
-Has been tested with the following Unpaywall releases:
-* 2020-04-27, 2020-02-25, 2019-11-22, 2019-08-16, 2019-04-19, 2019-02-21, 2018-09-27, 2018-09-24
-
-Does not work with the following releases:
-* 2018-03-29, 2018-04-28, 2018-06-21, 2018-09-02, 2018-09-06
-"""
-
+import pendulum
 from academic_observatory_workflows.workflows.unpaywall_telescope import (
     UnpaywallTelescope,
 )
 
-telescope = UnpaywallTelescope()
+start_date = pendulum.datetime(2021, 7, 2)  # Set this to the snapshot release date you want to base it off
+telescope = UnpaywallTelescope(start_date=start_date)
 globals()[telescope.dag_id] = telescope.make_dag()

@@ -95,7 +95,7 @@
     "description": "Indicates the data collection approaches used for this resource. Possible values: '1' First-generation hybrid detection. Uses only data from the Crossref API to determine hybrid status. Does a good job for Elsevier articles and a few other publishers, but most publishers are not checked for hybrid. '2' Second-generation hybrid detection. Uses additional sources, checks all publishers for hybrid. Gets about 10x as much hybrid. data_standard==2 is the version used in the paper we wrote about the dataset."
   },
   {
-    "mode": "REQUIRED",
+    "mode": "NULLABLE",
     "name": "doi",
     "type": "STRING",
     "description": "The DOI of this resource. This is always lowercase."

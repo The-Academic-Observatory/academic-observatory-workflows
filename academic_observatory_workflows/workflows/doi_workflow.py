@@ -139,7 +139,7 @@ def make_dataset_transforms(
                 output_clustering_fields=["doi"],
             ),
             Transform(
-                inputs={"unpaywall": Table(dataset_id_unpaywall, "unpaywall", sharded=True)},
+                inputs={"unpaywall": Table(dataset_id_unpaywall, "unpaywall", sharded=False)},
                 output_table=Table(dataset_id_observatory_intermediate, "unpaywall"),
                 output_cluster=True,
                 output_clustering_fields=["doi"],
