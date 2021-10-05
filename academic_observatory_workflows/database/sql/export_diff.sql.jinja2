@@ -1,0 +1,132 @@
+{# Copyright 2020 Curtin University
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Author: Richard Hosking #}
+
+WITH new_table as (
+    SELECT
+        *
+    FROM `{{ project_id }}.{{ dataset_id }}.{{ table_id }}{{ release.strftime('%Y%m%d') }}`
+),
+
+old_table as (
+    SELECT
+        *
+    FROM `{{ project_id }}.{{ dataset_id }}.{{ table_id }}{{ release.strftime('%Y%m%d') }}`
+),
+
+created_table as (
+    SELECT
+        new_table.*
+    FROM new_table as new_table
+    LEFT JOIN old_table as old_table on new_table.id = old_table.id
+    WHERE old_table.id IS NULL
+),
+
+created_table_ids as (
+SELECT
+    id,
+    STRUCT("{{ es_index_id }}" as _index, id as _id) as `create`,
+    null as fields
+FROM created_table
+),
+
+created_table_fields as (
+SELECT
+    id,
+    null as `create`,
+    created_table as fields
+FROM created_table
+),
+
+deleted_table as (
+    SELECT
+        old_table.id,
+        STRUCT("{{ es_index_id }}" as _index, old_table.id as _id) as delete,
+        null as fields
+    FROM old_table as old_table
+    LEFT JOIN new_table as new_table on new_table.id = old_table.id
+    WHERE new_table.id IS NULL
+),
+
+updated_table as (
+    SELECT
+        new_table.id,
+        new_table as fields
+    FROM new_table as new_table
+    INNER JOIN old_table as old_table on new_table.id = old_table.id
+    WHERE
+        TO_JSON_STRING(new_table) != TO_JSON_STRING(old_table)
+),
+
+updated_ids as (
+SELECT
+    id,
+    STRUCT("{{ es_index_id }}" as _index, id as _id) as update,
+    null as fields
+FROM updated_table as updated_ids
+),
+
+updated_fields as (
+SELECT
+    id,
+    null as update,
+    updated_fields.fields as fields
+FROM updated_table as updated_fields
+),
+
+create_diffs as (
+SELECT
+    id,
+    `create`,
+    fields
+FROM (
+SELECT
+    IF(created_table_ids.id is not null, created_table_ids.id, created_table_fields.id) as id,
+    created_table_ids.create,
+    created_table_fields.fields
+FROM created_table_ids
+FULL OUTER JOIN created_table_fields on 1 = 0
+ORDER BY id, `create`._id DESC)
+),
+
+update_diffs as (
+SELECT
+    id,
+    update,
+    fields
+FROM (
+SELECT
+    IF(updated_ids.id is not null, updated_ids.id, updated_fields.id) as id,
+    updated_ids.update,
+    updated_fields.fields
+FROM updated_ids
+FULL OUTER JOIN updated_fields on 1 = 0
+ORDER BY id, `update`._id DESC)
+)
+
+SELECT
+    `create`,
+    delete,
+    update,
+    CASE
+        WHEN create_diffs.id IS NOT NULL THEN create_diffs.fields
+        WHEN deleted_table.id IS NOT NULL THEN null
+        WHEN update_diffs.id IS NOT NULL THEN update_diffs.fields
+        ELSE null
+    END as fields
+FROM create_diffs
+FULL OUTER JOIN deleted_table on 1 = 0
+FULL OUTER JOIN update_diffs on 1 = 0
+ORDER BY create_diffs.id, `create`._id DESC, deleted_table.id, `delete`._id DESC, update_diffs.id, `update`._id DESC
