@@ -1,0 +1,68 @@
+{# Copyright 2020 Curtin University
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Author: Richard Hosking #}
+
+SELECT
+  CONCAT(institution.id, "-", time_period) as _id,
+  institution.id,
+  name,
+  country,
+  country_code,
+  region,
+  subregion,
+  coordinates,
+  DATE(time_period, 12, 31) AS published_year,
+  total_outputs as total,
+  access_types.oa.total_outputs as oa,
+  total_outputs - access_types.oa.total_outputs AS not_oa,
+  access_types.green.total_outputs as green,
+  access_types.gold.total_outputs as gold,
+  access_types.hybrid.total_outputs as hybrid,
+  access_types.bronze.total_outputs as bronze,
+  access_types.green_only.total_outputs as green_only,
+  access_types.oa.percent AS percent_oa,
+  access_types.green.percent as percent_green,
+  access_types.green_only.percent as percent_green_only,
+  access_types.gold.percent as percent_gold,
+  access_types.hybrid.percent as percent_hybrid,
+  access_types.bronze.percent as percent_bronze,
+  citations.mag.total_citations as total_citations,
+  citations.mag.citations_per_output as citations_per_output,
+  citations.mag.outputs_with_citations as outputs_with_citations,
+  citations.mag.outputs_without_citations as outputs_without_citations,
+  citations.mag.citations_per_cited_output as citations_per_cited_article,
+  outputs.titles,
+  outputs.abstracts,
+  outputs.fields
+FROM
+  `{{ project_id }}.{{ dataset_id }}.institution{{ release_date.strftime('%Y%m%d') }}` as institution
+LEFT JOIN
+  (SELECT as STRUCT
+    institution.identifier as id,
+    DATE(crossref.published_year, 12, 31) as published_year,
+    ARRAY_TO_STRING(ARRAY_AGG( mag.PaperTitle IGNORE NULLS), " ") as titles,
+    ARRAY_TO_STRING(ARRAY_AGG( mag.abstract IGNORE NULLS), " ") as abstracts,
+    ARRAY_TO_STRING(ARRAY_CONCAT(
+      ARRAY_CONCAT_AGG( ARRAY(SELECT DisplayName from UNNEST(mag.fields.level_0))),
+      ARRAY_CONCAT_AGG( ARRAY(SELECT DisplayName from UNNEST(mag.fields.level_1))),
+      ARRAY_CONCAT_AGG( ARRAY(SELECT DisplayName from UNNEST(mag.fields.level_2))),
+      ARRAY_CONCAT_AGG( ARRAY(SELECT DisplayName from UNNEST(mag.fields.level_3))),
+      ARRAY_CONCAT_AGG( ARRAY(SELECT DisplayName from UNNEST(mag.fields.level_4)))
+    ), " ") as fields,
+   FROM `{{ project_id }}.{{ dataset_id }}.doi{{ release_date.strftime('%Y%m%d') }}`, UNNEST(affiliations.institutions) as institution
+   GROUP BY institution.identifier, published_year
+) as outputs on DATE(time_period, 12, 31) = outputs.published_year AND institution.id = outputs.id
+WHERE time_period IS NOT NULL AND coordinates IS NOT NULL
+ORDER BY id, time_period ASC
