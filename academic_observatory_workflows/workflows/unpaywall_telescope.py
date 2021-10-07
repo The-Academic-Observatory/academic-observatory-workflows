@@ -177,7 +177,6 @@ class UnpaywallTelescope(StreamTelescope):
         dataset_id: str = "unpaywall",
         dataset_description: str = f"Unpaywall Data Feed: {DATAFEED_URL}",
         merge_partition_field: str = "doi",
-        bq_merge_days: int = 7,
         schema_folder: str = default_schema_folder(),
         airflow_vars: List = None,
     ):
@@ -189,7 +188,6 @@ class UnpaywallTelescope(StreamTelescope):
         :param dataset_id: the dataset id.
         :param dataset_description: the dataset description.
         :param merge_partition_field: the BigQuery field used to match partitions for a merge
-        :param bq_merge_days: how often partitions should be merged (every x days)
         :param schema_folder: the SQL schema path.
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
         """
@@ -211,7 +209,6 @@ class UnpaywallTelescope(StreamTelescope):
             schedule_interval,
             dataset_id,
             merge_partition_field,
-            bq_merge_days,
             schema_folder,
             dataset_description=dataset_description,
             batch_load=True,

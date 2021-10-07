@@ -220,7 +220,6 @@ class CrossrefEventsTelescope(StreamTelescope):
         dataset_description: str = "The Crossref Events dataset: https://www.eventdata.crossref.org/guide/",
         queue: str = "remote_queue",
         merge_partition_field: str = "id",
-        bq_merge_days: int = 7,
         schema_folder: str = default_schema_folder(),
         batch_load: bool = True,
         airflow_vars: List = None,
@@ -237,7 +236,6 @@ class CrossrefEventsTelescope(StreamTelescope):
         :param dataset_description: the dataset description.
         :param queue: the queue that the tasks should run on.
         :param merge_partition_field: the BigQuery field used to match partitions for a merge
-        :param bq_merge_days: how often partitions should be merged (every x days)
         :param schema_folder: the SQL schema path.
         :param batch_load: whether all files in the transform folder are loaded into 1 table at once
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
@@ -260,7 +258,6 @@ class CrossrefEventsTelescope(StreamTelescope):
             schedule_interval,
             dataset_id,
             merge_partition_field,
-            bq_merge_days,
             schema_folder,
             dataset_description=dataset_description,
             queue=queue,
