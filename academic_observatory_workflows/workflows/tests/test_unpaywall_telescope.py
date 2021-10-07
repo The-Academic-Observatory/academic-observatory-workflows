@@ -343,7 +343,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
 
                         env.add_connection(conn)
 
-                        telescope = UnpaywallTelescope(dataset_id=self.dataset_id, bq_merge_days=2)
+                        telescope = UnpaywallTelescope(dataset_id=self.dataset_id)
                         dag = telescope.make_dag()
 
                         # First run
@@ -394,7 +394,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
 
                             # Delete changed data from main table
                             ti = env.run_task(telescope.bq_delete_old.__name__)
-                            self.assertEqual(ti.state, State.SUCCESS)
+                            self.assertEqual(ti.state, State.SKIPPED)
 
                             # Add new changes
                             ti = env.run_task(telescope.bq_append_new.__name__)
@@ -458,11 +458,11 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
 
                             # Delete changed data from main table
                             ti = env.run_task(telescope.bq_delete_old.__name__)
-                            self.assertEqual(ti.state, State.SKIPPED)
+                            self.assertEqual(ti.state, State.SUCCESS)
 
                             # Add new changes
                             ti = env.run_task(telescope.bq_append_new.__name__)
-                            self.assertEqual(ti.state, State.SKIPPED)
+                            self.assertEqual(ti.state, State.SUCCESS)
 
                             # Cleanup files
                             download_folder, extract_folder, transform_folder = (

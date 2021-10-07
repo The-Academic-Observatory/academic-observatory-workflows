@@ -181,9 +181,9 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
                 ti = env.run_task(telescope.bq_load_partition.__name__)
                 self.assertEqual(ti.state, "skipped")
 
-                # Test delete old task is in success state, without doing anything
+                # Test delete old task is skipped for the first release
                 ti = env.run_task(telescope.bq_delete_old.__name__)
-                self.assertEqual(ti.state, "success")
+                self.assertEqual(ti.state, "skipped")
 
                 # Test append new creates table
                 env.run_task(telescope.bq_append_new.__name__)
@@ -282,7 +282,7 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
                 # Test append new adds rows to table
                 env.run_task(telescope.bq_append_new.__name__)
                 table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
-                expected_rows = 72
+                expected_rows = 142
                 self.assert_table_integrity(table_id, expected_rows)
 
                 # Test that all telescope data deleted
