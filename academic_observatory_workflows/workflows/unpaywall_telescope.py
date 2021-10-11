@@ -16,7 +16,7 @@
 
 import os
 from datetime import datetime, timedelta
-from typing import Generator, List, Tuple, Union
+from typing import Generator, List, Tuple, Union, Optional
 
 import pendulum
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
@@ -24,6 +24,7 @@ from academic_observatory_workflows.workflows.unpaywall_snapshot_telescope impor
     UnpaywallSnapshotRelease,
 )
 from airflow.exceptions import AirflowException
+from airflow.models.dagrun import DagRun
 from croniter import croniter
 from dateutil.relativedelta import relativedelta
 from observatory.platform.utils.airflow_utils import (
@@ -115,7 +116,7 @@ class UnpaywallRelease(StreamRelease):
             )
 
     @staticmethod
-    def get_diff_release(*, feed_url: str, start_date: pendulum.DateTime) -> Tuple[Union[None, str]]:
+    def get_diff_release(*, feed_url: str, start_date: pendulum.DateTime) -> Tuple[Optional[str], Optional[str]]:
         """Get the differential release url and filename.
 
         :param feed_url: The URL to query for releases.
@@ -176,7 +177,6 @@ class UnpaywallTelescope(StreamTelescope):
         dataset_id: str = "unpaywall",
         dataset_description: str = f"Unpaywall Data Feed: {DATAFEED_URL}",
         merge_partition_field: str = "doi",
-        bq_merge_days: int = 7,
         schema_folder: str = default_schema_folder(),
         airflow_vars: List = None,
     ):
@@ -188,7 +188,6 @@ class UnpaywallTelescope(StreamTelescope):
         :param dataset_id: the dataset id.
         :param dataset_description: the dataset description.
         :param merge_partition_field: the BigQuery field used to match partitions for a merge
-        :param bq_merge_days: how often partitions should be merged (every x days)
         :param schema_folder: the SQL schema path.
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
         """
@@ -210,7 +209,6 @@ class UnpaywallTelescope(StreamTelescope):
             schedule_interval,
             dataset_id,
             merge_partition_field,
-            bq_merge_days,
             schema_folder,
             dataset_description=dataset_description,
             batch_load=True,
@@ -317,7 +315,7 @@ class UnpaywallTelescope(StreamTelescope):
         :param kwargs: The context passed from the PythonOperator.
         :return start date, whether first release.
         """
-
-        first_release = is_first_dag_run(**kwargs)
+        dag_run: DagRun = kwargs["dag_run"]
+        first_release = is_first_dag_run(dag_run)
         start_date = pendulum.instance(kwargs["execution_date"])
         return start_date, first_release

@@ -245,7 +245,6 @@ class OrcidTelescope(StreamTelescope):
         table_descriptions: dict = None,
         queue: str = "remote_queue",
         merge_partition_field: str = "orcid_identifier.uri",
-        bq_merge_days: int = 7,
         schema_folder: str = default_schema_folder(),
         batch_load: bool = True,
         airflow_vars: List = None,
@@ -262,7 +261,6 @@ class OrcidTelescope(StreamTelescope):
         :param queue: the queue that the telescope should run on.
         :param table_descriptions: a dictionary with table ids and corresponding table descriptions.
         :param merge_partition_field: the BigQuery field used to match partitions for a merge
-        :param bq_merge_days: how often partitions should be merged (every x days)
         :param schema_folder: the SQL schema path.
         :param batch_load: whether all files in the transform folder are loaded into 1 table at once
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
@@ -293,7 +291,6 @@ class OrcidTelescope(StreamTelescope):
             schedule_interval,
             dataset_id,
             merge_partition_field,
-            bq_merge_days,
             schema_folder,
             dataset_description=dataset_description,
             table_descriptions=table_descriptions,
@@ -322,9 +319,7 @@ class OrcidTelescope(StreamTelescope):
 
         start_date, end_date, first_release = self.get_release_info(**kwargs)
 
-        release = OrcidRelease(
-            self.dag_id, start_date, end_date, first_release, self.max_processes
-        )
+        release = OrcidRelease(self.dag_id, start_date, end_date, first_release, self.max_processes)
         return release
 
     def check_dependencies(self, **kwargs) -> bool:

@@ -19,7 +19,7 @@ import shutil
 import unittest
 from datetime import timedelta
 from unittest.mock import patch
-
+from google.cloud import bigquery
 import pendulum
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.unpaywall_telescope import (
@@ -38,7 +38,7 @@ from observatory.platform.utils.test_utils import (
     ObservatoryTestCase,
     module_file_path,
 )
-from observatory.platform.utils.workflow_utils import blob_name
+from observatory.platform.utils.workflow_utils import blob_name, create_date_table_id
 
 
 class TestUnpaywallRelease(unittest.TestCase):
@@ -324,7 +324,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
         second_execution_date = pendulum.datetime(2021, 7, 3)  # No update found
         third_execution_date = pendulum.datetime(2021, 7, 4)  # Update found
 
-        with env.create():
+        with env.create(task_logging=True):
             server = HttpServer(directory=self.fixture_dir)
             with server.create():
                 with patch.object(
@@ -343,7 +343,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
 
                         env.add_connection(conn)
 
-                        telescope = UnpaywallTelescope(dataset_id=self.dataset_id, bq_merge_days=2)
+                        telescope = UnpaywallTelescope(dataset_id=self.dataset_id)
                         dag = telescope.make_dag()
 
                         # First run
@@ -394,7 +394,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
 
                             # Delete changed data from main table
                             ti = env.run_task(telescope.bq_delete_old.__name__)
-                            self.assertEqual(ti.state, State.SUCCESS)
+                            self.assertEqual(ti.state, State.SKIPPED)
 
                             # Add new changes
                             ti = env.run_task(telescope.bq_append_new.__name__)
@@ -458,11 +458,11 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
 
                             # Delete changed data from main table
                             ti = env.run_task(telescope.bq_delete_old.__name__)
-                            self.assertEqual(ti.state, State.SKIPPED)
+                            self.assertEqual(ti.state, State.SUCCESS)
 
                             # Add new changes
                             ti = env.run_task(telescope.bq_append_new.__name__)
-                            self.assertEqual(ti.state, State.SKIPPED)
+                            self.assertEqual(ti.state, State.SUCCESS)
 
                             # Cleanup files
                             download_folder, extract_folder, transform_folder = (
@@ -520,7 +520,10 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                             ti = env.run_task(telescope.bq_load_partition.__name__)
                             self.assertEqual(ti.state, State.SUCCESS)
                             main_table_id, partition_table_id = release.dag_id, f"{release.dag_id}_partitions"
-                            table_id = f'{self.project_id}.{telescope.dataset_id}.{partition_table_id}${pendulum.today().strftime("%Y%m%d")}'
+                            table_id = create_date_table_id(
+                                partition_table_id, release.end_date, bigquery.TimePartitioningType.DAY
+                            )
+                            table_id = f"{self.project_id}.{telescope.dataset_id}.{table_id}"
                             expected_rows = 2
                             self.assert_table_integrity(table_id, expected_rows)
 

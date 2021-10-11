@@ -225,9 +225,9 @@ class TestOrcidTelescope(ObservatoryTestCase):
                 ti = env.run_task(telescope.bq_load_partition.__name__)
                 self.assertEqual(ti.state, "skipped")
 
-                # Test delete old task is in success state, without doing anything
+                # Test delete old task is skipped for the first release
                 ti = env.run_task(telescope.bq_delete_old.__name__)
-                self.assertEqual(ti.state, "success")
+                self.assertEqual(ti.state, "skipped")
 
                 # Test append new creates table
                 env.run_task(telescope.bq_append_new.__name__)
@@ -257,13 +257,6 @@ class TestOrcidTelescope(ObservatoryTestCase):
                     next_execution_date=pendulum.datetime(2021, 3, 7),
                 )
 
-                # Test list releases task with files available
-                # ti = env.run_task(telescope.get_release_info.__name__)
-                # start_date, end_date, first_release = ti.xcom_pull(
-                #     key=OrcidTelescope.RELEASE_INFO,
-                #     task_ids=telescope.get_release_info.__name__,
-                #     include_prior_dates=False,
-                # )
                 self.assertEqual(release.end_date + timedelta(days=1), start_date)
                 self.assertEqual(pendulum.today("UTC") - timedelta(days=1), end_date)
                 self.assertFalse(first_release)

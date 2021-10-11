@@ -21,6 +21,7 @@ from unittest.mock import patch
 import pendulum
 import vcr
 from airflow.exceptions import AirflowSkipException
+from google.cloud import bigquery
 from click.testing import CliRunner
 
 from academic_observatory_workflows.config import test_fixtures_folder
@@ -36,7 +37,7 @@ from observatory.platform.utils.test_utils import (
     module_file_path,
 )
 from observatory.platform.utils.url_utils import get_user_agent
-from observatory.platform.utils.workflow_utils import blob_name
+from observatory.platform.utils.workflow_utils import blob_name, create_date_table_id
 
 
 class TestCrossrefEventsTelescope(ObservatoryTestCase):
@@ -117,7 +118,7 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
         dag = telescope.make_dag()
 
         # Create the Observatory environment and run tests
-        with env.create():
+        with env.create(task_logging=True):
             # first run
             with env.create_dag_run(dag, self.first_execution_date) as dag_run:
                 # Test that all dependencies are specified: no error should be thrown
@@ -180,9 +181,9 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
                 ti = env.run_task(telescope.bq_load_partition.__name__)
                 self.assertEqual(ti.state, "skipped")
 
-                # Test delete old task is in success state, without doing anything
+                # Test delete old task is skipped for the first release
                 ti = env.run_task(telescope.bq_delete_old.__name__)
-                self.assertEqual(ti.state, "success")
+                self.assertEqual(ti.state, "skipped")
 
                 # Test append new creates table
                 env.run_task(telescope.bq_append_new.__name__)
@@ -267,7 +268,8 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
                 # Test that load partition task creates partition
                 env.run_task(telescope.bq_load_partition.__name__)
                 main_table_id, partition_table_id = release.dag_id, f"{release.dag_id}_partitions"
-                table_id = f'{self.project_id}.{telescope.dataset_id}.{partition_table_id}${pendulum.today().strftime("%Y%m%d")}'
+                table_id = create_date_table_id(partition_table_id, release.end_date, bigquery.TimePartitioningType.DAY)
+                table_id = f"{self.project_id}.{telescope.dataset_id}.{table_id}"
                 expected_rows = 82
                 self.assert_table_integrity(table_id, expected_rows)
 
