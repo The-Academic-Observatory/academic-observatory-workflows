@@ -1,11 +1,11 @@
 output "api-domain-name" {
-  value = google_endpoints_service.api.service_name
+  value = module.api.api-domain-name
   description = "Custom domain name for the API"
   sensitive = true
 }
 
 output "api-gateway-url" {
-  value = google_cloud_run_service.api_gateway.status[0].url
+  value = module.api.api-gateway-url
   description = "Cloud run gateway URL for the API"
   sensitive = true
 }
