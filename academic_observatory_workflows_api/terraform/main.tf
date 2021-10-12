@@ -10,7 +10,7 @@ terraform {
   }
   required_providers {
     google = {
-      source = "hashicorp/google"
+      source  = "hashicorp/google"
       version = "~> 3.85.0"
     }
   }
@@ -18,18 +18,18 @@ terraform {
 
 provider "google" {
   credentials = var.google_cloud.credentials
-  project = var.google_cloud.project_id
-  region = var.google_cloud.region
-  zone = var.google_cloud.zone
+  project     = var.google_cloud.project_id
+  region      = var.google_cloud.region
+  zone        = var.google_cloud.zone
 }
 
 module "api" {
-  source  = "The-Academic-Observatory/api/google"
-  version = "0.0.2"
-  api = var.api
-  environment = var.environment
+  source       = "The-Academic-Observatory/api/google"
+  version      = "0.0.2"
+  api          = var.api
+  environment  = var.environment
   google_cloud = var.google_cloud
-  data_api = {"create" = true, "elasticsearch_api_key": var.elasticsearch.api_key, "elasticsearch_host": var.elasticsearch.host}
+  data_api     = { "create" = true, "elasticsearch_api_key" : var.elasticsearch.api_key, "elasticsearch_host" : var.elasticsearch.host }
 }
 
 //########################################################################################################################

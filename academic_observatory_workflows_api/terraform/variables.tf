@@ -8,16 +8,16 @@ domain_name: the custom domain name for the API, used for the google cloud endpo
 subdomain: can be either 'project_id' or 'environment', used to determine a prefix for the domain_name
 EOF
   type = object({
-    name = string
-    package = string
+    name        = string
+    package     = string
     domain_name = string
-    subdomain = string
+    subdomain   = string
   })
 }
 
 variable "environment" {
   description = "The environment type: develop, staging or production."
-  type = string
+  type        = string
 }
 
 variable "google_cloud" {
@@ -31,16 +31,16 @@ zone: the Google Cloud zone.
 data_location: the data location for storing buckets.
 EOF
   type = object({
-    project_id = string
-    credentials = string
-    region = string
-    zone = string
+    project_id    = string
+    credentials   = string
+    region        = string
+    zone          = string
     data_location = string
   })
 }
 
 variable "elasticsearch" {
-    description = <<EOF
+  description = <<EOF
 Elasticsearch login information
 
 api_key: The elasticsearch api key
@@ -48,7 +48,7 @@ host: The address of the elasticsearch server
 EOF
   type = object({
     api_key = string
-    host = string
+    host    = string
   })
   sensitive = true
 }
