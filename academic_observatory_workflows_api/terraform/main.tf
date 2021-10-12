@@ -5,7 +5,7 @@
 terraform {
   backend "remote" {
     workspaces {
-      prefix = "observatory-"
+      prefix = "observatory-ao-"
     }
   }
   required_providers {
