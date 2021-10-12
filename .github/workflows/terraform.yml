@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - INF-73_data_API
-  pull_request:
+#  pull_request:
 
 defaults:
   run:
