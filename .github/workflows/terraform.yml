@@ -27,6 +27,7 @@ jobs:
       - name: Terraform Init
         id: init
         run: terraform init
+          -backend-config="organization=${{ secrets.TF_BACKEND_ORGANIZATION }}"
 
       - name: Terraform Validate
         id: validate
@@ -65,6 +66,6 @@ jobs:
         if: steps.plan.outcome == 'failure'
         run: exit 1
 
-      - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -auto-approve
+#      - name: Terraform Apply
+#        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+#        run: terraform apply -auto-approve
