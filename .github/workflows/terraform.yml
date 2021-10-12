@@ -6,6 +6,10 @@ on:
       - INF-73_data_API
   pull_request:
 
+defaults:
+  run:
+    working-directory: ./academic_observatory_workflows_api/terraform
+
 jobs:
   terraform:
     name: "Terraform"
@@ -27,7 +31,7 @@ jobs:
       - name: Terraform Init
         id: init
         run: terraform init
-          -backend-config="organization=${{ secrets.TF_BACKEND_ORGANIZATION }}"
+          -backend-config="organization="${{ secrets.TF_BACKEND_ORGANIZATION }}""
 
       - name: Terraform Validate
         id: validate
