@@ -15,6 +15,7 @@
 
 # Author: James Diprose
 
+import sys
 from typing import Dict
 
 import yaml
@@ -77,3 +78,11 @@ class OpenApiRenderer:
             "Only supported where self.cloud_endpoints is False " "and self.api_client is False"
         )
         return yaml.safe_load(self.render())
+
+
+if __name__ == '__main__':
+    template_path = sys.argv[1]
+    build_path = sys.argv[2]
+    builder = OpenApiRenderer(template_path, cloud_endpoints=True, api_client=False)
+    with open(build_path, "w") as f:
+        f.write(builder.render())

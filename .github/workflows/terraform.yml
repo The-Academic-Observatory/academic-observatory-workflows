@@ -38,16 +38,7 @@ jobs:
           pip install -e .
 
       - name: Render openapi file
-        run: |
-          import os
-          from academic_observatory_workflows_api.server.openapi_renderer import OpenApiRenderer
-
-          template_path = os.path.join(os.path.dirname(os.getcwd()), "server", "openapi.yaml.jinja2")
-          builder = OpenApiRenderer(template_path, cloud_endpoints=True, api_client=False)
-          build_path = os.path.join(os.getcwd(), "openapi.yaml.tpl")
-          with open(build_path, "w") as f:
-              f.write(builder.render())
-        shell: python
+        run: python openapi_renderer.py "../server/openapi.yaml.jinja2" "./openapi.yaml.tpl"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
