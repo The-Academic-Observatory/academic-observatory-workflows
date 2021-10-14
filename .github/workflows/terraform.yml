@@ -13,12 +13,38 @@ defaults:
 jobs:
   terraform:
     name: "Terraform"
-    runs-on: ubuntu-latest
+    runs-on: {{ matrix.os }}
+    strategy:
+      max-parallel: 4
+      matrix:
+        python-version: [ 3.8 ]
+        os: [ ubuntu-20.04 ]
     env:
       TF_WORKSPACE: develop
     steps:
       - name: Checkout
         uses: actions/checkout@v2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Render openapi file
+        run: |
+          import sys
+          import os
+
+          sys.path.append(os.path.dirname(os.getcwd()))
+
+          from server.openapi_renderer import OpenApiRenderer
+
+          template_path = os.path.join(os.path.dirname(os.getcwd()), "server", "openapi.yaml.jinja2")
+          builder = OpenApiRenderer(template_path, cloud_endpoints=True, api_client=False)
+          build_path = os.path.join(os.getcwd(), "openapi.yaml.tpl")
+          with open(build_path, "w") as f:
+              f.write(builder.render())
+        shell: python
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
