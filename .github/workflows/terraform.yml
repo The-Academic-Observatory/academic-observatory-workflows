@@ -38,7 +38,7 @@ jobs:
           pip install -e .
 
       - name: Render openapi file
-        run: python openapi_renderer.py "../server/openapi.yaml.jinja2" "./openapi.yaml.tpl"
+        run: python ../server/openapi_renderer.py "../server/openapi.yaml.jinja2" "./openapi.yaml.tpl"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
