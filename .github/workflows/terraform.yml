@@ -1,10 +1,10 @@
 name: "Terraform"
 
 on:
-  push:
-    branches:
-      - INF-73_data_API
-#  pull_request:
+#  push:
+#    branches:
+#      - INF-73_data_API
+  pull_request:
 
 defaults:
   run:
