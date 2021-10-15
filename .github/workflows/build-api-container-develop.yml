@@ -3,7 +3,7 @@ name: "Build API Container Develop"
 on:
   pull_request:
     branches:
-      - INF-73_data_API
+      - develop
 
 defaults:
   run:
