@@ -10,6 +10,7 @@ defaults:
     working-directory: ./academic_observatory_workflows_api
 
 env:
+  NAME: ao
   SERVICE: ao-api
   REGION: us-west1
 
@@ -54,16 +55,17 @@ jobs:
         id: commit
         run: echo "::set-output name=hash::$(git rev-parse --short HEAD)"
 
-      - name: Deploy to Cloud Run
+      - name: Deploy backend to Cloud Run
         id: deploy
-        uses: google-github-actions/deploy-cloudrun@v0.4.0
+        uses: google-github-actions/deploy-cloudrun@v0.6.0
         with:
-          service: ${{ env.SERVICE }}
+          service: ${{ env.SERVICE }}-backend
           image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.event.number }}
           no_traffic: true
           suffix: ${{ github.event.number }}-${{ steps.commit.outputs.hash }}
           region: ${{ env.REGION }}
           tag: pr-${{ github.event.number }}
+          env_vars: ES_HOST="sm://${{ secrets.DEVELOP_GCP_PROJECT_ID }}/${{ env.NAME }}-elasticsearch_host",ES_API_KEY="sm://${{ secrets.DEVELOP_GCP_PROJECT_ID }}/${{ env.NAME }}-elasticsearch_api_key"
 
       - name: Show Output
         run: echo ${{ steps.deploy.outputs.url }}
