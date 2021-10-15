@@ -47,7 +47,7 @@ jobs:
 
       - name: Build and Push Container
         run: |-
-          docker build -t gcr.io/${{ secrets.DEVELOP_GCP_PROJECT_ID }}/${{ env.SERVICE }}:${{ github.event.number }}
+          docker build -t gcr.io/${{ secrets.DEVELOP_GCP_PROJECT_ID }}/${{ env.SERVICE }}:${{ github.event.number }} .
           docker push gcr.io/${{ secrets.DEVELOP_GCP_PROJECT_ID }}/${{ env.SERVICE }}:${{ github.event.number }}
 
       - name: Get HEAD Commit Hash
@@ -63,7 +63,7 @@ jobs:
           no_traffic: true
           suffix: ${{ github.event.number }}-${{ steps.commit.outputs.hash }}
           region: ${{ env.REGION }}
-          tag: pr-${{ github.event.number }}=myapp-${{ github.event.number }}-${{ steps.commit.outputs.hash }}
+          tag: pr-${{ github.event.number }}
 
       - name: Show Output
         run: echo ${{ steps.deploy.outputs.url }}
