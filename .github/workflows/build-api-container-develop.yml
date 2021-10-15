@@ -1,7 +1,7 @@
 name: "Build API Container Develop"
 
 on:
-  push:
+  pull_request:
     branches:
       - INF-73_data_API
 
