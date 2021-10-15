@@ -46,7 +46,7 @@ jobs:
 
       - name: Build and Push Container
         run: |-
-          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest .
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest -f ../Dockerfile
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
 
 #      - name: Set up Python ${{ matrix.python-version }}
