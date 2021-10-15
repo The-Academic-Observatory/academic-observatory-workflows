@@ -22,6 +22,11 @@ EOF
   })
 }
 
+variable "build_info" {
+  type = string
+  default = null
+}
+
 variable "api" {
   description = <<EOF
 Settings related to the API
@@ -36,6 +41,7 @@ EOF
 //    package = string
     domain_name = string
     subdomain = string
+    image_tag = string
   })
 }
 

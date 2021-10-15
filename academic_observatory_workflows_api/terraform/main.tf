@@ -34,7 +34,13 @@ data "terraform_remote_state" "observatory" {
   }
 }
 
+data "local_file" "build_image_info" {
+  count = var.build_info == null ? 1 : 0
+  filename = "./image_build.txt"
+}
+
 locals {
+  build_info = try(data.local_file.build_image_info[0].content, var.build_info)
   vpc_connector_name = try(data.terraform_remote_state.observatory[0].outputs.vpc_connector_name, null)
   observatory_db_uri = try(data.terraform_remote_state.observatory[0].outputs.observatory_db_uri, null)
   elasticsearch_host = var.data_api.elasticsearch_host != "" ? var.data_api.elasticsearch_host : null
@@ -44,7 +50,9 @@ locals {
 
 module "api" {
   source  = "The-Academic-Observatory/api/google"
-  version = "0.0.2"
+  version = "0.0.3"
+//  source = "./api"
+  build_info = local.build_info
   api = var.api
   environment = var.environment
   google_cloud = var.google_cloud
