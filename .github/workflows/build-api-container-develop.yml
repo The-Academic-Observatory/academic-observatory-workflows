@@ -60,7 +60,7 @@ jobs:
         uses: google-github-actions/deploy-cloudrun@v0.6.0
         with:
           service: ${{ env.SERVICE }}-backend
-          image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.event.number }}
+          image: gcr.io/${{ secrets.DEVELOP_GCP_PROJECT_ID }}/${{ env.SERVICE }}:${{ github.event.number }}
           no_traffic: true
           suffix: ${{ github.event.number }}-${{ steps.commit.outputs.hash }}
           region: ${{ env.REGION }}
