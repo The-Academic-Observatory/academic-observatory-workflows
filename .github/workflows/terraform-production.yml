@@ -62,18 +62,18 @@ jobs:
       - name: Get HEAD Commit Hash
         id: commit
         run: echo "::set-output name=hash::$(git rev-parse --short HEAD)"
-#
-#      - name: Deploy backend to Cloud Run
-#        id: deploy
-#        uses: google-github-actions/deploy-cloudrun@v0.6.0
-#        with:
-#          service: ${{ env.SERVICE }}-backend
-#          image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ env.IMAGE_TAG }}
-#          no_traffic: true
-#          suffix: ${{ env.IMAGE_TAG }}-${{ steps.commit.outputs.hash }}
-#          region: ${{ env.REGION }}
-#          tag: pr-${{ env.IMAGE_TAG }}
-#          env_vars: ES_HOST=sm://${{ env.PROJECT_ID }}/${{ env.NAME }}-elasticsearch_host,ES_API_KEY=sm://${{ env.PROJECT_ID }}/${{ env.NAME }}-elasticsearch_api_key
+
+      - name: Deploy backend to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v0.6.0
+        with:
+          service: ${{ env.SERVICE }}-backend
+          image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ env.IMAGE_TAG }}
+          no_traffic: true
+          suffix: ${{ env.IMAGE_TAG }}-${{ steps.commit.outputs.hash }}
+          region: ${{ env.REGION }}
+          tag: pr-${{ env.IMAGE_TAG }}
+          env_vars: ES_HOST=sm://${{ env.PROJECT_ID }}/${{ env.NAME }}-elasticsearch_host,ES_API_KEY=sm://${{ env.PROJECT_ID }}/${{ env.NAME }}-elasticsearch_api_key
 
       - name: Install dependencies
         run: |
@@ -136,5 +136,5 @@ jobs:
         if: steps.plan.outcome == 'failure'
         run: exit 1
 
-#      - name: Show Output
-#        run: echo ${{ steps.deploy.outputs.url }}
+      - name: Show Output
+        run: echo ${{ steps.deploy.outputs.url }}
