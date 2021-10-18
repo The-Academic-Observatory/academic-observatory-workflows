@@ -25,6 +25,7 @@ env:
   GCP_CREDENTIALS: ${{ secrets.DEVELOP_GCP_SERVICE_KEY }}
 #  IMAGE_TAG: ${{ github.event.release.release_id }}
   IMAGE_TAG: ${{ github.event.number}}
+  REGION: us-west1
 
 jobs:
   terraform1:
