@@ -1,0 +1,140 @@
+name: "Terraform Production"
+
+on:
+  pull_request:
+    branches:
+      - develop
+#  release:
+#    types:
+#      - published
+
+defaults:
+  run:
+    working-directory: ./academic_observatory_workflows_api/terraform
+
+env:
+  NAME: ao
+  SERVICE: ao-api
+#  TF_WORKSPACE: ao-production
+  TF_WORKSPACE: ao-develop
+  TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+  TF_BACKEND_ORGANIZATION: ${{ secrets.TF_BACKEND_ORGANIZATION }}
+#  PROJECT_ID: ${{ secrets.PRODUCTION_GCP_PROJECT_ID }}
+  PROJECT_ID: ${{ secrets.DEVELOP_GCP_PROJECT_ID }}
+#  GCP_CREDENTIALS: ${{ secrets.PRODUCTION_GCP_SERVICE_KEY }}
+  GCP_CREDENTIALS: ${{ secrets.DEVELOP_GCP_SERVICE_KEY }}
+#  IMAGE_TAG: ${{ github.event.release.release_id }}
+  IMAGE_TAG: ${{ github.event.number}}
+
+jobs:
+  terraform1:
+    name: "Terraform Production"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      max-parallel: 4
+      matrix:
+        python-version: [ 3.8 ]
+        os: [ ubuntu-20.04 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0.2.0
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          service_account_key: ${{ env.GCP_CREDENTIALS }}
+          export_default_credentials: true  # Set to true to authenticate the Cloud Run action
+
+#      - name: Authorize Docker push
+#        run: gcloud auth configure-docker
+#
+#      - name: Build and Push Container
+#        run: |-
+#          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ env.IMAGE_TAG }} ../
+#          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ env.IMAGE_TAG }} | tee >(tail -n1 > ./image_build.txt)
+#
+#      - name: Set up Python ${{ matrix.python-version }}
+#        uses: actions/setup-python@v2
+#        with:
+#          python-version: ${{ matrix.python-version }}
+#
+#      - name: Get HEAD Commit Hash
+#        id: commit
+#        run: echo "::set-output name=hash::$(git rev-parse --short HEAD)"
+#
+#      - name: Deploy backend to Cloud Run
+#        id: deploy
+#        uses: google-github-actions/deploy-cloudrun@v0.6.0
+#        with:
+#          service: ${{ env.SERVICE }}-backend
+#          image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ env.IMAGE_TAG }}
+#          no_traffic: true
+#          suffix: ${{ env.IMAGE_TAG }}-${{ steps.commit.outputs.hash }}
+#          region: ${{ env.REGION }}
+#          tag: pr-${{ env.IMAGE_TAG }}
+#          env_vars: ES_HOST=sm://${{ env.PROJECT_ID }}/${{ env.NAME }}-elasticsearch_host,ES_API_KEY=sm://${{ env.PROJECT_ID }}/${{ env.NAME }}-elasticsearch_api_key
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+
+          cd ..
+          pip install -e .
+
+      - name: Render openapi file
+        run: python ../server/openapi_renderer.py "../server/openapi.yaml.jinja2" "./openapi.yaml.tpl"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          # terraform_version: 0.13.0:
+          cli_config_credentials_token: ${{ env.TF_API_TOKEN }}
+
+      - name: Terraform Format
+        id: fmt
+        run: terraform fmt -write=false -diff
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+          -backend-config="organization="${{ env.TF_BACKEND_ORGANIZATION }}""
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color
+        continue-on-error: true
+
+#      - uses: actions/github-script@0.9.0
+#        if: github.event_name == 'pull_request'
+#        env:
+#          PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
+#        with:
+#          github-token: ${{ secrets.GITHUB_TOKEN }}
+#          script: |
+#            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+#            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+#            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+#            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+#            <details><summary>Show Plan</summary>\n
+#            \`\`\`\
+#            ${process.env.PLAN}
+#            \`\`\`
+#            </details>
+#            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+#            github.issues.createComment({
+#              issue_number: context.issue.number,
+#              owner: context.repo.owner,
+#              repo: context.repo.repo,
+#              body: output
+#            })
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+#      - name: Show Output
+#        run: echo ${{ steps.deploy.outputs.url }}

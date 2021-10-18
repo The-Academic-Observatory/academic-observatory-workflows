@@ -23,6 +23,7 @@ provider "google" {
   zone        = var.google_cloud.zone
 }
 
+# Get info from the observatory workspace if this is given
 data "terraform_remote_state" "observatory" {
   count = var.observatory_api.observatory_workspace != "" ? 1 : 0
   backend = "remote"
@@ -34,15 +35,19 @@ data "terraform_remote_state" "observatory" {
   }
 }
 
+# Get build info from a local file if no build_info is passed on
 data "local_file" "build_image_info" {
-  count = var.build_info == null ? 1 : 0
+  count = var.api.build_info == "" ? 1 : 0
   filename = "./image_build.txt"
 }
 
 locals {
-  build_info = try(data.local_file.build_image_info[0].content, var.build_info)
+  # Set the build info, either from local file or from variable
+  build_info = try(data.local_file.build_image_info[0].content, var.api.build_info)
+  # Set the vpc connector name and observatory db uri, obtained from other terraform workspace
   vpc_connector_name = try(data.terraform_remote_state.observatory[0].outputs.vpc_connector_name, null)
   observatory_db_uri = try(data.terraform_remote_state.observatory[0].outputs.observatory_db_uri, null)
+  # Set the elasticsearch host and api key if not empty, otherwise null
   elasticsearch_host = var.data_api.elasticsearch_host != "" ? var.data_api.elasticsearch_host : null
   elasticsearch_api_key = var.data_api.elasticsearch_api_key != "" ? var.data_api.elasticsearch_api_key : null
 }
