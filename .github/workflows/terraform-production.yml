@@ -46,22 +46,22 @@ jobs:
           service_account_key: ${{ env.GCP_CREDENTIALS }}
           export_default_credentials: true  # Set to true to authenticate the Cloud Run action
 
-#      - name: Authorize Docker push
-#        run: gcloud auth configure-docker
-#
-#      - name: Build and Push Container
-#        run: |-
-#          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ env.IMAGE_TAG }} ../
-#          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ env.IMAGE_TAG }} | tee >(tail -n1 > ./image_build.txt)
-#
-#      - name: Set up Python ${{ matrix.python-version }}
-#        uses: actions/setup-python@v2
-#        with:
-#          python-version: ${{ matrix.python-version }}
-#
-#      - name: Get HEAD Commit Hash
-#        id: commit
-#        run: echo "::set-output name=hash::$(git rev-parse --short HEAD)"
+      - name: Authorize Docker push
+        run: gcloud auth configure-docker
+
+      - name: Build and Push Container
+        run: |-
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ env.IMAGE_TAG }} ../
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ env.IMAGE_TAG }} | tee >(tail -n1 > ./image_build.txt)
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Get HEAD Commit Hash
+        id: commit
+        run: echo "::set-output name=hash::$(git rev-parse --short HEAD)"
 #
 #      - name: Deploy backend to Cloud Run
 #        id: deploy
