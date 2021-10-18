@@ -94,7 +94,7 @@ jobs:
 
       - name: Terraform Format
         id: fmt
-        run: terraform fmt -write=false -diff
+        run: terraform fmt -diff -check
 
       - name: Terraform Init
         id: init
@@ -120,8 +120,6 @@ jobs:
 
       - name: Create or update comment
         uses: peter-evans/create-or-update-comment@v1
-        env:
-          PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           comment-id: ${{ steps.fc.outputs.comment-id }}
@@ -133,8 +131,8 @@ jobs:
             #### Terraform Validation 🤖`${{ steps.validate.outcome }}`
             #### Terraform Plan 📖`${{ steps.plan.outcome }}`
             <details><summary>Show Plan</summary>\n
-            ```
-            ${{ process.env.PLAN }}
+            ```terraform
+            ${{ steps.plan.outputs.stdout }}
             ```
             </details>
             *Pusher: @${{ github.actor }}, Action: `${{ github.event_name }}`*

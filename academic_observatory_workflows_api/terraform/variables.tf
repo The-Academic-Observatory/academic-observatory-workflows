@@ -37,11 +37,11 @@ If the build info is an empty string, the content of a local file './image_build
 EOF
   type = object({
     name = string
-//    package = string
+    //    package = string
     domain_name = string
-    subdomain = string
-    image_tag = string
-    build_info = string
+    subdomain   = string
+    image_tag   = string
+    build_info  = string
   })
 }
 
@@ -51,7 +51,7 @@ Settings related specifically to the Observatory API
 EOF
   type = object({
     observatory_organization = string
-    observatory_workspace = string
+    observatory_workspace    = string
   })
 }
 
@@ -64,6 +64,6 @@ host: The address of the elasticsearch server
 EOF
   type = object({
     elasticsearch_api_key = string
-    elasticsearch_host = string
+    elasticsearch_host    = string
   })
 }
