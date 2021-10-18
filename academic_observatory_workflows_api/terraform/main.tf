@@ -50,7 +50,7 @@ locals {
 
 module "api" {
   source  = "The-Academic-Observatory/api/google"
-  version = "0.0.3"
+  version = "0.0.4"
 //  source = "./api"
   build_info = local.build_info
   api = var.api
