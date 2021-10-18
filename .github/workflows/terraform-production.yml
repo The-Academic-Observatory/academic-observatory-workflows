@@ -64,17 +64,17 @@ jobs:
         id: commit
         run: echo "::set-output name=hash::$(git rev-parse --short HEAD)"
 
-      - name: Deploy backend to Cloud Run
-        id: deploy
-        uses: google-github-actions/deploy-cloudrun@v0.6.0
-        with:
-          service: ${{ env.SERVICE }}-backend
-          image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ env.IMAGE_TAG }}
-          no_traffic: true
-          suffix: ${{ env.IMAGE_TAG }}-${{ steps.commit.outputs.hash }}
-          region: ${{ env.REGION }}
-          tag: pr-${{ env.IMAGE_TAG }}
-          env_vars: ES_HOST=sm://${{ env.PROJECT_ID }}/${{ env.NAME }}-elasticsearch_host,ES_API_KEY=sm://${{ env.PROJECT_ID }}/${{ env.NAME }}-elasticsearch_api_key
+#      - name: Deploy backend to Cloud Run
+#        id: deploy
+#        uses: google-github-actions/deploy-cloudrun@v0.6.0
+#        with:
+#          service: ${{ env.SERVICE }}-backend
+#          image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ env.IMAGE_TAG }}
+#          no_traffic: true
+#          suffix: ${{ env.IMAGE_TAG }}-${{ steps.commit.outputs.hash }}
+#          region: ${{ env.REGION }}
+#          tag: pr-${{ env.IMAGE_TAG }}
+#          env_vars: ES_HOST=sm://${{ env.PROJECT_ID }}/${{ env.NAME }}-elasticsearch_host,ES_API_KEY=sm://${{ env.PROJECT_ID }}/${{ env.NAME }}-elasticsearch_api_key
 
       - name: Install dependencies
         run: |
@@ -110,6 +110,36 @@ jobs:
         run: terraform plan -no-color
         continue-on-error: true
 
+      - name: Find Comment
+        uses: peter-evans/find-comment@v1
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: Terraform Workflow
+
+      - name: Create or update comment
+        uses: peter-evans/create-or-update-comment@v1
+        env:
+          PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            Terraform Workflow
+            #### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+            <details><summary>Show Plan</summary>\n
+            \`\`\`\
+            ${process.env.PLAN}
+            \`\`\`
+            </details>
+            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*
+          edit-mode: replace
+
 #      - uses: actions/github-script@0.9.0
 #        if: github.event_name == 'pull_request'
 #        env:
@@ -136,6 +166,3 @@ jobs:
       - name: Terraform Plan Status
         if: steps.plan.outcome == 'failure'
         run: exit 1
-
-      - name: Show Output
-        run: echo ${{ steps.deploy.outputs.url }}
