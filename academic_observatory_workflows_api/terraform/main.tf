@@ -54,7 +54,6 @@ locals {
 
 
 module "api" {
-//  source       = "./api"
   source       = "The-Academic-Observatory/api/google"
   version      = "0.0.5"
   image_tag    = local.image_tag
