@@ -1,12 +1,9 @@
 name: "Terraform Production"
 
 on:
-  pull_request:
-    branches:
-      - develop
-#  release:
-#    types:
-#      - published
+  release:
+    types:
+      - published
 
 defaults:
   run:
@@ -23,12 +20,12 @@ env:
   PROJECT_ID: ${{ secrets.DEVELOP_GCP_PROJECT_ID }}
 #  GCP_CREDENTIALS: ${{ secrets.PRODUCTION_GCP_SERVICE_KEY }}
   GCP_CREDENTIALS: ${{ secrets.DEVELOP_GCP_SERVICE_KEY }}
-#  IMAGE_TAG: ${{ github.event.release.release_id }}
-  IMAGE_TAG: ${{ github.event.number}}
+#  IMAGE_TAG: ${{ github.event.release.tag_name }}
+  IMAGE_TAG: ${{ github.event.number }}
   REGION: us-west1
 
 jobs:
-  terraform1:
+  terraform:
     name: "Terraform Production"
     runs-on: ${{ matrix.os }}
     strategy:
@@ -60,10 +57,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Get HEAD Commit Hash
-        id: commit
-        run: echo "::set-output name=hash::$(git rev-parse --short HEAD)"
-
+#      - name: Get HEAD Commit Hash
+#        id: commit
+#        run: echo "::set-output name=hash::$(git rev-parse --short HEAD)"
+#
 #      - name: Deploy backend to Cloud Run
 #        id: deploy
 #        uses: google-github-actions/deploy-cloudrun@v0.6.0
@@ -130,37 +127,16 @@ jobs:
             #### Terraform Initialization ⚙️`${{ steps.init.outcome }}`
             #### Terraform Validation 🤖`${{ steps.validate.outcome }}`
             #### Terraform Plan 📖`${{ steps.plan.outcome }}`
-            <details><summary>Show Plan</summary>\n
+            <details><summary>Show Plan</summary>
+
             ```terraform
             ${{ steps.plan.outputs.stdout }}
             ```
             </details>
+
             *Pusher: @${{ github.actor }}, Action: `${{ github.event_name }}`*
           edit-mode: replace
 
-#      - uses: actions/github-script@0.9.0
-#        if: github.event_name == 'pull_request'
-#        env:
-#          PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
-#        with:
-#          github-token: ${{ secrets.GITHUB_TOKEN }}
-#          script: |
-#            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
-#            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
-#            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
-#            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
-#            <details><summary>Show Plan</summary>\n
-#            \`\`\`\
-#            ${process.env.PLAN}
-#            \`\`\`
-#            </details>
-#            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
-#            github.issues.createComment({
-#              issue_number: context.issue.number,
-#              owner: context.repo.owner,
-#              repo: context.repo.repo,
-#              body: output
-#            })
       - name: Terraform Plan Status
         if: steps.plan.outcome == 'failure'
         run: exit 1

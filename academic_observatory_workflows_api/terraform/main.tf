@@ -36,14 +36,14 @@ data "terraform_remote_state" "observatory" {
 }
 
 # Get build info from a local file if no build_info is passed on
-data "local_file" "build_image_info" {
-  count    = var.api.build_info == "" ? 1 : 0
+data "local_file" "image_tag" {
+  count    = var.api.image_tag == "" ? 1 : 0
   filename = "./image_build.txt"
 }
 
 locals {
   # Set the build info, either from local file or from variable
-  build_info = try(data.local_file.build_image_info[0].content, var.api.build_info)
+  image_tag = try(data.local_file.image_tag[0].content, var.api.image_tag)
   # Set the vpc connector name and observatory db uri, obtained from other terraform workspace
   vpc_connector_name = try(data.terraform_remote_state.observatory[0].outputs.vpc_connector_name, null)
   observatory_db_uri = try(data.terraform_remote_state.observatory[0].outputs.observatory_db_uri, null)
@@ -54,9 +54,10 @@ locals {
 
 
 module "api" {
+//  source       = "./api"
   source       = "The-Academic-Observatory/api/google"
-  version      = "0.0.4"
-  build_info   = local.build_info
+  version      = "0.0.5"
+  image_tag    = local.image_tag
   api          = var.api
   environment  = var.environment
   google_cloud = var.google_cloud
