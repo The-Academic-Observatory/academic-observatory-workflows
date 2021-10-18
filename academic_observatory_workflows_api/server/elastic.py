@@ -334,4 +334,4 @@ def get_pit_id(agg: str, subagg: Optional[str]) -> Union[dict, Tuple[str, int]]:
         return Response(response=es_index.error, status=400, mimetype="text/html")
 
     pit_id = es.open_point_in_time(index=es_index.name, keep_alive=keep_alive)["id"]
-    return {"pit_id": pit_id, "keep_alive": keep_alive, "index": es_index.name}
+    return {"pit_id": pit_id, "keep_alive": keep_alive, "index": es_index.name, "test": "test changes"}
