@@ -128,16 +128,16 @@ jobs:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
             Terraform Workflow
-            #### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
-            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
-            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
-            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+            #### Terraform Format and Style 🖌`${{ steps.fmt.outcome }}`
+            #### Terraform Initialization ⚙️`${{ steps.init.outcome }}`
+            #### Terraform Validation 🤖`${{ steps.validate.outcome }}`
+            #### Terraform Plan 📖`${{ steps.plan.outcome }}`
             <details><summary>Show Plan</summary>\n
-            \`\`\`\
-            ${process.env.PLAN}
-            \`\`\`
+            ```
+            ${{ process.env.PLAN }}
+            ```
             </details>
-            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*
+            *Pusher: @${{ github.actor }}, Action: `${{ github.event_name }}`*
           edit-mode: replace
 
 #      - uses: actions/github-script@0.9.0
