@@ -60,6 +60,8 @@ jobs:
         run: |-
           docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:pr-${{ github.event.number }}-${{ steps.commit.outputs.hash }} ../
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:pr-${{ github.event.number }}-${{ steps.commit.outputs.hash }}
+    outputs:
+      commit_hash: ${{ steps.commit.outputs.hash }}
 
   terraform:
     name: "Terraform"
@@ -89,7 +91,7 @@ jobs:
       - name: Render openapi and image build files
         run: |
           python ../server/openapi_renderer.py "../server/openapi.yaml.jinja2" "./openapi.yaml.tpl"
-          echo pr-${{ github.event.number }}-${{ steps.commit.outputs.hash }} > ./image_build.txt
+          echo pr-${{ github.event.number }}-${{ needs.update_image.outputs.commit_hash }} > ./image_build.txt
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
