@@ -1,4 +1,4 @@
-name: "Terraform"
+name: "Terraform Develop"
 
 on:
   push:
@@ -42,8 +42,13 @@ jobs:
           service_account_key: ${{ env.GCP_CREDENTIALS }}
           export_default_credentials: true  # Set to true to authenticate the Cloud Run action
 
-#      - name: Delete old images with same PR tag
-#        run: gcloud container images list-tags gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }} --filter='-tags:*' --format="get(digest)" --limit=$BIG_NUMBER
+      - name: Delete old images with same PR tag, always keep the latest
+        run: >
+          gcloud container images list-tags gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}
+          --filter='tags:pr-${{github.event.number }}-*' --format="get(digest)" |
+          tail -n+2 |
+          xargs -I {} gcloud container images delete gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}@{}
+          --force-delete-tags --quiet
 
       - name: Authorize Docker push
         run: gcloud auth configure-docker
@@ -108,7 +113,6 @@ jobs:
       - name: Create or update comment
         uses: peter-evans/create-or-update-comment@v1
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           comment-id: ${{ steps.fc.outputs.comment-id }}
           issue-number: ${{ github.event.pull_request.number }}
           body: |
@@ -129,7 +133,6 @@ jobs:
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
-          #        if: github.event_name == 'pull_request'
         run: terraform apply -auto-approve
 
       - name: Terraform Plan Status
