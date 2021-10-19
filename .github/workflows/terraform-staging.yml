@@ -1,12 +1,12 @@
-name: "Terraform Develop"
+name: "Terraform Staging"
 
 on:
   push:
     branches:
-      - develop
+      - main
   pull_request:
     branches:
-      - develop
+      - main
 
 defaults:
   run:
@@ -14,16 +14,16 @@ defaults:
 
 env:
   SERVICE: ao-api
-  TF_WORKSPACE: ao-develop
+  TF_WORKSPACE: ao-staging
   TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
   TF_BACKEND_ORGANIZATION: ${{ secrets.TF_BACKEND_ORGANIZATION }}
-  PROJECT_ID: ${{ secrets.DEVELOP_GCP_PROJECT_ID }}
-  GCP_CREDENTIALS: ${{ secrets.DEVELOP_GCP_SERVICE_KEY }}
+  PROJECT_ID: ${{ secrets.STAGING_GCP_PROJECT_ID }}
+  GCP_CREDENTIALS: ${{ secrets.STAGING_GCP_SERVICE_KEY }}
   REGION: us-west1
 
 jobs:
   terraform:
-    name: "Terraform Develop"
+    name: "Terraform Staging"
     runs-on: ${{ matrix.os }}
     strategy:
       max-parallel: 4
@@ -131,7 +131,7 @@ jobs:
           edit-mode: replace
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: terraform apply -auto-approve
 
       - name: Terraform Plan Status
