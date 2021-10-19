@@ -34,7 +34,7 @@ image_tag: The image tag that will be used for the Cloud Run backend. If the val
 tag from a local file "./image_build.txt".
 EOF
   type = object({
-    name = string
+    name        = string
     domain_name = string
     subdomain   = string
     image_tag   = string
@@ -48,11 +48,11 @@ The data api requires the observatory organization and workspace set, while the 
 host and api key set.
 EOF
   type = object({
-    type = string
+    type                     = string
     observatory_organization = string
     observatory_workspace    = string
-    elasticsearch_api_key = string
-    elasticsearch_host    = string
+    elasticsearch_api_key    = string
+    elasticsearch_host       = string
   })
 
   validation {
@@ -60,9 +60,9 @@ EOF
     error_message = "The api type must either be 'data_api' or 'observatory_api'."
   }
   validation {
-    condition     = (
-    var.api_type.type == "data_api" && var.api_type.elasticsearch_host != "" && var.api_type.elasticsearch_api_key != "" ||
-    var.api_type.type == "observatory_api" && var.api_type.observatory_organization != "" && var.api_type.observatory_workspace != ""
+    condition = (
+      var.api_type.type == "data_api" && var.api_type.elasticsearch_host != "" && var.api_type.elasticsearch_api_key != "" ||
+      var.api_type.type == "observatory_api" && var.api_type.observatory_organization != "" && var.api_type.observatory_workspace != ""
     )
     error_message = "Elasticsearch host and api key can not be empty when the api type is set to 'data_api' and observatory organization and workspace can not be empty when the api type is set to 'observatory_api'.."
   }
