@@ -19,8 +19,8 @@ env:
   REGION: us-west1
 
 jobs:
-  terraform:
-    name: "Terraform Production"
+  update_image:
+    name: "Update Cloud Run Image"
     runs-on: ${{ matrix.os }}
     strategy:
       max-parallel: 4
@@ -46,6 +46,19 @@ jobs:
           docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.event.release.tag_name }} ../
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.event.release.tag_name }}
           echo ${{ github.event.release.tag_name }} > ./image_build.txt
+
+  terraform:
+    name: "Terraform"
+    needs: update_image
+    runs-on: ${{ matrix.os }}
+    strategy:
+      max-parallel: 4
+      matrix:
+        python-version: [ 3.8 ]
+        os: [ ubuntu-20.04 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v2
