@@ -258,7 +258,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
             expected_state = "success"
             with env.create_dag_run(doi_dag, start_date):
                 for task_id in DoiWorkflow.SENSOR_DAG_IDS:
-                    ti = env.run_task(f"{task_id}_sensor", doi_dag, execution_date=start_date)
+                    ti = env.run_task(f"{task_id}_sensor")
                     self.assertEqual(expected_state, ti.state)
 
             # Run Dummy Dags
@@ -270,22 +270,22 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 dag = make_dummy_dag(dag_id, execution_date)
                 with env.create_dag_run(dag, execution_date):
                     # Running all of a DAGs tasks sets the DAG to finished
-                    ti = env.run_task("dummy_task", dag, execution_date=execution_date)
+                    ti = env.run_task("dummy_task")
                     self.assertEqual(expected_state, ti.state)
 
             # Run end to end tests for DOI DAG
             with env.create_dag_run(doi_dag, execution_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
                 for task_id in DoiWorkflow.SENSOR_DAG_IDS:
-                    ti = env.run_task(f"{task_id}_sensor", doi_dag, execution_date=execution_date)
+                    ti = env.run_task(f"{task_id}_sensor")
                     self.assertEqual(expected_state, ti.state)
 
                 # Check dependencies
-                ti = env.run_task("check_dependencies", doi_dag, execution_date=execution_date)
+                ti = env.run_task("check_dependencies")
                 self.assertEqual(expected_state, ti.state)
 
                 # Create datasets
-                ti = env.run_task("create_datasets", doi_dag, execution_date=execution_date)
+                ti = env.run_task("create_datasets")
                 self.assertEqual(expected_state, ti.state)
 
                 # Generate fake dataset
@@ -302,11 +302,11 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 # Test that source dataset transformations run
                 for transform in transforms:
                     task_id = f"create_{transform.output_table.table_id}"
-                    ti = env.run_task(task_id, doi_dag, execution_date=execution_date)
+                    ti = env.run_task(task_id)
                     self.assertEqual(expected_state, ti.state)
 
                 # Test create DOI task
-                ti = env.run_task("create_doi", doi_dag, execution_date=execution_date)
+                ti = env.run_task("create_doi")
                 self.assertEqual(expected_state, ti.state)
 
                 # DOI assert table exists
@@ -320,7 +320,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 self.assert_doi(expected_output, actual_output)
 
                 # Test create book
-                ti = env.run_task("create_book", doi_dag, execution_date=execution_date)
+                ti = env.run_task("create_book")
                 self.assertEqual(expected_state, ti.state)
                 expected_table_id = f"{self.gcp_project_id}.{observatory_dataset_id}.book{release_suffix}"
                 expected_rows = 0
@@ -329,7 +329,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 # Test aggregations tasks
                 for agg in DoiWorkflow.AGGREGATIONS:
                     task_id = f"create_{agg.table_id}"
-                    ti = env.run_task(task_id, doi_dag, execution_date=execution_date)
+                    ti = env.run_task(task_id)
                     self.assertEqual(expected_state, ti.state)
 
                     # Aggregation assert table exists
@@ -343,14 +343,14 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 # TODO: test correctness of remaining outputs
 
                 # Test copy to dashboards
-                ti = env.run_task("copy_to_dashboards", doi_dag, execution_date=execution_date)
+                ti = env.run_task("copy_to_dashboards")
                 self.assertEqual(expected_state, ti.state)
                 table_ids = [agg.table_id for agg in DoiWorkflow.AGGREGATIONS] + ["doi"]
                 for table_id in table_ids:
                     self.assert_table_integrity(f"{self.gcp_project_id}.{dashboards_dataset_id}.{table_id}")
 
                 # Test create dashboard views
-                ti = env.run_task("create_dashboard_views", doi_dag, execution_date=execution_date)
+                ti = env.run_task("create_dashboard_views")
                 self.assertEqual(expected_state, ti.state)
                 for table_id in ["country", "funder", "group", "institution", "publisher", "subregion"]:
                     self.assert_table_integrity(f"{self.gcp_project_id}.{dashboards_dataset_id}.{table_id}_comparison")
@@ -359,7 +359,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 for agg in DoiWorkflow.AGGREGATIONS:
                     table_id = agg.table_id
                     task_id = f"export_{table_id}"
-                    ti = env.run_task(task_id, doi_dag, execution_date=execution_date)
+                    ti = env.run_task(task_id)
                     self.assertEqual(expected_state, ti.state)
 
                     # Check that the correct tables exist for each aggregation
