@@ -2,8 +2,8 @@ name: "Terraform Develop"
 
 on:
   push:
-#    branches:
-#      - develop
+    branches:
+      - develop
   pull_request:
     branches:
       - develop
@@ -53,10 +53,6 @@ jobs:
       - name: Authorize Docker push
         run: gcloud auth configure-docker
 
-#      - name: Get HEAD Commit Hash
-#        id: commit
-#        run: echo "::set-output name=hash::$(git rev-parse --short HEAD)"
-
       - name: Create Image Tag
         id: image
         run: >
@@ -69,7 +65,6 @@ jobs:
         run: |-
           docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ steps.image.outputs.tag }} ../
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ steps.image.outputs.tag }}
-
     outputs:
       image_tag: ${{ steps.image.outputs.tag }}
 
@@ -128,6 +123,7 @@ jobs:
         continue-on-error: true
 
       - name: Find Comment
+        if: github.event_name == 'pull_request'
         uses: peter-evans/find-comment@v1
         id: fc
         with:
@@ -136,6 +132,7 @@ jobs:
           body-includes: Terraform Workflow
 
       - name: Create or update comment
+        if: github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@v1
         with:
           comment-id: ${{ steps.fc.outputs.comment-id }}
