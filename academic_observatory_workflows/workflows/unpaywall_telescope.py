@@ -173,7 +173,7 @@ class UnpaywallTelescope(StreamTelescope):
     def __init__(
         self,
         dag_id: str = DAG_ID,
-        start_date: pendulum.DateTime = pendulum.datetime(2021, 10, 19),
+        start_date: pendulum.DateTime = pendulum.datetime(2021, 7, 2),
         schedule_interval: str = "@daily",
         dataset_id: str = "our_research",
         dataset_description: str = f"Unpaywall Data Feed: {DATAFEED_URL}",
