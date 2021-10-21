@@ -240,11 +240,11 @@ class TestOpenCitationsTelescope(ObservatoryTestCase):
                     self.create_templates(host=server.host, port=server.port)
                     with server.create():
                         # Check dependencies
-                        ti = env.run_task(telescope.check_dependencies.__name__, dag, execution_date)
+                        ti = env.run_task(telescope.check_dependencies.__name__)
                         self.assertEqual(ti.state, State.SUCCESS)
 
                         # Get release info
-                        ti = env.run_task(telescope.get_release_info.__name__, dag, execution_date)
+                        ti = env.run_task(telescope.get_release_info.__name__)
                         self.assertEqual(ti.state, State.SUCCESS)
 
                         actual_release_info = ti.xcom_pull(
@@ -259,25 +259,25 @@ class TestOpenCitationsTelescope(ObservatoryTestCase):
                         self.assertEqual(actual_release_info[0]["files"][1]["download_url"], download_url2)
 
                         # Download
-                        ti = env.run_task(telescope.download.__name__, dag, execution_date)
+                        ti = env.run_task(telescope.download.__name__)
                         self.assertEqual(ti.state, State.SUCCESS)
                         self.assertEqual(len(release.download_files), 2)
 
                         self.remove_templates()
 
                     # Upload downloaded
-                    ti = env.run_task(telescope.upload_downloaded.__name__, dag, execution_date)
+                    ti = env.run_task(telescope.upload_downloaded.__name__)
                     self.assertEqual(ti.state, State.SUCCESS)
                     self.assert_blob_integrity(
                         env.download_bucket, blob_name(release.download_files[0]), release.download_files[0]
                     )
 
                     # Extract
-                    ti = env.run_task(telescope.extract.__name__, dag, execution_date)
+                    ti = env.run_task(telescope.extract.__name__)
                     self.assertEqual(ti.state, State.SUCCESS)
 
                     # Upload transformed
-                    ti = env.run_task(telescope.upload_transformed.__name__, dag, execution_date)
+                    ti = env.run_task(telescope.upload_transformed.__name__)
                     self.assertEqual(ti.state, State.SUCCESS)
                     self.assert_blob_integrity(
                         env.transform_bucket, blob_name(release.transform_files[0]), release.transform_files[0]
@@ -286,7 +286,7 @@ class TestOpenCitationsTelescope(ObservatoryTestCase):
                     print(release.transform_files)
 
                     # BQ load
-                    ti = env.run_task(telescope.bq_load.__name__, dag, execution_date)
+                    ti = env.run_task(telescope.bq_load.__name__)
                     self.assertEqual(ti.state, State.SUCCESS)
 
                     table_id = (
@@ -345,6 +345,6 @@ class TestOpenCitationsTelescope(ObservatoryTestCase):
                         release.extract_folder,
                         release.transform_folder,
                     )
-                    env.run_task(telescope.cleanup.__name__, dag, execution_date)
+                    env.run_task(telescope.cleanup.__name__)
                     self.assertEqual(ti.state, State.SUCCESS)
                     self.assert_cleanup(download_folder, extract_folder, transform_folder)
