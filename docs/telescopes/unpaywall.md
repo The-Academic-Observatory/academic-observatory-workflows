@@ -18,14 +18,16 @@ This telescope uses the Unpaywall Data Feed service.  If you wish to ingest Unpa
 The free Unpaywall snapshot service is only updated a few times a year.  It is also difficult to find changes
 from snapshot to snapshot. The Data Feed service rectifies this by providing daily or weekly changefiles.
 To use the Data Feed:
-1. Get the current snapshot.
+1. Get the current snapshot using the API service which is updated daily, and available with the Data Feed subscription.
 2. Get all changefiles starting with latest timestamp just before the snapshot date.
 3. Apply the changefiles to the snapshot in date order from oldest to newest.
 
 The Data Feed service requires an API key in order to access the changefiles.  See the [data feed page](https://unpaywall.org/products/data-feed)
-for more information on obtaining a key.
+for more information on obtaining a key.  
 
-On first run, this telescope tries to pull the snapshot on the telescope's start date.  Subsequent scheduled runs will download the daily changefile from __TWO DAYS PRIOR__ to the scheduled execution date to update the dataset.  You should set the scheduled_interval to "@daily" or some other equivalent interval which that results in scheduled runs on a daily basis. The telescope attempts to catch up on missed scheduled runs in case of interruption.
+On first run, this telescope tries to pull the snapshot on the telescope's start date.  Note that the snapshot hosted at `https://api.unpaywall.org/feed/snapshot?api_key=YOUR_API_KEY` is currently updated daily by Unpaywall, so make sure you set the telescope's start date to be equal to that snapshot date.
+
+Subsequent scheduled runs will download the daily changefile from __TWO DAYS PRIOR__ to the scheduled execution date to update the dataset.  You should set the scheduled_interval to "@daily" or some other equivalent interval which that results in scheduled runs on a daily basis. The telescope attempts to catch up on missed scheduled runs from the start date to the current execution date in case of interruption.
 
 The reason that the changefile applied is from two days prior to each scheduled executin date is so that we can guarantee data integrity after applying the snapshot.
 
