@@ -16,7 +16,7 @@
 
 import os
 from datetime import datetime, timedelta
-from typing import Generator, List, Tuple, Union, Optional
+from typing import Generator, List, Optional, Tuple, Union
 
 import pendulum
 from airflow.exceptions import AirflowException
@@ -100,21 +100,24 @@ class UnpaywallRelease(StreamRelease):
     def download(self):
         """Download the release."""
         if self.first_release:
-            self._download_snapshot()
+            return self._download_snapshot()
         else:
-            self._download_data_feed()
+            return self._download_data_feed()
 
     def _download_snapshot(self):
         """Download the most recent Unpaywall snapshot on or before the start date."""
 
-        download_file(url=self.snapshot_url, headers=self.http_header, prefix_dir=self.download_folder)
+        success = download_file(url=self.snapshot_url, headers=self.http_header, prefix_dir=self.download_folder)
+
         download_date = UnpaywallSnapshotRelease.parse_release_date(self.download_files[0]).date()
         start_date = self.start_date.date()
 
         if start_date != download_date:
             raise AirflowException(
-                f"The telescope start date {start_date} and the downloaded snapshot date {download_date} do not match."
+                f"The telescope start date {start_date} and the downloaded snapshot date {download_date} do not match.  Please set the telescope's start date to {download_date}."
             )
+
+        return success
 
     @staticmethod
     def get_diff_release(*, feed_url: str, start_date: pendulum.DateTime) -> Tuple[Optional[str], Optional[str]]:
@@ -147,7 +150,8 @@ class UnpaywallRelease(StreamRelease):
             start_date=self.start_date,
         )
         filename = os.path.join(self.download_folder, filename)
-        download_file(url=url, filename=filename, headers=self.http_header)
+        success = download_file(url=url, filename=filename, headers=self.http_header)
+        return success
 
     def extract(self):
         """Unzip the downloaded files."""
@@ -180,6 +184,7 @@ class UnpaywallTelescope(StreamTelescope):
         merge_partition_field: str = "doi",
         schema_folder: str = default_schema_folder(),
         airflow_vars: List = None,
+        catchup=True,
     ):
         """Unpaywall Data Feed telescope.
 
@@ -191,6 +196,7 @@ class UnpaywallTelescope(StreamTelescope):
         :param merge_partition_field: the BigQuery field used to match partitions for a merge
         :param schema_folder: the SQL schema path.
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
+        :param catchup: Whether to perform catchup on old releases.
         """
 
         self._validate_schedule_interval(start_date=start_date, schedule_interval=schedule_interval)
@@ -213,7 +219,7 @@ class UnpaywallTelescope(StreamTelescope):
             schema_folder,
             dataset_description=dataset_description,
             batch_load=True,
-            catchup=True,
+            catchup=catchup,
             airflow_vars=airflow_vars,
             airflow_conns=[UnpaywallTelescope.AIRFLOW_CONNECTION],
         )
