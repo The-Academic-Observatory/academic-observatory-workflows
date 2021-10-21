@@ -405,7 +405,7 @@ class TestGridTelescopeDag(ObservatoryTestCase):
                     f"http://{self.httpserver.host}:{self.httpserver.port}" + "/v2/articles/{article_id}/files",
                 ):
                     # Check dependencies
-                    env.run_task(telescope.check_dependencies.__name__, dag, execution_date)
+                    env.run_task(telescope.check_dependencies.__name__)
 
                     # List releases
                     with patch(
@@ -414,7 +414,7 @@ class TestGridTelescopeDag(ObservatoryTestCase):
                         m_list_grid_records.return_value = [
                             {"article_ids": [1553266, 1553267], "release_date": "2015-10-09"},
                         ]
-                        ti = env.run_task(telescope.list_releases.__name__, dag, execution_date)
+                        ti = env.run_task(telescope.list_releases.__name__)
 
                         # Test list releases
                         available_releases = ti.xcom_pull(
@@ -425,7 +425,7 @@ class TestGridTelescopeDag(ObservatoryTestCase):
                         self.assertEqual(len(available_releases), 1)
 
                         # Download
-                        env.run_task(telescope.download.__name__, dag, execution_date)
+                        env.run_task(telescope.download.__name__)
                         copy_download_fixtures(mock=m_download, fixtures=self.fixtures)
 
                         # Test download
@@ -437,33 +437,33 @@ class TestGridTelescopeDag(ObservatoryTestCase):
                         self.assertEqual(len(release.download_files), 1)
 
                         # upload_downloaded
-                        env.run_task(telescope.upload_downloaded.__name__, dag, execution_date)
+                        env.run_task(telescope.upload_downloaded.__name__)
 
                         # Test upload_downloaded
                         for file in release.download_files:
                             self.assert_blob_integrity(env.download_bucket, blob_name(file), file)
 
                         # extract
-                        env.run_task(telescope.extract.__name__, dag, execution_date)
+                        env.run_task(telescope.extract.__name__)
 
                         # Test extract
                         self.assertEqual(len(release.extract_files), 1)
 
                         # transform
-                        env.run_task(telescope.transform.__name__, dag, execution_date)
+                        env.run_task(telescope.transform.__name__)
 
                         # Test transform
                         self.assertEqual(len(release.transform_files), 1)
 
                         # upload_transformed
-                        env.run_task(telescope.upload_transformed.__name__, dag, execution_date)
+                        env.run_task(telescope.upload_transformed.__name__)
 
                         # Test upload_transformed
                         for file in release.transform_files:
                             self.assert_blob_integrity(env.transform_bucket, blob_name(file), file)
 
                         # bq_load
-                        env.run_task(telescope.bq_load.__name__, dag, execution_date)
+                        env.run_task(telescope.bq_load.__name__)
 
                         # Test bq_load
                         # Will only check table exists rather than validate data.
@@ -475,7 +475,7 @@ class TestGridTelescopeDag(ObservatoryTestCase):
                             self.assert_table_integrity(table_id, expected_rows)
 
                         # cleanup
-                        env.run_task(telescope.cleanup.__name__, dag, execution_date)
+                        env.run_task(telescope.cleanup.__name__)
 
                         # Test cleanup
                         # Test that all telescope data deleted
@@ -484,5 +484,5 @@ class TestGridTelescopeDag(ObservatoryTestCase):
                             release.extract_folder,
                             release.transform_folder,
                         )
-                        env.run_task(telescope.cleanup.__name__, dag, execution_date)
+                        env.run_task(telescope.cleanup.__name__)
                         self.assert_cleanup(download_folder, extract_folder, transform_folder)

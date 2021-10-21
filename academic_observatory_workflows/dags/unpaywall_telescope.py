@@ -18,10 +18,11 @@
 # https://airflow.apache.org/docs/stable/faq.html
 
 import pendulum
+
 from academic_observatory_workflows.workflows.unpaywall_telescope import (
     UnpaywallTelescope,
 )
 
-start_date = pendulum.datetime(2021, 7, 2)  # Set this to the snapshot release date you want to base it off
+start_date = pendulum.datetime(2021, 10, 18)  # Set this to the snapshot release date you want to base it off
 telescope = UnpaywallTelescope(start_date=start_date)
 globals()[telescope.dag_id] = telescope.make_dag()

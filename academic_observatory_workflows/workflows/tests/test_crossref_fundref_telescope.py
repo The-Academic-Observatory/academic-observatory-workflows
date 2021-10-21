@@ -115,7 +115,7 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
 
             with env.create_dag_run(dag, execution_date):
                 # Test that all dependencies are specified: no error should be thrown
-                ti = env.run_task(telescope.check_dependencies.__name__, dag, execution_date)
+                ti = env.run_task(telescope.check_dependencies.__name__)
                 self.assertEqual(ti.state, State.SUCCESS)
 
                 # Test list releases task
@@ -129,7 +129,7 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
                     "academic_observatory_workflows.workflows.crossref_fundref_telescope.list_releases"
                 ) as mock_list_releases:
                     mock_list_releases.return_value = release_info
-                    ti = env.run_task(telescope.get_release_info.__name__, dag, execution_date)
+                    ti = env.run_task(telescope.get_release_info.__name__)
 
                 actual_release_info = ti.xcom_pull(
                     key=CrossrefFundrefTelescope.RELEASE_INFO,
@@ -146,32 +146,32 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
                 # Test download task
                 with httpretty.enabled():
                     self.setup_mock_file_download(release.url, self.download_path)
-                    env.run_task(telescope.download.__name__, dag, execution_date)
+                    env.run_task(telescope.download.__name__)
                 self.assertEqual(1, len(release.download_files))
                 self.assert_file_integrity(release.download_path, self.download_hash, "gzip_crc")
 
                 # Test that file uploaded
-                env.run_task(telescope.upload_downloaded.__name__, dag, execution_date)
+                env.run_task(telescope.upload_downloaded.__name__)
                 self.assert_blob_integrity(env.download_bucket, blob_name(release.download_path), release.download_path)
 
                 # Test that file extracted
-                env.run_task(telescope.extract.__name__, dag, execution_date)
+                env.run_task(telescope.extract.__name__)
                 self.assertEqual(1, len(release.extract_files))
                 self.assert_file_integrity(release.extract_path, self.extract_hash, "md5")
 
                 # Test that file transformed
-                env.run_task(telescope.transform.__name__, dag, execution_date)
+                env.run_task(telescope.transform.__name__)
                 self.assertEqual(1, len(release.transform_files))
                 self.assert_file_integrity(release.transform_path, self.transform_hash, "gzip_crc")
 
                 # Test that transformed file uploaded
-                env.run_task(telescope.upload_transformed.__name__, dag, execution_date)
+                env.run_task(telescope.upload_transformed.__name__)
                 self.assert_blob_integrity(
                     env.transform_bucket, blob_name(release.transform_path), release.transform_path
                 )
 
                 # Test that data loaded into BigQuery
-                env.run_task(telescope.bq_load.__name__, dag, execution_date)
+                env.run_task(telescope.bq_load.__name__)
                 table_id = (
                     f"{self.project_id}.{dataset_id}."
                     f"{bigquery_sharded_table_id(telescope.dag_id, release.release_date)}"
@@ -185,7 +185,7 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
                     release.extract_folder,
                     release.transform_folder,
                 )
-                env.run_task(telescope.cleanup.__name__, dag, execution_date)
+                env.run_task(telescope.cleanup.__name__)
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
 
     def test_list_releases(self):

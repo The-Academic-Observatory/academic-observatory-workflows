@@ -377,7 +377,7 @@ class TestUnpaywallSnapshotTelescope(ObservatoryTestCase):
 
                     with env.create_dag_run(dag, execution_date):
                         # check dependencies
-                        ti = env.run_task(telescope.check_dependencies.__name__, dag, execution_date)
+                        ti = env.run_task(telescope.check_dependencies.__name__)
                         self.assertEqual(ti.state, State.SUCCESS)
 
                         # get release info
@@ -391,40 +391,40 @@ class TestUnpaywallSnapshotTelescope(ObservatoryTestCase):
                                     "file_name": file_name,
                                 }
                             ]
-                            ti = env.run_task(telescope.get_release_info.__name__, dag, execution_date)
+                            ti = env.run_task(telescope.get_release_info.__name__)
                         self.assertEqual(ti.state, State.SUCCESS)
 
                         # download
-                        ti = env.run_task(telescope.download.__name__, dag, execution_date)
+                        ti = env.run_task(telescope.download.__name__)
                         self.assertEqual(ti.state, State.SUCCESS)
 
                         # Check file was downloaded
                         self.assertEqual(len(release.download_files), 1)
 
                         # upload_downloaded
-                        ti = env.run_task(telescope.upload_downloaded.__name__, dag, execution_date)
+                        ti = env.run_task(telescope.upload_downloaded.__name__)
                         self.assertEqual(ti.state, State.SUCCESS)
                         self.assert_blob_integrity(
                             env.download_bucket, blob_name(release.download_path), release.download_path
                         )
 
                         # extract
-                        ti = env.run_task(telescope.extract.__name__, dag, execution_date)
+                        ti = env.run_task(telescope.extract.__name__)
                         self.assertEqual(ti.state, State.SUCCESS)
 
                         # transform
-                        ti = env.run_task(telescope.transform.__name__, dag, execution_date)
+                        ti = env.run_task(telescope.transform.__name__)
                         self.assertEqual(ti.state, State.SUCCESS)
 
                         # upload_transformed
-                        ti = env.run_task(telescope.upload_transformed.__name__, dag, execution_date)
+                        ti = env.run_task(telescope.upload_transformed.__name__)
                         self.assertEqual(ti.state, State.SUCCESS)
                         self.assert_blob_integrity(
                             env.transform_bucket, blob_name(release.transform_path), release.transform_path
                         )
 
                         # bq_load
-                        ti = env.run_task(telescope.bq_load.__name__, dag, execution_date)
+                        ti = env.run_task(telescope.bq_load.__name__)
                         self.assertEqual(ti.state, State.SUCCESS)
 
                         table_id = (
@@ -440,6 +440,6 @@ class TestUnpaywallSnapshotTelescope(ObservatoryTestCase):
                             release.extract_folder,
                             release.transform_folder,
                         )
-                        env.run_task(telescope.cleanup.__name__, dag, execution_date)
+                        env.run_task(telescope.cleanup.__name__)
                         self.assertEqual(ti.state, State.SUCCESS)
                         self.assert_cleanup(download_folder, extract_folder, transform_folder)

@@ -142,7 +142,7 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
         *,
         dag_id: str = DAG_ID,
         start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
-        schedule_interval: str = "@monthly",
+        schedule_interval: str = "@weekly",
         dataset_id: str = "our_research",
         queue: str = "remote_queue",
         schema_folder: str = default_schema_folder(),

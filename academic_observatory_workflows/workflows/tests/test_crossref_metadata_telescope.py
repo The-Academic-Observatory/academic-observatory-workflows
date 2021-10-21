@@ -132,7 +132,7 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
                 env.add_connection(Connection(conn_id=AirflowConns.CROSSREF, uri="mysql://:crossref-token@"))
 
                 # Test that all dependencies are specified: no error should be thrown
-                env.run_task(telescope.check_dependencies.__name__, dag, execution_date)
+                env.run_task(telescope.check_dependencies.__name__)
 
                 # Test check release exists task, next tasks should not be skipped
                 with httpretty.enabled():
@@ -140,43 +140,43 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
                         year=execution_date.year, month=execution_date.month
                     )
                     httpretty.register_uri(httpretty.HEAD, url, body="", status=302)
-                    env.run_task(telescope.check_release_exists.__name__, dag, execution_date)
+                    env.run_task(telescope.check_release_exists.__name__)
 
                 release = CrossrefMetadataRelease(telescope.dag_id, execution_date)
 
                 # Test download task
                 with httpretty.enabled():
                     self.setup_mock_file_download(release.url, self.download_path)
-                    env.run_task(telescope.download.__name__, dag, execution_date)
+                    env.run_task(telescope.download.__name__)
                 self.assertEqual(1, len(release.download_files))
                 expected_file_hash = "10210c33936f9ba6b7e053f6f457591b"
                 self.assert_file_integrity(release.download_path, expected_file_hash, "md5")
 
                 # Test that file uploaded
-                env.run_task(telescope.upload_downloaded.__name__, dag, execution_date)
+                env.run_task(telescope.upload_downloaded.__name__)
                 self.assert_blob_integrity(env.download_bucket, blob_name(release.download_path), release.download_path)
 
                 # Test that file extracted
-                env.run_task(telescope.extract.__name__, dag, execution_date)
+                env.run_task(telescope.extract.__name__)
                 self.assertEqual(5, len(release.extract_files))
                 for i, file in enumerate(natsorted(release.extract_files)):
                     expected_file_hash = self.extract_file_hashes[i]
                     self.assert_file_integrity(file, expected_file_hash, "md5")
 
                 # Test that files transformed
-                env.run_task(telescope.transform.__name__, dag, execution_date)
+                env.run_task(telescope.transform.__name__)
                 self.assertEqual(5, len(release.transform_files))
                 for i, file in enumerate(natsorted(release.transform_files)):
                     expected_file_hash = self.transform_hashes[i]
                     self.assert_file_integrity(file, expected_file_hash, "md5")
 
                 # Test that transformed files uploaded
-                env.run_task(telescope.upload_transformed.__name__, dag, execution_date)
+                env.run_task(telescope.upload_transformed.__name__)
                 for file in release.transform_files:
                     self.assert_blob_integrity(env.transform_bucket, blob_name(file), file)
 
                 # Test that data loaded into BigQuery
-                env.run_task(telescope.bq_load.__name__, dag, execution_date)
+                env.run_task(telescope.bq_load.__name__)
                 table_id = (
                     f"{self.project_id}.{dataset_id}."
                     f"{bigquery_sharded_table_id(telescope.dag_id, release.release_date)}"
@@ -190,7 +190,7 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
                     release.extract_folder,
                     release.transform_folder,
                 )
-                env.run_task(telescope.cleanup.__name__, dag, execution_date)
+                env.run_task(telescope.cleanup.__name__)
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
 
     @patch("academic_observatory_workflows.workflows.crossref_metadata_telescope.BaseHook.get_connection")

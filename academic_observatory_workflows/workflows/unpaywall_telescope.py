@@ -19,14 +19,15 @@ from datetime import datetime, timedelta
 from typing import Generator, List, Tuple, Union, Optional
 
 import pendulum
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
-from academic_observatory_workflows.workflows.unpaywall_snapshot_telescope import (
-    UnpaywallSnapshotRelease,
-)
 from airflow.exceptions import AirflowException
 from airflow.models.dagrun import DagRun
 from croniter import croniter
 from dateutil.relativedelta import relativedelta
+
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
+from academic_observatory_workflows.workflows.unpaywall_snapshot_telescope import (
+    UnpaywallSnapshotRelease,
+)
 from observatory.platform.utils.airflow_utils import (
     AirflowVars,
     get_airflow_connection_password,
@@ -174,7 +175,7 @@ class UnpaywallTelescope(StreamTelescope):
         dag_id: str = DAG_ID,
         start_date: pendulum.DateTime = pendulum.datetime(2021, 7, 2),
         schedule_interval: str = "@daily",
-        dataset_id: str = "unpaywall",
+        dataset_id: str = "our_research",
         dataset_description: str = f"Unpaywall Data Feed: {DATAFEED_URL}",
         merge_partition_field: str = "doi",
         schema_folder: str = default_schema_folder(),

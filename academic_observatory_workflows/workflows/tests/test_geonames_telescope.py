@@ -151,13 +151,13 @@ class TestGeonamesTelescope(ObservatoryTestCase):
                 transform_folder = workflow_path(SubFolder.transformed, telescope.dag_id, release_id)
 
                 # Test that all dependencies are specified: no error should be thrown
-                env.run_task(telescope.check_dependencies.__name__, dag, execution_date)
+                env.run_task(telescope.check_dependencies.__name__)
 
                 # Test list releases task
                 with patch("academic_observatory_workflows.workflows.geonames_telescope.requests.head") as m_req:
                     m_req.return_value = MockResponse({"Last-Modified": "Fri, 05 Mar 2021 01:34:32 GMT"})
 
-                    ti = env.run_task(telescope.fetch_release_date.__name__, dag, execution_date)
+                    ti = env.run_task(telescope.fetch_release_date.__name__)
 
                 pulled_release_date = ti.xcom_pull(
                     key=GeonamesTelescope.RELEASE_INFO,
@@ -173,40 +173,40 @@ class TestGeonamesTelescope(ObservatoryTestCase):
                     with patch.object(
                         GeonamesRelease, "DOWNLOAD_URL", f"http://{server.host}:{server.port}/allCountries.zip"
                     ):
-                        env.run_task(telescope.download.__name__, dag, execution_date)
+                        env.run_task(telescope.download.__name__)
 
                 download_file_path = os.path.join(download_folder, f"{telescope.dag_id}.zip")
                 expected_file_hash = get_file_hash(file_path=self.all_countries_path, algorithm="md5")
                 self.assert_file_integrity(download_file_path, expected_file_hash, "md5")
 
                 # Test that file uploaded
-                env.run_task(telescope.upload_downloaded.__name__, dag, execution_date)
+                env.run_task(telescope.upload_downloaded.__name__)
                 self.assert_blob_integrity(env.download_bucket, blob_name(download_file_path), download_file_path)
 
                 # Test that file extracted
-                env.run_task(telescope.extract.__name__, dag, execution_date)
+                env.run_task(telescope.extract.__name__)
                 extracted_file_path = os.path.join(extract_folder, "allCountries.txt")
                 expected_file_hash = "de1bf005df4840d16faf598999d72051"
                 self.assert_file_integrity(extracted_file_path, expected_file_hash, "md5")
 
                 # Test that file transformed
-                env.run_task(telescope.transform.__name__, dag, execution_date)
+                env.run_task(telescope.transform.__name__)
                 transformed_file_path = os.path.join(transform_folder, f"{telescope.dag_id}.csv.gz")
                 expected_file_hash = "26c14e16"
                 self.assert_file_integrity(transformed_file_path, expected_file_hash, "gzip_crc")
 
                 # Test that transformed file uploaded
-                env.run_task(telescope.upload_transformed.__name__, dag, execution_date)
+                env.run_task(telescope.upload_transformed.__name__)
                 self.assert_blob_integrity(
                     env.transform_bucket, blob_name(transformed_file_path), transformed_file_path
                 )
 
                 # Test that data loaded into BigQuery
-                env.run_task(telescope.bq_load.__name__, dag, execution_date)
+                env.run_task(telescope.bq_load.__name__)
                 table_id = f"{self.project_id}.{dataset_id}.{bigquery_sharded_table_id(telescope.dag_id, release_date)}"
                 expected_rows = 50
                 self.assert_table_integrity(table_id, expected_rows)
 
                 # Test that all telescope data deleted
-                env.run_task(telescope.cleanup.__name__, dag, execution_date)
+                env.run_task(telescope.cleanup.__name__)
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
