@@ -92,7 +92,7 @@ class RorRelease(SnapshotRelease):
             with ZipFile(self.download_path) as zip_file:
                 zip_file.extractall(self.extract_folder)
         except BadZipFile:
-            logging.error("Not a zip file")
+            raise AirflowException("Not a zip file")
         logging.info(f"File extracted to: {self.extract_folder}")
 
     def transform(self):
@@ -269,7 +269,7 @@ def list_ror_records(start_date: pendulum.DateTime, end_date: pendulum.DateTime,
     logging.info(f"Getting info on available ROR records from Zenodo, from url: {RorTelescope.ROR_DATASET_URL}")
     response = retry_session().get(RorTelescope.ROR_DATASET_URL, timeout=timeout, headers={"Accept-encoding": "gzip"})
     if response.status_code != 200:
-        raise RuntimeError(
+        raise AirflowException(
             f"Request to get available records on Zenodo unsuccessful, url: {RorTelescope.ROR_DATASET_URL}, "
             f"status code: {response.status_code}, response: {response.text}, reason: {response.reason}"
         )

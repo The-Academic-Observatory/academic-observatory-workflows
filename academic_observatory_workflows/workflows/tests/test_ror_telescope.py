@@ -14,14 +14,19 @@
 
 # Author: Aniek Roelofs
 
+import json
 import os
 import httpretty
 import pendulum
+from unittest.mock import patch
 
+from click.testing import CliRunner
+from airflow.exceptions import AirflowException
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.ror_telescope import (
     RorRelease,
     RorTelescope,
+    list_ror_records,
 )
 from observatory.platform.utils.gc_utils import bigquery_sharded_table_id
 from observatory.platform.utils.test_utils import (
@@ -32,11 +37,6 @@ from observatory.platform.utils.test_utils import (
 from observatory.platform.utils.workflow_utils import (
     blob_name,
 )
-
-
-class MockResponse:
-    def __init__(self, headers):
-        self.headers = headers
 
 
 class TestRorTelescope(ObservatoryTestCase):
@@ -67,6 +67,7 @@ class TestRorTelescope(ObservatoryTestCase):
                 "transform_hash": "2e6c12a9",
             },
         }
+        self.release = RorRelease("ror", pendulum.datetime(2021, 1, 1), "https://myurl")
 
     def test_dag_structure(self):
         """Test that the ROR DAG has the correct structure.
@@ -95,7 +96,6 @@ class TestRorTelescope(ObservatoryTestCase):
 
         :return: None
         """
-
         with ObservatoryEnvironment().create():
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "ror_telescope.py")
             self.assert_dag_load("ror", dag_file)
@@ -211,3 +211,85 @@ class TestRorTelescope(ObservatoryTestCase):
                 env.run_task(telescope.cleanup.__name__)
                 for i, release in enumerate(releases):
                     self.assert_cleanup(download_folders[i], extract_folders[i], transform_folders[i])
+
+    @patch("academic_observatory_workflows.workflows.ror_telescope.list_ror_records")
+    def test_list_releases(self, mock_list_records):
+        """Test the list_releases method of the ROR telescope when there are no records
+
+        :return: None
+        """
+        mock_list_records.return_value = []
+
+        execution_date = pendulum.datetime(2020, 1, 1)
+        next_execution_date = pendulum.date(2020, 2, 1)
+        telescope = RorTelescope()
+
+        continue_dag = telescope.list_releases(execution_date=execution_date, next_execution_date=next_execution_date)
+        self.assertFalse(continue_dag)
+
+    @patch("airflow.models.variable.Variable.get")
+    def test_release_extract(self, mock_variable_get):
+        """Test exceptions are raised for the extract method of the ROR release
+
+        :return: None
+        """
+        mock_variable_get.return_value = "data_path"
+        with CliRunner().isolated_filesystem():
+            # Create file at download path that is not a zip file
+            with open(self.release.download_path, "w") as f:
+                f.write("test")
+
+            # Test that exception is raised
+            with self.assertRaises(AirflowException):
+                self.release.extract()
+
+    @patch("airflow.models.variable.Variable.get")
+    def test_release_transform(self, mock_variable_get):
+        """Test exceptions are raised for the transform method of the ROR release
+
+        :return: None
+        """
+        mock_variable_get.return_value = "data_path"
+        with CliRunner().isolated_filesystem():
+            # Test exception is raised when there is more than one file
+            file_path1 = os.path.join(self.release.extract_folder, "2020-01-01-ror-data.json")
+            file_path2 = os.path.join(self.release.extract_folder, "2021-01-01-ror-data.json")
+            for file in [file_path1, file_path2]:
+                with open(file, "w") as f:
+                    f.write("test")
+            with self.assertRaises(AirflowException):
+                self.release.transform()
+
+        with CliRunner().isolated_filesystem():
+            # Test exception is raised when there is no file (does not match regex pattern)
+            file_path1 = os.path.join(self.release.extract_folder, "ror-data.json")
+            with open(file_path1, "w") as f:
+                f.write("test")
+            with self.assertRaises(AirflowException):
+                self.release.transform()
+
+    def test_list_ror_records(self):
+        """Test the list_ror_records function
+
+        :return: None
+        """
+        start_date = pendulum.datetime(2020, 1, 1)
+        end_date = pendulum.datetime(2020, 2, 1)
+
+        # Test list records when there are no hits
+        with httpretty.enabled():
+            body = {
+                "hits": {"hits": [], "total": 2},
+                "links": {
+                    "self": "https://zenodo.org/api/records/?sort=mostrecent&communities=ror-data&page=1&size=10"
+                },
+            }
+            httpretty.register_uri(httpretty.GET, RorTelescope.ROR_DATASET_URL, body=json.dumps(body))
+            records = list_ror_records(start_date, end_date)
+            self.assertEqual([], records)
+
+        # Test list records with a response code that is not 200
+        with httpretty.enabled():
+            httpretty.register_uri(httpretty.GET, RorTelescope.ROR_DATASET_URL, status=400)
+            with self.assertRaises(AirflowException):
+                list_ror_records(start_date, end_date)
