@@ -56,11 +56,19 @@ class RorRelease(SnapshotRelease):
         self.url = url
 
     @property
-    def download_path(self):
+    def download_path(self) -> str:
+        """Get the path to the downloaded file.
+
+        :return: the file path.
+        """
         return os.path.join(self.download_folder, f"{self.dag_id}.zip")
 
     @property
     def transform_path(self) -> str:
+        """Get the path to the transformed file.
+
+        :return: the file path.
+        """
         return os.path.join(self.transform_folder, f"{self.dag_id}.jsonl.gz")
 
     def download(self):
@@ -88,18 +96,17 @@ class RorRelease(SnapshotRelease):
         logging.info(f"File extracted to: {self.extract_folder}")
 
     def transform(self):
-        """Transform an extracted ROR release by transforming the .json file into json lines format and gzipping the
-        result.
+        """Transform an extracted ROR release.
+        The .json file is turned into json lines format and gzipped.
 
         :return: None.
         """
         extract_files = self.extract_files
 
-        # Only process one JSON file
+        # Check there is only one JSON file
         if len(extract_files) == 1:
             release_json_file = extract_files[0]
             logging.info(f"Transforming file: {release_json_file}")
-
         else:
             raise AirflowException(f"{len(extract_files)} extracted files found: {extract_files}")
 
@@ -110,7 +117,7 @@ class RorRelease(SnapshotRelease):
 
 class RorTelescope(SnapshotTelescope):
     """
-
+    The Research Organization Registry (ROR): https://ror.readme.io/
 
     Saved to the BigQuery table: <project_id>.ror.rorYYYYMMDD
     """
@@ -200,8 +207,7 @@ class RorTelescope(SnapshotTelescope):
         return releases
 
     def list_releases(self, **kwargs):
-        """Lists all ROR releases for a given month and publishes their article_id's and
-        release_date's as an XCom.
+        """Lists all ROR records for a given month and publishes their url and release_date as an XCom.
 
         :param kwargs: the context passed from the BranchPythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html

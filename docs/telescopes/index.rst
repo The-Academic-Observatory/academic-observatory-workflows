@@ -13,6 +13,7 @@ output data to other places. Workflows are built on top of Apache Airflow's DAGs
     grid
     mag
     orcid
+    ror
     scopus
     unpaywall_snapshot
     unpaywall
