@@ -1,13 +1,14 @@
-# ROR Telescope
+# ROR
 
-ROR (Research Organization Registry) is a community-led registry of open, sustainable, usable, and unique identifiers for every research organization in the world.
+"ROR (Research Organization Registry) is a community-led registry of open, sustainable, usable, and unique identifiers for every research organization in the world.
 
 ROR includes identifiers and metadata for more than 100,000 organizations. 
 ROR identifiers are designed to link research organizations to research outputs in scholarly infrastructure. 
-Search the ROR registry at https://ror.org/search.
+Search the ROR registry at https://ror.org/search."
+-- [ROR website](https://ror.readme.io/docs/ror-basics).
 
 This telescope gets the latest ROR data from the available data dumps. 
-See https://ror.readme.io/docs/data-dump for more information on the data dump.
+See their [docs](https://ror.readme.io/docs/data-dump) for more information on the data dump.
 
 
  ```eval_rst
@@ -41,7 +42,7 @@ See https://ror.readme.io/docs/data-dump for more information on the data dump.
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/{{ workflow_module }}_latest.csv
+   :file: ../schemas/ror_latest.csv
    :width: 100%
    :header-rows: 1
 ```
