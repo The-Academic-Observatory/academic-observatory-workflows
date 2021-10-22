@@ -19,6 +19,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import requests
+import shutil
 from typing import List
 from zipfile import BadZipFile, ZipFile
 
@@ -29,7 +31,6 @@ from airflow.models.taskinstance import TaskInstance
 from google.cloud.bigquery import SourceFormat
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.file_utils import list_to_jsonl_gz
-from observatory.platform.utils.http_download import download_file
 from observatory.platform.utils.url_utils import (
     retry_session,
 )
@@ -67,12 +68,10 @@ class RorRelease(SnapshotRelease):
 
         :return: None.
         """
-
-        success = download_file(url=self.url, filename=self.download_path)
-        if success:
-            logging.info(f"Downloaded file from {self.url} to: {self.download_path}")
-        else:
-            raise AirflowException(f"Unsuccessful downloading file from: {self.url}")
+        with requests.get(self.url, stream=True) as r:
+            with open(self.download_path, "wb") as f:
+                shutil.copyfileobj(r.raw, f)
+        logging.info(f"Downloaded file from {self.url} to: {self.download_path}")
 
     def extract(self):
         """Extract a single ROR release to a given extraction path.
@@ -281,7 +280,7 @@ def list_ror_records(start_date: pendulum.DateTime, end_date: pendulum.DateTime,
             records.append({"release_date": release_date.format("YYYYMMDD"), "url": link})
             logging.info(f"Found record created on '{release_date}', url: {link}")
 
-        if release_date < end_date:
+        if release_date < start_date:
             break
 
     return records
