@@ -158,7 +158,7 @@ class TestRorTelescope(ObservatoryTestCase):
                     for release in releases:
                         download_path = self.releases[release.url]["path"]
                         self.setup_mock_file_download(release.url, download_path)
-                    env.run_task(telescope.download.__name__, dag, execution_date)
+                    env.run_task(telescope.download.__name__)
                 for release in releases:
                     self.assertEqual(1, len(release.download_files))
                     download_hash = self.releases[release.url]["download_hash"]
@@ -208,6 +208,6 @@ class TestRorTelescope(ObservatoryTestCase):
                     [releases[0].extract_folder, releases[1].extract_folder],
                     [releases[0].transform_folder, releases[1].transform_folder],
                 )
-                env.run_task(telescope.cleanup.__name__, dag, execution_date)
+                env.run_task(telescope.cleanup.__name__)
                 for i, release in enumerate(releases):
                     self.assert_cleanup(download_folders[i], extract_folders[i], transform_folders[i])
