@@ -19,15 +19,14 @@ from datetime import datetime, timedelta
 from typing import Generator, List, Optional, Tuple, Union
 
 import pendulum
-from airflow.exceptions import AirflowException
-from airflow.models.dagrun import DagRun
-from croniter import croniter
-from dateutil.relativedelta import relativedelta
-
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from academic_observatory_workflows.workflows.unpaywall_snapshot_telescope import (
     UnpaywallSnapshotRelease,
 )
+from airflow.exceptions import AirflowException
+from airflow.models.dagrun import DagRun
+from croniter import croniter
+from dateutil.relativedelta import relativedelta
 from observatory.platform.utils.airflow_utils import (
     AirflowVars,
     get_airflow_connection_password,
@@ -100,14 +99,14 @@ class UnpaywallRelease(StreamRelease):
     def download(self):
         """Download the release."""
         if self.first_release:
-            return self._download_snapshot()
+            self._download_snapshot()
         else:
-            return self._download_data_feed()
+            self._download_data_feed()
 
     def _download_snapshot(self):
         """Download the most recent Unpaywall snapshot on or before the start date."""
 
-        success = download_file(url=self.snapshot_url, headers=self.http_header, prefix_dir=self.download_folder)
+        download_file(url=self.snapshot_url, headers=self.http_header, prefix_dir=self.download_folder)
 
         download_date = UnpaywallSnapshotRelease.parse_release_date(self.download_files[0]).date()
         start_date = self.start_date.date()
@@ -116,8 +115,6 @@ class UnpaywallRelease(StreamRelease):
             raise AirflowException(
                 f"The telescope start date {start_date} and the downloaded snapshot date {download_date} do not match.  Please set the telescope's start date to {download_date}."
             )
-
-        return success
 
     @staticmethod
     def get_diff_release(*, feed_url: str, start_date: pendulum.DateTime) -> Tuple[Optional[str], Optional[str]]:
@@ -150,8 +147,7 @@ class UnpaywallRelease(StreamRelease):
             start_date=self.start_date,
         )
         filename = os.path.join(self.download_folder, filename)
-        success = download_file(url=url, filename=filename, headers=self.http_header)
-        return success
+        download_file(url=url, filename=filename, headers=self.http_header)
 
     def extract(self):
         """Unzip the downloaded files."""
