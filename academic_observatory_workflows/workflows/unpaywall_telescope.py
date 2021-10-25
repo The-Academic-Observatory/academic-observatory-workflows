@@ -16,18 +16,17 @@
 
 import os
 from datetime import datetime, timedelta
-from typing import Generator, List, Tuple, Union, Optional
+from typing import Generator, List, Optional, Tuple, Union
 
 import pendulum
-from airflow.exceptions import AirflowException
-from airflow.models.dagrun import DagRun
-from croniter import croniter
-from dateutil.relativedelta import relativedelta
-
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from academic_observatory_workflows.workflows.unpaywall_snapshot_telescope import (
     UnpaywallSnapshotRelease,
 )
+from airflow.exceptions import AirflowException
+from airflow.models.dagrun import DagRun
+from croniter import croniter
+from dateutil.relativedelta import relativedelta
 from observatory.platform.utils.airflow_utils import (
     AirflowVars,
     get_airflow_connection_password,
@@ -108,12 +107,13 @@ class UnpaywallRelease(StreamRelease):
         """Download the most recent Unpaywall snapshot on or before the start date."""
 
         download_file(url=self.snapshot_url, headers=self.http_header, prefix_dir=self.download_folder)
+
         download_date = UnpaywallSnapshotRelease.parse_release_date(self.download_files[0]).date()
         start_date = self.start_date.date()
 
         if start_date != download_date:
             raise AirflowException(
-                f"The telescope start date {start_date} and the downloaded snapshot date {download_date} do not match."
+                f"The telescope start date {start_date} and the downloaded snapshot date {download_date} do not match.  Please set the telescope's start date to {download_date}."
             )
 
     @staticmethod
@@ -180,6 +180,7 @@ class UnpaywallTelescope(StreamTelescope):
         merge_partition_field: str = "doi",
         schema_folder: str = default_schema_folder(),
         airflow_vars: List = None,
+        catchup=True,
     ):
         """Unpaywall Data Feed telescope.
 
@@ -191,6 +192,7 @@ class UnpaywallTelescope(StreamTelescope):
         :param merge_partition_field: the BigQuery field used to match partitions for a merge
         :param schema_folder: the SQL schema path.
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
+        :param catchup: Whether to perform catchup on old releases.
         """
 
         self._validate_schedule_interval(start_date=start_date, schedule_interval=schedule_interval)
@@ -213,7 +215,7 @@ class UnpaywallTelescope(StreamTelescope):
             schema_folder,
             dataset_description=dataset_description,
             batch_load=True,
-            catchup=True,
+            catchup=catchup,
             airflow_vars=airflow_vars,
             airflow_conns=[UnpaywallTelescope.AIRFLOW_CONNECTION],
         )
