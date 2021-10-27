@@ -28,18 +28,11 @@ jobs:
     steps:
       - name: Set environment variables
         id: vars
-        run: |
-          if [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' && ${{ github.event_name }} == 'push' ]; then \
-            echo "test"; \
-            echo "::set-output name=TF_WORKSPACE::ao-develop"; \
-            echo "::set-output name=PROJECT_ID::${{ secrets.DEVELOP_GCP_PROJECT_ID }}"; \
-            export CHANGELOG="${{ secrets.DEVELOP_GCP_SERVICE_KEY }}"; \
-            CHANGELOG="${CHANGELOG//'%'/'%25'}"; \
-            CHANGELOG="${CHANGELOG//$'\n'/'%0A'}"; \
-            CHANGELOG="${CHANGELOG//$'\r'/'%0D'}"; \
-            echo "::set-output name=GCP_CREDENTIALS::$(echo "$CHANGELOG")"; \
-#            msg=$(printf '%s' "${{ secrets.DEVELOP_GCP_SERVICE_KEY }}" | jq --raw-input --slurp '.'); \
-#            echo "::set-output name=GCP_CREDENTIALS::$msg"; \
+        run: >
+          if [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' && ${{ github.event_name }} == 'push' ]; then
+            echo "test";
+            echo "::set-output name=TF_WORKSPACE::ao-develop";
+            echo "::set-output name=PROJECT_ID::${{ secrets.DEVELOP_GCP_PROJECT_ID }}";
           fi
 #          if [ ${{ github.ref }} == 'refs/heads/develop' ]; then
 #            echo "TF_WORKSPACE=ao-develop" >> $GITHUB_ENV;
@@ -60,18 +53,16 @@ jobs:
           echo "vars"
           echo "${{ steps.vars.outputs.TF_WORKSPACE }}"
           echo "${{ steps.vars.outputs.PROJECT_ID }}"
-          echo "${{ steps.vars.outputs.GCP_CREDENTIALS }}"
 
     outputs:
       tf_workspace: ${{ steps.vars.outputs.TF_WORKSPACE }}
       project_id: ${{ steps.vars.outputs.PROJECT_ID }}
-      gcp_credentials: ${{ steps.vars.outputs.GCP_CREDENTIALS }}
 
 
   build-and-push-image:
     name: "Build and push image"
     needs: set_variables
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -83,17 +74,33 @@ jobs:
           echo "vars"
           echo "${{ needs.set_variables.outputs.tf_workspace }}"
           echo "${{ needs.set_variables.outputs.project_id }}"
-          echo "${{ needs.set_variables.outputs.gcp_credentials }}"
 
       - name: Checkout project
         uses: actions/checkout@v2
 
       - name: Log in to the Container registry
+        if: github.ref == 'refs/heads/INF-73_data_API'
         uses: docker/login-action@v1
         with:
           registry: gcr.io
           username: _json_key
-          password: ${{ env.GCP_CREDENTIALS }}
+          password: ${{ secrets.DEVELOP_GCP_SERVICE_KEY }}
+
+      - name: Log in to the Container registry
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@v1
+        with:
+          registry: gcr.io
+          username: _json_key
+          password: ${{ secrets.STAGING_GCP_SERVICE_KEY }}
+
+      - name: Log in to the Container registry
+        if: github.ref == 'refs/heads/develop' && github.event_name == 'release'
+        uses: docker/login-action@v1
+        with:
+          registry: gcr.io
+          username: _json_key
+          password: ${{ secrets.PRODUCTION_GCP_SERVICE_KEY }}
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
