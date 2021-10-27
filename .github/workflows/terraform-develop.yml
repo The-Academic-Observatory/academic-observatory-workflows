@@ -2,8 +2,8 @@ name: "Terraform Develop"
 
 on:
   push:
-    branches:
-      - develop
+#    branches:
+#      - develop
   pull_request:
     branches:
       - develop
@@ -22,51 +22,71 @@ env:
   REGION: us-west1
 
 jobs:
-  update_image:
-    name: "Update Cloud Run Image"
-    runs-on: ${{ matrix.os }}
-    strategy:
-      max-parallel: 4
-      matrix:
-        python-version: [ 3.8 ]
-        os: [ ubuntu-20.04 ]
+  build-and-push-image:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+
     steps:
-      - name: Checkout
+      - name: Checkout project
         uses: actions/checkout@v2
 
-      - name: Setup Cloud SDK
-        uses: google-github-actions/setup-gcloud@v0.2.0
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
         with:
-          project_id: ${{ env.PROJECT_ID }}
-          service_account_key: ${{ env.GCP_CREDENTIALS }}
-          export_default_credentials: true  # Set to true to authenticate the Cloud Run action
+          registry: gcr.io
+          username: _json_key
+          password: ${{ env.GCP_CREDENTIALS }}
 
-      - name: Delete old images with same PR tag, always keep the latest
-        if: github.event_name == 'pull_request'
-        run: >
-          gcloud container images list-tags gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}
-          --filter='tags:pr-${{github.event.number }}-*' --format="get(digest)" |
-          tail -n+2 |
-          xargs -I {} gcloud container images delete gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}@{}
-          --force-delete-tags --quiet
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v3
+        with:
+          images: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}
 
-      - name: Authorize Docker push
-        run: gcloud auth configure-docker
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
 
-      - name: Create Image Tag
-        id: image
-        run: >
-          if [ ${{ github.event_name }} == 'pull_request' ];
-          then echo "::set-output name=tag::pr-${{ github.event.number }}-$(git rev-parse --short HEAD)";
-          else echo "::set-output name=tag::push-$(git rev-parse --short HEAD)";
-          fi
-
-      - name: Build and Push Container
-        run: |-
-          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ steps.image.outputs.tag }} ../
-          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ steps.image.outputs.tag }}
-    outputs:
-      image_tag: ${{ steps.image.outputs.tag }}
+#  update_image:
+#    name: "Update Cloud Run Image"
+#    if: github.event_name == 'push'
+#    runs-on: ${{ matrix.os }}
+#    strategy:
+#      max-parallel: 4
+#      matrix:
+#        python-version: [ 3.8 ]
+#        os: [ ubuntu-20.04 ]
+#    steps:
+#      - name: Checkout
+#        uses: actions/checkout@v2
+#
+#      - name: Setup Cloud SDK
+#        uses: google-github-actions/setup-gcloud@v0.2.0
+#        with:
+#          project_id: ${{ env.PROJECT_ID }}
+#          service_account_key: ${{ env.GCP_CREDENTIALS }}
+#          export_default_credentials: true  # Set to true to authenticate the Cloud Run action
+#
+#      - name: Authorize Docker push
+#        run: gcloud auth configure-docker
+#
+#      - name: Build and Push Container
+#        run: |-
+#          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ steps.image.outputs.tag }} ../
+#          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ steps.image.outputs.tag }}
+#
+#      - name: Delete images without a tag
+#        run: >
+#          gcloud container images list-tags gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}
+#          --filter='-tags:*' --format="get(digest)" |
+#          xargs -I {} gcloud container images delete gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}@{}
+#          --quiet
 
   terraform:
     name: "Terraform"
@@ -93,10 +113,10 @@ jobs:
           cd ..
           pip install -e .
 
-      - name: Render openapi and image build files
+      - name: Render openapi file
         run: |
           python ../server/openapi_renderer.py "../server/openapi.yaml.jinja2" "./openapi.yaml.tpl"
-          echo ${{ needs.update_image.outputs.image_tag }} > ./image_build.txt
+#          echo ${{ needs.update_image.outputs.image_tag }} > ./image_build.txt
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
