@@ -38,6 +38,30 @@ The telescope downloads results in parallel. Web of Science has imposed [throttl
 * Cited references: 100 max per article.
 * Max records retrievable in period: licence dependent. Unclear what Curtin’s limit is if any.
 
+ ```eval_rst
++------------------------------+--------------------------------------+
+| Summary                      |                                      |
++==============================+======================================+
+| Harvest Type                 | API                                  |
++------------------------------+--------------------------------------+
+| Harvest frequency            | Default: @monthly                    |
++------------------------------+--------------------------------------+
+| Runs on remote worker        | Default: False                       |
++------------------------------+--------------------------------------+
+| Catchup missed runs          | Default: False                       |
++------------------------------+--------------------------------------+
+| Table Write Disposition      | Append                               |
++------------------------------+--------------------------------------+
+| Dataset Update Frequency     | Daily                                |
++------------------------------+--------------------------------------+
+| Credentials Required         | Yes                                  |
++------------------------------+--------------------------------------+
+| Uses Workflow Template       | Snapshot                             |
++------------------------------+--------------------------------------+
+| Each shard includes all data | Yes                                  |
++------------------------------+--------------------------------------+
+```
+
 ## Latest schema
 ``` eval_rst
 .. csv-table::
