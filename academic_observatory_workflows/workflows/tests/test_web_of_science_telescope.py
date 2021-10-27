@@ -255,11 +255,11 @@ class TestWosNameAttributes(unittest.TestCase):
     def test_get_contribs_blank(self):
         data = {}
         wna = WosNameAttributes(data)
-        self.assertEqual(wna.contribs_, {})
+        self.assertEqual(wna._contribs, {})
 
         data = {"static_data": {}}
         wna = WosNameAttributes(data)
-        self.assertEqual(wna.contribs_, {})
+        self.assertEqual(wna._contribs, {})
 
     def test_no_name(self):
         data = {}
@@ -305,7 +305,7 @@ class TestWosNameAttributes(unittest.TestCase):
             }
         }
         wna = WosNameAttributes(data)
-        self.assertEqual(wna.contribs_, {"first last": {}})
+        self.assertEqual(wna._contribs, {"first last": {}})
 
     def test_orcid_rid(self):
         data = {
@@ -318,7 +318,7 @@ class TestWosNameAttributes(unittest.TestCase):
             }
         }
         wna = WosNameAttributes(data)
-        self.assertEqual(wna.contribs_, {"first last": {"r_id": "rid", "orcid": "orcid"}})
+        self.assertEqual(wna._contribs, {"first last": {"r_id": "rid", "orcid": "orcid"}})
 
         orcid = wna.get_orcid("first last")
         self.assertEqual(orcid, "orcid")

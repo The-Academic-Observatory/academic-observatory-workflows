@@ -26,7 +26,6 @@ import backoff
 import jsonlines
 import pendulum
 import xmltodict
-from academic_observatory_workflows.config import schema_folder
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from airflow.exceptions import AirflowException
 from google.cloud.bigquery import WriteDisposition
@@ -294,10 +293,10 @@ class WosNameAttributes:
     """Helper class for parsing name attributes."""
 
     def __init__(self, data: dict):
-        self.contribs_ = WosNameAttributes.get_contribs_(data)
+        self._contribs = WosNameAttributes._get_contribs(data)
 
     @staticmethod
-    def get_contribs_(data: dict) -> dict:
+    def _get_contribs(data: dict) -> dict:
         """Helper function to parse the contributors structure to aid extraction of fields.
 
         :param data: dictionary to query.
@@ -332,7 +331,7 @@ class WosNameAttributes:
         :return: orcid id.
         """
         try:
-            orcid = self.contribs_[full_name]["orcid"]
+            orcid = self._contribs[full_name]["orcid"]
             return orcid
         except:
             return None
@@ -346,7 +345,7 @@ class WosNameAttributes:
         """
 
         try:
-            rid = self.contribs_[full_name]["r_id"]
+            rid = self._contribs[full_name]["r_id"]
             return rid
         except:
             return None
@@ -788,12 +787,12 @@ class WebOfScienceRelease(SnapshotRelease):
         """Convert the XML response into BQ friendly jsonlines."""
 
         for xml_file in self.download_files:
-            records = self.transform_xml_to_json_(xml_file)
-            harvest_datetime = self.get_harvest_datetime_(xml_file)
-            entries = self.transform_to_db_format_(records=records, harvest_datetime=harvest_datetime)
-            self.write_transform_files_(entries=entries, xml_file=xml_file)
+            records = self._transform_xml_to_json(xml_file)
+            harvest_datetime = self._get_harvest_datetime(xml_file)
+            entries = self._transform_to_db_format(records=records, harvest_datetime=harvest_datetime)
+            self._write_transform_files(entries=entries, xml_file=xml_file)
 
-    def schema_check_(self, schema: str):
+    def _schema_check(self, schema: str):
         """Check that the schema hasn't changed. Throw on different schema.
 
         :param schema: Schema string from HTTP response.
@@ -804,7 +803,7 @@ class WebOfScienceRelease(SnapshotRelease):
                 f"Schema change detected. Expected: {WebOfScienceRelease.EXPECTED_SCHEMA}, received: {schema}"
             )
 
-    def get_harvest_datetime_(self, filepath: str) -> str:
+    def _get_harvest_datetime(self, filepath: str) -> str:
         """Get the harvest datetime from the filename. <startdate>_<enddate>_<page>_<timestamp>.xml
 
         :param filepath: XML file path.
@@ -815,7 +814,7 @@ class WebOfScienceRelease(SnapshotRelease):
         file_tokens = filename.split("_")
         return file_tokens[3][:-4]
 
-    def transform_xml_to_json_(self, xml_file: str) -> Union[dict, list]:
+    def _transform_xml_to_json(self, xml_file: str) -> Union[dict, list]:
         """Transform XML response to JSON. Throw if schema has changed.
 
         :param xml_file: XML file of the API response.
@@ -824,10 +823,10 @@ class WebOfScienceRelease(SnapshotRelease):
 
         xml_data = load_file(xml_file)
         records, schema = WosUtility.parse_query(xml_data)
-        self.schema_check_(schema)
+        self._schema_check(schema)
         return records
 
-    def transform_to_db_format_(self, records: list, harvest_datetime: str) -> List[dict]:
+    def _transform_to_db_format(self, records: list, harvest_datetime: str) -> List[dict]:
         """Convert the json response to the expected schema.
 
         :param records: List of the records as json.
@@ -848,7 +847,7 @@ class WebOfScienceRelease(SnapshotRelease):
 
         return entries
 
-    def write_transform_files_(self, *, entries: Union[Dict, List], xml_file: str):
+    def _write_transform_files(self, *, entries: Union[Dict, List], xml_file: str):
         """Save the schema compatible dictionaries as jsonlines.
 
         :param entries: List of schema compatible entries.
