@@ -247,7 +247,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
             )
 
             # Disable dag check on dag run sensor
-            for sensor in workflow.sensors:
+            for sensor in workflow.operators[0]:
                 sensor.check_exists = False
                 sensor.grace_period = timedelta(seconds=1)
 
