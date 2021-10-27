@@ -33,12 +33,12 @@ jobs:
             echo "TF_WORKSPACE=ao-develop" >> $GITHUB_ENV;
             echo "PROJECT_ID=${{ secrets.DEVELOP_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
             echo "GCP_CREDENTIALS=${{ secrets.DEVELOP_GCP_SERVICE_KEY }}" >> $GITHUB_ENV;
-          elif [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' && ${{ github.events }} == 'push' ]; then
+          elif [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' && ${{ github.event_name }} == 'push' ]; then
             echo "test";
             echo "::set-output name=TF_WORKSPACE::ao-develop";
             echo "::set-output name=PROJECT_ID::${{ secrets.DEVELOP_GCP_PROJECT_ID }}";
             echo "::set-output name=GCP_CREDENTIALS::${{ secrets.DEVELOP_GCP_SERVICE_KEY }}";
-          elif [ ${{ github.ref }} == 'refs/heads/main' && ${{ github.events }} == 'push' ]; then
+          elif [ ${{ github.ref }} == 'refs/heads/main' && ${{ github.event_name }} == 'push' ]; then
             echo "TF_WORKSPACE=ao-staging" >> $GITHUB_ENV;
             echo "PROJECT_ID=${{ secrets.STAGING_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
             echo "GCP_CREDENTIALS=${{ secrets.STAGING_GCP_SERVICE_KEY }}" >> $GITHUB_ENV;
