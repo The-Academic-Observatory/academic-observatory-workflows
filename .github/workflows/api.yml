@@ -1,10 +1,10 @@
-name: "Terraform Develop"
+name: "API Workflow"
 
 on:
   push:
-#    branches:
-#      - develop
-#      - main
+    branches:
+      - develop
+      - main
   pull_request:
     branches:
       - develop
@@ -32,10 +32,8 @@ env:
   PRODUCTION_GCP_PROJECT_ID: ${{ secrets.PRODUCTION_GCP_PROJECT_ID }}
 
 jobs:
-
   build-and-push-image:
     name: "Build and push image"
-#    needs: set_variables
     if: github.event_name == 'push' || github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
@@ -73,7 +71,7 @@ jobs:
       - name: Set GCP project id env
         id: vars
         run: |
-          if [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' ] && [ ${{ github.event_name }} == 'push' ]; then
+          if [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' ]; then
             echo "PROJECT_ID=${{ env.DEVELOP_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
           elif [ ${{ github.ref }} == 'refs/heads/main' ] && [ ${{ github.event_name }} == 'push' ]; then
             echo "PROJECT_ID=${{ env.STAGING_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
@@ -135,12 +133,12 @@ jobs:
       - name: Set Terraform Workspace env
         id: vars
         run: |
-          if [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' ] && [ ${{ github.event_name }} == 'push' ]; then
+          if [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' ]; then
             echo "TF_WORKSPACE=${{ env.DEVELOP_TF_WORKSPACE }}" >> $GITHUB_ENV;
-          elif [ ${{ github.ref }} == 'refs/heads/main' ] && [ ${{ github.event_name }} == 'push' ]; then
-            echo "TF_WORKSPACE=${{ env.STAGING_TF_WORKSPACE }}" >> $GITHUB_ENV;
-          else
+          elif [ ${{ github.ref }} == 'refs/heads/main' ] && [ ${{ github.event_name }} == 'release' ]; then
             echo "TF_WORKSPACE=${{ env.PRODUCTION_TF_WORKSPACE }}" >> $GITHUB_ENV;
+          else
+            echo "TF_WORKSPACE=${{ env.STAGING_TF_WORKSPACE }}" >> $GITHUB_ENV;
           fi
 
       - name: Terraform Format
@@ -193,7 +191,7 @@ jobs:
           edit-mode: replace
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+        if: github.event_name == 'push'
         run: terraform apply -auto-approve
 
       - name: Terraform Plan Status
