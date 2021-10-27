@@ -15,9 +15,21 @@ on:
 
 env:
   SERVICE: ao-api
-#  TF_WORKSPACE: ao-develop
+
+  DEVELOP_TF_WORKSPACE: ao-develop
+  STAGING_TF_WORKSPACE: ao-staging
+  PRODUCTION_TF_WORKSPACE: ao-production
+
   TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
   TF_BACKEND_ORGANIZATION: ${{ secrets.TF_BACKEND_ORGANIZATION }}
+
+  DEVELOP_GCP_SERVICE_KEY: ${{ secrets.DEVELOP_GCP_SERVICE_KEY }}
+  STAGING_GCP_SERVICE_KEY: ${{ secrets.STAGING_GCP_SERVICE_KEY }}
+  PRODUCTION_GCP_SERVICE_KEY: ${{ secrets.PRODUCTION_GCP_SERVICE_KEY }}
+
+  DEVELOP_GCP_PROJECT_ID: ${{ secrets.DEVELOP_GCP_PROJECT_ID }}
+  STAGING_GCP_PROJECT_ID: ${{ secrets.STAGING_GCP_PROJECT_ID }}
+  PRODUCTION_GCP_PROJECT_ID: ${{ secrets.PRODUCTION_GCP_PROJECT_ID }}
 
 jobs:
 
@@ -40,7 +52,7 @@ jobs:
         with:
           registry: gcr.io
           username: _json_key
-          password: ${{ secrets.DEVELOP_GCP_SERVICE_KEY }}
+          password: ${{ env.DEVELOP_GCP_SERVICE_KEY }}
 
       - name: Log in to the Staging Container registry
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -48,7 +60,7 @@ jobs:
         with:
           registry: gcr.io
           username: _json_key
-          password: ${{ secrets.STAGING_GCP_SERVICE_KEY }}
+          password: ${{ env.STAGING_GCP_SERVICE_KEY }}
 
       - name: Log in to the Production Container registry
         if: github.ref == 'refs/heads/main' && github.event_name == 'release'
@@ -56,17 +68,17 @@ jobs:
         with:
           registry: gcr.io
           username: _json_key
-          password: ${{ secrets.PRODUCTION_GCP_SERVICE_KEY }}
+          password: ${{ env.PRODUCTION_GCP_SERVICE_KEY }}
 
       - name: Set GCP project id env
         id: vars
         run: |
           if [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' ] && [ ${{ github.event_name }} == 'push' ]; then
-            echo "PROJECT_ID=${{ secrets.DEVELOP_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
+            echo "PROJECT_ID=${{ env.DEVELOP_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
           elif [ ${{ github.ref }} == 'refs/heads/main' ] && [ ${{ github.event_name }} == 'push' ]; then
-            echo "PROJECT_ID=${{ secrets.STAGING_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
+            echo "PROJECT_ID=${{ env.STAGING_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
           else
-            echo "PROJECT_ID=${{ secrets.PRODUCTION_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
+            echo "PROJECT_ID=${{ env.PRODUCTION_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
           fi
 
       - name: Extract metadata (tags, labels) for Docker
@@ -124,11 +136,11 @@ jobs:
         id: vars
         run: |
           if [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' ] && [ ${{ github.event_name }} == 'push' ]; then
-            echo "TF_WORKSPACE=ao-develop" >> $GITHUB_ENV;
+            echo "TF_WORKSPACE=${{ env.DEVELOP_TF_WORKSPACE }}" >> $GITHUB_ENV;
           elif [ ${{ github.ref }} == 'refs/heads/main' ] && [ ${{ github.event_name }} == 'push' ]; then
-            echo "TF_WORKSPACE=ao-staging" >> $GITHUB_ENV;
+            echo "TF_WORKSPACE=${{ env.STAGING_TF_WORKSPACE }}" >> $GITHUB_ENV;
           else
-            echo "TF_WORKSPACE=ao-production" >> $GITHUB_ENV;
+            echo "TF_WORKSPACE=${{ env.PRODUCTION_TF_WORKSPACE }}" >> $GITHUB_ENV;
           fi
 
       - name: Terraform Format
