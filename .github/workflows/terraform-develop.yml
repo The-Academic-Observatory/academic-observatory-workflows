@@ -33,7 +33,7 @@ jobs:
             echo "test";
             echo "::set-output name=TF_WORKSPACE::ao-develop";
             echo "::set-output name=PROJECT_ID::${{ secrets.DEVELOP_GCP_PROJECT_ID }}";
-            msg=$(printf '%s' "${{ secrets.DEVELOP_GCP_SERVICE_KEY }}" | jq --raw-input --slurp '.')
+            msg=$(printf '%s' '${{ secrets.DEVELOP_GCP_SERVICE_KEY }}' | jq --raw-input --slurp '.');
             echo "::set-output name=GCP_CREDENTIALS::$msg";
           fi
 #          if [ ${{ github.ref }} == 'refs/heads/develop' ]; then
