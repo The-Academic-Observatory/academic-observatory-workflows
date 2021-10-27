@@ -15,6 +15,7 @@
 # Author: Aniek Roelofs
 
 import json
+import jsonlines
 import os
 import httpretty
 import pendulum
@@ -53,18 +54,26 @@ class TestRorTelescope(ObservatoryTestCase):
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
 
+        # Get list of dictionaries with expected BQ table content
+        table_content = []
+        with jsonlines.open(test_fixtures_folder("ror", "table_content.jsonl"), "r") as reader:
+            for row in reader:
+                table_content.append(row)
+
         self.releases = {
             "https://zenodo.org/api/files/6b2024bb-b37f-4a01-a78a-6d90f9d0cb90/2021-09-20-ror-data.zip": {
                 "path": test_fixtures_folder("ror", "2021-09-20-ror-data.zip"),
                 "download_hash": "60620675937e6513104275931331f68f",
                 "extract_hash": "17931b9f766387d10778f121725c0fa1",
                 "transform_hash": "2e6c12a9",
+                "table_content": table_content,
             },
             "https://zenodo.org/api/files/ee5e3ae8-81a1-4f49-88ea-6feb09d4d0ac/2021-09-23-ror-data.zip": {
                 "path": test_fixtures_folder("ror", "2021-09-23-ror-data.zip"),
                 "download_hash": "0cac8705fba6df755648472356b7cb83",
                 "extract_hash": "17931b9f766387d10778f121725c0fa1",
                 "transform_hash": "2e6c12a9",
+                "table_content": table_content,
             },
         }
         self.release = RorRelease("ror", pendulum.datetime(2021, 1, 1), "https://myurl")
@@ -199,8 +208,8 @@ class TestRorTelescope(ObservatoryTestCase):
                         f"{self.project_id}.{dataset_id}."
                         f"{bigquery_sharded_table_id(telescope.dag_id, release.release_date)}"
                     )
-                    expected_rows = 2
-                    self.assert_table_integrity(table_id, expected_rows)
+                    expected_content = self.releases[release.url]["table_content"]
+                    self.assert_table_content(table_id, expected_content)
 
                 # Test that all telescope data deleted
                 download_folders, extract_folders, transform_folders = (
