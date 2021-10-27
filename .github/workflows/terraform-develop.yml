@@ -18,52 +18,12 @@ env:
 #  TF_WORKSPACE: ao-develop
   TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
   TF_BACKEND_ORGANIZATION: ${{ secrets.TF_BACKEND_ORGANIZATION }}
-#  PROJECT_ID: ${{ secrets.DEVELOP_GCP_PROJECT_ID }}
-#  GCP_CREDENTIALS: ${{ secrets.DEVELOP_GCP_SERVICE_KEY }}
 
 jobs:
-  set_variables:
-    name: "Set environment variables"
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set environment variables
-        id: vars
-        run: |
-          if [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' ] && [ ${{ github.event_name }} == 'push' ]; then
-            echo "test";
-            echo "::set-output name=TF_WORKSPACE::ao-develop";
-            echo "::set-output name=PROJECT_ID::${{ secrets.DEVELOP_GCP_PROJECT_ID }}";
-          fi
-#          if [ ${{ github.ref }} == 'refs/heads/develop' ]; then
-#            echo "TF_WORKSPACE=ao-develop" >> $GITHUB_ENV;
-#            echo "PROJECT_ID=${{ secrets.DEVELOP_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
-#            echo "GCP_CREDENTIALS=${{ secrets.DEVELOP_GCP_SERVICE_KEY }}" >> $GITHUB_ENV;
-#          elif [ ${{ github.ref }} == 'refs/heads/main' && ${{ github.event_name }} == 'push' ]; then
-#            echo "TF_WORKSPACE=ao-staging" >> $GITHUB_ENV;
-#            echo "PROJECT_ID=${{ secrets.STAGING_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
-#            echo "GCP_CREDENTIALS=${{ secrets.STAGING_GCP_SERVICE_KEY }}" >> $GITHUB_ENV;
-#          else
-#            echo "TF_WORKSPACE=ao-production" >> $GITHUB_ENV;
-#            echo "PROJECT_ID=${{ secrets.PRODUCTION_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
-#            echo "GCP_CREDENTIALS=${{ secrets.PRODUCTION_GCP_SERVICE_KEY }}" >> $GITHUB_ENV;
-#          fi
-
-      - name: Test vars
-        run: |
-          echo "vars"
-          echo "${{ steps.vars.outputs.TF_WORKSPACE }}"
-          echo "${{ steps.vars.outputs.PROJECT_ID }}"
-#          echo "${{ steps.vars.outputs.GCP_CREDENTIALS }}"
-
-    outputs:
-      tf_workspace: ${{ steps.vars.outputs.TF_WORKSPACE }}
-      project_id: ${{ steps.vars.outputs.PROJECT_ID }}
-#      gcp_credentials: ${{ steps.vars.outputs.GCP_CREDENTIALS }}
-
 
   build-and-push-image:
     name: "Build and push image"
-    needs: set_variables
+#    needs: set_variables
     if: github.event_name == 'push' || github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
@@ -71,13 +31,6 @@ jobs:
       contents: read
 
     steps:
-      - name: Test vars
-        run: |
-          echo "vars"
-          echo "${{ needs.set_variables.outputs.tf_workspace }}"
-          echo "${{ needs.set_variables.outputs.project_id }}"
-#          echo "${{ needs.set_variables.outputs.gcp_credentials }}"
-
       - name: Checkout project
         uses: actions/checkout@v2
 
@@ -105,11 +58,22 @@ jobs:
           username: _json_key
           password: ${{ secrets.PRODUCTION_GCP_SERVICE_KEY }}
 
+      - name: Set GCP project id env
+        id: vars
+        run: |
+          if [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' ] && [ ${{ github.event_name }} == 'push' ]; then
+            echo "PROJECT_ID=${{ secrets.DEVELOP_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
+          elif [ ${{ github.ref }} == 'refs/heads/main' ] && [ ${{ github.event_name }} == 'push' ]; then
+            echo "PROJECT_ID=${{ secrets.STAGING_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
+          else
+            echo "PROJECT_ID=${{ secrets.PRODUCTION_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
+          fi
+
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v3
         with:
-          images: ${{ needs.set_variables.outputs.project_id }}/${{ env.SERVICE }}
+          images: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v2
@@ -154,6 +118,17 @@ jobs:
         with:
           # terraform_version: 0.13.0:
           cli_config_credentials_token: ${{ env.TF_API_TOKEN }}
+
+      - name: Set Terraform Workspace env
+        id: vars
+        run: |
+          if [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' ] && [ ${{ github.event_name }} == 'push' ]; then
+            echo "TF_WORKSPACE=ao-develop" >> $GITHUB_ENV;
+          elif [ ${{ github.ref }} == 'refs/heads/main' ] && [ ${{ github.event_name }} == 'push' ]; then
+            echo "TF_WORKSPACE=ao-staging" >> $GITHUB_ENV;
+          else
+            echo "TF_WORKSPACE=ao-production" >> $GITHUB_ENV;
+          fi
 
       - name: Terraform Format
         id: fmt
