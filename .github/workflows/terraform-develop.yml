@@ -23,6 +23,7 @@ env:
 
 jobs:
   set_variables:
+    name: "Set environment variables"
     runs-on: ubuntu-latest
     steps:
       - name: Set environment variables
@@ -47,6 +48,8 @@ jobs:
 
 
   build-and-push-image:
+    name: "Build and push image"
+    needs: set_variables
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -78,6 +81,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
 
   terraform:
+    needs: build-and-push-image
     name: "Terraform"
     defaults:
       run:
