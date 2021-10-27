@@ -1,0 +1,588 @@
+[
+  {
+    "name": "id",
+    "description": "Unique ROR ID for the organization",
+    "mode": "REQUIRED",
+    "type": "STRING"
+  },
+  {
+    "name": "name",
+    "description": "The primary name of the organization",
+    "mode": "REQUIRED",
+    "type": "STRING"
+  },
+  {
+    "name": "email_address",
+    "description": "A contact mail address for the organization. Deprecated field - Not actively curating",
+    "mode": "NULLABLE",
+    "type": "STRING"
+  },
+  {
+    "name": "ip_addresses",
+    "description": "IP address(es) associated with the organization. Deprecated field - Not actively curating",
+    "mode": "REPEATED",
+    "type": "STRING"
+  },
+  {
+    "name": "established",
+    "description": "Year the organization was established (CE)",
+    "mode": "NULLABLE",
+    "type": "INTEGER"
+  },
+  {
+    "name": "types",
+    "description": "Organization type. Allowed types: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, Other",
+    "mode": "REPEATED",
+    "type": "STRING"
+  },
+  {
+    "name": "relationships",
+    "description": "Related organizations in ROR. Allowed relationship types: Parent, Child, Related",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "fields": [
+      {
+        "name": "id",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "label",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "type",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      }
+    ]
+  },
+  {
+    "name": "addresses",
+    "description": "The organization's location",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "fields": [
+      {
+        "name": "lat",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "FLOAT"
+      },
+      {
+        "name": "lng",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "FLOAT"
+      },
+      {
+        "name": "state",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "state_code",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "city",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "geonames_city",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "id",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "INTEGER"
+          },
+          {
+            "name": "city",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "geonames_admin1",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "name",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "id",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "INTEGER"
+              },
+              {
+                "name": "ascii_name",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "code",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          },
+          {
+            "name": "geonames_admin2",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "name",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "id",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "INTEGER"
+              },
+              {
+                "name": "ascii_name",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "code",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          },
+          {
+            "name": "license",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "attribution",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "license",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          },
+          {
+            "name": "nuts_level1",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "name",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "code",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          },
+          {
+            "name": "nuts_level2",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "name",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "code",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          },
+          {
+            "name": "nuts_level3",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "name",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "code",
+                "description": "",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "postcode",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "primary",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "BOOLEAN"
+      },
+      {
+        "name": "line",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "country_geonames_id",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "INTEGER"
+      }
+    ]
+  },
+  {
+    "name": "links",
+    "description": "Official website of the organization",
+    "mode": "REPEATED",
+    "type": "STRING"
+  },
+  {
+    "name": "aliases",
+    "description": "Other names the organization is known by",
+    "mode": "REPEATED",
+    "type": "STRING"
+  },
+  {
+    "name": "acronyms",
+    "description": "Acronyms or initialisms for the organization name",
+    "mode": "REPEATED",
+    "type": "STRING"
+  },
+  {
+    "name": "status",
+    "description": "Whether the organization is active or not",
+    "mode": "REQUIRED",
+    "type": "STRING"
+  },
+  {
+    "name": "wikipedia_url",
+    "description": "Wikipedia link for the organization",
+    "mode": "NULLABLE",
+    "type": "STRING"
+  },
+  {
+    "name": "labels",
+    "description": "Name(s) for the organization in other language(s)",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "fields": [
+      {
+        "name": "label",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "iso639",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      }
+    ]
+  },
+  {
+    "name": "country",
+    "description": "Country where organization is located",
+    "mode": "REQUIRED",
+    "type": "RECORD",
+    "fields": [
+      {
+        "name": "country_name",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "country_code",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      }
+    ]
+  },
+  {
+    "name": "external_ids",
+    "description": "Other identifiers for the organization. Allowed external IDs: Crossref Funder ID (FundRef), GRID, ISNI, Wikidata. Other external IDs not actively curated include OrgRef, HESA, UCAS, UKPRN, CNRS.",
+    "mode": "NULLABLE",
+    "type": "RECORD",
+    "fields": [
+      {
+        "name": "ISNI",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "preferred",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "all",
+            "description": "",
+            "mode": "REPEATED",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "OrgRef",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "preferred",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "all",
+            "description": "",
+            "mode": "REPEATED",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "Wikidata",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "preferred",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "all",
+            "description": "",
+            "mode": "REPEATED",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "GRID",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "preferred",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "all",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "FundRef",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "preferred",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "all",
+            "description": "",
+            "mode": "REPEATED",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "CNRS",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "preferred",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "all",
+            "description": "",
+            "mode": "REPEATED",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "HESA",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "preferred",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "all",
+            "description": "",
+            "mode": "REPEATED",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "UCAS",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "preferred",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "all",
+            "description": "",
+            "mode": "REPEATED",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "UKPRN",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "preferred",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "all",
+            "description": "",
+            "mode": "REPEATED",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "LinkedIn",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "preferred",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "all",
+            "description": "",
+            "mode": "REPEATED",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "Ringgold",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "preferred",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "all",
+            "description": "",
+            "mode": "REPEATED",
+            "type": "STRING"
+          }
+        ]
+      }
+    ]
+  }
+]
