@@ -84,6 +84,7 @@ jobs:
 
   terraform:
     needs: build-and-push-image
+    if: always()
     name: "Terraform"
     defaults:
       run:
