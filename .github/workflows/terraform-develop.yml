@@ -33,6 +33,11 @@ jobs:
             echo "test"; \
             echo "::set-output name=TF_WORKSPACE::ao-develop"; \
             echo "::set-output name=PROJECT_ID::${{ secrets.DEVELOP_GCP_PROJECT_ID }}"; \
+            export CHANGELOG="${{ secrets.DEVELOP_GCP_PROJECT_ID }}"; \
+            CHANGELOG="${CHANGELOG//'%'/'%25'}"; \
+            CHANGELOG="${CHANGELOG//$'\n'/'%0A'}"; \
+            CHANGELOG="${CHANGELOG//$'\r'/'%0D'}"; \
+            echo "::set-output name=changelog::$(echo "$CHANGELOG")"
             msg=$(printf '%s' "${{ secrets.DEVELOP_GCP_SERVICE_KEY }}" | jq --raw-input --slurp '.'); \
             echo "::set-output name=GCP_CREDENTIALS::$msg"; \
           fi
