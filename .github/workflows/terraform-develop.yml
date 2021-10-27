@@ -4,24 +4,47 @@ on:
   push:
 #    branches:
 #      - develop
+#      - main
   pull_request:
     branches:
       - develop
-
-defaults:
-  run:
-    working-directory: ./academic_observatory_workflows_api/terraform
+      - main
+  release:
+    types:
+      - published
 
 env:
   SERVICE: ao-api
-  TF_WORKSPACE: ao-develop
+#  TF_WORKSPACE: ao-develop
   TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
   TF_BACKEND_ORGANIZATION: ${{ secrets.TF_BACKEND_ORGANIZATION }}
-  PROJECT_ID: ${{ secrets.DEVELOP_GCP_PROJECT_ID }}
-  GCP_CREDENTIALS: ${{ secrets.DEVELOP_GCP_SERVICE_KEY }}
-  REGION: us-west1
+#  PROJECT_ID: ${{ secrets.DEVELOP_GCP_PROJECT_ID }}
+#  GCP_CREDENTIALS: ${{ secrets.DEVELOP_GCP_SERVICE_KEY }}
 
 jobs:
+  set_variables:
+    - name: Set environment variables
+      #TODO remove PR github ref
+      run: >
+        if [ ${{ github.ref }} == 'refs/heads/develop' ]; then
+          echo "TF_WORKSPACE=ao-develop" >> $GITHUB_ENV;
+          echo "PROJECT_ID=${{ secrets.DEVELOP_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
+          echo "GCP_CREDENTIALS=${{ secrets.DEVELOP_GCP_SERVICE_KEY }}" >> $GITHUB_ENV;
+        elif [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' && ${{ github.events }} == 'push' ]; then
+          echo "TF_WORKSPACE=ao-staging" >> $GITHUB_ENV;
+          echo "PROJECT_ID=${{ secrets.STAGING_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
+          echo "GCP_CREDENTIALS=${{ secrets.STAGING_GCP_SERVICE_KEY }}" >> $GITHUB_ENV;
+        elif [ ${{ github.ref }} == 'refs/heads/main' && ${{ github.events }} == 'push' ]; then
+          echo "TF_WORKSPACE=ao-staging" >> $GITHUB_ENV;
+          echo "PROJECT_ID=${{ secrets.STAGING_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
+          echo "GCP_CREDENTIALS=${{ secrets.STAGING_GCP_SERVICE_KEY }}" >> $GITHUB_ENV;
+        else
+          echo "TF_WORKSPACE=ao-production" >> $GITHUB_ENV;
+          echo "PROJECT_ID=${{ secrets.PRODUCTION_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
+          echo "GCP_CREDENTIALS=${{ secrets.PRODUCTION_GCP_SERVICE_KEY }}" >> $GITHUB_ENV;
+        fi
+
+
   build-and-push-image:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -49,48 +72,15 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v2
         with:
-          context: .
+          context: ./academic_observatory_workflows_api/
           push: true
           tags: ${{ steps.meta.outputs.tags }}
 
-#  update_image:
-#    name: "Update Cloud Run Image"
-#    if: github.event_name == 'push'
-#    runs-on: ${{ matrix.os }}
-#    strategy:
-#      max-parallel: 4
-#      matrix:
-#        python-version: [ 3.8 ]
-#        os: [ ubuntu-20.04 ]
-#    steps:
-#      - name: Checkout
-#        uses: actions/checkout@v2
-#
-#      - name: Setup Cloud SDK
-#        uses: google-github-actions/setup-gcloud@v0.2.0
-#        with:
-#          project_id: ${{ env.PROJECT_ID }}
-#          service_account_key: ${{ env.GCP_CREDENTIALS }}
-#          export_default_credentials: true  # Set to true to authenticate the Cloud Run action
-#
-#      - name: Authorize Docker push
-#        run: gcloud auth configure-docker
-#
-#      - name: Build and Push Container
-#        run: |-
-#          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ steps.image.outputs.tag }} ../
-#          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ steps.image.outputs.tag }}
-#
-#      - name: Delete images without a tag
-#        run: >
-#          gcloud container images list-tags gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}
-#          --filter='-tags:*' --format="get(digest)" |
-#          xargs -I {} gcloud container images delete gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}@{}
-#          --quiet
-
   terraform:
     name: "Terraform"
-#    needs: update_image
+    defaults:
+      run:
+        working-directory: ./academic_observatory_workflows_api/terraform
     runs-on: ${{ matrix.os }}
     strategy:
       max-parallel: 4
@@ -109,14 +99,12 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-
           cd ..
           pip install -e .
 
       - name: Render openapi file
         run: |
           python ../server/openapi_renderer.py "../server/openapi.yaml.jinja2" "./openapi.yaml.tpl"
-#          echo ${{ needs.update_image.outputs.image_tag }} > ./image_build.txt
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
