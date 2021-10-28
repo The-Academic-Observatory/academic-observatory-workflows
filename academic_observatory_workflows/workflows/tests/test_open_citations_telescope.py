@@ -68,7 +68,7 @@ class TestOpenCitationsTelescope(ObservatoryTestCase):
         ]
         start_date = pendulum.datetime(2019, 1, 1)
         end_date = pendulum.datetime(2019, 2, 1)
-        releases = telescope.list_releases_(start_date=start_date, end_date=end_date)
+        releases = telescope._list_releases(start_date=start_date, end_date=end_date)
         self.assertEqual(len(releases), 0)
 
     @patch("academic_observatory_workflows.workflows.open_citations_telescope.bigquery_table_exists")
@@ -85,7 +85,7 @@ class TestOpenCitationsTelescope(ObservatoryTestCase):
             {"files": [2], "date": "20210101"},
         ]
 
-        filtered_releases = list(filter(telescope.process_release_, releases))
+        filtered_releases = list(filter(telescope._process_release, releases))
         self.assertEqual(len(filtered_releases), 2)
 
     @patch("academic_observatory_workflows.workflows.open_citations_telescope.bigquery_table_exists")
@@ -103,11 +103,11 @@ class TestOpenCitationsTelescope(ObservatoryTestCase):
             {"files": [2], "date": "20210101"},
         ]
 
-        filtered_releases = list(filter(telescope.process_release_, releases))
+        filtered_releases = list(filter(telescope._process_release, releases))
         self.assertEqual(len(filtered_releases), 2)
 
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope.process_release_")
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope.list_releases_")
+    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope._process_release")
+    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope._list_releases")
     def test_get_release_info_continue(self, m_list_releases, m_process_release):
         m_list_releases.return_value = [1, 2, 3]
         m_process_release.return_value = True
@@ -122,8 +122,8 @@ class TestOpenCitationsTelescope(ObservatoryTestCase):
         self.assertTrue(continue_dag)
         self.assertEqual(len(ti.method_calls), 1)
 
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope.process_release_")
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope.list_releases_")
+    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope._process_release")
+    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope._list_releases")
     def test_get_release_info_skip(self, m_list_releases, m_process_release):
         m_list_releases.return_value = []
         m_process_release.return_value = True

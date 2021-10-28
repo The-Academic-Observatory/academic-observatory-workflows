@@ -156,7 +156,7 @@ class OpenCitationsTelescope(SnapshotTelescope):
         self.add_task(self.bq_load)
         self.add_task(self.cleanup)
 
-    def list_releases_(
+    def _list_releases(
         self,
         *,
         start_date: pendulum.DateTime,
@@ -180,7 +180,7 @@ class OpenCitationsTelescope(SnapshotTelescope):
 
         return releases
 
-    def process_release_(self, release: Dict[str, str]) -> bool:
+    def _process_release(self, release: Dict[str, str]) -> bool:
         """Indicates whether we should process this release. If there are no files, or if the BigQuery table exists, we will not process this release.
 
         :param release: Release to consider.
@@ -209,8 +209,8 @@ class OpenCitationsTelescope(SnapshotTelescope):
 
         start_date = kwargs["execution_date"]
         end_date = kwargs["next_execution_date"].subtract(microseconds=1)
-        releases = self.list_releases_(start_date=start_date, end_date=end_date)
-        filtered_releases = list(filter(self.process_release_, releases))
+        releases = self._list_releases(start_date=start_date, end_date=end_date)
+        filtered_releases = list(filter(self._process_release, releases))
 
         continue_dag = len(filtered_releases) > 0
         if continue_dag:
