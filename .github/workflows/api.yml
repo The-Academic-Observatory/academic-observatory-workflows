@@ -1,4 +1,37 @@
 name: "API Workflow"
+description: >
+  This Github action builds docker API images that are uploaded to the GCR and runs a Terraform workflow.
+
+  For a pull request event:
+  - Run Terraform:
+    - fmt
+    - validate
+    - plan (output is pushed to comment in PR)
+
+  For a push event:
+  - Build and push images
+  - Run Terraform:
+    - fmt
+    - validate
+    - plan
+    - apply
+
+  For a published release event:
+  - Build and push images
+  - Run Terraform:
+    - fmt
+    - validate
+    - plan
+
+  Develop (target) branch settings:
+  - GCP project id: develop, TF workspace: develop, Image tag: develop
+
+  Main (target) branch settings:
+  - GCP project id: staging, TF workspace: staging, Image tag: staging
+
+  Published release settings:
+  - GCP project id: production, TF workspace: production, Image tag: <release_name>
+
 
 on:
   push:
@@ -14,26 +47,31 @@ on:
       - published
 
 env:
-  SERVICE: ao-api
+  # The name of the api (should be same as in the config file)
+  SERVICE: ao
 
+  # The Terraform token and organisation
+  TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+  TF_BACKEND_ORGANIZATION: ${{ secrets.TF_BACKEND_ORGANIZATION }}
+
+  # The Terraform Cloud workspaces for different environments
   DEVELOP_TF_WORKSPACE: ao-develop
   STAGING_TF_WORKSPACE: ao-staging
   PRODUCTION_TF_WORKSPACE: ao-production
 
-  TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
-  TF_BACKEND_ORGANIZATION: ${{ secrets.TF_BACKEND_ORGANIZATION }}
-
+  # The GCP keys for different environments
   DEVELOP_GCP_SERVICE_KEY: ${{ secrets.DEVELOP_GCP_SERVICE_KEY }}
   STAGING_GCP_SERVICE_KEY: ${{ secrets.STAGING_GCP_SERVICE_KEY }}
   PRODUCTION_GCP_SERVICE_KEY: ${{ secrets.PRODUCTION_GCP_SERVICE_KEY }}
 
+  # The GCP project ids for different environments
   DEVELOP_GCP_PROJECT_ID: ${{ secrets.DEVELOP_GCP_PROJECT_ID }}
   STAGING_GCP_PROJECT_ID: ${{ secrets.STAGING_GCP_PROJECT_ID }}
   PRODUCTION_GCP_PROJECT_ID: ${{ secrets.PRODUCTION_GCP_PROJECT_ID }}
 
 jobs:
   build-and-push-image:
-    name: "Build and push image"
+    name: "Build and push docker image for API"
     if: github.event_name == 'push' || github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
@@ -45,7 +83,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Log in to the Develop Container registry
-        if: github.ref == 'refs/heads/INF-73_data_API'
+        if: github.ref == 'refs/heads/develop'
         uses: docker/login-action@v1
         with:
           registry: gcr.io
@@ -71,7 +109,7 @@ jobs:
       - name: Set GCP project id env
         id: vars
         run: |
-          if [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' ]; then
+          if [ ${{ github.ref }} == 'refs/heads/develop' ]; then
             echo "PROJECT_ID=${{ env.DEVELOP_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
           elif [ ${{ github.ref }} == 'refs/heads/main' ] && [ ${{ github.event_name }} == 'push' ]; then
             echo "PROJECT_ID=${{ env.STAGING_GCP_PROJECT_ID }}" >> $GITHUB_ENV;
@@ -83,7 +121,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3
         with:
-          images: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}
+          images: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}-api
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v2
@@ -130,13 +168,22 @@ jobs:
           # terraform_version: 0.13.0:
           cli_config_credentials_token: ${{ env.TF_API_TOKEN }}
 
-      - name: Set Terraform Workspace env
-        id: vars
+      - name: Set Terraform Workspace env for push & release event
+        if: github.event_name == 'push' || github.event_name == 'release'
         run: |
-          if [ ${{ github.ref }} == 'refs/heads/INF-73_data_API' ]; then
+          if [ ${{ github.ref }} == 'refs/heads/develop' ] ; then
             echo "TF_WORKSPACE=${{ env.DEVELOP_TF_WORKSPACE }}" >> $GITHUB_ENV;
-          elif [ ${{ github.ref }} == 'refs/heads/main' ] && [ ${{ github.event_name }} == 'release' ]; then
+          elif [ ${{ github.ref }} == 'refs/heads/main' ] && [ ${{ github.event_name }} == 'push' ]; then
+            echo "TF_WORKSPACE=${{ env.STAGING_TF_WORKSPACE }}" >> $GITHUB_ENV;
+          else
             echo "TF_WORKSPACE=${{ env.PRODUCTION_TF_WORKSPACE }}" >> $GITHUB_ENV;
+          fi
+
+      - name: Set Terraform Workspace env for pull_request event
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ ${{ github.event.pull_request.base.ref }} == 'refs/heads/develop' ] ; then
+            echo "TF_WORKSPACE=${{ env.DEVELOP_TF_WORKSPACE }}" >> $GITHUB_ENV;
           else
             echo "TF_WORKSPACE=${{ env.STAGING_TF_WORKSPACE }}" >> $GITHUB_ENV;
           fi
