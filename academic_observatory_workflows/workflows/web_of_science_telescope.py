@@ -916,6 +916,12 @@ class WebOfScienceTelescope(SnapshotTelescope):
             load_bigquery_table_kwargs=load_bigquery_table_kwargs,
         )
 
+        if len(airflow_conns) == 0:
+            raise AirflowException("You need to supply an Airflow connection with the login credentials.")
+
+        if len(institution_ids) == 0:
+            raise AirflowException("You need to supply at least one institution id to search for in the query.")
+
         self.institution_ids = institution_ids
         self.earliest_date = earliest_date
 

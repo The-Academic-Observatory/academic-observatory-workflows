@@ -862,11 +862,32 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
 
         return telescope
 
+    def test_ctor(self):
+        self.assertRaises(
+            AirflowException,
+            WebOfScienceTelescope,
+            dag_id="dag",
+            dataset_id="dataset",
+            airflow_conns=[],
+            airflow_vars=[],
+            institution_ids=[],
+        )
+
+        self.assertRaises(
+            AirflowException,
+            WebOfScienceTelescope,
+            dag_id="dag",
+            dataset_id="dataset",
+            airflow_conns=["conn"],
+            airflow_vars=[],
+            institution_ids=[],
+        )
+
     def test_dag_structure(self):
         """Test that the Crossref Events DAG has the correct structure."""
 
         telescope = WebOfScienceTelescope(
-            dag_id="web_of_science", airflow_conns=[], airflow_vars=[], institution_ids=[""]
+            dag_id="web_of_science", airflow_conns=["conn"], airflow_vars=[], institution_ids=["123"]
         )
         dag = telescope.make_dag()
         self.assert_dag_structure(
