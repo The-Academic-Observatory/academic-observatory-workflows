@@ -20,81 +20,12 @@ A DAG that harvests the OpenCitations Indexes: http://opencitations.net/
 Saved to the BigQuery table: <project_id>.open_citations.open_citationsYYYYMMDD
 """
 
-import pendulum
-from airflow import DAG
-from airflow.operators.python import PythonOperator, ShortCircuitOperator
-from academic_observatory_workflows.workflows.open_citations_telescope import OpenCitationsTelescope
+# The keywords airflow and DAG are required to load the DAGs from this file, see bullet 2 in the Apache Airflow FAQ:
+# https://airflow.apache.org/docs/stable/faq.html
 
-default_args = {"owner": "airflow", "start_date": pendulum.datetime(2018, 7, 1)}
+from academic_observatory_workflows.workflows.open_citations_telescope import (
+    OpenCitationsTelescope,
+)
 
-with DAG(dag_id=OpenCitationsTelescope.DAG_ID, schedule_interval="@weekly", default_args=default_args) as dag:
-    # Check that dependencies exist before starting
-    check_task = PythonOperator(
-        task_id=OpenCitationsTelescope.TASK_ID_CHECK_DEPENDENCIES,
-        python_callable=OpenCitationsTelescope.check_dependencies,
-        queue=OpenCitationsTelescope.QUEUE,
-    )
-
-    # List releases and skip all subsequent tasks if there is no release to process
-    list_releases_task = ShortCircuitOperator(
-        task_id=OpenCitationsTelescope.TASK_ID_LIST_RELEASES,
-        python_callable=OpenCitationsTelescope.list_releases,
-        queue=OpenCitationsTelescope.QUEUE,
-    )
-
-    # Download the Open Citations releases for a given interval
-    download_task = PythonOperator(
-        task_id=OpenCitationsTelescope.TASK_ID_DOWNLOAD,
-        python_callable=OpenCitationsTelescope.download,
-        queue=OpenCitationsTelescope.QUEUE,
-        retries=OpenCitationsTelescope.RETRIES,
-    )
-
-    # Upload the Open Citations releases for a given interval
-    upload_downloaded = PythonOperator(
-        task_id=OpenCitationsTelescope.TASK_ID_UPLOAD_DOWNLOADED,
-        python_callable=OpenCitationsTelescope.upload_downloaded,
-        queue=OpenCitationsTelescope.QUEUE,
-        retries=OpenCitationsTelescope.RETRIES,
-    )
-
-    # Extract the Open Citations releases for a given interval
-    extract_task = PythonOperator(
-        task_id=OpenCitationsTelescope.TASK_ID_EXTRACT,
-        python_callable=OpenCitationsTelescope.extract,
-        queue=OpenCitationsTelescope.QUEUE,
-    )
-
-    # Upload the transformed Open Citations releases for a given interval to Google Cloud Storage
-    upload_extracted_task = PythonOperator(
-        task_id=OpenCitationsTelescope.TASK_ID_UPLOAD_EXTRACTED,
-        python_callable=OpenCitationsTelescope.upload_extracted,
-        queue=OpenCitationsTelescope.QUEUE,
-        retries=OpenCitationsTelescope.RETRIES,
-    )
-
-    # Load the transformed Open Citations releases for a given interval to BigQuery
-    bq_load_task = PythonOperator(
-        task_id=OpenCitationsTelescope.TASK_ID_BQ_LOAD,
-        python_callable=OpenCitationsTelescope.load_to_bq,
-        queue=OpenCitationsTelescope.QUEUE,
-    )
-
-    # Delete all files
-    cleanup_task = PythonOperator(
-        task_id=OpenCitationsTelescope.TASK_ID_CLEANUP,
-        python_callable=OpenCitationsTelescope.cleanup,
-        queue=OpenCitationsTelescope.QUEUE,
-    )
-
-    # Task dependencies
-    (
-        check_task
-        >> list_releases_task
-        >> download_task
-        >> upload_downloaded
-        >> extract_task
-        >> upload_extracted_task
-        >> bq_load_task
-        >> cleanup_task
-    )
+telescope = OpenCitationsTelescope()
+globals()[telescope.dag_id] = telescope.make_dag()

@@ -12,409 +12,238 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: James Diprose
+# Author: James Diprose, Tuan Chien
 
-import glob
-import json
-import logging
 import os
-import shutil
-import subprocess
-from dataclasses import dataclass
-from typing import List
+import zipfile
+from typing import Dict, List
 
 import pendulum
-from academic_observatory_workflows.config import schema_folder
-from airflow.exceptions import AirflowException
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
+from airflow.models import Variable
 from airflow.models.taskinstance import TaskInstance
-from airflow.models.variable import Variable
+from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
-from observatory.platform.utils.airflow_utils import AirflowVars, check_variables
-from observatory.platform.utils.config_utils import find_schema
+from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.gc_utils import (
     bigquery_sharded_table_id,
     bigquery_table_exists,
-    create_bigquery_dataset,
-    load_bigquery_table,
-    upload_files_to_cloud_storage,
 )
-from observatory.platform.utils.http_download import download_file
-from observatory.platform.utils.proc_utils import wait_for_process
-from observatory.platform.utils.url_utils import retry_session
-from observatory.platform.utils.workflow_utils import SubFolder, workflow_path
-
-OPEN_CITATIONS_ARTICLE_ID = 6741422
-OPEN_CITATIONS_VERSION_URL = "https://api.figshare.com/v2/articles/{article_id}/versions"
-
-
-@dataclass
-class File:
-    name: str
-    download_url: str
-    md5hash: str
-    parent: "OpenCitationsRelease" = None
-
-    @property
-    def download_blob_name(self):
-        return f"telescopes/{OpenCitationsTelescope.DAG_ID}/{self.parent.release_name}/{self.name}"
+from observatory.platform.utils.http_download import DownloadInfo, download_files
+from observatory.platform.utils.url_utils import (
+    get_http_response_json,
+    get_observatory_http_header,
+)
+from observatory.platform.workflows.snapshot_telescope import (
+    SnapshotRelease,
+    SnapshotTelescope,
+)
 
 
-class OpenCitationsRelease:
-    release_date: pendulum.DateTime
-    files: List[File]
+class OpenCitationsRelease(SnapshotRelease):
+    """Open Citations COCI dataset release info."""
 
-    def __init__(self, release_date: pendulum.DateTime, files: List[File]):
-        self.release_date = release_date
-        self.files = files
+    def __init__(
+        self,
+        dag_id: str,
+        release_date: pendulum.DateTime,
+        files: List[DownloadInfo],
+    ):
+        """Create a OpenCitationsRelease instance.
 
-        # Add parent release to files
-        for file in self.files:
-            file.parent = self
-
-    @property
-    def release_name(self) -> str:
-        return f'{OpenCitationsTelescope.DAG_ID}_{self.release_date.strftime("%Y_%m_%d")}'
-
-    @property
-    def download_path(self) -> str:
-        return os.path.join(workflow_path(SubFolder.downloaded, OpenCitationsTelescope.DAG_ID), self.release_name)
-
-    @property
-    def extract_path(self) -> str:
-        return os.path.join(workflow_path(SubFolder.extracted, OpenCitationsTelescope.DAG_ID), self.release_name)
-
-    @property
-    def transformed_blob_path(self) -> str:
-        return f"telescopes/{OpenCitationsTelescope.DAG_ID}/{self.release_name}/*.csv"
-
-
-def list_open_citations_releases(
-    start_date: pendulum.DateTime = None, end_date: pendulum.DateTime = None, timeout: float = 30.0
-) -> List[OpenCitationsRelease]:
-    """List the Open Citations releases for a given time period.
-
-    :param start_date: the start date.
-    :param end_date: the end date.
-    :param timeout: timeout in seconds.
-    :return: a list of Open Citations releases found within the given time period (if the time period was specified).
-    """
-
-    versions = fetch_open_citations_versions()
-    releases = []
-    for version in versions:
-        version_url = version["url"]
-        response = retry_session().get(version_url, timeout=timeout, headers={"Accept-encoding": "gzip"})
-        article = json.loads(response.text)
-        release_date = pendulum.parse(article["created_date"])
-
-        if (start_date is None or start_date <= release_date) and (end_date is None or release_date <= end_date):
-            files = []
-            for file in article["files"]:
-                name = file["name"]
-                download_url = file["download_url"]
-                md5hash = file["computed_md5"]
-                files.append(File(name, download_url, md5hash))
-            releases.append(OpenCitationsRelease(release_date, files))
-    return releases
-
-
-def fetch_open_citations_versions():
-    """Fetch the Open Citation versions that are available.
-
-    :return: the open citations versions.
-    """
-
-    url = OPEN_CITATIONS_VERSION_URL.format(article_id=OPEN_CITATIONS_ARTICLE_ID)
-    response = retry_session().get(url, timeout=30, headers={"Accept-encoding": "gzip"})
-    return json.loads(response.text)
-
-
-def pull_releases(ti: TaskInstance) -> List[OpenCitationsRelease]:
-    return ti.xcom_pull(
-        key=OpenCitationsTelescope.RELEASES_TOPIC_NAME,
-        task_ids=OpenCitationsTelescope.TASK_ID_LIST_RELEASES,
-        include_prior_dates=False,
-    )
-
-
-class OpenCitationsTelescope:
-    """A container for holding the constants and static functions for the Open Citations telescope."""
-
-    DAG_ID = "open_citations"
-    DESCRIPTION = "The OpenCitations Indexes: http://opencitations.net/"
-    DATASET_ID = DAG_ID
-    QUEUE = "remote_queue"
-    RETRIES = 3
-    RELEASES_TOPIC_NAME = "releases"
-
-    TASK_ID_CHECK_DEPENDENCIES = "check_dependencies"
-    TASK_ID_LIST_RELEASES = f"list_releases"
-    TASK_ID_DOWNLOAD = f"download"
-    TASK_ID_UPLOAD_DOWNLOADED = f"upload_downloaded"
-    TASK_ID_EXTRACT = f"extract"
-    TASK_ID_UPLOAD_EXTRACTED = f"upload_extracted"
-    TASK_ID_BQ_LOAD = f"bq_load"
-    TASK_ID_CLEANUP = f"cleanup"
-
-    @staticmethod
-    def check_dependencies(**kwargs):
-        """Check that all variables exist that are required to run the DAG.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
+        :param dag_id: the DAG id.
+        :param release_date: the date of the release.
+        :param files: List of files to download.
         """
 
-        vars_valid = check_variables(
-            AirflowVars.DATA_PATH,
-            AirflowVars.PROJECT_ID,
-            AirflowVars.DATA_LOCATION,
-            AirflowVars.DOWNLOAD_BUCKET,
-            AirflowVars.TRANSFORM_BUCKET,
-        )
-        if not vars_valid:
-            raise AirflowException("Required variables are missing")
+        super().__init__(dag_id, release_date)
+        self.files = files
 
-    @staticmethod
-    def list_releases(**kwargs):
-        """Task to lists all Open Citations releases for a given time period.
+    def download(self):
+        """Download the release."""
+
+        headers = get_observatory_http_header(package_name="academic_observatory_workflows")
+        download_files(download_list=self.files, headers=headers, prefix_dir=self.download_folder)
+
+    def extract(self):
+        """Extract the release to the transform folder."""
+
+        for file in self.download_files:
+            with zipfile.ZipFile(file, "r") as zf:
+                zf.extractall(self.transform_folder)
+
+        # Need to rename files to make the schema finding mechanism work
+        for file in self.transform_files:
+            filename = os.path.basename(file)
+            dir = os.path.dirname(file)
+            new_name = os.path.join(dir, f"open_citations.{filename}")
+            os.rename(file, new_name)
+
+
+class OpenCitationsTelescope(SnapshotTelescope):
+    """A telescope that harvests the Open Citations COCI CSV dataset . http://opencitations.net/index/coci"""
+
+    DAG_ID = "open_citations"
+    VERSION_URL = "https://api.figshare.com/v2/articles/6741422/versions"
+
+    def __init__(
+        self,
+        dag_id: str = DAG_ID,
+        start_date: pendulum.DateTime = pendulum.datetime(2018, 7, 1),
+        schedule_interval: str = "@weekly",
+        dataset_id: str = DAG_ID,
+        schema_folder: str = default_schema_folder(),
+        queue: str = "remote_queue",
+        dataset_description: str = "The OpenCitations Indexes: http://opencitations.net/",
+        table_descriptions: Dict = None,
+        catchup: bool = False,
+        airflow_vars: List = None,
+    ):
+        """
+        :param dag_id: the id of the DAG.
+        :param start_date: the start date of the DAG.
+        :param schedule_interval: the schedule interval of the DAG.
+        :param dataset_id: the BigQuery dataset id.
+        :param schema_folder: the SQL schema path.
+        :param queue: Queue to run tasks on.
+        :param dataset_description: description for the BigQuery dataset.
+        :param table_descriptions: a dictionary with table ids and corresponding table descriptions.
+        :param catchup:  whether to catchup the DAG or not.
+        :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow.
+        """
+
+        load_bigquery_table_kwargs = {
+            "csv_field_delimiter": ",",
+            "csv_quote_character": '"',
+            "csv_skip_leading_rows": 1,
+            "csv_allow_quoted_newlines": True,
+            "write_disposition": bigquery.WriteDisposition.WRITE_APPEND,
+        }
+
+        if table_descriptions is None:
+            table_descriptions = {dag_id: "The Open Citations COCI CSV table."}
+
+        if airflow_vars is None:
+            airflow_vars = [
+                AirflowVars.DATA_PATH,
+                AirflowVars.PROJECT_ID,
+                AirflowVars.DATA_LOCATION,
+                AirflowVars.DOWNLOAD_BUCKET,
+                AirflowVars.TRANSFORM_BUCKET,
+            ]
+
+        super().__init__(
+            dag_id,
+            start_date,
+            schedule_interval,
+            dataset_id,
+            schema_folder,
+            queue=queue,
+            source_format=SourceFormat.CSV,
+            load_bigquery_table_kwargs=load_bigquery_table_kwargs,
+            dataset_description=dataset_description,
+            table_descriptions=table_descriptions,
+            catchup=catchup,
+            airflow_vars=airflow_vars,
+        )
+
+        self.add_setup_task(self.check_dependencies)
+        self.add_setup_task(self.get_release_info)
+        self.add_task(self.download)
+        self.add_task(self.upload_downloaded)
+        self.add_task(self.extract)
+        self.add_task(self.upload_transformed)
+        self.add_task(self.bq_load)
+        self.add_task(self.cleanup)
+
+    def _list_releases(
+        self,
+        *,
+        start_date: pendulum.DateTime,
+        end_date: pendulum.DateTime,
+    ) -> List[Dict[str, str]]:
+        """List available releases from figshare between the start and end date (inclusive).
+
+        :param start_date: Start date.
+        :param end_date: End date.
+        :return: List of dictionaries containing release info.
+        """
+
+        versions = get_http_response_json(OpenCitationsTelescope.VERSION_URL)
+        releases = []
+        for version in versions:
+            article = get_http_response_json(version["url"])
+            release_date = pendulum.parse(article["created_date"])
+
+            if (start_date is None or start_date <= release_date) and (end_date is None or release_date <= end_date):
+                releases.append({"date": release_date.format("YYYYMMDD"), "files": article["files"]})
+
+        return releases
+
+    def _process_release(self, release: Dict[str, str]) -> bool:
+        """Indicates whether we should process this release. If there are no files, or if the BigQuery table exists, we will not process this release.
+
+        :param release: Release to consider.
+        :return: Whether to process the release.
+        """
+
+        if len(release["files"]) == 0:
+            return False
+
+        project_id = Variable.get(AirflowVars.PROJECT_ID)
+        table_id = bigquery_sharded_table_id(self.dag_id, pendulum.parse(release["date"]))
+
+        if bigquery_table_exists(project_id, self.dataset_id, table_id):
+            return False
+
+        return True
+
+    def get_release_info(self, **kwargs):
+        """Calculate which releases require processing, and push the info to an XCom.
 
         :param kwargs: the context passed from the BranchPythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html
         for a list of the keyword arguments that are passed to this argument.
-        :return: the identifier of the task to execute next.
+        :return: whether to keep executing the DAG.
         """
 
         start_date = kwargs["execution_date"]
         end_date = kwargs["next_execution_date"].subtract(microseconds=1)
-        releases = list_open_citations_releases(start_date=start_date, end_date=end_date)
-        project_id = Variable.get(AirflowVars.PROJECT_ID)
+        releases = self._list_releases(start_date=start_date, end_date=end_date)
+        filtered_releases = list(filter(self._process_release, releases))
 
-        # Check if we can skip any releases
-        releases_out = []
-        for release in releases:
-            table_id = bigquery_sharded_table_id(OpenCitationsTelescope.DAG_ID, release.release_date)
-
-            if bigquery_table_exists(project_id, OpenCitationsTelescope.DATASET_ID, table_id):
-                logging.info(
-                    f"Skipping as table exists for {release.release_name} release: "
-                    f"{project_id}.{OpenCitationsTelescope.DATASET_ID}.{table_id}"
-                )
-            else:
-                logging.info(
-                    f"Table doesn't exist yet, processing Open Citations {release.release_date} "
-                    f"release in this workflow"
-                )
-                releases_out.append(release)
-
-        continue_dag = len(releases_out)
+        continue_dag = len(filtered_releases) > 0
         if continue_dag:
-            # Push messages
-            ti: TaskInstance = kwargs["ti"]
-            ti.xcom_push(OpenCitationsTelescope.RELEASES_TOPIC_NAME, releases_out, start_date)
+            ti = kwargs["ti"]
+            ti.xcom_push(OpenCitationsTelescope.RELEASE_INFO, filtered_releases, start_date)
         return continue_dag
 
-    @staticmethod
-    def download(**kwargs):
-        """Task to download the Open Citations releases for a given time period.
+    def make_release(self, **kwargs) -> List[OpenCitationsRelease]:
+        """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is
+        called in 'task_callable'.
 
         :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: a list of OpenCitationsRelease instances.
         """
 
-        # Pull messages
         ti: TaskInstance = kwargs["ti"]
-        releases = pull_releases(ti)
+        releases_dict = ti.xcom_pull(
+            key=OpenCitationsTelescope.RELEASE_INFO, task_ids=self.get_release_info.__name__, include_prior_dates=False
+        )
 
-        # Download and extract each release posted this month
-        for release in releases:
-            os.makedirs(release.download_path, exist_ok=True)
-            for file in release.files:
-                download_file(url=file.download_url, filename=file.name, hash=file.md5hash, hash_algorithm="md5")
-
-    @staticmethod
-    def upload_downloaded(**kwargs):
-        """Task to upload the downloaded Open Citations releases for a given month.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
-        """
-
-        # Get bucket name
-        bucket_name = Variable.get(AirflowVars.DOWNLOAD_BUCKET)
-
-        # Pull messages
-        ti: TaskInstance = kwargs["ti"]
-        releases = pull_releases(ti)
-
-        # Upload each release
-        file_paths = []
-        blob_names = []
-        for release in releases:
-            for file in release.files:
-                file_path = os.path.join(release.download_path, file.name)
-                blob_name = file.download_blob_name
-                file_paths.append(file_path)
-                blob_names.append(blob_name)
-
-        success = upload_files_to_cloud_storage(bucket_name, blob_names, file_paths)
-        if not success:
-            raise AirflowException("Problem uploading files")
-
-    @staticmethod
-    def extract(**kwargs):
-        """Task to extract the downloaded Open Citations releases for a given month.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
-        """
-
-        # Pull messages
-        ti: TaskInstance = kwargs["ti"]
-        releases = pull_releases(ti)
-
-        for release in releases:
-            os.makedirs(release.extract_path, exist_ok=True)
-
-            for file in release.files:
-                file_path = os.path.join(release.download_path, file.name)
-                cmd = f"unzip {file_path} -d {release.extract_path}"
-                logging.info(f"Running command: {cmd}")
-                p = subprocess.Popen(
-                    cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, executable="/bin/bash"
+        releases = []
+        for rel_info in releases_dict:
+            files = []
+            for file in rel_info["files"]:
+                info = DownloadInfo(
+                    url=file["download_url"], filename=file["name"], hash=file["computed_md5"], hash_algorithm="md5"
                 )
-                stdout, stderr = wait_for_process(p)
+                files.append(info)
 
-                if stdout:
-                    logging.info(stdout)
+            release = OpenCitationsRelease(self.dag_id, release_date=pendulum.parse(rel_info["date"]), files=files)
 
-                if stderr:
-                    raise AirflowException(f"bash command failed for {file_path}, {release.release_date}: {stderr}")
+            releases.append(release)
 
-                logging.info(f"File extracted to: {release.extract_path}")
-
-    @staticmethod
-    def upload_extracted(**kwargs):
-        """Task to upload the extracted Open Citations releases for a given month.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
-        """
-
-        # Get bucket name
-        bucket_name = Variable.get(AirflowVars.TRANSFORM_BUCKET)
-
-        # Pull messages
-        ti: TaskInstance = kwargs["ti"]
-        releases = pull_releases(ti)
-
-        # Upload each release
-        file_paths = []
-        blob_names = []
-        for release in releases:
-            release_file_paths = glob.glob(f"{release.extract_path}/*.csv")
-            for file_path in release_file_paths:
-                file_name = os.path.basename(file_path)
-                blob_name = f"telescopes/{OpenCitationsTelescope.DAG_ID}/{release.release_name}/{file_name}"
-                file_paths.append(file_path)
-                blob_names.append(blob_name)
-
-        logging.info(f"file_paths: {file_paths}")
-        logging.info(f"blob_names: {blob_names}")
-
-        success = upload_files_to_cloud_storage(bucket_name, blob_names, file_paths)
-        if not success:
-            raise AirflowException("Problem uploading files")
-
-    @staticmethod
-    def load_to_bq(**kwargs):
-        """Load transformed Open Citations release into BigQuery.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
-        """
-
-        # Pull messages
-        ti: TaskInstance = kwargs["ti"]
-        releases = pull_releases(ti)
-
-        # Get variables
-        project_id = Variable.get(AirflowVars.PROJECT_ID)
-        data_location = Variable.get(AirflowVars.DATA_LOCATION)
-        bucket_name = Variable.get(AirflowVars.TRANSFORM_BUCKET)
-
-        # Create dataset
-        dataset_id = OpenCitationsTelescope.DATASET_ID
-        create_bigquery_dataset(project_id, dataset_id, data_location, OpenCitationsTelescope.DESCRIPTION)
-        table_name = OpenCitationsTelescope.DAG_ID
-
-        # Load each release
-        for release in releases:
-            table_id = bigquery_sharded_table_id(table_name, release.release_date)
-
-            # Select schema file based on release date
-            analysis_schema_path = schema_folder()
-            schema_file_path = find_schema(analysis_schema_path, table_name, release.release_date)
-            if schema_file_path is None:
-                logging.error(
-                    f"No schema found with search parameters: analysis_schema_path={analysis_schema_path}, "
-                    f"table_name={table_name}, release_date={release.release_date}"
-                )
-                exit(os.EX_CONFIG)
-
-            # Load BigQuery table
-            uri = f"gs://{bucket_name}/{release.transformed_blob_path}"
-            logging.info(f"URI: {uri}")
-            success = load_bigquery_table(
-                uri,
-                dataset_id,
-                data_location,
-                table_id,
-                schema_file_path,
-                SourceFormat.CSV,
-                csv_field_delimiter=",",
-                csv_quote_character='"',
-                csv_skip_leading_rows=1,
-                csv_allow_quoted_newlines=True,
-            )
-            if not success:
-                raise AirflowException("bq_load task: data failed to load data into BigQuery")
-
-    @staticmethod
-    def cleanup(**kwargs):
-        """Delete files of downloaded and extracted Open Citations releases.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
-        """
-
-        # Pull messages
-        ti: TaskInstance = kwargs["ti"]
-        releases = pull_releases(ti)
-
-        for release in releases:
-            logging.info(f"Removing downloaded files for release: {release.release_name}")
-            download_path = release.download_path
-            try:
-                shutil.rmtree(download_path)
-            except FileNotFoundError as e:
-                logging.warning(f"No such file or directory {download_path}: {e}")
-
-            logging.info(f"Removing extracted files for release: {release.release_name}")
-            extract_path = release.extract_path
-            try:
-                shutil.rmtree(extract_path)
-            except FileNotFoundError as e:
-                logging.warning(f"No such file or directory {extract_path}: {e}")
+        return releases
