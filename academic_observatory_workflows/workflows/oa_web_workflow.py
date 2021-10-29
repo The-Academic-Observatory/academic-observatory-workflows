@@ -103,9 +103,9 @@ NAME_OVERRIDES = {
 def draw_change_points(values: List[float], width=166, height=48, stroke_width=2) -> str:
     """Make the change points for the change charts.
 
-    :param values:
-    :param width:
-    :param height:
+    :param values: the list of values to plot.
+    :param width: the width of the chart.
+    :param height: the height of the chart.
     :param stroke_width: the stroke width.
     :return: the change points as strings.
     """
@@ -137,14 +137,14 @@ def draw_change_points(values: List[float], width=166, height=48, stroke_width=2
     return " ".join(points)
 
 
-def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, location: str = "us"):
-    """
+def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, location: str = "us") -> bool:
+    """Run a BigQuery query and save the results on Google Cloud Storage.
 
-    :param query:
-    :param project_id:
-    :param destination_uri:
-    :param location:
-    :return:
+    :param query: the query string.
+    :param project_id: the Google Cloud project id.
+    :param destination_uri: the Google Cloud Storage destination uri.
+    :param location: the BigQuery dataset location.
+    :return: the status of the job.
     """
 
     client = bigquery.Client()
@@ -165,12 +165,12 @@ def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, locati
     return query_job.state == "DONE" and extract_job.state == "DONE"
 
 
-def calc_percentages(df, keys: List[str]):
-    """
+def calc_percentages(df: pd.DataFrame, keys: List[str]):
+    """Calculate percentages for fields in a Pandas dataframe.
 
-    :param df:
-    :param keys:
-    :return:
+    :param df: the Pandas dataframe.
+    :param keys: they keys to calculate percentages for.
+    :return: None.
     """
 
     for key in keys:
@@ -206,52 +206,17 @@ class OaWebRelease(SnapshotRelease):
         self.agg_dataset_id = agg_dataset_id
         self.grid_dataset_id = grid_dataset_id
 
-    def build_entity_summary_data(self, table_id: str, df: pd.DataFrame):
-        """
+    def make_index_table_data(self, df: pd.DataFrame, ts_data: Dict, category: str):
+        """Make the data for the index tables.
 
-        :param table_id:
-        :param df:
-        :return:
-        """
-
-        base_path = os.path.join(self.transform_folder, "data", table_id)
-        os.makedirs(base_path, exist_ok=True)
-        df["category"] = table_id
-        records = df.to_dict("records")
-        for row in records:
-            entity_id = row.id
-            output_path = os.path.join(base_path, f"{entity_id}_summary.json")
-            with open(output_path, mode="w") as f:
-                json.dump(row, f, separators=(",", ":"))
-
-    def build_auto_complete_data(self, table_id: str, df: pd.DataFrame):
-        """
-
-        :param table_id:
-        :param df:
-        :return:
-        """
-
-        records = []
-        for i, row in df.iterrows():
-            id = row.id
-            name = row.name
-            category = table_id
-            logo = row.logo
-            records.append({"id": id, "name": name, "category": category, "logo": logo})
-        return records
-
-    def build_summary_data(self, table_id: str, df: pd.DataFrame, ts_data: Dict):
-        """
-
-        :param table_id:
-        :param df:
-        :param ts_data:
+        :param df: Pandas dataframe with all data points.
+        :param ts_data: timeseries data.
+        :param category: the category.
         :return:
         """
 
         # Aggregate
-        df_summary = df.groupby(["id"]).agg(
+        df_index_table = df.groupby(["id"]).agg(
             {
                 "id": "first",
                 "name": "first",
@@ -268,44 +233,48 @@ class OaWebRelease(SnapshotRelease):
         )
 
         # Exclude countries with small samples
-        df_summary = df_summary[df_summary.n_outputs >= INCLUSION_THRESHOLD]
+        df_index_table = df_index_table[df_index_table.n_outputs >= INCLUSION_THRESHOLD]
 
         # Add percentages to dataframe
-        calc_percentages(df_summary, self.PERCENTAGE_FIELD_KEYS)
+        calc_percentages(df_index_table, self.PERCENTAGE_FIELD_KEYS)
 
         # Sort from highest oa percentage to lowest
-        df_summary.sort_values(by=["p_outputs_oa"], ascending=False, inplace=True)
+        df_index_table.sort_values(by=["p_outputs_oa"], ascending=False, inplace=True)
 
         # Add ranks
-        df_summary.rank = list(range(1, len(df_summary) + 1))
+        df_index_table.rank = list(range(1, len(df_index_table) + 1))
 
         # Add category
-        df_summary.category = table_id
+        df_index_table.category = category
 
         # Name overrides
-        df_summary.name = df_summary.name.apply(lambda name: NAME_OVERRIDES[name] if name in NAME_OVERRIDES else name)
+        df_index_table.name = df_index_table.name.apply(
+            lambda name: NAME_OVERRIDES[name] if name in NAME_OVERRIDES else name
+        )
 
         # Clean URLs
-        df_summary.friendly_url = df_summary.url.apply(lambda u: get_url_domain_suffix(u) if not pd.isnull(u) else u)
+        df_index_table.friendly_url = df_index_table.url.apply(
+            lambda u: get_url_domain_suffix(u) if not pd.isnull(u) else u
+        )
 
         # If country add wikipedia url
-        if table_id == "country":
-            df_summary.url = df_summary.name.apply(
+        if category == "country":
+            df_index_table.url = df_index_table.name.apply(
                 lambda name: f"https://en.wikipedia.org/wiki/{urllib.parse.quote(name)}"
             )
 
         # Integrate time series data
         change_points = []
-        for i, row in df_summary.iterrows():
+        for i, row in df_index_table.iterrows():
             entity_id = row.id
             change_points.append(ts_data[entity_id])
-        df_summary.change_points = change_points
+        df_index_table.change_points = change_points
 
         # Make logos
-        self.make_logos(table_id, df_summary)
+        self.download_institution_logos(df_index_table, category)
 
         # Save subset
-        base_path = os.path.join(self.transform_folder, "data", table_id)
+        base_path = os.path.join(self.transform_folder, "data", category)
         os.makedirs(base_path, exist_ok=True)
         summary_path = os.path.join(base_path, "summary.json")
         columns = [
@@ -321,25 +290,43 @@ class OaWebRelease(SnapshotRelease):
             "n_outputs_oa",
             "change_points",
         ]
-        df_summary_subset = df_summary[columns]
+        df_summary_subset = df_index_table[columns]
         df_summary_subset.to_json(summary_path, orient="records")
-        return df_summary
+        return df_index_table
 
-    def make_logos(self, table_id: str, df: pd.DataFrame, size=32, fmt="jpg"):
+    def save_entity_details_data(self, df: pd.DataFrame, category: str):
+        """Save the summary data for each entity, saving the result for each entity as a JSON file.
+
+        :param df: a Pandas dataframe.
+        :param category: the entity category.
+        :return: None.
         """
 
-        :param table_id:
-        :param df:
-        :param size:
-        :param fmt:
-        :return:
+        base_path = os.path.join(self.transform_folder, "data", category)
+        os.makedirs(base_path, exist_ok=True)
+        df["category"] = category
+        records = df.to_dict("records")
+        for row in records:
+            entity_id = row.id
+            output_path = os.path.join(base_path, f"{entity_id}_summary.json")
+            with open(output_path, mode="w") as f:
+                json.dump(row, f, separators=(",", ":"))
+
+    def download_institution_logos(self, df: pd.DataFrame, category: str, size=32, fmt="jpg"):
+        """Download institution logos.
+
+        :param df: the index table Pandas dataframe.
+        :param category: the entity category.
+        :param size: the image size.
+        :param fmt: the image format.
+        :return: None.
         """
 
         # Make logos
-        if table_id == "country":
-            df.logo = df.id.apply(lambda country_code: f"/logos/{table_id}/{country_code}.svg")
-        elif table_id == "institution":
-            base_path = os.path.join(self.transform_folder, "logos", table_id)
+        if category == "country":
+            df.logo = df.id.apply(lambda country_code: f"/logos/{category}/{country_code}.svg")
+        elif category == "institution":
+            base_path = os.path.join(self.transform_folder, "logos", category)
             logo_path_unknown = f"/unknown.svg"
             os.makedirs(base_path, exist_ok=True)
             logos = []
@@ -353,23 +340,23 @@ class OaWebRelease(SnapshotRelease):
                         clearbit_download_logo(company_url=url, file_path=file_path, size=size, fmt=fmt)
 
                     if os.path.isfile(file_path):
-                        logo_path = f"/logos/{table_id}/{grid_id}.{fmt}"
+                        logo_path = f"/logos/{category}/{grid_id}.{fmt}"
 
                 logos.append(logo_path)
             df.logo = logos
 
-    def build_timeseries_data(self, table_id: str, df: pd.DataFrame):
-        """
+    def make_timeseries_data(self, df: pd.DataFrame, category: str) -> Dict:
+        """Make timeseries data for each entity.
 
-        :param table_id:
-        :param df:
-        :return:
+        :param df: the Pandas dataframe containing all data points.
+        :param category: the entity category.
+        :return: a dictionary with keys for each entity and timeseries data for each value.
         """
 
         ts_data = {}
 
         # Time series statistics for each entity
-        base_path = os.path.join(self.transform_folder, "data", table_id)
+        base_path = os.path.join(self.transform_folder, "data", category)
         os.makedirs(base_path, exist_ok=True)
         ts_groups = df.groupby(["id"])
         for entity_id, df_group in ts_groups:
@@ -415,6 +402,22 @@ class OaWebRelease(SnapshotRelease):
 
         return ts_data
 
+    def make_auto_complete_data(self, df: pd.DataFrame, category: str):
+        """Build the autocomplete data.
+
+        :param df: index table Pandas dataframe.
+        :param category: entity category.
+        :return: autocomplete records.
+        """
+
+        records = []
+        for i, row in df.iterrows():
+            id = row.id
+            name = row.name
+            logo = row.logo
+            records.append({"id": id, "name": name, "category": category, "logo": logo})
+        return records
+
 
 class OaWebWorkflow(Workflow):
     AIRFLOW_VAR_WEBSITE_FOLDER = "website_folder"
@@ -439,8 +442,8 @@ class OaWebWorkflow(Workflow):
         :param start_date: the start date.
         :param schedule_interval: the schedule interval.
         :param catchup: whether to catchup or not.
-        :param table_ids: the table ids
-        :param airflow_vars:
+        :param table_ids: the table ids.
+        :param airflow_vars: required Airflow Variables.
         """
 
         if airflow_vars is None:
@@ -463,7 +466,7 @@ class OaWebWorkflow(Workflow):
         if table_ids is None:
             self.table_ids = ["country", "institution"]
 
-        self.add_sensor(
+        self.add_operator(
             ExternalTaskSensor(task_id=f"{ext_dag_id}_sensor", external_dag_id=ext_dag_id, mode="reschedule")
         )
         self.add_setup_task(self.check_dependencies)
@@ -471,7 +474,7 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.download)
         self.add_task(self.transform)
         # TODO: add in a task to clone a certain version of the website, when this is ready
-        self.add_task(
+        self.add_operator(
             BashOperator(
                 task_id="build_website",
                 params={"website_folder": self.website_folder()},
@@ -479,7 +482,7 @@ class OaWebWorkflow(Workflow):
                 retries=retries,
             )
         )
-        self.add_task(
+        self.add_operator(
             BashOperator(
                 task_id="deploy_website",
                 params={"website_folder": self.website_folder()},
@@ -522,7 +525,7 @@ class OaWebWorkflow(Workflow):
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
-        :return:
+        :return: None.
         """
 
         results = []
@@ -572,7 +575,7 @@ class OaWebWorkflow(Workflow):
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
-        :return:
+        :return: None.
         """
 
         prefix = f"{self.dag_id}/{release.release_id}"
@@ -589,21 +592,21 @@ class OaWebWorkflow(Workflow):
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
-        :return:
+        :return: None.
         """
 
         # Make required folders
         base_path = os.path.join(release.transform_folder, "data")
         os.makedirs(base_path, exist_ok=True)
         auto_complete = []
-        for table_id in self.table_ids:
-            csv_path = os.path.join(release.download_folder, f"{table_id}.csv")
+        for category in self.table_ids:
+            csv_path = os.path.join(release.download_folder, f"{category}.csv")
             df = pd.read_csv(csv_path)
             df.fillna("", inplace=True)
-            ts_data = release.build_timeseries_data(table_id, df)
-            df_summary = release.build_summary_data(table_id, df, ts_data)
-            auto_complete += release.build_auto_complete_data(table_id, df_summary)
-            release.build_entity_summary_data(table_id, df_summary)
+            ts_data = release.make_timeseries_data(df, category)
+            df_index_table = release.make_index_table_data(df, ts_data, category)
+            auto_complete += release.make_auto_complete_data(df_index_table, category)
+            release.save_entity_details_data(df_index_table, category)
 
         # Save auto complete data as json
         output_path = os.path.join(base_path, "autocomplete.json")

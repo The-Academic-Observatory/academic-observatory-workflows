@@ -19,6 +19,14 @@ from unittest import TestCase
 from academic_observatory_workflows.workflows.oa_web_workflow import OaWebWorkflow
 
 
+
+class TestOaWebRelease(TestCase):
+
+    def __init__(self):
+        pass
+
+
+
 class TestOaWebWorkflow(TestCase):
 
     def __init__(self):
