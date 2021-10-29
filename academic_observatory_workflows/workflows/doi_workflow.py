@@ -426,16 +426,17 @@ class DoiWorkflow(Workflow):
 
     def create_tasks(self):
         # Add sensors
-        for ext_dag_id in self.SENSOR_DAG_IDS:
-            sensor = DagRunSensor(
-                task_id=f"{ext_dag_id}_sensor",
-                external_dag_id=ext_dag_id,
-                mode="reschedule",
-                duration=timedelta(days=7),  # Look back up to 7 days from execution date
-                poke_interval=int(timedelta(hours=1).total_seconds()),  # Check at this interval if dag run is ready
-                timeout=int(timedelta(days=2).total_seconds()),  # Sensor will fail after 2 days of waiting
-            )
-            self.add_sensor(sensor)
+        with self.parallel_tasks():
+            for ext_dag_id in self.SENSOR_DAG_IDS:
+                sensor = DagRunSensor(
+                    task_id=f"{ext_dag_id}_sensor",
+                    external_dag_id=ext_dag_id,
+                    mode="reschedule",
+                    duration=timedelta(days=7),  # Look back up to 7 days from execution date
+                    poke_interval=int(timedelta(hours=1).total_seconds()),  # Check at this interval if dag run is ready
+                    timeout=int(timedelta(days=2).total_seconds()),  # Sensor will fail after 2 days of waiting
+                )
+                self.add_operator(sensor)
 
         # Setup tasks
         self.add_setup_task(self.check_dependencies)
