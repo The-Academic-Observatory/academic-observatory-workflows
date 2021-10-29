@@ -138,7 +138,7 @@ class WosUtility:
         if num_results > WosUtilConst.RESULT_LIMIT:
             for offset in range(WosUtilConst.RESULT_LIMIT + 1, num_results, WosUtilConst.RESULT_LIMIT):
                 query["offset"] = offset
-                record_list.append(WosUtility.search(client, query).records)
+                record_list.append(WosUtility.search(client=client, query=query).records)
 
         return record_list
 
