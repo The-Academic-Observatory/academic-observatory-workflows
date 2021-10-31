@@ -7,21 +7,14 @@ Web of science, previously Web of knowledge, provides bibliometric information, 
 international publication identifiers, and abstracts. - source: [WOS](https://clarivate.com/webofsciencegroup) and
 [data details](https://clarivate.com/webofsciencegroup/solutions/xml-and-apis).
 
-This telescope will follow general ETL design pattern of the other DAGs.  SubDAGs will be used for handling ETL for each
-institution. SubDAGs might be taskgroups in the future once Airflow 2.0 lands.
-
-The telescope will check for any connection id entries for institutions where we want to pull.  Each institution must have
-access credentials, and entries will be pulled from the specified start date in the connection id to the start date of
-the dag.
-
 ## Observatory Platform API
 
 The telescope relies on the Observatory Platform API in order to create dags.  A DAG will be created in Airflow for every web_of_science telescope returned by the API, i.e., one for each organisation.
 
 The following fields need to be set in the `extra` field of the telescope:
-* `airflow_connection` which is a string defining the Airflow connection ID name containing the login and password for accessing the Web of Science service.
+* `airflow_connection` which is a list of Airflow connection ID names containing the login and password for accessing the Web of Science service.
 * `institution_ids` which is a list of strings containing the institution IDs to search in Web of Science, for example "Curtin University".
-* `earliest_date` which is the earliest `datetime` in which to query for results.
+* `earliest_date` which is the earliest `datetime` to query.
 
 
 ## Storage location
