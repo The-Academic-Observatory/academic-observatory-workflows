@@ -181,7 +181,7 @@ jobs:
       - name: Set Terraform Workspace env for pull_request event
         if: github.event_name == 'pull_request'
         run: |
-          if [ ${{ github.event.pull_request.base.ref }} == 'refs/heads/develop' ] ; then
+          if [ ${{ github.event.pull_request.base.ref }} == 'develop' ] ; then
             echo "TF_WORKSPACE=${{ env.DEVELOP_TF_WORKSPACE }}" >> $GITHUB_ENV;
           else
             echo "TF_WORKSPACE=${{ env.STAGING_TF_WORKSPACE }}" >> $GITHUB_ENV;
