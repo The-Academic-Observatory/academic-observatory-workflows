@@ -1,37 +1,36 @@
+#This Github action builds docker API images that are uploaded to the GCR and runs a Terraform workflow.
+#
+#For a pull request event:
+#- Run Terraform:
+#  - fmt
+#  - validate
+#  - plan (output is pushed to comment in PR)
+#
+#For a push event:
+#- Build and push images
+#- Run Terraform:
+#  - fmt
+#  - validate
+#  - plan
+#  - apply
+#
+#For a published release event:
+#- Build and push images
+#- Run Terraform:
+#  - fmt
+#  - validate
+#  - plan
+#
+#Develop (target) branch settings:
+#- GCP project id: develop, TF workspace: develop, Image tag: develop
+#
+#Main (target) branch settings:
+#- GCP project id: staging, TF workspace: staging, Image tag: staging
+#
+#Published release settings:
+#- GCP project id: production, TF workspace: production, Image tag: <release_name>
+
 name: "API Workflow"
-description: >
-  This Github action builds docker API images that are uploaded to the GCR and runs a Terraform workflow.
-
-  For a pull request event:
-  - Run Terraform:
-    - fmt
-    - validate
-    - plan (output is pushed to comment in PR)
-
-  For a push event:
-  - Build and push images
-  - Run Terraform:
-    - fmt
-    - validate
-    - plan
-    - apply
-
-  For a published release event:
-  - Build and push images
-  - Run Terraform:
-    - fmt
-    - validate
-    - plan
-
-  Develop (target) branch settings:
-  - GCP project id: develop, TF workspace: develop, Image tag: develop
-
-  Main (target) branch settings:
-  - GCP project id: staging, TF workspace: staging, Image tag: staging
-
-  Published release settings:
-  - GCP project id: production, TF workspace: production, Image tag: <release_name>
-
 
 on:
   push:
