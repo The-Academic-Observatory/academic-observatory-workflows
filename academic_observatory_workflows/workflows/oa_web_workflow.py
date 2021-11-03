@@ -271,7 +271,7 @@ class OaWebRelease(SnapshotRelease):
         df_index_table.change_points = change_points
 
         # Make logos
-        self.download_institution_logos(df_index_table, category)
+        self.make_logos(df_index_table, category)
 
         # Save subset
         base_path = os.path.join(self.transform_folder, "data", category)
@@ -312,8 +312,8 @@ class OaWebRelease(SnapshotRelease):
             with open(output_path, mode="w") as f:
                 json.dump(row, f, separators=(",", ":"))
 
-    def download_institution_logos(self, df: pd.DataFrame, category: str, size=32, fmt="jpg"):
-        """Download institution logos.
+    def make_logos(self, df: pd.DataFrame, category: str, size=32, fmt="jpg"):
+        """Make or download country and institution logos.
 
         :param df: the index table Pandas dataframe.
         :param category: the entity category.
@@ -324,7 +324,7 @@ class OaWebRelease(SnapshotRelease):
 
         # Make logos
         if category == "country":
-            df.logo = df.id.apply(lambda country_code: f"/logos/{category}/{country_code}.svg")
+            df["logo"] = df.id.apply(lambda country_code: f"/logos/{category}/{country_code}.svg")
         elif category == "institution":
             base_path = os.path.join(self.transform_folder, "logos", category)
             logo_path_unknown = f"/unknown.svg"
@@ -343,14 +343,14 @@ class OaWebRelease(SnapshotRelease):
                         logo_path = f"/logos/{category}/{grid_id}.{fmt}"
 
                 logos.append(logo_path)
-            df.logo = logos
+            df["logo"] = logos
 
-    def make_timeseries_data(self, df: pd.DataFrame, category: str) -> Dict:
-        """Make timeseries data for each entity.
+    def save_timeseries_data(self, df: pd.DataFrame, category: str) -> Dict:
+        """Save timeseries data for each entity and returns the change points.
 
         :param df: the Pandas dataframe containing all data points.
         :param category: the entity category.
-        :return: a dictionary with keys for each entity and timeseries data for each value.
+        :return: a dictionary with keys for each entity and change points data for each value.
         """
 
         ts_data = {}
@@ -412,9 +412,9 @@ class OaWebRelease(SnapshotRelease):
 
         records = []
         for i, row in df.iterrows():
-            id = row.id
-            name = row.name
-            logo = row.logo
+            id = row["id"]
+            name = row["name"]
+            logo = row["logo"]
             records.append({"id": id, "name": name, "category": category, "logo": logo})
         return records
 
@@ -603,7 +603,7 @@ class OaWebWorkflow(Workflow):
             csv_path = os.path.join(release.download_folder, f"{category}.csv")
             df = pd.read_csv(csv_path)
             df.fillna("", inplace=True)
-            ts_data = release.make_timeseries_data(df, category)
+            ts_data = release.save_timeseries_data(df, category)
             df_index_table = release.make_index_table_data(df, ts_data, category)
             auto_complete += release.make_auto_complete_data(df_index_table, category)
             release.save_entity_details_data(df_index_table, category)
