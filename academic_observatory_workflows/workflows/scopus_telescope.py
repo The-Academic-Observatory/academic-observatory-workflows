@@ -208,6 +208,7 @@ class ScopusTelescope(SnapshotTelescope):
             schedule_interval,
             dataset_id,
             schema_folder,
+            catchup=False,
             table_descriptions={dag_id: ScopusTelescope.TABLE_DESCRIPTION},
             airflow_vars=airflow_vars,
             airflow_conns=airflow_conns,
@@ -267,7 +268,7 @@ class ScopusTelescope(SnapshotTelescope):
 class ScopusClientThrottleLimits:
     """API throttling constants for ScopusClient."""
 
-    CALL_LIMIT = 1  # SCOPUS allows 2 api calls / second.
+    CALL_LIMIT = 2  # SCOPUS allows 2 api calls / second.
     CALL_PERIOD = 1  # seconds
 
 

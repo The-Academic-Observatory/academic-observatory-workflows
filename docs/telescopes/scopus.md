@@ -27,7 +27,7 @@ The telescope saves the dataset to a Google BigQuery table with the `project_id`
 ## Download throttling limits
 
 The telescope downloads SCOPUS data in parallel sessions up to the number of API keys supplied.  Each session observes the following [throttling limits](https://dev.elsevier.com/api_key_settings.html) imposed by Elsevier:
- * API calls are rate limited to 1 call/s (Elsevier sets 2 call/s as their documented rate).
+ * API calls are rate limited to 2 call/s (Elsevier sets 2 call/s as their documented rate).
  * Number of results returned per call is capped at 25 (Elsevier limit).
  * Maximum number of results per query is 5000 (Elsevier limit).
 
