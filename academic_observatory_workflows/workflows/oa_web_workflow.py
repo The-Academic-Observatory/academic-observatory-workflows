@@ -493,13 +493,15 @@ class OaWebWorkflow(Workflow):
         self,
         *,
         dag_id: str = "oa_web_workflow",
-        start_date: Optional[pendulum.DateTime] = pendulum.DateTime(2021, 5, 2),
+        start_date: Optional[pendulum.DateTime] = pendulum.datetime(2021, 5, 2),
         schedule_interval: Optional[str] = "@weekly",
         catchup: Optional[bool] = False,
         ext_dag_id: str = "doi",
         table_ids: List[str] = None,
         airflow_vars: List[str] = None,
         retries: int = 3,
+        agg_dataset_id: str = "observatory",
+        grid_dataset_id: str = "digital_science",
     ):
         """Create the OaWebWorkflow.
 
@@ -527,6 +529,8 @@ class OaWebWorkflow(Workflow):
             catchup=catchup,
             airflow_vars=airflow_vars,
         )
+        self.agg_dataset_id = agg_dataset_id
+        self.grid_dataset_id = grid_dataset_id
         self.table_ids = table_ids
         if table_ids is None:
             self.table_ids = ["country", "institution"]
@@ -581,7 +585,13 @@ class OaWebWorkflow(Workflow):
         project_id = Variable.get(AirflowVars.PROJECT_ID)
         release_date = make_release_date(**kwargs)
 
-        return OaWebRelease(dag_id=self.dag_id, project_id=project_id, release_date=release_date)
+        return OaWebRelease(
+            dag_id=self.dag_id,
+            project_id=project_id,
+            release_date=release_date,
+            grid_dataset_id=self.grid_dataset_id,
+            agg_dataset_id=self.agg_dataset_id,
+        )
 
     def query(self, release: OaWebRelease, **kwargs):
         """Fetch the data for each table.

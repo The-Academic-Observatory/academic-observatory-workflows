@@ -17,14 +17,23 @@
 import os
 from unittest import TestCase
 from unittest.mock import patch
-
+from observatory.platform.utils.test_utils import (
+    ObservatoryEnvironment,
+    ObservatoryTestCase,
+    make_dummy_dag,
+    module_file_path,
+)
+from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import schema_folder, test_fixtures_folder
+from observatory.platform.utils.file_utils import load_jsonl
+from observatory.platform.utils.test_utils import Table, bq_load_tables
 import pandas as pd
 import pendulum
 import vcr
 from airflow.models.connection import Connection
 from airflow.models.variable import Variable
 from click.testing import CliRunner
-
+from airflow.utils.state import State
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.oa_web_workflow import OaWebRelease, OaWebWorkflow
 from observatory.platform.utils.test_utils import (
@@ -497,6 +506,10 @@ class TestOaWebRelease(TestCase):
 
 
 class TestOaWebWorkflow(ObservatoryTestCase):
+    def setUp(self) -> None:
+        self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
+        self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
+
     def test_dag_structure(self):
         """Test that the DAG has the correct structure.
 
@@ -533,7 +546,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         :return: None
         """
 
-        env = ObservatoryEnvironment(enable_api=False)
+        env = ObservatoryEnvironment(project_id=self.project_id, data_location=self.data_location, enable_api=False)
         with env.create():
             env.add_variable(Variable(key=OaWebWorkflow.AIRFLOW_VAR_WEBSITE_FOLDER, val="/path/to/website"))
             env.add_connection(
@@ -546,6 +559,23 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "oa_web_workflow.py")
             self.assert_dag_load("oa_web_workflow", dag_file)
 
+    def setup_tables(self, dataset_id_all: str, bucket_name: str, release_date: pendulum.DateTime):
+        grid = load_jsonl(test_fixtures_folder("doi", "grid.jsonl"))
+        country = load_jsonl(test_fixtures_folder("oa_web_workflow", "country.jsonl"))
+        institution = load_jsonl(test_fixtures_folder("oa_web_workflow", "institution.jsonl"))
+
+        analysis_schema_path = schema_folder()
+        with CliRunner().isolated_filesystem() as t:
+            tables = [
+                Table("grid", True, dataset_id_all, grid, "grid", analysis_schema_path),
+                Table("country", True, dataset_id_all, country, "country", analysis_schema_path),
+                Table("institution", True, dataset_id_all, institution, "institution", analysis_schema_path),
+            ]
+
+            bq_load_tables(
+                tables=tables, bucket_name=bucket_name, release_date=release_date, data_location=self.data_location
+            )
+
     def test_telescope(self):
         """Test the telescope end to end.
 
@@ -554,6 +584,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
         execution_date = pendulum.now()
         env = ObservatoryEnvironment(enable_api=False)
+        dataset_id = env.add_dataset("data")
         with env.create():
             env.add_variable(Variable(key=OaWebWorkflow.AIRFLOW_VAR_WEBSITE_FOLDER, val="/path/to/website"))
             env.add_connection(
@@ -563,7 +594,44 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 )
             )
 
-            dag = OaWebWorkflow().make_dag()
-
+            # Run fake DOI workflow
+            dag = make_dummy_dag("doi", execution_date)
             with env.create_dag_run(dag, execution_date):
-                self.fail()
+                # Running all of a DAGs tasks sets the DAG to finished
+                ti = env.run_task("dummy_task")
+                self.assertEqual(State.SUCCESS, ti.state)
+
+            # Upload fake data to BigQuery
+            self.setup_tables(dataset_id_all=dataset_id, bucket_name=env.download_bucket, release_date=execution_date)
+
+            # Run workflow
+            workflow = OaWebWorkflow()
+            dag = workflow.make_dag()
+            with env.create_dag_run(dag, execution_date):
+                # DOI Sensor
+                ti = env.run_task("doi_sensor")
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # Check dependencies
+                ti = env.run_task(workflow.check_dependencies.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # Run query
+                ti = env.run_task(workflow.query.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # # Download data
+                # ti = env.run_task(workflow.download.__name__)
+                # self.assertEqual(State.SUCCESS, ti.state)
+                #
+                # # Transform data
+                # ti = env.run_task(workflow.transform.__name__)
+                # self.assertEqual(State.SUCCESS, ti.state)
+                #
+                # # Build website
+                # ti = env.run_task(workflow.transform.__name__)
+                # self.assertEqual(State.SUCCESS, ti.state)
+                #
+                # # Deploy website
+                # ti = env.run_task(workflow.transform.__name__)
+                # self.assertEqual(State.SUCCESS, ti.state)
