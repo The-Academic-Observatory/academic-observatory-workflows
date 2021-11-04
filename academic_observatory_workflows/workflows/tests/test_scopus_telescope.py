@@ -14,24 +14,67 @@
 
 # Author: Tuan Chien
 
+import json
 import os
 import unittest
 import unittest.mock as mock
+from logging import error
 from queue import Queue
-from unittest.mock import patch
+from threading import Event, Thread
+from time import sleep
+from unittest.mock import MagicMock, patch
 
+import observatory.api.server.orm as orm
 import pendulum
-from click.testing import CliRunner
-
+from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.scopus_telescope import (
     ScopusClient,
     ScopusJsonParser,
     ScopusRelease,
+    ScopusTelescope,
     ScopusUtility,
     ScopusUtilWorker,
 )
+from airflow import AirflowException
+from airflow.models import Connection
+from airflow.utils.state import State
+from click.testing import CliRunner
+from freezegun import freeze_time
+from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
+from observatory.platform.utils.gc_utils import run_bigquery_query
+from observatory.platform.utils.test_utils import (
+    HttpServer,
+    ObservatoryEnvironment,
+    ObservatoryTestCase,
+    module_file_path,
+)
 from observatory.platform.utils.url_utils import get_user_agent
-from observatory.platform.utils.workflow_utils import build_schedule
+from observatory.platform.utils.workflow_utils import (
+    bigquery_sharded_table_id,
+    blob_name,
+    build_schedule,
+    make_dag_id,
+    make_observatory_api,
+)
+
+
+class MockUrlResponse:
+    def __init__(self, *, response="{}", code=200):
+        self.response = response
+        self.code = code
+
+    def getheader(self, header):
+        if header == "X-RateLimit-Remaining":
+            return 0
+
+        if header == "X-RateLimit-Reset":
+            return 10
+
+    def getcode(self):
+        return self.code
+
+    def read(self):
+        return self.response
 
 
 class TestScopusClient(unittest.TestCase):
@@ -49,248 +92,315 @@ class TestScopusClient(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.api_key = "testkey"
+        self.query = "dummyquery"
 
     def test_scopus_client_user_agent(self):
         """Test to make sure the user agent string is set correctly."""
         with patch("observatory.platform.utils.url_utils.metadata", return_value=TestScopusClient.MockMetadata):
-            obj = ScopusClient("")
+            obj = ScopusClient(api_key="")
             generated_ua = obj._headers["User-Agent"]
             self.assertEqual(generated_ua, get_user_agent(package_name="academic_observatory_workflows"))
 
+    def test_get_reset_date_from_error(self):
+        msg = f"{ScopusClient.QUOTA_EXCEED_ERROR_PREFIX}2000"
+        offset = ScopusClient.get_reset_date_from_error(msg)
+        self.assertEqual(offset, 2)
 
-class TestScopusRelease(unittest.TestCase):
-    """Test the ScopusRelease class."""
+    def test_get_next_page_url(self):
+        links = []
+        next_link = ScopusClient.get_next_page_url(links)
+        self.assertEqual(next_link, None)
 
-    @patch("academic_observatory_workflows.workflows.scopus_telescope.workflow_path", return_value="test")
-    def test_init(self, mock_target):
-        """Test initialisation."""
+        expected_url = "http://next.url"
+        links = [{"@ref": "next", "@href": expected_url}]
+        next_link = ScopusClient.get_next_page_url(links)
+        self.assertEqual(next_link, expected_url)
 
-        obj = ScopusRelease(
-            inst_id="inst_id",
-            scopus_inst_id=["scopus_inst_id"],
-            release_date=pendulum.datetime(1984, 1, 1),
-            start_date=pendulum.datetime(2000, 5, 1),
-            end_date=pendulum.datetime(2000, 1, 1),
-            project_id="project_id",
-            download_bucket_name="download_bucket",
-            transform_bucket_name="transform_bucket",
-            data_location="data_location",
-            schema_ver="schema_ver",
-        )
+        links = [{"@ref": "self"}]
+        next_link = ScopusClient.get_next_page_url(links)
+        self.assertEqual(next_link, None)
 
-        self.assertEqual(obj.inst_id, "inst_id")
-        self.assertEqual(obj.scopus_inst_id[0], "scopus_inst_id")
-        self.assertEqual(obj.release_date, pendulum.datetime(1984, 1, 1))
-        self.assertEqual(obj.start_date, pendulum.datetime(2000, 5, 1))
-        self.assertEqual(obj.end_date, pendulum.datetime(2000, 1, 1))
-        self.assertEqual(obj.project_id, "project_id")
-        self.assertEqual(obj.download_path, "test")
-        self.assertEqual(obj.transform_path, "test")
-        self.assertEqual(obj.telescope_path, "telescopes/scopus/1984-01-01")
-        self.assertEqual(obj.download_bucket_name, "download_bucket")
-        self.assertEqual(obj.transform_bucket_name, "transform_bucket")
-        self.assertEqual(obj.data_location, "data_location")
-        self.assertEqual(obj.schema_ver, "schema_ver")
-        self.assertEqual(mock_target.call_count, 2)
+        links = [{}]
+        self.assertEqual(ScopusClient.get_next_page_url(links), None)
+
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.Request")
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.urlopen")
+    def test_retrieve_exceeded(self, m_urlopen, m_request):
+        m_urlopen.return_value = MockUrlResponse(code=429)
+
+        client = ScopusClient(api_key=self.api_key)
+        self.assertRaises(AirflowException, client.retrieve, self.query)
+
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.Request")
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.urlopen")
+    def test_retrieve_noresults(self, m_urlopen, m_request):
+        m_urlopen.return_value = MockUrlResponse(code=200, response=b"{}")
+
+        client = ScopusClient(api_key=self.api_key)
+        results, remaining, reset = client.retrieve(self.query)
+        self.assertEqual(results, [])
+        self.assertEqual(remaining, 0)
+        self.assertEqual(reset, 10)
+
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.Request")
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.urlopen")
+    def test_retrieve_unexpected_httpcode(self, m_urlopen, m_request):
+        m_urlopen.return_value = MockUrlResponse(code=403, response=b"{}")
+
+        client = ScopusClient(api_key=self.api_key)
+        self.assertRaises(AirflowException, client.retrieve, self.query)
+
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.Request")
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.urlopen")
+    def test_retrieve_max_results_exceeded(self, m_urlopen, m_request):
+        response = b'{"search-results": {"entry": [1], "opensearch:totalResults": 5001}}'
+
+        m_urlopen.return_value = MockUrlResponse(code=200, response=response)
+        client = ScopusClient(api_key=self.api_key)
+        self.assertRaises(AirflowException, client.retrieve, self.query)
+
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.Request")
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.urlopen")
+    def test_retrieve_no_next_url(self, m_urlopen, m_request):
+        response = b'{"search-results": {"entry": [1], "opensearch:totalResults": 2, "link": []}}'
+
+        m_urlopen.return_value = MockUrlResponse(code=200, response=response)
+        client = ScopusClient(api_key=self.api_key)
+        self.assertRaises(AirflowException, client.retrieve, self.query)
+
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.Request")
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.urlopen")
+    def test_retrieve(self, m_urlopen, m_request):
+        response = b'{"search-results": {"entry": [1], "opensearch:totalResults": 2, "link": [{"@ref": "next", "@href": "someurl"}]}}'
+
+        m_urlopen.return_value = MockUrlResponse(code=200, response=response)
+        client = ScopusClient(api_key=self.api_key)
+        results, _, _ = client.retrieve(self.query)
+        self.assertEqual(len(results), 2)
 
 
 class TestScopusUtilWorker(unittest.TestCase):
-    """Test the ScopusUtilWorker class."""
+    def test_ctor(self):
+        util = ScopusUtilWorker(
+            client_id=0, client=None, quota_reset_date=pendulum.datetime(2000, 1, 1), quota_remaining=0
+        )
 
-    def test_init(self):
-        """Test the constructor."""
-
-        now = pendulum.now("UTC")
-        client = ScopusClient("api_key", "standard")
-        client_id = 1
-        worker = ScopusUtilWorker(client_id, client, now, 20000)
-        self.assertEqual(now, worker.quota_reset_date)
-        self.assertEqual(client_id, worker.client_id)
-        self.assertTrue(isinstance(worker.client, ScopusClient))
-
-
-class TestScopusUtility(unittest.TestCase):
-    """Test the SCOPUS utility class."""
-
-    class MockMetadata:
-        @classmethod
-        def get(self, attribute):
-            if attribute == "Version":
-                return "1"
-            if attribute == "Home-page":
-                return "http://test.test"
-            if attribute == "Author-email":
-                return "test@test"
-
-    def __init__(self, *args, **kwargs):
-        super(TestScopusUtility, self).__init__(*args, **kwargs)
-        self.scopus_1990_09_01_path = "/tmp/scopus_curtin_1990_09_01.yml"
-        self.reset_past = pendulum.datetime(2019, 1, 1, 11, 11, 11)
-        self.reset_future = pendulum.datetime(9999, 9, 29, 1, 11, 11)
-        self.conn = "test"
-        self.api_key1 = "test_key1"
-        self.api_key2 = "test_key2"
-        self.scopus_inst_id = ["60031226"]  # Curtin University
-        self.workers = [
-            ScopusUtilWorker(1, ScopusClient(self.api_key1, "standard"), self.reset_past, 20000),
-            ScopusUtilWorker(2, ScopusClient(self.api_key2, "standard"), self.reset_past, 20000),
-        ]
-        self.conn = "scopus_curtin"
-        self.workdir = "."
-        self.schedule = build_schedule(pendulum.datetime(1990, 5, 1), pendulum.datetime(1990, 9, 1))
+        self.assertEqual(util.client_id, 0)
+        self.assertEqual(util.client, None)
+        self.assertEqual(util.quota_reset_date, pendulum.datetime(2000, 1, 1))
+        self.assertEqual(util.quota_remaining, 0)
 
     def test_build_query(self):
-        """Test query builder."""
+        institution_ids = ["60031226"]
+        period = pendulum.period(pendulum.datetime(2021, 1, 1), pendulum.datetime(2021, 2, 1))
+        query = ScopusUtility.build_query(institution_ids=institution_ids, period=period)
 
-        scopus_inst_id = ["test1", "test2"]
-        period = pendulum.Period(pendulum.datetime(2018, 10, 1), pendulum.datetime(2019, 2, 1))
-        query = ScopusUtility.build_query(scopus_inst_id, period)
-        query_truth = '(AF-ID(test1) OR AF-ID(test2)) AND PUBDATETXT("October 2018" or "November 2018" or "December 2018" or "January 2019" or "February 2019")'
-        self.assertEqual(query, query_truth)
+    def test_make_query(self):
+        worker = MagicMock()
+        worker.client = MagicMock()
+        worker.client.retrieve = MagicMock()
+        worker.client.retrieve.return_value = [{}, {}], 2000, 10
+        query = ""
+        results, num_results = ScopusUtility.make_query(worker=worker, query=query)
+        self.assertEqual(num_results, 2)
+        self.assertEqual(results, "[{}, {}]")
 
-    @patch("academic_observatory_workflows.workflows.scopus_telescope.sleep")
-    def test_sleep_if_needed(self, sleep_mock):
-        """Test sleep calculation."""
-        ScopusUtility.sleep_if_needed(self.reset_past, self.conn)
-        sleep_mock.assert_not_called()
+    @freeze_time("2021-02-01")
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.write_to_file")
+    def test_download_period(self, m_write_file):
+        conn = "conn_id"
+        worker = MagicMock()
+        worker.client = MagicMock()
+        worker.client.retrieve = MagicMock()
+        results = [{}] * (ScopusClient.MAX_RESULTS + 1)
+        worker.client.retrieve.return_value = results, 2000, 10
+        period = pendulum.period(pendulum.date(2021, 1, 1), pendulum.date(2021, 2, 1))
+        institution_ids = ["123"]
+        ScopusUtility.download_period(
+            worker=worker, conn=conn, period=period, institution_ids=institution_ids, download_dir="/tmp"
+        )
 
-        ScopusUtility.sleep_if_needed(self.reset_future, self.conn)
-        sleep_mock.assert_called_once()
+        args, _ = m_write_file.call_args
+        self.assertEqual(args[0], json.dumps(results))
+        self.assertEqual(args[1], "/tmp/2021-01-01_2021-02-01_2021-02-01T00:00:00+00:00.json")
 
-    def test_qe_worker_maintenace(self):
-        """Test quota exceeded worker maintenance."""
+    @freeze_time("2021-02-02")
+    def test_sleep_if_needed_needed(self):
+        reset_date = pendulum.datetime(2021, 2, 2, 0, 0, 1)
+        with patch("academic_observatory_workflows.workflows.scopus_telescope.logging.info") as m_log:
+            ScopusUtility.sleep_if_needed(reset_date=reset_date, conn="conn")
+            self.assertEqual(m_log.call_count, 1)
 
-        workerq = Queue()
-        qe_workers = [ScopusUtilWorker(1, ScopusClient("test", "standard"), self.reset_past, 20000)]
-        qe_workers = ScopusUtility.qe_worker_maintenance(qe_workers, workerq, "test")
-        self.assertEqual(workerq.qsize(), 1)
-        self.assertEqual(len(qe_workers), 0)
+    @freeze_time("2021-02-02")
+    def test_sleep_if_needed_not_needed(self):
+        reset_date = pendulum.datetime(2021, 2, 1)
+        with patch("academic_observatory_workflows.workflows.scopus_telescope.logging.info") as m_log:
+            ScopusUtility.sleep_if_needed(reset_date=reset_date, conn="conn")
+            self.assertEqual(m_log.call_count, 0)
 
-        workerq = Queue()
-        qe_workers = [ScopusUtilWorker(1, ScopusClient("test", "standard"), self.reset_future, 20000)]
-        qe_workers = ScopusUtility.qe_worker_maintenance(qe_workers, workerq, "test")
-        self.assertEqual(workerq.qsize(), 0)
-        self.assertEqual(len(qe_workers), 1)
-
+    @freeze_time("2021-02-02")
     def test_update_reset_date(self):
-        """Test updating of reset date."""
+        conn = "conn_id"
+        worker = MagicMock()
+        now = pendulum.now("UTC")
+        worker.quota_reset_date = now
+        new_ts = now.int_timestamp * 1000 + 2000
+        error_msg = f"{ScopusClient.QUOTA_EXCEED_ERROR_PREFIX}{new_ts}"
+        ScopusUtility.update_reset_date(conn=conn, error_msg=error_msg, worker=worker)
+        self.assertTrue(worker.quota_reset_date > now)
 
-        reset_date = pendulum.now("UTC")
-        error_msg = f"{ScopusClient.QUOTA_EXCEED_ERROR_PREFIX}9999999999999"
-        worker = ScopusUtilWorker(1, ScopusClient("test"), reset_date, 20000)
+    @patch.object(ScopusUtilWorker, "QUEUE_WAIT_TIME", 1)
+    def test_download_worker_empty_retry_exit(self):
+        def trigger_exit(event):
+            now = pendulum.now("UTC")
+            trigger = now.add(seconds=5)
 
-        new_reset = ScopusUtility.update_reset_date(self.conn, error_msg, worker, reset_date)
-        self.assertTrue(new_reset > reset_date)
+            while pendulum.now("UTC") < trigger:
+                continue
 
-        error_msg = f"{ScopusClient.QUOTA_EXCEED_ERROR_PREFIX}0"
-        new_reset = ScopusUtility.update_reset_date(self.conn, error_msg, worker, reset_date)
-        self.assertEqual(new_reset, pendulum.datetime(1970, 1, 1, 0, 0, 0))
+            event.set()
 
-    @patch("academic_observatory_workflows.workflows.scopus_telescope.ScopusUtility.make_query", return_value=("", 0))
-    def test_download_scopus_period(self, mock_make_query):
-        """Test downloading of a period. Mocks out actual api call."""
+        conn = "conn"
+        queue = Queue()
+        event = Event()
+        institution_ids = ["123"]
 
-        with patch("observatory.platform.utils.url_utils.metadata", return_value=TestScopusUtility.MockMetadata):
-            with CliRunner().isolated_filesystem():
-                period = pendulum.Period(pendulum.datetime(1990, 9, 1), pendulum.datetime(1990, 9, 30))
-                worker = ScopusUtilWorker(1, ScopusClient(self.api_key1), pendulum.now("UTC"), 20000)
-                save_file = ScopusUtility.download_scopus_period(
-                    worker, self.conn, period, self.scopus_inst_id, self.workdir
-                )
-                self.assertEqual(mock_make_query.call_count, 1)
-                self.assertNotEqual(save_file, "")
+        thread = Thread(target=trigger_exit, args=(event,))
+        thread.start()
+        worker = ScopusUtilWorker(client_id=0, client=None, quota_reset_date=pendulum.now("UTC"), quota_remaining=10)
 
-    @patch("academic_observatory_workflows.workflows.scopus_telescope.ScopusUtilWorker.QUEUE_WAIT_TIME", 1)
-    @patch("academic_observatory_workflows.workflows.scopus_telescope.ScopusUtility.make_query", return_value=("", 0))
-    def test_sequential(self, mock_make_query):
-        """Sequential download test."""
+        ScopusUtility.download_worker(
+            worker=worker,
+            exit_event=event,
+            taskq=queue,
+            conn=conn,
+            institution_ids=institution_ids,
+            download_dir="",
+        )
+        thread.join()
+
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.ScopusUtility.download_period")
+    def test_download_worker_download_exit(self, m_download):
+        def trigger_exit(event):
+            now = pendulum.now("UTC")
+            trigger = now.add(seconds=5)
+
+            while pendulum.now("UTC") < trigger:
+                continue
+
+            event.set()
+
+        conn = "conn"
+        queue = Queue()
+        now = pendulum.now("UTC")
+        queue.put(pendulum.period(now, now))
+        event = Event()
+        institution_ids = ["123"]
+
+        thread = Thread(target=trigger_exit, args=(event,))
+        thread.start()
+        worker = ScopusUtilWorker(client_id=0, client=None, quota_reset_date=pendulum.now("UTC"), quota_remaining=10)
+
+        ScopusUtility.download_worker(
+            worker=worker,
+            exit_event=event,
+            taskq=queue,
+            conn=conn,
+            institution_ids=institution_ids,
+            download_dir="",
+        )
+        thread.join()
+
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.ScopusUtility.download_period")
+    def test_download_worker_download_quota_exceed_retry_exit(self, m_download):
+        def trigger_exit(event):
+            now = pendulum.now("UTC")
+            trigger = now.add(seconds=1)
+
+            while pendulum.now("UTC") < trigger:
+                continue
+
+            event.set()
 
         now = pendulum.now("UTC")
-        workers = list()
+        next_reset = now.add(seconds=2).int_timestamp * 1000
 
-        workers.append(ScopusUtilWorker(1, ScopusClient(self.api_key1), now, 20000))
-        workers.append(ScopusUtilWorker(2, ScopusClient(self.api_key2), now, 20000))
+        m_download.side_effect = [AirflowException(f"{ScopusClient.QUOTA_EXCEED_ERROR_PREFIX}{next_reset}"), None]
 
-        taskq = Queue()
-        for period in self.schedule:
-            taskq.put(period)
+        conn = "conn"
+        queue = Queue()
+        queue.put(pendulum.period(now, now))
+        event = Event()
+        institution_ids = ["123"]
 
-        def side_effect(*args):
-            side_effect.count += 1
-            if side_effect.count <= 1:
-                raise Exception(f"{ScopusClient.QUOTA_EXCEED_ERROR_PREFIX}1601433684000")
-            return mock.DEFAULT
+        thread = Thread(target=trigger_exit, args=(event,))
+        thread.start()
+        worker = ScopusUtilWorker(client_id=0, client=None, quota_reset_date=now, quota_remaining=10)
 
-        side_effect.count = 0
-        mock_make_query.side_effect = side_effect
-
-        with CliRunner().isolated_filesystem():
-            download_path = os.path.join(os.path.abspath(""), "telescopes")
-            os.makedirs(download_path, exist_ok=True)
-
-            saved_files = ScopusUtility.download_sequential(
-                workers, taskq, self.conn, self.scopus_inst_id, download_path
-            )
-            self.assertEqual(mock_make_query.call_count, 6)
-            self.assertEqual(len(saved_files), 5)
-
-    @patch("academic_observatory_workflows.workflows.scopus_telescope.ScopusUtilWorker.QUEUE_WAIT_TIME", 1)
-    @patch("academic_observatory_workflows.workflows.scopus_telescope.ScopusUtility.make_query", return_value=("", 0))
-    def test_parallel(self, mock_make_query):
-        """Parallel download test."""
-
-        taskq = Queue()
-        for period in self.schedule:
-            taskq.put(period)
-
-        def side_effect(*args):
-            side_effect.count += 1
-            if side_effect.count <= 4:
-                raise Exception(f"{ScopusClient.QUOTA_EXCEED_ERROR_PREFIX}1601433684000")
-            return mock.DEFAULT
-
-        side_effect.count = 0
-        mock_make_query.side_effect = side_effect
-
-        with CliRunner().isolated_filesystem():
-            download_path = os.path.join(os.path.abspath(""), "telescopes")
-            os.makedirs(download_path, exist_ok=True)
-
-            saved_files = ScopusUtility.download_parallel(
-                self.workers, taskq, self.conn, self.scopus_inst_id, download_path
-            )
-            self.assertEqual(mock_make_query.call_count, 9)
-            self.assertEqual(len(saved_files), 5)
-
-    @patch("academic_observatory_workflows.workflows.scopus_telescope.ScopusUtilWorker.QUEUE_WAIT_TIME", 1)
-    @patch("academic_observatory_workflows.workflows.scopus_telescope.workflow_path", return_value="test")
-    @patch("academic_observatory_workflows.workflows.scopus_telescope.ScopusUtility.make_query", return_value=("", 0))
-    def test_download_snapshot(self, mock_make_query, mock_telepath):
-        """Download snapshot test."""
-
-        release = ScopusRelease(
-            inst_id="curtin",
-            scopus_inst_id=["60031226"],
-            release_date=pendulum.datetime(2020, 1, 1),
-            start_date=pendulum.datetime(1990, 5, 1),
-            end_date=pendulum.datetime(1990, 9, 1),
-            project_id="project_id",
-            download_bucket_name="download_bucket",
-            transform_bucket_name="transform_bucket",
-            data_location="data_location",
-            schema_ver="schema_ver",
+        ScopusUtility.download_worker(
+            worker=worker,
+            exit_event=event,
+            taskq=queue,
+            conn=conn,
+            institution_ids=institution_ids,
+            download_dir="",
         )
-        self.assertEqual(mock_telepath.call_count, 2)
+        thread.join()
 
-        with patch("observatory.platform.utils.url_utils.metadata", return_value=TestScopusUtility.MockMetadata):
-            with CliRunner().isolated_filesystem():
-                api_keys = [{"key": self.api_key1}, {"key": self.api_key2}]
-                saved_files = ScopusUtility.download_snapshot(api_keys, release, "sequential")
-                self.assertEqual(mock_make_query.call_count, 5)
-                self.assertEqual(len(saved_files), 5)
-                saved_files = ScopusUtility.download_snapshot(api_keys, release, "parallel")
-                self.assertEqual(mock_make_query.call_count, 10)
-                self.assertEqual(len(saved_files), 5)
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.ScopusUtility.download_period")
+    def test_download_worker_download_uncaught_exception(self, m_download):
+        def trigger_exit(event):
+            now = pendulum.now("UTC")
+            trigger = now.add(seconds=5)
+
+            while pendulum.now("UTC") < trigger:
+                continue
+
+            event.set()
+
+        now = pendulum.now("UTC")
+        m_download.side_effect = AirflowException("Some other error")
+        conn = "conn"
+        queue = Queue()
+        queue.put(pendulum.period(now, now))
+        event = Event()
+        institution_ids = ["123"]
+
+        thread = Thread(target=trigger_exit, args=(event,))
+        thread.start()
+        worker = ScopusUtilWorker(client_id=0, client=None, quota_reset_date=now, quota_remaining=10)
+
+        self.assertRaises(
+            AirflowException,
+            ScopusUtility.download_worker,
+            worker=worker,
+            exit_event=event,
+            taskq=queue,
+            conn=conn,
+            institution_ids=institution_ids,
+            download_dir="",
+        )
+        thread.join()
+
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.ScopusUtility.download_period")
+    def test_download_parallel(self, m_download):
+        now = pendulum.now("UTC")
+        conn = "conn"
+        queue = Queue()
+        institution_ids = ["123"]
+        m_download.return_value = None
+
+        for _ in range(4):
+            queue.put(pendulum.period(now, now))
+
+        workers = [
+            ScopusUtilWorker(client_id=i, client=None, quota_reset_date=now, quota_remaining=10) for i in range(2)
+        ]
+
+        ScopusUtility.download_parallel(
+            workers=workers, taskq=queue, conn=conn, institution_ids=institution_ids, download_dir=""
+        )
 
 
 class TestScopusJsonParser(unittest.TestCase):
@@ -298,7 +408,7 @@ class TestScopusJsonParser(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
         super(TestScopusJsonParser, self).__init__(*args, **kwargs)
-        self.scopus_inst_id = ["60031226"]  # Curtin University
+        self.institution_ids = ["60031226"]  # Curtin University
 
         self.data = {
             "dc:identifier": "scopusid",
@@ -363,6 +473,10 @@ class TestScopusJsonParser(unittest.TestCase):
         self.assertEqual(af["id"], "id")
         self.assertEqual(af["name_variant"], "variant")
 
+        # 0 length affiliations
+        affil = ScopusJsonParser.get_affiliations({"affiliation": []})
+        self.assertEqual(affil, None)
+
     def test_get_authors(self):
         """Test get authors"""
 
@@ -380,12 +494,34 @@ class TestScopusJsonParser(unittest.TestCase):
         self.assertEqual(au["initials"], "mj")
         self.assertEqual(au["afid"], "id")
 
+        # 0 length author
+        author = ScopusJsonParser.get_authors({"author": []})
+        self.assertEqual(author, None)
+
+    def test_get_identifier_list(self):
+        ids = ScopusJsonParser.get_identifier_list({}, "myid")
+        self.assertEqual(ids, None)
+
+        ids = ScopusJsonParser.get_identifier_list({"myid": "thing"}, "myid")
+        self.assertEqual(ids, ["thing"])
+
+        ids = ScopusJsonParser.get_identifier_list({"myid": []}, "myid")
+        self.assertEqual(ids, None)
+
+        ids = ScopusJsonParser.get_identifier_list({"myid": [{"$": "thing"}]}, "myid")
+        self.assertEqual(ids, ["thing"])
+
     def test_parse_json(self):
         """Test the parser."""
 
         harvest_datetime = pendulum.now("UTC").isoformat()
         release_date = "2018-01-01"
-        entry = ScopusJsonParser.parse_json(self.data, harvest_datetime, release_date, self.scopus_inst_id)
+        entry = ScopusJsonParser.parse_json(
+            data=self.data,
+            harvest_datetime=harvest_datetime,
+            release_date=release_date,
+            institution_ids=self.institution_ids,
+        )
         self.assertEqual(entry["harvest_datetime"], harvest_datetime)
         self.assertEqual(entry["release_date"], release_date)
         self.assertEqual(entry["title"], "arttitle")
@@ -438,4 +574,250 @@ class TestScopusJsonParser(unittest.TestCase):
         self.assertEqual(au["afid"], "id")
 
         self.assertEqual(len(entry["institution_ids"]), 1)
-        self.assertEqual(entry["institution_ids"], self.scopus_inst_id)
+        self.assertEqual(entry["institution_ids"], self.institution_ids)
+
+
+class TestScopusTelescope(ObservatoryTestCase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
+        self.host = "localhost"
+        self.api_port = 5000
+        self.data_location = "us"
+        self.org_name = "Curtin University"
+        self.conn_id = "scopus_curtin_university"
+        self.earliest_date = pendulum.datetime(2021, 1, 1)
+
+        self.fixture_dir = test_fixtures_folder("scopus")
+        self.fixture_file = os.path.join(self.fixture_dir, "test.json")
+        with open(self.fixture_file, "r") as f:
+            self.results_str = f.read()
+        self.results_len = 1
+
+    def setup_connections(self, env):
+        # Add Observatory API connection
+        conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.api_port}")
+        env.add_connection(conn)
+
+        # Add login/pass connection
+        conn = Connection(conn_id=self.conn_id, uri=f"http://login:password@localhost")
+        env.add_connection(conn)
+
+    def setup_api(self, env):
+        dt = pendulum.now("UTC")
+
+        extra = {
+            "airflow_connections": self.conn_id,
+            "institution_ids": ["123"],
+            "earliest_date": self.earliest_date.isoformat(),
+        }
+
+        name = "Scopus Telescope"
+        telescope_type = orm.TelescopeType(name=name, type_id=ScopusTelescope.DAG_ID, created=dt, modified=dt)
+        env.api_session.add(telescope_type)
+
+        organisation = orm.Organisation(
+            name=self.org_name,
+            created=dt,
+            modified=dt,
+            gcp_project_id=self.project_id,
+            gcp_download_bucket=env.download_bucket,
+            gcp_transform_bucket=env.transform_bucket,
+        )
+
+        env.api_session.add(organisation)
+        telescope = orm.Telescope(
+            name=name,
+            telescope_type=telescope_type,
+            organisation=organisation,
+            modified=dt,
+            created=dt,
+            extra=extra,
+        )
+        env.api_session.add(telescope)
+        env.api_session.commit()
+
+    def get_telescope(self, dataset_id):
+        api = make_observatory_api()
+        telescope_type = api.get_telescope_type(type_id=ScopusTelescope.DAG_ID)
+        telescopes = api.get_telescopes(telescope_type_id=telescope_type.id, limit=1000)
+        self.assertEqual(len(telescopes), 1)
+
+        dag_id = make_dag_id(ScopusTelescope.DAG_ID, telescopes[0].organisation.name)
+        airflow_conns = [telescopes[0].extra.get("airflow_connections")]
+        institution_ids = telescopes[0].extra.get("institution_ids")
+        earliest_date_str = telescopes[0].extra.get("earliest_date").isoformat()
+        earliest_date = pendulum.parse(earliest_date_str)
+
+        airflow_vars = [
+            AirflowVars.DATA_PATH,
+            AirflowVars.DATA_LOCATION,
+        ]
+
+        telescope = ScopusTelescope(
+            dag_id=dag_id,
+            dataset_id=dataset_id,
+            airflow_conns=airflow_conns,
+            airflow_vars=airflow_vars,
+            institution_ids=institution_ids,
+            earliest_date=earliest_date,
+        )
+
+        return telescope
+
+    def test_ctor(self):
+        self.assertRaises(
+            AirflowException,
+            ScopusTelescope,
+            dag_id="dag",
+            dataset_id="dataset",
+            airflow_conns=[],
+            airflow_vars=[],
+            institution_ids=[],
+            earliest_date=pendulum.now("UTC"),
+        )
+
+        self.assertRaises(
+            AirflowException,
+            ScopusTelescope,
+            dag_id="dag",
+            dataset_id="dataset",
+            airflow_conns=["conn"],
+            airflow_vars=[],
+            institution_ids=[],
+            earliest_date=pendulum.now("UTC"),
+        )
+
+    def test_dag_structure(self):
+        """Test that the ScopusTelescope DAG has the correct structure.
+
+        :return: None
+        """
+        dag = ScopusTelescope(
+            dag_id="dag",
+            airflow_conns="conn",
+            airflow_vars=[],
+            institution_ids=["10"],
+            earliest_date=pendulum.now("UTC"),
+            view="standard",
+        ).make_dag()
+        self.assert_dag_structure(
+            {
+                "check_dependencies": ["download"],
+                "download": ["upload_downloaded"],
+                "upload_downloaded": ["transform"],
+                "transform": ["upload_transformed"],
+                "upload_transformed": ["bq_load"],
+                "bq_load": ["cleanup"],
+                "cleanup": [],
+            },
+            dag,
+        )
+
+    def test_dag_load(self):
+        """Test that the DAG can be loaded from a DAG bag."""
+
+        dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
+
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
+
+        with env.create():
+            self.setup_connections(env)
+            self.setup_api(env)
+
+            dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
+            dag_id = make_dag_id(ScopusTelescope.DAG_ID, self.org_name)
+            self.assert_dag_load(dag_id, dag_file)
+
+    def test_telescope(self):
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
+
+        with env.create():
+            self.setup_connections(env)
+            self.setup_api(env)
+            dataset_id = env.add_dataset()
+
+            execution_date = pendulum.datetime(2021, 1, 1)
+            telescope = self.get_telescope(dataset_id)
+            dag = telescope.make_dag()
+
+            release_date = pendulum.datetime(2021, 2, 1)
+            release = ScopusRelease(
+                dag_id=make_dag_id(ScopusTelescope.DAG_ID, self.org_name),
+                release_date=release_date,
+                api_keys=["1"],
+                institution_ids=["123"],
+                view="standard",
+                earliest_date=pendulum.datetime(2021, 1, 1),
+            )
+
+            with env.create_dag_run(dag, execution_date):
+                # check dependencies
+                ti = env.run_task(telescope.check_dependencies.__name__)
+                self.assertEqual(ti.state, State.SUCCESS)
+
+                # download
+                with patch(
+                    "academic_observatory_workflows.workflows.scopus_telescope.ScopusUtility.make_query"
+                ) as m_search:
+                    m_search.return_value = self.results_str, self.results_len
+                    ti = env.run_task(telescope.download.__name__)
+                    self.assertEqual(ti.state, State.SUCCESS)
+                    self.assertEqual(len(release.download_files), 1)
+                    self.assertEqual(m_search.call_count, 1)
+
+                # upload downloaded
+                ti = env.run_task(telescope.upload_downloaded.__name__)
+                self.assertEqual(ti.state, State.SUCCESS)
+                self.assert_blob_integrity(
+                    env.download_bucket, blob_name(release.download_files[0]), release.download_files[0]
+                )
+
+                # transform
+                ti = env.run_task(telescope.transform.__name__)
+                self.assertEqual(ti.state, State.SUCCESS)
+
+                # upload_transformed
+                ti = env.run_task(telescope.upload_transformed.__name__)
+                self.assertEqual(ti.state, State.SUCCESS)
+                for file in release.transform_files:
+                    self.assert_blob_integrity(env.transform_bucket, blob_name(file), file)
+
+                # bq_load
+                ti = env.run_task(telescope.bq_load.__name__)
+                self.assertEqual(ti.state, State.SUCCESS)
+
+                table_id = (
+                    f"{self.project_id}.{dataset_id}."
+                    f"{bigquery_sharded_table_id(ScopusTelescope.DAG_ID, release.release_date)}"
+                )
+                expected_rows = 1
+                self.assert_table_integrity(table_id, expected_rows)
+
+                # Sample some fields to check in the first row
+                sql = f"SELECT * FROM {self.project_id}.{dataset_id}.scopus20210201"
+                records = list(run_bigquery_query(sql))
+                self.assertEqual(records[0]["aggregation_type"], "Journal")
+                self.assertEqual(records[0]["source_id"], 1)
+                self.assertEqual(records[0]["eid"], "somedoi")
+                self.assertEqual(records[0]["pii"], "S00000")
+                self.assertEqual(records[0]["identifier"], "SCOPUS_ID:000000")
+                self.assertEqual(records[0]["doi"], ["10.0000/00"])
+                self.assertEqual(records[0]["publication_name"], "Journal of Things")
+                self.assertEqual(records[0]["institution_ids"], [123])
+                self.assertEqual(records[0]["creator"], "Name F.")
+                self.assertEqual(records[0]["article_number"], "1")
+                self.assertEqual(records[0]["title"], "Article title")
+                self.assertEqual(records[0]["issn"], ["00000000"])
+                self.assertEqual(records[0]["subtype_description"], "Article")
+                self.assertEqual(records[0]["citedby_count"], 0)
+
+                # cleanup
+                download_folder, extract_folder, transform_folder = (
+                    release.download_folder,
+                    release.extract_folder,
+                    release.transform_folder,
+                )
+                env.run_task(telescope.cleanup.__name__)
+                self.assertEqual(ti.state, State.SUCCESS)
+                self.assert_cleanup(download_folder, extract_folder, transform_folder)
