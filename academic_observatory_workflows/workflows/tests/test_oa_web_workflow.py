@@ -349,8 +349,22 @@ class TestOaWebRelease(TestCase):
     def test_update_index_with_change_points(self):
         self.fail()
 
-    def test_save_index(self):
-        self.fail()
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
+    def test_save_index(self, mock_var_get):
+        with CliRunner().isolated_filesystem() as t:
+            mock_var_get.return_value = t
+
+            for category, data, entity_ids in self.entities:
+                df = pd.DataFrame(data)
+                country_index = self.release.make_index(df, category)
+                ts = self.release.make_timeseries(df)
+                change_points = self.release.make_change_points(ts)
+                self.release.update_index_with_change_points(country_index, change_points)
+                self.release.update_index_with_logos(country_index, category)
+                self.release.save_index(country_index, category)
+
+                path = os.path.join(self.release.transform_folder, "data", category, "summary.json")
+                self.assertTrue(os.path.isfile(path))
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
     def test_save_entity_details(self, mock_var_get):
@@ -464,8 +478,22 @@ class TestOaWebRelease(TestCase):
             e["category"] = category
         self.assertEqual(expected, records)
 
-    def test_save_autocomplete(self):
-        self.fail()
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
+    def test_save_autocomplete(self, mock_var_get):
+        with CliRunner().isolated_filesystem() as t:
+            mock_var_get.return_value = t
+            category = "country"
+            expected = [
+                {"id": "NZL", "name": "New Zealand", "logo": "/logos/country/NZL.svg"},
+                {"id": "AUS", "name": "Australia", "logo": "/logos/country/AUS.svg"},
+                {"id": "USA", "name": "United States", "logo": "/logos/country/USA.svg"},
+            ]
+            df = pd.DataFrame(expected)
+            records = self.release.make_auto_complete(df, category)
+            self.release.save_autocomplete(records)
+
+            path = os.path.join(self.release.transform_folder, "data", "autocomplete.json")
+            self.assertTrue(os.path.isfile(path))
 
 
 class TestOaWebWorkflow(ObservatoryTestCase):
