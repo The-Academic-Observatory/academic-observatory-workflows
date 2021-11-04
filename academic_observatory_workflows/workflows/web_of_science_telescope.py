@@ -15,48 +15,41 @@
 # Author: Tuan Chien
 
 
-import json
 import logging
 import os
-import urllib.request
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from math import ceil
-from typing import Any, Dict, List, Type, Union
-from urllib.error import URLError
+from math import floor
+from typing import Any, Dict, List, Tuple, Type, Union
 
 import backoff
+import jsonlines
 import pendulum
 import xmltodict
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from airflow.exceptions import AirflowException
-from airflow.models import Variable
-from airflow.models.taskinstance import TaskInstance
-from google.cloud.bigquery import SourceFormat, WriteDisposition
+from google.cloud.bigquery import WriteDisposition
+from observatory.platform.utils.airflow_utils import (
+    AirflowConns,
+    AirflowVars,
+    get_airflow_connection_login,
+    get_airflow_connection_password,
+)
+from observatory.platform.utils.file_utils import load_file, write_to_file
+from observatory.platform.utils.workflow_utils import (
+    build_schedule,
+    get_as_list,
+    get_as_list_or_none,
+    get_chunks,
+    get_entry_or_none,
+)
+from observatory.platform.workflows.snapshot_telescope import (
+    SnapshotRelease,
+    SnapshotTelescope,
+)
 from ratelimit import limits, sleep_and_retry
 from suds import WebFault
 from wos import WosClient
-
-from academic_observatory_workflows.config import schema_folder
-from observatory.platform.utils.airflow_utils import AirflowVars, check_variables
-from observatory.platform.utils.config_utils import find_schema
-from observatory.platform.utils.file_utils import write_to_file, zip_files
-from observatory.platform.utils.gc_utils import (
-    bigquery_sharded_table_id,
-    create_bigquery_dataset,
-    load_bigquery_table,
-)
-from observatory.platform.utils.workflow_utils import SubFolder, workflow_path
-from observatory.platform.utils.workflow_utils import (
-    build_schedule,
-    delete_msg_files,
-    get_as_list,
-    get_as_list_or_none,
-    get_entry_or_none,
-    json_to_db,
-    upload_telescope_file_list,
-    validate_date,
-    write_xml_to_json,
-)
 
 
 class WosUtilConst:
@@ -75,27 +68,19 @@ class WosUtility:
     """Handles the interaction with Web of Science"""
 
     @staticmethod
-    def build_query(wos_inst_id: List[str], period: Type[pendulum.Period]) -> OrderedDict:
+    def build_query(*, institution_ids: List[str], period: Type[pendulum.Period]) -> OrderedDict:
         """Build a WoS API query.
 
-        :param wos_inst_id: List of Institutional ID to query, e.g, "Curtin University"
+        :param institution_ids: List of Institutional ID to query, e.g, "Curtin University"
         :param period: A tuple containing start and end dates.
         :return: Constructed web query.
         """
         start_date = period.start.isoformat()
         end_date = period.end.isoformat()
 
-        organisations = str()
-        n_institutes = len(wos_inst_id)
-        for i, inst in enumerate(wos_inst_id):
-            organisations += inst
-            organisations += " OR "
-
-        organisations = organisations[:-4]  # Remove last ' OR '
-
+        organisations = " OR ".join(institution_ids)
         query_str = f"OG=({organisations})"
 
-        logging.info(f"Query string: {query_str}")
         query = OrderedDict(
             [
                 ("query", query_str),
@@ -107,206 +92,21 @@ class WosUtility:
         return query
 
     @staticmethod
-    def parse_query(records: Any) -> (dict, str):
+    def parse_query(records: Any) -> Tuple[dict, str]:
         """Parse XML tree record into a dict.
 
         :param records: XML tree returned by the web query.
         :return: Dictionary version of the web response and a schema version string.
         """
 
-        try:
-            records_dict = xmltodict.parse(records)
-        except Exception as e:
-            raise AirflowException(f"XML to dict parsing failed: {e}")
-
-        records = records_dict["records"]
-        schema_string = records["@xmlns"]
-
-        prefix_len = len(WosTelescope.SCHEMA_ID_PREFIX)
-        prefix_loc = schema_string.find(WosTelescope.SCHEMA_ID_PREFIX)
-        if prefix_loc == -1:
-            logging.warning(
-                f"WOS schema has changed.\nExpecting prefix: {WosTelescope.SCHEMA_ID_PREFIX}\n"
-                f"Received: {schema_string}"
-            )
-            return None
-
-        ver_start = prefix_len
-        ver_end = schema_string.find("/", ver_start)
-        schema_ver = schema_string[ver_start:ver_end]
-        logging.info(f"Found schema version: {schema_ver}")
-
-        if "REC" not in records:
-            logging.warning(f"No record found for query. Please double check parameters, e.g., institution id.")
-            return None, schema_ver
-
-        return get_as_list(records, "REC"), schema_ver
-
-    @staticmethod
-    def download_wos_period(
-        client: WosClient, conn: str, period: pendulum.Period, wos_inst_id: List[str], download_path: str
-    ) -> List[str]:
-        """Download records for a stated date range.
-
-        :param client: WebClient object.
-        :param conn: file name for saved response as a pickle file.
-        :param period: Period tuple containing (start date, end date).
-        :param wos_inst_id: List of Institutional ID to query, e.g, "Curtin University"
-        :param download_path: Path to download files to.
-        """
-
-        timestamp = pendulum.now().isoformat()
-        inst_str = conn[WosTelescope.ID_STRING_OFFSET :]
-        save_file_prefix = os.path.join(
-            download_path, period.start.isoformat(), inst_str, f"{period.start}-{period.end}_{timestamp}"
-        )
-        query = WosUtility.build_query(wos_inst_id, period)
-        result = WosUtility.make_query(client, query)
-        logging.info(f"{conn} with session id {client._SID}: retrieving period {period.start} - {period.end}")
-
-        counter = 0
-        saved_files = list()
-        for entry in result:
-            save_file = f"{save_file_prefix}-{counter}.xml"
-            write_to_file(entry, save_file)
-            counter += 1
-            saved_files.append(save_file)
-
-        return saved_files
-
-    @staticmethod
-    @backoff.on_exception(
-        backoff.constant, WebFault, max_tries=WosUtilConst.RETRIES, interval=WosUtilConst.SESSION_CALL_PERIOD
-    )
-    def download_wos_batch(
-        login: str, password: str, batch: list, conn: str, wos_inst_id: List[str], download_path: str
-    ) -> List[str]:
-        """Download one batch of WoS snapshots. Throttling limits are more conservative than WoS limits.
-        Throttle limits may or may not be enforced. Probably depends on how executors spin up tasks.
-
-        :param login: login.
-        :param password: password.
-        :param batch: List of tuples of (start_date, end_date) to fetch.
-        :param conn: connection_id string from Airflow variable.
-        :param wos_inst_id: List of Institutional ID to query, e.g, "Curtin University"
-        :param download_path: download path to save response to.
-        :return: List of saved files from this batch.
-        """
-
-        file_list = list()
-        with WosClient(login, password) as client:
-            for period in batch:
-                files = WosUtility.download_wos_period(client, conn, period, wos_inst_id, download_path)
-                file_list += files
-        return file_list
-
-    @staticmethod
-    def download_wos_parallel(
-        login: str, password: str, schedule: list, conn: str, wos_inst_id: List[str], download_path: str
-    ) -> List[str]:
-        """Download WoS snapshot with parallel sessions. Using threads.
-
-        :param login: WoS login
-        :param password: WoS password
-        :param schedule: List of date range (start_date, end_date) tuples to download.
-        :param conn: Airflow connection_id string.
-        :param wos_inst_id: List of Institutional ID to query, e.g, "Curtin University"
-        :param download_path: Path to download to.
-        :return: List of files downloaded.
-        """
-
-        sessions = WosUtilConst.SESSION_CALL_LIMIT
-        batch_size = ceil(len(schedule) / sessions)
-
-        # Evenly distribute schedule among the session batches. Last session gets whatever the remaining tail is.
-        batches = [schedule[i * batch_size : (i + 1) * batch_size] for i in range(sessions - 1)]
-        batches.append(schedule[(sessions - 1) * batch_size :])  # Last session
-
-        file_list = []
-        with ThreadPoolExecutor(max_workers=sessions) as executor:
-            futures = []
-            for i in range(sessions):
-                futures.append(
-                    executor.submit(
-                        WosUtility.download_wos_batch, login, password, batches[i], conn, wos_inst_id, download_path
-                    )
-                )
-            for future in as_completed(futures):
-                files = future.result()
-                file_list = file_list + files
-
-        return file_list
-
-    @staticmethod
-    def download_wos_sequential(
-        login: str, password: str, schedule: list, conn: str, wos_inst_id: List[str], download_path: str
-    ) -> List[str]:
-        """Download WoS snapshot sequentially.
-
-        :param login: WoS login
-        :param password: WoS password
-        :param schedule: List of date range (start_date, end_date) tuples to download.
-        :param conn: Airflow connection_id string.
-        :param wos_inst_id: List of Institutional ID to query, e.g, "Curtin University"
-        :param download_path: Path to download to.
-        :return: List of files downloaded.
-        """
-
-        return WosUtility.download_wos_batch(login, password, schedule, conn, wos_inst_id, download_path)
-
-    @staticmethod
-    def download_wos_snapshot(
-        download_path: str, conn, wos_inst_id: List[str], end_date: pendulum.DateTime, mode: str
-    ) -> List[str]:
-        """Download snapshot from Web of Science for the given institution.
-
-        :param download_path: the directory where the downloaded wos snapshot should be saved.
-        :param conn: Airflow connection object.
-        :param wos_inst_id: List of wos institution ids to use in query.
-        :param end_date: end date of schedule. Usually the DAG start date of this DAG run.
-        :param mode: Download mode to use. 'sequential' or 'parallel'
-        """
-
-        extra = json.loads(conn.extra)
-        login = conn.login
-        password = conn.password
-        start_date = pendulum.parse(extra["start_date"])
-        end_date = end_date
-        schedule = build_schedule(start_date, end_date)
-
-        if mode == "sequential" or len(schedule) <= WosUtilConst.SESSION_CALL_LIMIT:
-            logging.info("Downloading snapshot with sequential method")
-            return WosUtility.download_wos_sequential(login, password, schedule, str(conn), wos_inst_id, download_path)
-
-        if mode == "parallel":
-            logging.info("Downloading snapshot with parallel method")
-            return WosUtility.download_wos_parallel(login, password, schedule, str(conn), wos_inst_id, download_path)
-
-    @staticmethod
-    def make_query(client: WosClient, query: OrderedDict) -> List[Any]:
-        """Make the API calls to retrieve information from Web of Science.
-
-        :param client: WosClient object.
-        :param query: Constructed search query from use build_query.
-
-        :return: List of XML responses.
-        """
-
-        results = WosUtility.wos_search(client, query)
-        num_results = int(results.recordsFound)
-        record_list = [results.records]
-
-        if num_results > WosUtilConst.RESULT_LIMIT:
-            for offset in range(2, num_results, WosUtilConst.RESULT_LIMIT):
-                query["offset"] = offset
-                record_list.append(WosUtility.wos_search(client, query).records)
-
-        return record_list
+        records_dict = xmltodict.parse(records)["records"]
+        schema_string = records_dict["@xmlns"]
+        return get_as_list(records_dict, "REC"), schema_string
 
     @staticmethod
     @sleep_and_retry
     @limits(calls=WosUtilConst.CALL_LIMIT, period=WosUtilConst.CALL_PERIOD)
-    def wos_search(client: WosClient, query: OrderedDict) -> Any:
+    def search(*, client: WosClient, query: OrderedDict) -> Any:
         """Throttling wrapper for the API call. This is a global limit for this API when called from a program on the
         same machine. If you are throttled, it will throw a WebFault and the exception message will contain the phrase
         'Request denied by Throttle server'
@@ -321,453 +121,171 @@ class WosUtility:
 
         return client.search(**query)
 
-
-class WosRelease:
-    """Used to store info on a given WoS release.
-
-    :param inst_id: institution id from the airflow connection (minus the wos_)
-    :param wos_inst_id: List of institution ids to use in the WoS query.
-    :param release_date: Release date (currently the execution date).
-    :param dag_start: Start date of the dag (not execution date).
-    :param project_id: The project id to use.
-    :param download_bucket_name: Download bucket name to use for storing downloaded files in the cloud.
-    :param transform_bucket_name: Transform bucket name to use for storing transformed files in the cloud.
-    :param data_location: Location of the data servers
-    """
-
-    def __init__(
-        self,
-        inst_id: str,
-        wos_inst_id: List[str],
-        release_date: pendulum.DateTime,
-        dag_start: pendulum.DateTime,
-        project_id: str,
-        download_bucket_name: str,
-        transform_bucket_name: str,
-        data_location: str,
-        schema_ver: str,
-    ):
-        self.inst_id = inst_id
-        self.wos_inst_id = wos_inst_id
-        self.release_date = release_date
-        self.dag_start = dag_start
-        self.download_path = workflow_path(SubFolder.downloaded, WosTelescope.DAG_ID)
-        self.transform_path = workflow_path(SubFolder.transformed, WosTelescope.DAG_ID)
-        self.telescope_path = f"telescopes/{WosTelescope.DAG_ID}/{release_date}"
-        self.project_id = project_id
-        self.download_bucket_name = download_bucket_name
-        self.transform_bucket_name = transform_bucket_name
-        self.data_location = data_location
-        self.schema_ver = schema_ver
-
-
-class WosTelescope:
-    """A container for holding the constants and static functions for the Web of Science telescope."""
-
-    DAG_ID = "webofscience"
-    ID_STRING_OFFSET = len(DAG_ID) + 1
-    DESCRIPTION = "Web of Science: https://www.clarivate.com/webofsciencegroup"
-    SCHEDULE_INTERVAL = "@monthly"
-    QUEUE = "default"
-    RETRIES = 3
-    DATASET_ID = "clarivate"
-    SCHEMA_PATH = "telescopes"
-    TABLE_NAME = DAG_ID
-    SCHEMA_VER = "wok5.4"
-
-    TASK_ID_CHECK_DEPENDENCIES = "check_dependencies"
-    TASK_CHECK_API_SERVER = "check_api_server"
-    TASK_ID_DOWNLOAD = "download"
-    TASK_ID_UPLOAD_DOWNLOADED = "upload_downloaded"
-    TASK_ID_TRANSFORM_XML = "transform_xml"
-    TASK_ID_TRANSFORM_DB_FORMAT = "transform_db_format"
-    TASK_ID_UPLOAD_TRANSFORMED = "upload_transformed"
-    TASK_ID_BQ_LOAD = "bq_load"
-    TASK_ID_CLEANUP = "cleanup"
-
-    XCOM_RELEASES = "releases"
-    XCOM_DOWNLOAD_PATH = "download_path"
-    XCOM_UPLOAD_ZIP_PATH = "download_zip_path"
-    XCOM_JSON_PATH = "json_path"
-    XCOM_JSON_HARVEST = "json_harvest"
-    XCOM_JSONL_PATH = "jsonl_path"
-    XCOM_JSONL_ZIP_PATH = "jsonl_zip_path"
-    XCOM_JSONL_BLOB_PATH = "jsonl_blob_path"
-
-    # Implement multiprocessing later if needed. WosClient seems to be synchronous i/o so asyncio doesn't help.
-    DOWNLOAD_MODE = "sequential"  # Valid options: ['sequential', 'parallel']
-
-    API_SERVER = "http://scientific.thomsonreuters.com"
-    SCHEMA_ID_PREFIX = "http://scientific.thomsonreuters.com/schema/"
-
     @staticmethod
-    def check_dependencies(**kwargs):
-        """Check that all variables exist that are required to run the DAG.
+    def make_query(*, client: WosClient, query: OrderedDict) -> List[Any]:
+        """Make the API calls to retrieve information from Web of Science.
 
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
+        :param client: WosClient object.
+        :param query: Constructed search query from use build_query.
+
+        :return: List of XML responses.
         """
 
-        vars_valid = check_variables(
-            AirflowVars.DATA_PATH,
-            AirflowVars.PROJECT_ID,
-            AirflowVars.DATA_LOCATION,
-            AirflowVars.DOWNLOAD_BUCKET,
-            AirflowVars.TRANSFORM_BUCKET,
-        )
-        if not vars_valid:
-            raise AirflowException("Required variables are missing")
+        results = WosUtility.search(client=client, query=query)
+        num_results = int(results.recordsFound)
+        record_list = [results.records]
 
-        conn = kwargs["conn"]
+        if num_results > WosUtilConst.RESULT_LIMIT:
+            for offset in range(WosUtilConst.RESULT_LIMIT + 1, num_results, WosUtilConst.RESULT_LIMIT):
+                query["offset"] = offset
+                record_list.append(WosUtility.search(client=client, query=query).records)
 
-        # Validate extra field is set correctly.
-        extra = conn.extra
-
-        logging.info(f"Validating json in extra field of {conn}")
-        try:
-            extra_dict = json.loads(extra)
-        except Exception as e:
-            raise AirflowException(f"Error processing json extra fields in {conn} connection id profile: {e}")
-
-        logging.info(f"Validating extra field keys for {conn}")
-
-        # Check date is ok
-        start_date = extra_dict["start_date"]
-        if not validate_date(start_date):
-            raise AirflowException(f"Invalid date string for {conn}: {start_date}")
-
-        # Check institution id is set
-        if "id" not in extra_dict:
-            raise AirflowException(f'The "id" field is not set for {conn}.')
-
-        # Check login is set
-        if len(conn.login) == 0:
-            raise AirflowException(f'The "login" field is not set for {conn}.')
-
-        # Check password is set
-        if len(conn.password) == 0:
-            raise AirflowException(f'The "password" field is not set for {conn}.')
-
-        logging.info(f"Checking for airflow override variables of {conn}")
-
-        # Set project id override
-        project_id = Variable.get(AirflowVars.PROJECT_ID)
-        if "project_id" in extra_dict:
-            project_id = extra_dict["project_id"]
-            logging.info(f"Override for project_id found. Using: {project_id}")
-
-        # Set download bucket name override
-        download_bucket_name = Variable.get(AirflowVars.DOWNLOAD_BUCKET)
-        if "download_bucket_name" in extra_dict:
-            download_bucket_name = extra_dict["download_bucket_name"]
-            logging.info(f"Override for download_bucket_name found. Using: {download_bucket_name}")
-
-        # Set transform bucket name override
-        transform_bucket_name = Variable.get(AirflowVars.TRANSFORM_BUCKET)
-        if "transform_bucket_name" in extra_dict:
-            transform_bucket_name = extra_dict["transform_bucket_name"]
-            logging.info(f"Override for transform_bucket_name found. Using: {transform_bucket_name}")
-
-        # Set data location override
-        data_location = Variable.get(AirflowVars.DATA_LOCATION)
-        if "data_location" in extra_dict:
-            data_location = extra_dict["data_location"]
-            logging.info(f"Override for data_location found. Using: {data_location}")
-
-        # Push release information for other tasks
-        wos_inst_id = get_as_list(extra_dict, "id")
-        release = WosRelease(
-            inst_id=kwargs["institution"],
-            wos_inst_id=wos_inst_id,
-            release_date=kwargs["execution_date"],
-            dag_start=pendulum.parse(kwargs["dag_start"]),
-            project_id=project_id,
-            download_bucket_name=download_bucket_name,
-            transform_bucket_name=transform_bucket_name,
-            data_location=data_location,
-            schema_ver=WosTelescope.SCHEMA_VER,
-        )
-
-        logging.info(
-            f"WosRelease contains:\ndownload_bucket_name: {release.download_bucket_name}, transform_bucket_name: "
-            + f"{release.transform_bucket_name}, data_location: {release.data_location}"
-        )
-
-        ti: TaskInstance = kwargs["ti"]
-        ti.xcom_push(WosTelescope.XCOM_RELEASES, release)
+        return record_list
 
     @staticmethod
-    def check_api_server():
-        """Check that http://scientific.thomsonreuters.com is still contactable.
+    def download_wos_period(
+        *, client: WosClient, conn: str, period: pendulum.Period, institution_ids: List[str], download_dir: str
+    ) -> List[str]:
+        """Download records for a stated date range.
 
-        :return: the identifier of the task to execute next.
+        :param client: WebClient object.
+        :param conn: file name for saved response as a pickle file.
+        :param period: Period tuple containing (start date, end date).
+        :param institution_ids: List of Institutional ID to query, e.g, "Curtin University"
+        :param download_dir: Directory to download files to.
         """
 
-        http_code_ok = 200
+        harvest_ts = pendulum.now("UTC")
+        logging.info(f"{conn} with session id {client._SID}: retrieving period {period.start} - {period.end}")
+        query = WosUtility.build_query(institution_ids=institution_ids, period=period)
+        result = WosUtility.make_query(client=client, query=query)
 
-        logging.info(f"Checking API server {WosTelescope.API_SERVER} is up.")
-
-        try:
-            http_code = urllib.request.urlopen(WosTelescope.API_SERVER).getcode()
-        except URLError as e:
-            raise ValueError(f"Failed to fetch url because of: {e}")
-
-        if http_code != http_code_ok:
-            raise ValueError(f"HTTP response code {http_code} received.")
+        file_prefix = os.path.join(download_dir, f"{period.start}_{period.end}")
+        for i, entry in enumerate(result):
+            save_file = f"{file_prefix}_{i}_{harvest_ts}.xml"
+            logging.info(f"Saving to file {save_file}")
+            write_to_file(entry, save_file)
 
     @staticmethod
-    def download(**kwargs):
-        """Task to download the WoS snapshots.
+    @backoff.on_exception(
+        backoff.constant, WebFault, max_tries=WosUtilConst.RETRIES, interval=WosUtilConst.SESSION_CALL_PERIOD
+    )
+    def download_wos_batch(
+        *,
+        login: str,
+        password: str,
+        batch: List[pendulum.Period],
+        conn: str,
+        institution_ids: List[str],
+        download_dir: str,
+    ) -> List[str]:
+        """Download one batch of WoS snapshots. Throttling limits are more conservative than WoS limits.
+        Throttle limits may or may not be enforced. Probably depends on how executors spin up tasks.
 
-        Pushes the following xcom:
-            download_path (str): the path to a pickled file containing the list of xml responses in a month query.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
+        :param login: login.
+        :param password: password.
+        :param batch: List of tuples of (start_date, end_date) to fetch.
+        :param conn: connection_id string from Airflow variable.
+        :param institution_ids: List of Institutional ID to query, e.g, "Curtin University"
+        :param download_dir: Download directory to save response to.
+        :return: List of saved files from this batch.
         """
 
-        ti: TaskInstance = kwargs["ti"]
-        release: WosRelease = WosTelescope.pull_release(ti)
-
-        # Prepare paths
-        download_files = WosUtility.download_wos_snapshot(
-            release.download_path, kwargs["conn"], release.wos_inst_id, release.dag_start, WosTelescope.DOWNLOAD_MODE
-        )
-
-        # Notify next task of the files downloaded.
-        ti.xcom_push(WosTelescope.XCOM_DOWNLOAD_PATH, download_files)
-
-    @staticmethod
-    def upload_downloaded(**kwargs):
-        """Task to upload the downloaded WoS snapshots.
-
-        Pushes the following xcom:
-            upload_zip_path (str): the path to pickle zip file of downloaded response.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
-        """
-
-        ti: TaskInstance = kwargs["ti"]
-        release: WosRelease = WosTelescope.pull_release(ti)
-
-        # Pull messages
-        download_list = ti.xcom_pull(
-            key=WosTelescope.XCOM_DOWNLOAD_PATH, task_ids=WosTelescope.TASK_ID_DOWNLOAD, include_prior_dates=False
-        )
-
-        # Upload each snapshot
-        logging.info("upload_downloaded: zipping and uploading downloaded files")
-        zip_list = zip_files(download_list)
-        upload_telescope_file_list(release.download_bucket_name, release.inst_id, release.telescope_path, zip_list)
-
-        # Notify next task of the files downloaded.
-        ti.xcom_push(WosTelescope.XCOM_UPLOAD_ZIP_PATH, zip_list)
-
-    @staticmethod
-    def transform_xml(**kwargs):
-        """Task to transform the XML from the query to json.
-
-        Pushes the following xcom:
-            json_path (str): the path to json file of a converted xml response.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
-        """
-
-        ti: TaskInstance = kwargs["ti"]
-        xml_files = ti.xcom_pull(
-            key=WosTelescope.XCOM_DOWNLOAD_PATH, task_ids=WosTelescope.TASK_ID_DOWNLOAD, include_prior_dates=False
-        )
-        release: WosRelease = WosTelescope.pull_release(ti)
-
-        # Process each xml file
-        logging.info("transform_xml: transforming xml to dict and writing to json")
-        json_file_list, schema_vers = write_xml_to_json(
-            release.transform_path, release.release_date.isoformat(), release.inst_id, xml_files, WosUtility.parse_query
-        )
-
-        # Check we received consistent schema versions, and update release information.
-        if schema_vers and schema_vers.count(WosTelescope.SCHEMA_VER) == len(schema_vers):
-            release.schema_ver = schema_vers[0]
-        else:
-            raise AirflowException(f"Inconsistent schema versions received in response.")
-
-        # Notify next task of the converted json files
-        json_path = list()
-        json_harvest = list()
-        for file in json_file_list:
-            file_name = os.path.basename(file)
-            start = file_name.find("_") + 1
-            end = file_name.rfind("-")
-            harvest_datetime = file_name[start:end]
-            json_path.append(file)
-            json_harvest.append(harvest_datetime)
-        ti.xcom_push(WosTelescope.XCOM_JSON_PATH, json_path)
-        ti.xcom_push(WosTelescope.XCOM_JSON_HARVEST, json_harvest)
-
-    @staticmethod
-    def transform_db_format(**kwargs):
-        """Task to transform the json into db field format (and in jsonlines form).
-
-        Pushes the following xcom:
-            version (str): the version of the GRID release.
-            json_gz_file_name (str): the file name for the transformed GRID release.
-            json_gz_file_path (str): the path to the transformed GRID release (including file name).
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
-        """
-
-        ti: TaskInstance = kwargs["ti"]
-        release: WosRelease = WosTelescope.pull_release(ti)
-
-        # Pull messages
-        json_files = ti.xcom_pull(
-            key=WosTelescope.XCOM_JSON_PATH, task_ids=WosTelescope.TASK_ID_TRANSFORM_XML, include_prior_dates=False
-        )
-
-        harvest_times = ti.xcom_pull(
-            key=WosTelescope.XCOM_JSON_HARVEST, task_ids=WosTelescope.TASK_ID_TRANSFORM_XML, include_prior_dates=False
-        )
-
-        json_harvest_pair = list(zip(json_files, harvest_times))
-        json_harvest_pair.sort()  # Sort by institution and date
-        print(f"json harvest pairs are:\n{json_harvest_pair}")
-
-        # Apply field extraction and transformation to jsonlines
-        logging.info("transform_db_format: parsing and transforming into db format")
-        jsonl_list = json_to_db(
-            json_harvest_pair, release.release_date.isoformat(), WosJsonParser.parse_json, release.wos_inst_id
-        )
-
-        # Notify next task
-        ti.xcom_push(WosTelescope.XCOM_JSONL_PATH, jsonl_list)
-
-    @staticmethod
-    def upload_transformed(**kwargs):
-        """Task to upload the transformed WoS data into jsonlines files.
-
-        Pushes the following xcom:
-            release_date (str): the release date of the GRID release.
-            blob_name (str): the name of the blob on the Google Cloud storage bucket.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
-        """
-
-        ti: TaskInstance = kwargs["ti"]
-        release: WosRelease = WosTelescope.pull_release(ti)
-
-        # Pull messages
-        jsonl_paths = ti.xcom_pull(
-            key=WosTelescope.XCOM_JSONL_PATH,
-            task_ids=WosTelescope.TASK_ID_TRANSFORM_DB_FORMAT,
-            include_prior_dates=False,
-        )
-
-        # Upload each snapshot
-        logging.info("upload_transformed: zipping and uploading jsonlines to cloud")
-        zip_list = zip_files(jsonl_paths)
-        blob_list = upload_telescope_file_list(
-            release.transform_bucket_name, release.inst_id, release.telescope_path, zip_list
-        )
-
-        # Notify next task of the files downloaded.
-        ti.xcom_push(WosTelescope.XCOM_JSONL_BLOB_PATH, blob_list)
-        ti.xcom_push(WosTelescope.XCOM_JSONL_ZIP_PATH, zip_list)
-
-    @staticmethod
-    def bq_load(**kwargs):
-        """Task to load the transformed WoS snapshot into BigQuery.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
-        """
-
-        ti: TaskInstance = kwargs["ti"]
-        release: WosRelease = WosTelescope.pull_release(ti)
-
-        jsonl_zip_blobs = ti.xcom_pull(
-            key=WosTelescope.XCOM_JSONL_BLOB_PATH,
-            task_ids=WosTelescope.TASK_ID_UPLOAD_TRANSFORMED,
-            include_prior_dates=False,
-        )
-
-        # Create dataset
-        create_bigquery_dataset(
-            release.project_id, WosTelescope.DATASET_ID, release.data_location, WosTelescope.DESCRIPTION
-        )
-
-        # Create table id
-        table_id = bigquery_sharded_table_id(WosTelescope.TABLE_NAME, release.release_date)
-
-        # Load into BigQuery
-        analysis_schema_path = schema_folder()
-
-        for file in jsonl_zip_blobs:
-            schema_file_path = find_schema(
-                analysis_schema_path, WosTelescope.TABLE_NAME, release.release_date, "", release.schema_ver
-            )
-            if schema_file_path is None:
-                logging.error(
-                    f"No schema found with search parameters: analysis_schema_path={WosTelescope.SCHEMA_PATH}, "
-                    f"table_name={WosTelescope.TABLE_NAME}, release_date={release.release_date}, "
-                    f"schema_ver={release.schema_ver}"
+        with WosClient(login, password) as client:
+            for period in batch:
+                WosUtility.download_wos_period(
+                    client=client, conn=conn, period=period, institution_ids=institution_ids, download_dir=download_dir
                 )
-                exit(os.EX_CONFIG)
-
-            # Load BigQuery table
-            uri = f"gs://{release.transform_bucket_name}/{file}"
-            logging.info(f"URI: {uri}")
-
-            load_bigquery_table(
-                uri,
-                WosTelescope.DATASET_ID,
-                release.data_location,
-                table_id,
-                schema_file_path,
-                SourceFormat.NEWLINE_DELIMITED_JSON,
-                write_disposition=WriteDisposition.WRITE_APPEND,
-            )
 
     @staticmethod
-    def cleanup(**kwargs):
-        """Delete files of downloaded, extracted and transformed releases.
+    def get_parallel_batches(schedule: List[pendulum.Period]) -> Tuple[int, List[List[pendulum.Period]]]:
+        """Split the schedule to download in parallel sessions.  If the number of periods is less than the number of sessions, just use a single session. If there is not an even split, then the extra periods will be distributed amongst the first few sessions evenly.
 
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
+        :param schedule: Schedule to split.
+        :return: Number of sessions, and the split schedule.
         """
 
-        ti: TaskInstance = kwargs["ti"]
+        n_schedule = len(schedule)
 
-        delete_msg_files(ti, WosTelescope.XCOM_DOWNLOAD_PATH, WosTelescope.TASK_ID_DOWNLOAD)
-        delete_msg_files(ti, WosTelescope.XCOM_UPLOAD_ZIP_PATH, WosTelescope.TASK_ID_UPLOAD_DOWNLOADED)
-        delete_msg_files(ti, WosTelescope.XCOM_JSON_PATH, WosTelescope.TASK_ID_TRANSFORM_XML)
-        delete_msg_files(ti, WosTelescope.XCOM_JSONL_PATH, WosTelescope.TASK_ID_TRANSFORM_DB_FORMAT)
-        delete_msg_files(ti, WosTelescope.XCOM_JSONL_ZIP_PATH, WosTelescope.TASK_ID_UPLOAD_TRANSFORMED)
+        if n_schedule < WosUtilConst.SESSION_CALL_LIMIT:
+            sessions = 1
+            batches = [schedule]
+        else:
+            sessions = WosUtilConst.SESSION_CALL_LIMIT
+            batch_size = int(floor(len(schedule) / sessions))
+            batches = list(get_chunks(input_list=schedule, chunk_size=batch_size))
+
+            # Evenly distribute the remainder amongst the sessions
+            if len(schedule) % sessions != 0:
+                last_batch = batches[-1]
+                batches = batches[:-1]  # Remove last batch
+                for i, period in enumerate(last_batch):
+                    batches[i].append(period)
+
+        return sessions, batches
 
     @staticmethod
-    def pull_release(ti: TaskInstance):
-        """Get the WosRelease object from XCOM message."""
-        return ti.xcom_pull(
-            key=WosTelescope.XCOM_RELEASES, task_ids=WosTelescope.TASK_ID_CHECK_DEPENDENCIES, include_prior_dates=False
+    def download_wos_parallel(
+        *,
+        login: str,
+        password: str,
+        schedule: List[pendulum.Period],
+        conn: str,
+        institution_ids: List[str],
+        download_dir: str,
+    ) -> List[str]:
+        """Download WoS snapshot with parallel sessions. Using threads.
+
+        :param login: WoS login
+        :param password: WoS password
+        :param schedule: List of date range (start_date, end_date) tuples to download.
+        :param conn: Airflow connection_id string.
+        :param institution_ids: List of Institutional ID to query, e.g, "Curtin University"
+        :param download_dir: Path to download to.
+        :return: List of files downloaded.
+        """
+
+        sessions, batches = WosUtility.get_parallel_batches(schedule)
+
+        with ThreadPoolExecutor(max_workers=sessions) as executor:
+            futures = []
+            for i in range(sessions):
+                futures.append(
+                    executor.submit(
+                        WosUtility.download_wos_batch,
+                        login=login,
+                        password=password,
+                        batch=batches[i],
+                        conn=conn,
+                        institution_ids=institution_ids,
+                        download_dir=download_dir,
+                    )
+                )
+            for future in as_completed(futures):
+                future.result()
+
+    @staticmethod
+    def download_wos_sequential(
+        *, login: str, password: str, schedule: list, conn: str, institution_ids: List[str], download_dir: str
+    ) -> List[str]:
+        """Download WoS snapshot sequentially.
+
+        :param login: WoS login
+        :param password: WoS password
+        :param schedule: List of date range (start_date, end_date) tuples to download.
+        :param conn: Airflow connection_id string.
+        :param institution_ids: List of Institutional ID to query, e.g, "Curtin University"
+        :param download_dir: Path to download to.
+        :return: List of files downloaded.
+        """
+
+        return WosUtility.download_wos_batch(
+            login=login,
+            password=password,
+            batch=schedule,
+            conn=conn,
+            institution_ids=institution_ids,
+            download_dir=download_dir,
         )
 
 
@@ -787,7 +305,7 @@ class WosNameAttributes:
 
         contrib_dict = dict()
 
-        if "contributors" in data["static_data"]:
+        try:
             contributors = get_as_list(data["static_data"]["contributors"], "contributor")
             for contributor in contributors:
                 name_field = contributor["name"]
@@ -800,6 +318,8 @@ class WosNameAttributes:
                 if "@orcid_id" in name_field:
                     attrib["orcid"] = name_field["@orcid_id"]
                 contrib_dict[full_name] = attrib
+        except:
+            pass
 
         return contrib_dict
 
@@ -810,9 +330,11 @@ class WosNameAttributes:
         :param full_name: The 'first_name last_name' string.
         :return: orcid id.
         """
-        if full_name is None or full_name not in self._contribs or "orcid" not in self._contribs[full_name]:
+        try:
+            orcid = self._contribs[full_name]["orcid"]
+            return orcid
+        except:
             return None
-        return self._contribs[full_name]["orcid"]
 
     def get_r_id(self, full_name: str) -> str:
         """Get the r_id of a person. Note that full name must be the combination of first and last name.
@@ -822,9 +344,11 @@ class WosNameAttributes:
         :return: r_id.
         """
 
-        if full_name is None or full_name not in self._contribs or "r_id" not in self._contribs[full_name]:
+        try:
+            rid = self._contribs[full_name]["r_id"]
+            return rid
+        except:
             return None
-        return self._contribs[full_name]["r_id"]
 
 
 class WosJsonParser:
@@ -849,36 +373,22 @@ class WosJsonParser:
             "parent_book_doi",
             "doi",
         }
-        field = dict()
+
+        field = {rtype: None for rtype in recognised_types}
         field["uid"] = data["UID"]
 
-        for thing in recognised_types:
-            field[thing] = None
+        try:
+            identifiers = data["dynamic_data"]["cluster_related"]["identifiers"]
+            identifier = get_as_list(identifiers, "identifier")
 
-        if "dynamic_data" not in data:
-            return field
+            for entry in identifier:
+                type_ = entry["@type"]
+                value = entry["@value"]
 
-        if "cluster_related" not in data["dynamic_data"]:
-            return field
-
-        if "identifiers" not in data["dynamic_data"]["cluster_related"]:
-            return field
-
-        if data["dynamic_data"]["cluster_related"]["identifiers"] is None:
-            return field
-
-        if "identifier" not in data["dynamic_data"]["cluster_related"]["identifiers"]:
-            return field
-
-        identifiers = data["dynamic_data"]["cluster_related"]["identifiers"]
-        identifier = get_as_list(identifiers, "identifier")
-
-        for entry in identifier:
-            type_ = entry["@type"]
-            value = entry["@value"]
-
-            if type_ in recognised_types:
-                field[type_] = value
+                if type_ in recognised_types:
+                    field[type_] = value
+        except:
+            pass
 
         return field
 
@@ -890,38 +400,42 @@ class WosJsonParser:
         :return: Publication info record.
         """
 
-        summary = data["static_data"]["summary"]
+        field = {
+            "sort_date": None,
+            "pub_type": None,
+            "page_count": None,
+            "source": None,
+            "doc_type": None,
+            "publisher": None,
+            "publisher_city": None,
+        }
 
-        field = dict()
-        field["sort_date"] = None
-        field["pub_type"] = None
-        field["page_count"] = None
-        field["source"] = None
-        field["doc_type"] = None
-        field["publisher"] = None
-        field["publisher_city"] = None
+        try:
+            summary = data["static_data"]["summary"]
 
-        if "pub_info" in summary:
-            pub_info = summary["pub_info"]
-            field["sort_date"] = pub_info["@sortdate"]
-            field["pub_type"] = pub_info["@pubtype"]
-            field["page_count"] = int(pub_info["page"]["@page_count"])
+            if "pub_info" in summary:
+                pub_info = summary["pub_info"]
+                field["sort_date"] = pub_info["@sortdate"]
+                field["pub_type"] = pub_info["@pubtype"]
+                field["page_count"] = int(pub_info["page"]["@page_count"])
 
-        if "publishers" in summary and "publisher" in summary["publishers"]:
-            publisher = summary["publishers"]["publisher"]
-            field["publisher"] = publisher["names"]["name"]["full_name"]
-            field["publisher_city"] = publisher["address_spec"]["city"]
+            if "publishers" in summary and "publisher" in summary["publishers"]:
+                publisher = summary["publishers"]["publisher"]
+                field["publisher"] = publisher["names"]["name"]["full_name"]
+                field["publisher_city"] = publisher["address_spec"]["city"]
 
-        if "titles" in summary and "title" in summary["titles"]:
-            titles = get_as_list(summary["titles"], "title")
-            for title in titles:
-                if title["@type"] == "source":
-                    field["source"] = title["#text"]
-                    break
+            if "titles" in summary and "title" in summary["titles"]:
+                titles = get_as_list(summary["titles"], "title")
+                for title in titles:
+                    if title["@type"] == "source":
+                        field["source"] = title["#text"]
+                        break
 
-        if "doctypes" in summary:
-            doctypes = get_as_list(summary["doctypes"], "doctype")
-            field["doc_type"] = doctypes[0]
+            if "doctypes" in summary:
+                doctypes = get_as_list(summary["doctypes"], "doctype")
+                field["doc_type"] = doctypes[0]
+        except:
+            pass
 
         return field
 
@@ -932,14 +446,13 @@ class WosJsonParser:
         :param data: dictionary of web response.
         :return: String of title or None if not found.
         """
-        if "titles" not in data["static_data"]["summary"]:
+
+        try:
+            for entry in data["static_data"]["summary"]["titles"]["title"]:
+                if "@type" in entry and entry["@type"] == "item" and "#text" in entry:
+                    return entry["#text"]
+        except:
             return None
-
-        for entry in data["static_data"]["summary"]["titles"]["title"]:
-            if "@type" in entry and entry["@type"] == "item" and "#text" in entry:
-                return entry["#text"]
-
-        raise AirflowException("Schema change detected in title field. Please review.")
 
     @staticmethod
     def get_names(data: dict) -> List[Dict[str, Any]]:
@@ -950,33 +463,30 @@ class WosJsonParser:
         """
 
         field = list()
-        if "names" not in data["static_data"]["summary"]:
-            return field
+        try:
+            data["static_data"]["summary"]["names"]
+            attrib = WosNameAttributes(data)
+            names = get_as_list(data["static_data"]["summary"]["names"], "name")
 
-        names = data["static_data"]["summary"]["names"]
-        if "name" not in names:
-            return field
+            for name in names:
+                entry = dict()
+                entry["seq_no"] = int(get_entry_or_none(name, "@seq_no"))
+                entry["role"] = get_entry_or_none(name, "@role")
+                entry["first_name"] = get_entry_or_none(name, "first_name")
+                entry["last_name"] = get_entry_or_none(name, "last_name")
+                entry["wos_standard"] = get_entry_or_none(name, "wos_standard")
+                entry["daisng_id"] = get_entry_or_none(name, "@daisng_id")
+                entry["full_name"] = get_entry_or_none(name, "full_name")
 
-        attrib = WosNameAttributes(data)
-        names = get_as_list(data["static_data"]["summary"]["names"], "name")
-
-        for name in names:
-            entry = dict()
-            entry["seq_no"] = int(get_entry_or_none(name, "@seq_no"))
-            entry["role"] = get_entry_or_none(name, "@role")
-            entry["first_name"] = get_entry_or_none(name, "first_name")
-            entry["last_name"] = get_entry_or_none(name, "last_name")
-            entry["wos_standard"] = get_entry_or_none(name, "wos_standard")
-            entry["daisng_id"] = get_entry_or_none(name, "@daisng_id")
-            entry["full_name"] = get_entry_or_none(name, "full_name")
-
-            # Get around errors / booby traps for name retrieval
-            first_name = entry["first_name"]
-            last_name = entry["last_name"]
-            full_name = f"{first_name} {last_name}"
-            entry["orcid"] = attrib.get_orcid(full_name)
-            entry["r_id"] = attrib.get_r_id(full_name)
-            field.append(entry)
+                # Get around errors / booby traps for name retrieval
+                first_name = entry["first_name"]
+                last_name = entry["last_name"]
+                full_name = f"{first_name} {last_name}"
+                entry["orcid"] = attrib.get_orcid(full_name)
+                entry["r_id"] = attrib.get_r_id(full_name)
+                field.append(entry)
+        except:
+            pass
 
         return field
 
@@ -989,10 +499,10 @@ class WosJsonParser:
         """
 
         lang_list = list()
-        if "languages" not in data["static_data"]["fullrecord_metadata"]:
-            return lang_list
 
-        if "language" not in data["static_data"]["fullrecord_metadata"]["languages"]:
+        try:
+            data["static_data"]["fullrecord_metadata"]["languages"]
+        except:
             return lang_list
 
         languages = get_as_list(data["static_data"]["fullrecord_metadata"]["languages"], "language")
@@ -1008,13 +518,11 @@ class WosJsonParser:
         :return: Reference count.
         """
 
-        if "refs" not in data["static_data"]["fullrecord_metadata"]:
+        try:
+            refcount = int(data["static_data"]["fullrecord_metadata"]["refs"]["@count"])
+            return refcount
+        except:
             return None
-
-        if "@count" not in data["static_data"]["fullrecord_metadata"]["refs"]:
-            return None
-
-        return int(data["static_data"]["fullrecord_metadata"]["refs"]["@count"])
 
     @staticmethod
     def get_abstract(data: dict) -> List[str]:
@@ -1025,16 +533,15 @@ class WosJsonParser:
         """
 
         abstract_list = list()
-        if "abstracts" not in data["static_data"]["fullrecord_metadata"]:
-            return abstract_list
-        if "abstract" not in data["static_data"]["fullrecord_metadata"]["abstracts"]:
-            return abstract_list
+        try:
+            abstracts = get_as_list(data["static_data"]["fullrecord_metadata"]["abstracts"], "abstract")
+            for abstract in abstracts:
+                texts = get_as_list(abstract["abstract_text"], "p")
+                for text in texts:
+                    abstract_list.append(text)
+        except:
+            pass
 
-        abstracts = get_as_list(data["static_data"]["fullrecord_metadata"]["abstracts"], "abstract")
-        for abstract in abstracts:
-            texts = get_as_list(abstract["abstract_text"], "p")
-            for text in texts:
-                abstract_list.append(text)
         return abstract_list
 
     @staticmethod
@@ -1046,15 +553,14 @@ class WosJsonParser:
         """
 
         keywords = list()
-        if "keywords" not in data["static_data"]["fullrecord_metadata"]:
-            return keywords
-        if "keyword" not in data["static_data"]["fullrecord_metadata"]["keywords"]:
-            return keywords
+        try:
+            keywords = get_as_list(data["static_data"]["fullrecord_metadata"]["keywords"], "keyword")
+            if "item" in data["static_data"] and "keywords_plus" in data["static_data"]["item"]:
+                plus = get_as_list(data["static_data"]["item"]["keywords_plus"], "keyword")
+                keywords = keywords + plus
+        except:
+            pass
 
-        keywords = get_as_list(data["static_data"]["fullrecord_metadata"]["keywords"], "keyword")
-        if "item" in data["static_data"] and "keywords_plus" in data["static_data"]["item"]:
-            plus = get_as_list(data["static_data"]["item"]["keywords_plus"], "keyword")
-            keywords = keywords + plus
         return keywords
 
     @staticmethod
@@ -1066,23 +572,22 @@ class WosJsonParser:
         """
 
         conferences = list()
-        if "conferences" not in data["static_data"]["summary"]:
-            return conferences
-        if "conference" not in data["static_data"]["summary"]["conferences"]:
-            return conferences
+        try:
+            conf_list = get_as_list(data["static_data"]["summary"]["conferences"], "conference")
+            for conf in conf_list:
+                conference = dict()
+                conference["id"] = get_entry_or_none(conf, "@conf_id")
+                if conference["id"] is not None:
+                    conference["id"] = int(conference["id"])
+                conference["name"] = None
 
-        conf_list = get_as_list(data["static_data"]["summary"]["conferences"], "conference")
-        for conf in conf_list:
-            conference = dict()
-            conference["id"] = get_entry_or_none(conf, "@conf_id")
-            if conference["id"] is not None:
-                conference["id"] = int(conference["id"])
-            conference["name"] = None
+                if "conf_titles" in conf and "conf_title" in conf["conf_titles"]:
+                    titles = get_as_list(conf["conf_titles"], "conf_title")
+                    conference["name"] = titles[0]
+                conferences.append(conference)
+        except:
+            pass
 
-            if "conf_titles" in conf and "conf_title" in conf["conf_titles"]:
-                titles = get_as_list(conf["conf_titles"], "conf_title")
-                conference["name"] = titles[0]
-            conferences.append(conference)
         return conferences
 
     @staticmethod
@@ -1095,11 +600,9 @@ class WosJsonParser:
 
         orgs = list()
 
-        if "addresses" not in data["static_data"]["fullrecord_metadata"]:
-            return orgs
-
-        addr_list = get_as_list(data["static_data"]["fullrecord_metadata"]["addresses"], "address_name")
-        if addr_list is None:
+        try:
+            addr_list = get_as_list(data["static_data"]["fullrecord_metadata"]["addresses"], "address_name")
+        except:
             return orgs
 
         for addr in addr_list:
@@ -1115,14 +618,12 @@ class WosJsonParser:
                 return orgs
 
             org_list = get_as_list(addr["address_spec"]["organizations"], "organization")
+            org["org_name"] = org_list[0] if len(org_list) > 0 else None
+
             for entry in org_list:
-                if "@pref" in entry and entry["@pref"] == "Y":
+                if isinstance(entry, dict) and "@pref" in entry and entry["@pref"] == "Y":
                     org["org_name"] = entry["#text"]
                     break
-            else:
-                org["org_name"] = org_list[0]
-                if not isinstance(org["org_name"], str):
-                    raise AirflowException("Schema parsing error for org.")
 
             if "suborganizations" in addr["address_spec"]:
                 org["suborgs"] = get_as_list(addr["address_spec"]["suborganizations"], "suborganization")
@@ -1154,17 +655,15 @@ class WosJsonParser:
         fund_ack["text"] = list()
         fund_ack["grants"] = list()
 
-        if "fund_ack" not in data["static_data"]["fullrecord_metadata"]:
+        try:
+            entry = data["static_data"]["fullrecord_metadata"]["fund_ack"]
+            if "fund_text" in entry and "p" in entry["fund_text"]:
+                fund_ack["text"] = get_as_list(entry["fund_text"], "p")
+
+            grants = get_as_list(entry["grants"], "grant")
+        except:
             return fund_ack
 
-        entry = data["static_data"]["fullrecord_metadata"]["fund_ack"]
-        if "fund_text" in entry and "p" in entry["fund_text"]:
-            fund_ack["text"] = get_as_list(entry["fund_text"], "p")
-
-        if "grants" not in entry:
-            return fund_ack
-
-        grants = get_as_list(entry["grants"], "grant")
         for grant in grants:
             grant_info = dict()
             grant_info["agency"] = get_entry_or_none(grant, "grant_agency")
@@ -1183,7 +682,9 @@ class WosJsonParser:
         """
 
         category_info = dict()
-        if "category_info" not in data["static_data"]["fullrecord_metadata"]:
+        try:
+            entry = data["static_data"]["fullrecord_metadata"]["category_info"]
+        except:
             return category_info
 
         entry = data["static_data"]["fullrecord_metadata"]["category_info"]
@@ -1203,13 +704,13 @@ class WosJsonParser:
         return category_info
 
     @staticmethod
-    def parse_json(data: dict, harvest_datetime: str, release_date: str, institutes: List[str]) -> dict:
+    def parse_json(*, data: dict, harvest_datetime: str, release_date: str, institution_ids: List[str]) -> dict:
         """Turn json data into db schema format.
 
         :param data: dictionary of web response.
         :param harvest_datetime: isoformat string of time the fetch took place.
-        :param release_date: DAG execution date.
-        :param institutes: List of institution ids used in the query.
+        :param release_date: Dataset release date.
+        :param institution_ids: List of institution ids used in the query.
         :return: dict of data in right field format.
         """
 
@@ -1228,6 +729,228 @@ class WosJsonParser:
         entry["fund_ack"] = WosJsonParser.get_fund_ack(data)
         entry["categories"] = WosJsonParser.get_categories(data)
         entry["orgs"] = WosJsonParser.get_orgs(data)
-        entry["institution_ids"] = institutes
+        entry["institution_ids"] = institution_ids
 
         return entry
+
+
+class WebOfScienceRelease(SnapshotRelease):
+    API_URL = "http://scientific.thomsonreuters.com"
+    EXPECTED_SCHEMA = "http://scientific.thomsonreuters.com/schema/wok5.4/public/FullRecord"
+
+    def __init__(
+        self,
+        *,
+        dag_id: str,
+        release_date: pendulum.DateTime,
+        login: str,
+        password: str,
+        institution_ids: List[str],
+        earliest_date: pendulum.DateTime,
+    ):
+        """Construct an UnpaywallSnapshotRelease instance.
+
+        :param dag_id: The DAG ID.
+        :param release_date: Release date.
+        :param login: WoS login.
+        :param password: WoS password.
+        :param institution_ids: List of institution IDs to query.
+        :param earliest_date: Earliest date to query from.
+        """
+
+        super().__init__(
+            dag_id=dag_id,
+            release_date=release_date,
+        )
+
+        self.table_id = WebOfScienceTelescope.DAG_ID
+        self.login = login
+        self.password = password
+        self.institution_ids = institution_ids
+        self.earliest_date = earliest_date
+
+    def download(self):
+        """Download a Web of Science live snapshot."""
+
+        self.harvest_datetime = pendulum.now("UTC")
+        schedule = build_schedule(self.earliest_date, self.release_date)
+        WosUtility.download_wos_parallel(
+            login=self.login,
+            password=self.password,
+            schedule=schedule,
+            conn=self.dag_id,
+            institution_ids=self.institution_ids,
+            download_dir=self.download_folder,
+        )
+
+    def transform(self):
+        """Convert the XML response into BQ friendly jsonlines."""
+
+        for xml_file in self.download_files:
+            records = self._transform_xml_to_json(xml_file)
+            harvest_datetime = self._get_harvest_datetime(xml_file)
+            entries = self._transform_to_db_format(records=records, harvest_datetime=harvest_datetime)
+            self._write_transform_files(entries=entries, xml_file=xml_file)
+
+    def _schema_check(self, schema: str):
+        """Check that the schema hasn't changed. Throw on different schema.
+
+        :param schema: Schema string from HTTP response.
+        """
+
+        if schema != WebOfScienceRelease.EXPECTED_SCHEMA:
+            raise AirflowException(
+                f"Schema change detected. Expected: {WebOfScienceRelease.EXPECTED_SCHEMA}, received: {schema}"
+            )
+
+    def _get_harvest_datetime(self, filepath: str) -> str:
+        """Get the harvest datetime from the filename. <startdate>_<enddate>_<page>_<timestamp>.xml
+
+        :param filepath: XML file path.
+        :return: Harvest datetime string.
+        """
+
+        filename = os.path.basename(filepath)
+        file_tokens = filename.split("_")
+        return file_tokens[3][:-4]
+
+    def _transform_xml_to_json(self, xml_file: str) -> Union[dict, list]:
+        """Transform XML response to JSON. Throw if schema has changed.
+
+        :param xml_file: XML file of the API response.
+        :return: Converted dict or list of the response.
+        """
+
+        xml_data = load_file(xml_file)
+        records, schema = WosUtility.parse_query(xml_data)
+        self._schema_check(schema)
+        return records
+
+    def _transform_to_db_format(self, records: list, harvest_datetime: str) -> List[dict]:
+        """Convert the json response to the expected schema.
+
+        :param records: List of the records as json.
+        :param harvest_datetime: Timestamp of when the API call was made.
+        :return: List of transformed entries.
+        """
+
+        entries = []
+        for data in records:
+            entry = WosJsonParser.parse_json(
+                data=data,
+                harvest_datetime=harvest_datetime,
+                release_date=self.release_date.date().isoformat(),
+                institution_ids=self.institution_ids,
+            )
+
+            entries.append(entry)
+
+        return entries
+
+    def _write_transform_files(self, *, entries: Union[Dict, List], xml_file: str):
+        """Save the schema compatible dictionaries as jsonlines.
+
+        :param entries: List of schema compatible entries.
+        :param xml_file: The filepath to the xml file of API response.
+        :param index: Index to use as the end of the name.
+        """
+
+        # Strip out the harvest time stamp from the filename so that schema detection works
+        filename = os.path.basename(xml_file)
+        filename = f"{filename[:23]}.jsonl"
+        filename = f"{WebOfScienceTelescope.DAG_ID}.{filename}"
+        dst_file = os.path.join(self.transform_folder, filename)
+
+        with jsonlines.open(dst_file, mode="w") as writer:
+            writer.write_all(entries)
+
+
+class WebOfScienceTelescope(SnapshotTelescope):
+    DAG_ID = "web_of_science"
+    TABLE_DESCRIPTION = (
+        "The Web of Science citation database: https://clarivate.com/webofsciencegroup/solutions/web-of-science"
+    )
+
+    def __init__(
+        self,
+        *,
+        dag_id: str,
+        airflow_conns: List[AirflowConns],
+        airflow_vars: List[AirflowVars],
+        institution_ids: List[str],
+        earliest_date: pendulum.DateTime = pendulum.datetime(1800, 1, 1),
+        start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
+        schedule_interval: str = "@monthly",
+        dataset_id: str = "clarivate",
+        schema_folder: str = default_schema_folder(),
+        catchup: bool = False,
+    ):
+        """Web of Science telescope.
+
+        :param dag_id: the id of the DAG.
+        :param start_date: the start date of the DAG.
+        :param schedule_interval: the schedule interval of the DAG.
+        :param dataset_id: the dataset id.
+        :param schema_folder: the SQL schema path.
+        :param airflow_vars: list of airflow variable keys to check the existence of
+        :param airflow_conns: list of airflow connection ids to check the existence of
+        :param institution_ids: list of institution IDs to use for the WoS search query.
+        :param earliest_date: earliest date to query for results.
+        :param catchup: whether to use catchup on missed runs.
+        """
+
+        load_bigquery_table_kwargs = {
+            "write_disposition": WriteDisposition.WRITE_APPEND,
+        }
+
+        super().__init__(
+            dag_id,
+            start_date,
+            schedule_interval,
+            dataset_id,
+            schema_folder,
+            table_descriptions={dag_id: WebOfScienceTelescope.TABLE_DESCRIPTION},
+            catchup=catchup,
+            airflow_vars=airflow_vars,
+            airflow_conns=airflow_conns,
+            load_bigquery_table_kwargs=load_bigquery_table_kwargs,
+        )
+
+        if len(airflow_conns) == 0:
+            raise AirflowException("You need to supply an Airflow connection with the login credentials.")
+
+        if len(institution_ids) == 0:
+            raise AirflowException("You need to supply at least one institution id to search for in the query.")
+
+        self.institution_ids = institution_ids
+        self.earliest_date = earliest_date
+
+        self.add_setup_task(self.check_dependencies)
+        self.add_task(self.download)
+        self.add_task(self.upload_downloaded)
+        self.add_task(self.transform)
+        self.add_task(self.upload_transformed)
+        self.add_task(self.bq_load)
+        self.add_task(self.cleanup)
+
+    def make_release(self, **kwargs) -> List[WebOfScienceRelease]:
+        """Make a list of WebOfScienceRelease instances.
+
+        :param kwargs: The context passed from the PythonOperator.
+        :return: WebOfScienceRelease instance.
+        """
+
+        release_date = pendulum.now("UTC")
+        conn = self.airflow_conns[0]
+        login = get_airflow_connection_login(conn)
+        password = get_airflow_connection_password(conn)
+
+        release = WebOfScienceRelease(
+            dag_id=self.dag_id,
+            release_date=release_date,
+            login=login,
+            password=password,
+            institution_ids=self.institution_ids,
+            earliest_date=self.earliest_date,
+        )
+        return [release]
