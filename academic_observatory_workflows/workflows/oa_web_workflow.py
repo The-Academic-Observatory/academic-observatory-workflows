@@ -20,7 +20,7 @@ import json
 import os
 import os.path
 import urllib.parse
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 
 import google.cloud.bigquery as bigquery
 import pandas as pd
@@ -165,18 +165,6 @@ def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, locati
     return query_job.state == "DONE" and extract_job.state == "DONE"
 
 
-def calc_percentages(df: pd.DataFrame, keys: List[str]):
-    """Calculate percentages for fields in a Pandas dataframe.
-
-    :param df: the Pandas dataframe.
-    :param keys: they keys to calculate percentages for.
-    :return: None.
-    """
-
-    for key in keys:
-        df[f"p_{key}"] = round(df[f"n_{key}"] / df.n_outputs * 100, 0)
-
-
 class OaWebRelease(SnapshotRelease):
     PERCENTAGE_FIELD_KEYS = ["outputs_oa", "outputs_gold", "outputs_green", "outputs_hybrid", "outputs_bronze"]
 
@@ -206,12 +194,26 @@ class OaWebRelease(SnapshotRelease):
         self.agg_dataset_id = agg_dataset_id
         self.grid_dataset_id = grid_dataset_id
 
-    def make_index_table_data(self, df: pd.DataFrame, ts_data: Dict, category: str):
+    def load_csv(self, category: str) -> pd.DataFrame:
+        """Load the CSV file for a given category.
+
+        :param category: the category, i.e. country or institution.
+        :return: the Pandas Dataframe.
+        """
+
+        # Load CSV
+        csv_path = os.path.join(self.download_folder, f"{category}.csv")
+        df = pd.read_csv(csv_path)
+        df["date"] = pd.to_datetime(df["date"])
+        df.fillna("", inplace=True)
+
+        return df
+
+    def make_index(self, df: pd.DataFrame, category: str):
         """Make the data for the index tables.
 
         :param df: Pandas dataframe with all data points.
-        :param ts_data: timeseries data.
-        :param category: the category.
+        :param category: the category, i.e. country or institution.
         :return:
         """
 
@@ -233,45 +235,106 @@ class OaWebRelease(SnapshotRelease):
         )
 
         # Exclude countries with small samples
-        df_index_table = df_index_table[df_index_table.n_outputs >= INCLUSION_THRESHOLD]
+        df_index_table = df_index_table[df_index_table["n_outputs"] >= INCLUSION_THRESHOLD]
 
         # Add percentages to dataframe
-        calc_percentages(df_index_table, self.PERCENTAGE_FIELD_KEYS)
+        self.update_df_with_percentages(df_index_table, self.PERCENTAGE_FIELD_KEYS)
 
         # Sort from highest oa percentage to lowest
         df_index_table.sort_values(by=["p_outputs_oa"], ascending=False, inplace=True)
 
         # Add ranks
-        df_index_table.rank = list(range(1, len(df_index_table) + 1))
+        df_index_table["rank"] = list(range(1, len(df_index_table) + 1))
 
         # Add category
-        df_index_table.category = category
+        df_index_table["category"] = category
 
         # Name overrides
-        df_index_table.name = df_index_table.name.apply(
+        df_index_table["name"] = df_index_table["name"].apply(
             lambda name: NAME_OVERRIDES[name] if name in NAME_OVERRIDES else name
         )
 
         # Clean URLs
-        df_index_table.friendly_url = df_index_table.url.apply(
+        df_index_table["friendly_url"] = df_index_table["url"].apply(
             lambda u: get_url_domain_suffix(u) if not pd.isnull(u) else u
         )
 
         # If country add wikipedia url
         if category == "country":
-            df_index_table.url = df_index_table.name.apply(
+            df_index_table["url"] = df_index_table["name"].apply(
                 lambda name: f"https://en.wikipedia.org/wiki/{urllib.parse.quote(name)}"
             )
+
+        return df_index_table
+
+    def update_df_with_percentages(self, df: pd.DataFrame, keys: List[str]):
+        """Calculate percentages for fields in a Pandas dataframe.
+
+        :param df: the Pandas dataframe.
+        :param keys: they keys to calculate percentages for.
+        :return: None.
+        """
+
+        for key in keys:
+            df[f"p_{key}"] = round(df[f"n_{key}"] / df["n_outputs"] * 100, 0)
+
+    def update_index_with_logos(self, df_index_table: pd.DataFrame, category: str, size=32, fmt="jpg"):
+        """Update the index with logos, downloading logos if the don't exist.
+
+        :param df_index_table: the index table Pandas dataframe.
+        :param category: the category, i.e. country or institution.
+        :param size: the image size.
+        :param fmt: the image format.
+        :return: None.
+        """
+
+        # Make logos
+        if category == "country":
+            df_index_table["logo"] = df_index_table["id"].apply(
+                lambda country_code: f"/logos/{category}/{country_code}.svg"
+            )
+        elif category == "institution":
+            base_path = os.path.join(self.transform_folder, "logos", category)
+            logo_path_unknown = f"/unknown.svg"
+            os.makedirs(base_path, exist_ok=True)
+            logos = []
+            for i, row in df_index_table.iterrows():
+                grid_id = row["id"]
+                url = row["url"]
+                logo_path = logo_path_unknown
+                if not pd.isnull(url):
+                    file_path = os.path.join(base_path, f"{grid_id}.{fmt}")
+                    if not os.path.isfile(file_path):
+                        clearbit_download_logo(company_url=url, file_path=file_path, size=size, fmt=fmt)
+
+                    if os.path.isfile(file_path):
+                        logo_path = f"/logos/{category}/{grid_id}.{fmt}"
+
+                logos.append(logo_path)
+            df_index_table["logo"] = logos
+
+    def update_index_with_change_points(self, df_index_table: pd.DataFrame, change_points_index: Dict):
+        """Update the index with change points.
+
+        :param df_index_table: the index table Pandas Dataframe.
+        :param change_points_index: the change points index.
+        :return: None.
+        """
 
         # Integrate time series data
         change_points = []
         for i, row in df_index_table.iterrows():
-            entity_id = row.id
-            change_points.append(ts_data[entity_id])
-        df_index_table.change_points = change_points
+            entity_id = row["id"]
+            change_points.append(change_points_index[entity_id])
+        df_index_table["change_points"] = change_points
 
-        # Make logos
-        self.make_logos(df_index_table, category)
+    def save_index(self, df_index_table: pd.DataFrame, category: str):
+        """Save the index table.
+
+        :param df_index_table: the index table Pandas Dataframe.
+        :param category: the category, i.e. country or institution.
+        :return: None.
+        """
 
         # Save subset
         base_path = os.path.join(self.transform_folder, "data", category)
@@ -290,85 +353,46 @@ class OaWebRelease(SnapshotRelease):
             "n_outputs_oa",
             "change_points",
         ]
-        df_summary_subset = df_index_table[columns]
-        df_summary_subset.to_json(summary_path, orient="records")
-        return df_index_table
+        df_subset = df_index_table[columns]
+        df_subset.to_json(summary_path, orient="records")
 
-    def save_entity_details_data(self, df: pd.DataFrame, category: str):
+    def save_entity_details(self, df_index_table: pd.DataFrame, category: str):
         """Save the summary data for each entity, saving the result for each entity as a JSON file.
 
-        :param df: a Pandas dataframe.
-        :param category: the entity category.
+        :param df_index_table: a Pandas dataframe.
+        :param category: the category, i.e. country or institution.
         :return: None.
         """
 
         base_path = os.path.join(self.transform_folder, "data", category)
         os.makedirs(base_path, exist_ok=True)
-        df["category"] = category
-        records = df.to_dict("records")
+        df_index_table["category"] = category
+        records = df_index_table.to_dict("records")
         for row in records:
-            entity_id = row.id
+            entity_id = row["id"]
             output_path = os.path.join(base_path, f"{entity_id}_summary.json")
             with open(output_path, mode="w") as f:
                 json.dump(row, f, separators=(",", ":"))
 
-    def make_logos(self, df: pd.DataFrame, category: str, size=32, fmt="jpg"):
-        """Make or download country and institution logos.
+    def make_timeseries(self, df: pd.DataFrame) -> List[Tuple[str, pd.DataFrame]]:
+        """Make timeseries data for each entity, returning them.
 
-        :param df: the index table Pandas dataframe.
-        :param category: the entity category.
-        :param size: the image size.
-        :param fmt: the image format.
-        :return: None.
-        """
-
-        # Make logos
-        if category == "country":
-            df["logo"] = df.id.apply(lambda country_code: f"/logos/{category}/{country_code}.svg")
-        elif category == "institution":
-            base_path = os.path.join(self.transform_folder, "logos", category)
-            logo_path_unknown = f"/unknown.svg"
-            os.makedirs(base_path, exist_ok=True)
-            logos = []
-            for i, row in df.iterrows():
-                grid_id = row["id"]
-                url = row["url"]
-                logo_path = logo_path_unknown
-                if not pd.isnull(url):
-                    file_path = os.path.join(base_path, f"{grid_id}.{fmt}")
-                    if not os.path.isfile(file_path):
-                        clearbit_download_logo(company_url=url, file_path=file_path, size=size, fmt=fmt)
-
-                    if os.path.isfile(file_path):
-                        logo_path = f"/logos/{category}/{grid_id}.{fmt}"
-
-                logos.append(logo_path)
-            df["logo"] = logos
-
-    def save_timeseries_data(self, df: pd.DataFrame, category: str) -> Dict:
-        """Save timeseries data for each entity and returns the change points.
-
-        :param df: the Pandas dataframe containing all data points.
-        :param category: the entity category.
+        :param df: the Pandas dataframe containing all data points for a particular category.
         :return: a dictionary with keys for each entity and change points data for each value.
         """
 
-        ts_data = {}
-
-        # Time series statistics for each entity
-        base_path = os.path.join(self.transform_folder, "data", category)
-        os.makedirs(base_path, exist_ok=True)
+        results = []
         ts_groups = df.groupby(["id"])
         for entity_id, df_group in ts_groups:
             # Exclude institutions with small num outputs
-            total_outputs = df_group.n_outputs.sum()
+            total_outputs = df_group["n_outputs"].sum()
             if total_outputs >= INCLUSION_THRESHOLD:
-                calc_percentages(df_group, self.PERCENTAGE_FIELD_KEYS)
+                self.update_df_with_percentages(df_group, self.PERCENTAGE_FIELD_KEYS)
                 df_group = df_group.sort_values(by=["year"])
                 df_group = df_group.loc[:, ~df_group.columns.str.contains("^Unnamed")]
 
                 # Save to csv
-                df_group = df_group[
+                df_ts: pd.DataFrame = df_group[
                     [
                         "year",
                         "n_outputs",
@@ -380,43 +404,84 @@ class OaWebRelease(SnapshotRelease):
                         "p_outputs_bronze",
                     ]
                 ]
-                ts_path = os.path.join(base_path, f"{entity_id}_ts.json")
-                df_group.to_json(ts_path, orient="records")
 
-                # Fill in data for years with missing points
-                df_ts = df_group[["year", "p_outputs_oa"]]
-                end = pendulum.now().year
-                start = end - self.change_chart_years - 1
-                df_ts = df_ts[(start <= df_ts.year) & (df_ts.year < end)]  # Filter
+                results.append((entity_id, df_ts))
 
-                df_ts.set_index("year", inplace=True)
-                df_ts = df_ts.reindex(list(range(start, end)))
-                df_ts = df_ts.sort_values(by=["year"])
-                all_null = df_ts.p_outputs_oa.isnull().values.any()
-                if all_null:
-                    df_ts.p_outputs_oa = df_ts.p_outputs_oa.fillna(0)
-                else:
-                    df_ts.interpolate(method="linear", inplace=True)
+        return results
 
-                ts_data[entity_id] = draw_change_points(df_ts.p_outputs_oa.tolist())
+    def save_timeseries(self, timeseries: List[Tuple[str, pd.DataFrame]], category: str):
+        """Save the timeseries data.
 
-        return ts_data
+        :param timeseries: the timeseries data for each entity. A list of tuples, with (entity id, entity dataframe).
+        :param category: the category, i.e. country or institution.
+        :return: None.
+        """
 
-    def make_auto_complete_data(self, df: pd.DataFrame, category: str):
+        base_path = os.path.join(self.transform_folder, "data", category)
+        os.makedirs(base_path, exist_ok=True)
+
+        for entity_id, df_ts in timeseries:
+            ts_path = os.path.join(base_path, f"{entity_id}_ts.json")
+            df_ts.to_json(ts_path, orient="records")
+
+    def make_change_points(self, timeseries: List[Tuple[str, pd.DataFrame]]) -> Dict:
+        """Make the change points.
+
+        :param timeseries: the timeseries data for each entity. A list of tuples, with (entity id, entity dataframe).
+        :return: None.
+        """
+
+        change_points_index = dict()
+
+        for entity_id, df_ts in timeseries:
+            # Fill in data for years with missing points
+            df_ts = df_ts[["year", "p_outputs_oa"]]
+            end = pendulum.now().year
+            start = end - self.change_chart_years - 1
+            df_ts = df_ts[(start <= df_ts.year) & (df_ts.year < end)]  # Filter
+
+            df_ts.set_index("year", inplace=True)
+            df_ts = df_ts.reindex(list(range(start, end)))
+            df_ts = df_ts.sort_values(by=["year"])
+            all_null = df_ts.p_outputs_oa.isnull().values.any()
+            if all_null:
+                df_ts.p_outputs_oa = df_ts.p_outputs_oa.fillna(0)
+            else:
+                df_ts.interpolate(method="linear", inplace=True)
+
+            change_points_index[entity_id] = draw_change_points(df_ts.p_outputs_oa.tolist())
+
+        return change_points_index
+
+    def make_auto_complete(self, df_index_table: pd.DataFrame, category: str):
         """Build the autocomplete data.
 
-        :param df: index table Pandas dataframe.
-        :param category: entity category.
+        :param df_index_table: index table Pandas dataframe.
+        :param category: the category, i.e. country or institution.
         :return: autocomplete records.
         """
 
         records = []
-        for i, row in df.iterrows():
+        for i, row in df_index_table.iterrows():
             id = row["id"]
             name = row["name"]
             logo = row["logo"]
             records.append({"id": id, "name": name, "category": category, "logo": logo})
         return records
+
+    def save_autocomplete(self, auto_complete: List[Dict]):
+        """Save the autocomplete data.
+
+        :param auto_complete: the autocomplete list.
+        :return: None.
+        """
+
+        base_path = os.path.join(self.transform_folder, "data")
+        os.makedirs(base_path, exist_ok=True)
+
+        output_path = os.path.join(base_path, "autocomplete.json")
+        df_ac = pd.DataFrame(auto_complete)
+        df_ac.to_json(output_path, orient="records")
 
 
 class OaWebWorkflow(Workflow):
@@ -596,19 +661,26 @@ class OaWebWorkflow(Workflow):
         """
 
         # Make required folders
-        base_path = os.path.join(release.transform_folder, "data")
-        os.makedirs(base_path, exist_ok=True)
         auto_complete = []
         for category in self.table_ids:
-            csv_path = os.path.join(release.download_folder, f"{category}.csv")
-            df = pd.read_csv(csv_path)
-            df.fillna("", inplace=True)
-            ts_data = release.save_timeseries_data(df, category)
-            df_index_table = release.make_index_table_data(df, ts_data, category)
-            auto_complete += release.make_auto_complete_data(df_index_table, category)
-            release.save_entity_details_data(df_index_table, category)
+            # Load data
+            df = release.load_csv(category)
+
+            # Make timeseries and change points
+            entity_timeseries = release.make_timeseries(df)
+            change_points_index = release.make_change_points(entity_timeseries)
+
+            # Make index table
+            df_index_table = release.make_index(df, category)
+            release.update_index_with_logos(df_index_table, category)
+            release.update_index_with_change_points(df_index_table, change_points_index)
+
+            # Make autocomplete data for this category
+            auto_complete += release.make_auto_complete(df_index_table, category)
+
+            # Save category data
+            release.save_index(df_index_table, category)
+            release.save_entity_details(df_index_table, category)
 
         # Save auto complete data as json
-        output_path = os.path.join(base_path, "autocomplete.json")
-        df_ac = pd.DataFrame(auto_complete)
-        df_ac.to_json(output_path, orient="records")
+        release.save_autocomplete(auto_complete)
