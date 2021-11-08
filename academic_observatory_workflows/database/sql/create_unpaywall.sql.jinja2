@@ -55,6 +55,7 @@ SELECT
   genre as output_type,
   publisher,
   journal_name,
+  journal_issn_l,
 
 {#
 ### Is Open Access:
@@ -63,6 +64,7 @@ We use the is_oa tag from Unpaywall directly to populate general OA status. This
 #}
   is_oa,
   journal_is_in_doaj as is_in_doaj,
+  journal_is_oa,
 
 {#
 ### Gold Open Access:
