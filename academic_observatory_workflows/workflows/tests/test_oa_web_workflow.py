@@ -15,40 +15,31 @@
 # Author: James Diprose
 
 import os
+import shutil
+from typing import List
 from unittest import TestCase
 from unittest.mock import patch
-from observatory.platform.utils.test_utils import (
-    ObservatoryEnvironment,
-    ObservatoryTestCase,
-    make_dummy_dag,
-    module_file_path,
-)
-from academic_observatory_workflows.config import test_fixtures_folder
-from academic_observatory_workflows.config import schema_folder, test_fixtures_folder
-from observatory.platform.utils.file_utils import load_jsonl
-from observatory.platform.utils.test_utils import Table, bq_load_tables
+
 import pandas as pd
 import pendulum
 import vcr
 from airflow.models.connection import Connection
 from airflow.models.variable import Variable
-from click.testing import CliRunner
 from airflow.utils.state import State
-from academic_observatory_workflows.config import test_fixtures_folder
-from academic_observatory_workflows.workflows.oa_web_workflow import OaWebRelease, OaWebWorkflow
+from click.testing import CliRunner
+
+from academic_observatory_workflows.config import test_fixtures_folder, schema_folder
+from academic_observatory_workflows.workflows.oa_web_workflow import OaWebRelease, OaWebWorkflow, clean_url
+from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
     module_file_path,
 )
-
-
-class TestOaWebFunctions(TestCase):
-    def test_draw_change_points(self):
-        self.fail()
-
-    def test_bq_query_to_gcs(self):
-        self.fail()
+from observatory.platform.utils.test_utils import Table, bq_load_tables
+from observatory.platform.utils.test_utils import (
+    make_dummy_dag,
+)
 
 
 class TestOaWebRelease(TestCase):
@@ -174,6 +165,12 @@ class TestOaWebRelease(TestCase):
             ("country", self.countries, ["NZL", "AUS"]),
             ("institution", self.institutions, ["grid.9654.e", "grid.1032.0"]),
         ]
+
+    def test_clean_url(self):
+        url = "https://www.auckland.ac.nz/en.html"
+        expected = "https://www.auckland.ac.nz/"
+        actual = clean_url(url)
+        self.assertEqual(expected, actual)
 
     def create_mock_csv(self, category, test_data):
         csv_path = os.path.join(self.release.download_folder, f"{category}.csv")
@@ -349,14 +346,8 @@ class TestOaWebRelease(TestCase):
                     self.assertEqual(expected_path, actual_path)
 
                     # Check that downloaded logo exists
-                    full_path = os.path.join(self.release.transform_folder, expected_path[1:])
+                    full_path = os.path.join(self.release.build_path, expected_path[1:])
                     self.assertTrue(os.path.isfile(full_path))
-
-    def test_make_change_points(self):
-        self.fail()
-
-    def test_update_index_with_change_points(self):
-        self.fail()
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
     def test_save_index(self, mock_var_get):
@@ -366,13 +357,10 @@ class TestOaWebRelease(TestCase):
             for category, data, entity_ids in self.entities:
                 df = pd.DataFrame(data)
                 country_index = self.release.make_index(df, category)
-                ts = self.release.make_timeseries(df)
-                change_points = self.release.make_change_points(ts)
-                self.release.update_index_with_change_points(country_index, change_points)
                 self.release.update_index_with_logos(country_index, category)
                 self.release.save_index(country_index, category)
 
-                path = os.path.join(self.release.transform_folder, "data", category, "summary.json")
+                path = os.path.join(self.release.build_path, "data", category, "summary.json")
                 self.assertTrue(os.path.isfile(path))
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
@@ -386,7 +374,7 @@ class TestOaWebRelease(TestCase):
                 self.release.save_entity_details(country_index, category)
 
                 for entity_id in entity_ids:
-                    path = os.path.join(self.release.transform_folder, "data", category, f"{entity_id}_summary.json")
+                    path = os.path.join(self.release.build_path, "data", category, f"{entity_id}_summary.json")
                     self.assertTrue(os.path.isfile(path))
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
@@ -471,7 +459,7 @@ class TestOaWebRelease(TestCase):
                 self.release.save_timeseries(ts, category)
 
                 for entity_id in entity_ids:
-                    path = os.path.join(self.release.transform_folder, "data", category, f"{entity_id}_ts.json")
+                    path = os.path.join(self.release.build_path, "data", category, f"{entity_id}_ts.json")
                     self.assertTrue(os.path.isfile(path))
 
     def test_make_auto_complete(self):
@@ -501,7 +489,7 @@ class TestOaWebRelease(TestCase):
             records = self.release.make_auto_complete(df, category)
             self.release.save_autocomplete(records)
 
-            path = os.path.join(self.release.transform_folder, "data", "autocomplete.json")
+            path = os.path.join(self.release.build_path, "data", "autocomplete.json")
             self.assertTrue(os.path.isfile(path))
 
 
@@ -509,6 +497,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
     def setUp(self) -> None:
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
+        self.oa_web_fixtures = "oa_web_workflow"
 
     def test_dag_structure(self):
         """Test that the DAG has the correct structure.
@@ -533,7 +522,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "check_dependencies": ["query"],
                     "query": ["download"],
                     "download": ["transform"],
-                    "transform": ["build_website"],
+                    "transform": ["copy_static_assets"],
+                    "copy_static_assets": ["build_website"],
                     "build_website": ["deploy_website"],
                     "deploy_website": [],
                 },
@@ -561,15 +551,16 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
     def setup_tables(self, dataset_id_all: str, bucket_name: str, release_date: pendulum.DateTime):
         grid = load_jsonl(test_fixtures_folder("doi", "grid.jsonl"))
-        country = load_jsonl(test_fixtures_folder("oa_web_workflow", "country.jsonl"))
-        institution = load_jsonl(test_fixtures_folder("oa_web_workflow", "institution.jsonl"))
+        country = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "country.jsonl"))
+        institution = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "institution.jsonl"))
 
         analysis_schema_path = schema_folder()
+        oa_web_schema_path = test_fixtures_folder(self.oa_web_fixtures, "schema")
         with CliRunner().isolated_filesystem() as t:
             tables = [
                 Table("grid", True, dataset_id_all, grid, "grid", analysis_schema_path),
-                Table("country", True, dataset_id_all, country, "country", analysis_schema_path),
-                Table("institution", True, dataset_id_all, institution, "institution", analysis_schema_path),
+                Table("country", True, dataset_id_all, country, "country", oa_web_schema_path),
+                Table("institution", True, dataset_id_all, institution, "institution", oa_web_schema_path),
             ]
 
             bq_load_tables(
@@ -582,11 +573,18 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         :return: None.
         """
 
-        execution_date = pendulum.now()
-        env = ObservatoryEnvironment(enable_api=False)
+        execution_date = pendulum.datetime(2021, 11, 13)
+        env = ObservatoryEnvironment(project_id=self.project_id, data_location=self.data_location, enable_api=False)
         dataset_id = env.add_dataset("data")
-        with env.create():
-            env.add_variable(Variable(key=OaWebWorkflow.AIRFLOW_VAR_WEBSITE_FOLDER, val="/path/to/website"))
+        with env.create() as t:
+            # Copy test website
+            website_name = "open-access-web"
+            src_folder = test_fixtures_folder("oa_web_workflow", website_name)
+            dst_folder = os.path.join(t, "data", website_name)
+            shutil.copytree(src_folder, dst_folder)
+
+            # Add required environment variables and connections
+            env.add_variable(Variable(key=OaWebWorkflow.AIRFLOW_VAR_WEBSITE_FOLDER, val=dst_folder))
             env.add_connection(
                 Connection(
                     conn_id=OaWebWorkflow.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN,
@@ -605,7 +603,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             self.setup_tables(dataset_id_all=dataset_id, bucket_name=env.download_bucket, release_date=execution_date)
 
             # Run workflow
-            workflow = OaWebWorkflow()
+            workflow = OaWebWorkflow(agg_dataset_id=dataset_id, grid_dataset_id=dataset_id)
             dag = workflow.make_dag()
             with env.create_dag_run(dag, execution_date):
                 # DOI Sensor
@@ -620,18 +618,65 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 ti = env.run_task(workflow.query.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
 
-                # # Download data
-                # ti = env.run_task(workflow.download.__name__)
-                # self.assertEqual(State.SUCCESS, ti.state)
-                #
-                # # Transform data
-                # ti = env.run_task(workflow.transform.__name__)
-                # self.assertEqual(State.SUCCESS, ti.state)
-                #
-                # # Build website
-                # ti = env.run_task(workflow.transform.__name__)
-                # self.assertEqual(State.SUCCESS, ti.state)
-                #
-                # # Deploy website
-                # ti = env.run_task(workflow.transform.__name__)
-                # self.assertEqual(State.SUCCESS, ti.state)
+                # Download data
+                ti = env.run_task(workflow.download.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                base_folder = os.path.join(
+                    t, "data", "telescopes", "download", "oa_web_workflow", "oa_web_workflow_2021_11_13"
+                )
+                expected_file_names = ["country.csv", "institution.csv"]
+                for file_name in expected_file_names:
+                    path = os.path.join(base_folder, file_name)
+                    self.assertTrue(os.path.isfile(path))
+
+                # Transform data
+                ti = env.run_task(workflow.transform.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                base_folder = os.path.join(
+                    t, "data", "telescopes", "transform", "oa_web_workflow", "oa_web_workflow_2021_11_13", "build"
+                )
+                expected_files = make_expected_build_files(base_folder)
+                print("Checking expected transformed files")
+                for file in expected_files:
+                    print(f"\t{file}")
+                    self.assertTrue(os.path.isfile(file))
+
+                # Copy static assets
+                ti = env.run_task(workflow.copy_static_assets.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                base_folder = os.path.join(t, "data", website_name, "static", "build")
+                expected_files = make_expected_build_files(base_folder)
+                print("Checking expected static assets")
+                for file in expected_files:
+                    print(f"\t{file}")
+                    self.assertTrue(os.path.isfile(file))
+                self.assertFalse(os.path.isfile(os.path.join(base_folder, "static", "build", "old.txt")))
+
+                # Build website
+                ti = env.run_task(OaWebWorkflow.TASK_ID_BUILD_WEBSITE)
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # Deploy website
+                ti = env.run_task(OaWebWorkflow.TASK_ID_DEPLOY_WEBSITE)
+                self.assertEqual(State.SUCCESS, ti.state)
+
+
+def make_expected_build_files(base_path: str) -> List[str]:
+    country_path = os.path.join(base_path, "data", "country")
+    institution_path = os.path.join(base_path, "data", "institution")
+    logos_path = os.path.join(base_path, "logos", "institution")
+    return [
+        os.path.join(country_path, "AUS_summary.json"),
+        os.path.join(country_path, "AUS_ts.json"),
+        os.path.join(country_path, "NZL_summary.json"),
+        os.path.join(country_path, "NZL_ts.json"),
+        os.path.join(country_path, "summary.json"),
+        os.path.join(institution_path, "grid.1032.0_summary.json"),
+        os.path.join(institution_path, "grid.1032.0_ts.json"),
+        os.path.join(institution_path, "grid.9654.e_summary.json"),
+        os.path.join(institution_path, "grid.9654.e_ts.json"),
+        os.path.join(institution_path, "summary.json"),
+        os.path.join(base_path, "data", "autocomplete.json"),
+        os.path.join(logos_path, "grid.1032.0.jpg"),
+        os.path.join(logos_path, "grid.9654.e.jpg"),
+    ]

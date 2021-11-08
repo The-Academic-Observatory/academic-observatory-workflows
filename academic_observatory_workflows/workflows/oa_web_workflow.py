@@ -1,5 +1,4 @@
 # Copyright 2021 Curtin University
-# Copyright 2021 Artificial Dimensions Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,8 +18,10 @@
 import json
 import os
 import os.path
+import shutil
 import urllib.parse
 from typing import Optional, List, Dict, Tuple
+from urllib.parse import urlparse
 
 import google.cloud.bigquery as bigquery
 import pandas as pd
@@ -100,43 +101,6 @@ NAME_OVERRIDES = {
 }
 
 
-def draw_change_points(values: List[float], width=166, height=48, stroke_width=2) -> str:
-    """Make the change points for the change charts.
-
-    :param values: the list of values to plot.
-    :param width: the width of the chart.
-    :param height: the height of the chart.
-    :param stroke_width: the stroke width.
-    :return: the change points as strings.
-    """
-
-    # Calculate means and scale
-    x_scale = width / (len(values) - 1)
-
-    # Use the following formula to scale y:
-    # https://math.stackexchange.com/questions/914823/shift-numbers-into-a-different-range
-    a = max(values)
-    b = min(values)
-    c = stroke_width
-    d = height - stroke_width
-
-    def scale_y(t):
-        return c + (d - c) / (b - a) * (t - a)
-
-    # Draw lines
-    points = []
-    all_zero = all(v == 0 for v in values)
-    for x, y in enumerate(values):
-        sx = x * x_scale
-        if not all_zero:
-            sy = scale_y(y)
-        else:
-            sy = 0.0
-        points.append(f"{sx},{sy}")
-
-    return " ".join(points)
-
-
 def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, location: str = "us") -> bool:
     """Run a BigQuery query and save the results on Google Cloud Storage.
 
@@ -163,6 +127,17 @@ def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, locati
     extract_job.result()
 
     return query_job.state == "DONE" and extract_job.state == "DONE"
+
+
+def clean_url(url: str) -> str:
+    """Remove path and query from URL.
+
+    :param url: the url.
+    :return: the cleaned url.
+    """
+
+    p = urlparse(url)
+    return f"{p.scheme}://{p.netloc}/"
 
 
 class OaWebRelease(SnapshotRelease):
@@ -193,6 +168,10 @@ class OaWebRelease(SnapshotRelease):
         self.change_chart_years = change_chart_years
         self.agg_dataset_id = agg_dataset_id
         self.grid_dataset_id = grid_dataset_id
+
+    @property
+    def build_path(self):
+        return os.path.join(self.transform_folder, "build")
 
     def load_csv(self, category: str) -> pd.DataFrame:
         """Load the CSV file for a given category.
@@ -294,13 +273,14 @@ class OaWebRelease(SnapshotRelease):
                 lambda country_code: f"/logos/{category}/{country_code}.svg"
             )
         elif category == "institution":
-            base_path = os.path.join(self.transform_folder, "logos", category)
+            base_path = os.path.join(self.build_path, "logos", category)
             logo_path_unknown = f"/unknown.svg"
             os.makedirs(base_path, exist_ok=True)
             logos = []
             for i, row in df_index_table.iterrows():
                 grid_id = row["id"]
-                url = row["url"]
+                url = clean_url(row["url"])
+
                 logo_path = logo_path_unknown
                 if not pd.isnull(url):
                     file_path = os.path.join(base_path, f"{grid_id}.{fmt}")
@@ -313,21 +293,6 @@ class OaWebRelease(SnapshotRelease):
                 logos.append(logo_path)
             df_index_table["logo"] = logos
 
-    def update_index_with_change_points(self, df_index_table: pd.DataFrame, change_points_index: Dict):
-        """Update the index with change points.
-
-        :param df_index_table: the index table Pandas Dataframe.
-        :param change_points_index: the change points index.
-        :return: None.
-        """
-
-        # Integrate time series data
-        change_points = []
-        for i, row in df_index_table.iterrows():
-            entity_id = row["id"]
-            change_points.append(change_points_index[entity_id])
-        df_index_table["change_points"] = change_points
-
     def save_index(self, df_index_table: pd.DataFrame, category: str):
         """Save the index table.
 
@@ -337,7 +302,7 @@ class OaWebRelease(SnapshotRelease):
         """
 
         # Save subset
-        base_path = os.path.join(self.transform_folder, "data", category)
+        base_path = os.path.join(self.build_path, "data", category)
         os.makedirs(base_path, exist_ok=True)
         summary_path = os.path.join(base_path, "summary.json")
         columns = [
@@ -351,7 +316,6 @@ class OaWebRelease(SnapshotRelease):
             "p_outputs_green",
             "n_outputs",
             "n_outputs_oa",
-            "change_points",
         ]
         df_subset = df_index_table[columns]
         df_subset.to_json(summary_path, orient="records")
@@ -364,7 +328,7 @@ class OaWebRelease(SnapshotRelease):
         :return: None.
         """
 
-        base_path = os.path.join(self.transform_folder, "data", category)
+        base_path = os.path.join(self.build_path, "data", category)
         os.makedirs(base_path, exist_ok=True)
         df_index_table["category"] = category
         records = df_index_table.to_dict("records")
@@ -417,41 +381,12 @@ class OaWebRelease(SnapshotRelease):
         :return: None.
         """
 
-        base_path = os.path.join(self.transform_folder, "data", category)
+        base_path = os.path.join(self.build_path, "data", category)
         os.makedirs(base_path, exist_ok=True)
 
         for entity_id, df_ts in timeseries:
             ts_path = os.path.join(base_path, f"{entity_id}_ts.json")
             df_ts.to_json(ts_path, orient="records")
-
-    def make_change_points(self, timeseries: List[Tuple[str, pd.DataFrame]]) -> Dict:
-        """Make the change points.
-
-        :param timeseries: the timeseries data for each entity. A list of tuples, with (entity id, entity dataframe).
-        :return: None.
-        """
-
-        change_points_index = dict()
-
-        for entity_id, df_ts in timeseries:
-            # Fill in data for years with missing points
-            df_ts = df_ts[["year", "p_outputs_oa"]]
-            end = pendulum.now().year
-            start = end - self.change_chart_years - 1
-            df_ts = df_ts[(start <= df_ts.year) & (df_ts.year < end)]  # Filter
-
-            df_ts.set_index("year", inplace=True)
-            df_ts = df_ts.reindex(list(range(start, end)))
-            df_ts = df_ts.sort_values(by=["year"])
-            all_null = df_ts.p_outputs_oa.isnull().values.any()
-            if all_null:
-                df_ts.p_outputs_oa = df_ts.p_outputs_oa.fillna(0)
-            else:
-                df_ts.interpolate(method="linear", inplace=True)
-
-            change_points_index[entity_id] = draw_change_points(df_ts.p_outputs_oa.tolist())
-
-        return change_points_index
 
     def make_auto_complete(self, df_index_table: pd.DataFrame, category: str):
         """Build the autocomplete data.
@@ -476,7 +411,7 @@ class OaWebRelease(SnapshotRelease):
         :return: None.
         """
 
-        base_path = os.path.join(self.transform_folder, "data")
+        base_path = os.path.join(self.build_path, "data")
         os.makedirs(base_path, exist_ok=True)
 
         output_path = os.path.join(base_path, "autocomplete.json")
@@ -485,6 +420,8 @@ class OaWebRelease(SnapshotRelease):
 
 
 class OaWebWorkflow(Workflow):
+    TASK_ID_BUILD_WEBSITE = "build_website"
+    TASK_ID_DEPLOY_WEBSITE = "deploy_website"
     AIRFLOW_VAR_WEBSITE_FOLDER = "website_folder"
     AIRFLOW_CONN_CLOUDFLARE_API_TOKEN = "cloudflare_api_token"
     DEPLOY_WEBSITE_PATH = "/home/airflow/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/airflow/.yarn/bin"
@@ -543,18 +480,19 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.download)
         self.add_task(self.transform)
         # TODO: add in a task to clone a certain version of the website, when this is ready
+        self.add_task(self.copy_static_assets)
         self.add_operator(
             BashOperator(
-                task_id="build_website",
-                params={"website_folder": self.website_folder()},
+                task_id=self.TASK_ID_BUILD_WEBSITE,
+                params={"website_folder": self.website_folder},
                 bash_command="cd {{ params.website_folder }} && ./build.sh ",
                 retries=retries,
             )
         )
         self.add_operator(
             BashOperator(
-                task_id="deploy_website",
-                params={"website_folder": self.website_folder()},
+                task_id=self.TASK_ID_DEPLOY_WEBSITE,
+                params={"website_folder": self.website_folder},
                 env={
                     "CF_API_TOKEN": get_airflow_connection_password(self.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN),
                     "PATH": self.DEPLOY_WEBSITE_PATH,
@@ -564,6 +502,7 @@ class OaWebWorkflow(Workflow):
             )
         )
 
+    @property
     def website_folder(self) -> str:
         """Get the path to the oa website folder.
 
@@ -676,21 +615,34 @@ class OaWebWorkflow(Workflow):
             # Load data
             df = release.load_csv(category)
 
-            # Make timeseries and change points
-            entity_timeseries = release.make_timeseries(df)
-            change_points_index = release.make_change_points(entity_timeseries)
-
             # Make index table
             df_index_table = release.make_index(df, category)
             release.update_index_with_logos(df_index_table, category)
-            release.update_index_with_change_points(df_index_table, change_points_index)
 
             # Make autocomplete data for this category
             auto_complete += release.make_auto_complete(df_index_table, category)
 
+            # Make timeseries
+            entity_timeseries = release.make_timeseries(df)
+
             # Save category data
             release.save_index(df_index_table, category)
             release.save_entity_details(df_index_table, category)
+            release.save_timeseries(entity_timeseries, category)
 
         # Save auto complete data as json
         release.save_autocomplete(auto_complete)
+
+    def copy_static_assets(self, release: OaWebRelease, **kwargs):
+        """Remove previously generated static assets from website and copy newly generated assets.
+
+        :return: None.
+        """
+
+        # Remove existing build folder
+        website_build_folder = os.path.join(self.website_folder, "static", "build")
+        if os.path.exists(website_build_folder):
+            shutil.rmtree(website_build_folder, ignore_errors=True)
+
+        # Copy generated files to new build folder
+        shutil.copytree(release.build_path, website_build_folder)
