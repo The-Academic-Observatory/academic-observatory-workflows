@@ -911,7 +911,7 @@ def bq_load_observatory_dataset(
     test_doi_path = test_fixtures_folder("doi")
     grid = load_jsonl(os.path.join(test_doi_path, "grid.jsonl"))
     iso3166_countries_and_regions = load_jsonl(os.path.join(test_doi_path, "iso3166_countries_and_regions.jsonl"))
-    grid_to_home_url = load_jsonl(os.path.join(test_doi_path, "grid_to_home_url.jsonl"))
+    grid_to_home_url = load_jsonl(os.path.join(test_doi_path, "ror_to_home_url.jsonl"))
     groupings = load_jsonl(os.path.join(test_doi_path, "groupings.jsonl"))
     mag_affiliation_override = load_jsonl(os.path.join(test_doi_path, "mag_affiliation_override.jsonl"))
 
