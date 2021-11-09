@@ -399,7 +399,7 @@ SELECT
   process_repositories(
     ARRAY_CONCAT_AGG(
       dois.unpaywall.repository_names
-    ), COUNTIF(unpaywall.green = True)
+    ), COUNTIF( unpaywall.green = True )
   ) as repositories,
 
   {% if relate_to_institutions %}
