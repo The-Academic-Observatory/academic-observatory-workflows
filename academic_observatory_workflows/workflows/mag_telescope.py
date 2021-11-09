@@ -286,6 +286,7 @@ class MagTelescope:
         # Get variables
         gcp_project_id = Variable.get(AirflowVars.PROJECT_ID)
         gcp_bucket_name = Variable.get(AirflowVars.DOWNLOAD_BUCKET)
+        gcp_bucket_path = "telescopes"
 
         # Get Azure connection information
         connection = BaseHook.get_connection("mag_snapshots_container")
@@ -306,14 +307,16 @@ class MagTelescope:
             description = "Transfer MAG Releases: " + ", ".join(row_keys)
             logging.info(description)
             success = azure_to_google_cloud_storage_transfer(
-                azure_account_name,
-                azure_sas_token,
-                azure_container,
-                include_prefixes,
-                gcp_project_id,
-                gcp_bucket_name,
-                description,
+                azure_storage_account_name=azure_account_name,
+                azure_sas_token=azure_sas_token,
+                azure_container=azure_container,
+                include_prefixes=include_prefixes,
+                gc_project_id=gcp_project_id,
+                gc_bucket=gcp_bucket_name,
+                gc_bucket_path=gcp_bucket_path,
+                description=description,
             )
+
             releases_str = ", ".join(row_keys)
             if success:
                 logging.info(f"Success transferring MAG releases: {releases_str}")
