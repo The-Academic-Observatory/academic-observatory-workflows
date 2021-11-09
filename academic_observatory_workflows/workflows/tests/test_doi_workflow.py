@@ -60,7 +60,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
         inst_curtin = Institution(
             1,
             name="Curtin University",
-            grid_id="grid.1032.0",
+            ror_id="grid.1032.0",
             country_code="AUS",
             country_code_2="AU",
             region="Oceania",
@@ -73,7 +73,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
         inst_anu = Institution(
             2,
             name="Australian National University",
-            grid_id="grid.1001.0",
+            ror_id="grid.1001.0",
             country_code="AUS",
             country_code_2="AU",
             region="Oceania",
@@ -86,7 +86,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
         inst_akl = Institution(
             3,
             name="University of Auckland",
-            grid_id="grid.9654.e",
+            ror_id="grid.9654.e",
             country_code="NZL",
             country_code_2="NZ",
             region="Oceania",
@@ -120,7 +120,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "crossref_metadata_sensor": ["check_dependencies"],
                 "crossref_fundref_sensor": ["check_dependencies"],
                 "geonames_sensor": ["check_dependencies"],
-                "grid_sensor": ["check_dependencies"],
+                "ror_sensor": ["check_dependencies"],
                 "mag_sensor": ["check_dependencies"],
                 "open_citations_sensor": ["check_dependencies"],
                 "unpaywall_sensor": ["check_dependencies"],
@@ -130,7 +130,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "create_datasets": [
                     "create_crossref_events",
                     "create_crossref_fundref",
-                    "create_grid",
+                    "create_ror",
                     "create_mag",
                     "create_orcid",
                     "create_open_citations",
@@ -138,7 +138,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 ],
                 "create_crossref_events": ["create_doi"],
                 "create_crossref_fundref": ["create_doi"],
-                "create_grid": ["create_doi"],
+                "create_ror": ["create_doi"],
                 "create_mag": ["create_doi"],
                 "create_orcid": ["create_doi"],
                 "create_open_citations": ["create_doi"],
@@ -222,7 +222,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
             dataset_id_crossref_events=fake_dataset_id,
             dataset_id_crossref_metadata=fake_dataset_id,
             dataset_id_crossref_fundref=fake_dataset_id,
-            dataset_id_grid=fake_dataset_id,
+            dataset_id_ror=fake_dataset_id,
             dataset_id_iso=fake_dataset_id,
             dataset_id_mag=fake_dataset_id,
             dataset_id_orcid=fake_dataset_id,
@@ -463,8 +463,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
             # Check events
             self.assert_doi_events(expected_record["events"], actual_record["events"])
 
-            # Check grids
-            self.assertSetEqual(set(expected_record["grids"]), set(actual_record["grids"]))
+            # Check rors
+            self.assertSetEqual(set(expected_record["rors"]), set(actual_record["rors"]))
 
             # Check affiliations
             self.assert_doi_affiliations(expected_record["affiliations"], actual_record["affiliations"])
