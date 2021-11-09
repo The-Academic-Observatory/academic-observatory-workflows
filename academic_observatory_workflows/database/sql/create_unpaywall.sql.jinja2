@@ -184,6 +184,7 @@ exclusive categories, e.g. in the generation of stacked bar charts that include 
 ### Provides a list of repository URLs for future analysis by repository type
 #}
   ARRAY((SELECT url FROM UNNEST(oa_locations) WHERE host_type = "repository")) as repository_locations,
+  ARRAY((SELECT repository_institution FROM UNNEST(oa_locations) WHERE host_type = "repository" AND repository_institution IS NOT NULL)) as repository_names,
   best_oa_location.url_for_landing_page,
   best_oa_location.url_for_pdf
 

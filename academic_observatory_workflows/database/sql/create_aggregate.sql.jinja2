@@ -210,6 +210,11 @@ CREATE TEMP FUNCTION compute_access_types(items ARRAY<STRUCT<doi STRING, citatio
       ROUND(SAFE_DIVIDE( (COUNTIF(green_only is True)) * 100 , COUNT(doi)), 2) as percent
     ) as green_only,
 
+    STRUCT(
+      COUNTIF(gold OR gold_just_doaj OR hybrid OR bronze) as total_outputs,
+      ROUND(SAFE_DIVIDE( (COUNTIF(gold OR gold_just_doaj OR hybrid OR bronze)) * 100 , COUNT(doi)), 2) as percent
+    ) as publisher,
+
     ARRAY_CONCAT(
       compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(is_oa, false) as is_x)), "oa", "Open Access", "Not Open Access"),
       compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(green, false) as is_x)), "green", "Green", "Not Green"),
@@ -322,6 +327,19 @@ CREATE TEMP FUNCTION process_events(events ANY TYPE) as (
   )
 );
 
+CREATE TEMP FUNCTION process_repositories(repositories ARRAY<STRING>, total_green INT64) as (
+  ARRAY(SELECT AS STRUCT
+          repository as id,
+          COUNT(repository) as total_outputs,
+          ROUND(SAFE_DIVIDE( COUNT(repository), total_green), 3) as percentage_of_all_green,
+      FROM UNNEST(repositories) as repository
+      WHERE repository IS NOT NULL
+      GROUP BY repository
+      ORDER BY total_outputs DESC
+      LIMIT 1000
+   )
+);
+
 ----
 -- Main SQL Function
 ----
@@ -376,6 +394,13 @@ SELECT
 
         FROM UNNEST(dois.mag.fields.level_0) as fields)) )) as level0
   ) as disciplines,
+
+  -- Repoistories
+  process_repositories(
+    ARRAY_CONCAT_AGG(
+      dois.unpaywall.repository_names
+    ), COUNTIF( unpaywall.green = True )
+  ) as repositories,
 
   {% if relate_to_institutions %}
   -- Institutions
