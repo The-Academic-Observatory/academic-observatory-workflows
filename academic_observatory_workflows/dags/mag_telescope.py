@@ -57,18 +57,18 @@ with DAG(dag_id=MagTelescope.DAG_ID, schedule_interval="@weekly", default_args=d
         queue=MagTelescope.QUEUE,
     )
 
-    # List releases and skip all subsequent tasks if there is no release to process
-    list_releases = ShortCircuitOperator(
-        task_id=MagTelescope.TASK_ID_LIST,
-        python_callable=MagTelescope.list_releases,
-        provide_context=True,
-        queue=MagTelescope.QUEUE,
-    )
-
     # Transfer all MAG releases to Google Cloud storage that were processed in the given interval
     transfer = PythonOperator(
         task_id=MagTelescope.TASK_ID_TRANSFER,
         python_callable=MagTelescope.transfer,
+        provide_context=True,
+        queue=MagTelescope.QUEUE,
+    )
+
+    # List releases and skip all subsequent tasks if there is no release to process
+    list_releases = ShortCircuitOperator(
+        task_id=MagTelescope.TASK_ID_LIST,
+        python_callable=MagTelescope.list_releases,
         provide_context=True,
         queue=MagTelescope.QUEUE,
     )
@@ -114,4 +114,4 @@ with DAG(dag_id=MagTelescope.DAG_ID, schedule_interval="@weekly", default_args=d
         queue=MagTelescope.QUEUE,
     )
 
-    check >> list_releases >> transfer >> download >> transform >> upload_transformed >> bq_load >> cleanup
+    check >> transfer >> list_releases >> download >> transform >> upload_transformed >> bq_load >> cleanup
