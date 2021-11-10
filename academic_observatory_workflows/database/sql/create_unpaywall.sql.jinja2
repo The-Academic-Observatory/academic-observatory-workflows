@@ -49,12 +49,28 @@ to the queries themselves. Strive for clarity and precision over
 brevity where necessary
 #}
 
+WITH name as (
+SELECT
+    identifier,
+    ARRAY_AGG(name IGNORE NULLS ORDER BY count DESC LIMIT 1)[SAFE_OFFSET(0)] as name
+FROM(
+    SELECT
+        journal_issn_l as identifier,
+        journal_name as name,
+        COUNT(*) as count
+    FROM `{{ project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}`
+    WHERE journal_issn_l is not null
+    GROUP BY journal_issn_l, journal_name
+    ORDER BY journal_issn_l, count DESC)
+GROUP BY identifier)
+
 SELECT
   UPPER(TRIM(doi)) as doi,
   year,
   genre as output_type,
   publisher,
   journal_name,
+  name.name as normalised_journal_name,
   journal_issn_l,
 
 {#
@@ -192,4 +208,5 @@ exclusive categories, e.g. in the generation of stacked bar charts that include 
   best_oa_location.url_for_pdf
 
 FROM 
-  `{{ project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}`
+  `{{ project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}` as unpaywall
+LEFT JOIN name on name.identifier = unpaywall.journal_issn_l
