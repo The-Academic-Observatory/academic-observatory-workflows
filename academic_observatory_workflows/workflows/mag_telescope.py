@@ -33,7 +33,6 @@ from airflow.models.variable import Variable
 from google.cloud import storage
 from google.cloud.bigquery import SourceFormat
 from google.cloud.storage import Blob
-
 from natsort import natsorted
 
 from academic_observatory_workflows.config import schema_folder
@@ -172,6 +171,17 @@ def list_mag_release_dates(
     mag_dataset_id: str = "mag",
     mag_table_name: str = "Affiliations",
 ) -> List[pendulum.Date]:
+    """List all MAG release dates that have not been loaded into BigQuery.
+
+    :param project_id: the Google Cloud project id.
+    :param bucket_name: the Google Cloud bucket name.
+    :param prefix: the prefix to search on.
+    :param delimiter: ?
+    :param mag_dataset_id: the MAG BigQuery dataset id.
+    :param mag_table_name: the table name to use to check whether the MAG dataset has loaded.
+    :return: a list of release dates.
+    """
+
     # Find releases on Google Cloud Storage
     release_dates = set()
     client = storage.Client()
@@ -194,6 +204,12 @@ def list_mag_release_dates(
 
 
 def make_release_name(release_date: pendulum.Date) -> str:
+    """Make a release name for a MAG release.
+
+    :param release_date: release date.
+    :return: the release name.
+    """
+
     date_str = release_date.format("YYYY-MM-DD")
     return f"mag-{date_str}"
 
