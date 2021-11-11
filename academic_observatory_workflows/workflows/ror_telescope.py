@@ -130,7 +130,7 @@ class RorTelescope(SnapshotTelescope):
         self,
         dag_id: str = DAG_ID,
         start_date: pendulum.DateTime = pendulum.datetime(2021, 9, 1),
-        schedule_interval: str = "@monthly",
+        schedule_interval: str = "@weekly",
         dataset_id: str = DATASET_ID,
         schema_folder: str = default_schema_folder(),
         source_format: str = SourceFormat.NEWLINE_DELIMITED_JSON,
