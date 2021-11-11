@@ -760,7 +760,7 @@ def make_unpaywall(dataset: ObservatoryDataset) -> List[Dict]:
                 "genre": random.choice(genre_lookup[paper.output_type]),
                 "publisher": paper.publisher.name,
                 "journal_name": paper.journal.name,
-                "journal_issn-l": paper.journal.id,
+                "journal_issn_l": paper.journal.id,
                 "is_oa": is_oa,
                 "journal_is_in_doaj": journal_is_in_doaj,
                 "best_oa_location": best_oa_location,
@@ -1192,7 +1192,7 @@ def make_doi_journals(journal: Journal) -> List[Dict]:
 
     return [
         {
-            "identifier": journal.name,
+            "identifier": journal.id,
             "types": ["Journal"],
             "name": journal.name,
             "home_repo": [],
