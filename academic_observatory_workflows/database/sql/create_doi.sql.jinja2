@@ -14,6 +14,7 @@
 
 # Author: Richard Hosking, James Diprose #}
 
+{# This query, using crossref metadata as the reference, links together all the other tables that expose objects with doi as the primairy key #}
 WITH dois_temp_table as (
 SELECT
   *,
@@ -30,6 +31,7 @@ FROM
   WHERE ARRAY_LENGTH(issued.date_parts) > 0)
 ),
 
+{# this query builds the .affiliation section of the final doi table. The primiary purpose of this is to allow the aggregrate_doi query #}
 affiliations_temp_table as (
 SELECT
   extras.doi as doi,
@@ -136,6 +138,7 @@ SELECT
   LEFT JOIN `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.orcid{{ release_date.strftime('%Y%m%d') }}` as orcid on UPPER(TRIM(orcid.doi)) = UPPER(TRIM(extras.doi))
 )
 
+{# Brings together the two temporary tables above. #}
 SELECT
   dois.* EXCEPT (mag_grids),
   affiliations
