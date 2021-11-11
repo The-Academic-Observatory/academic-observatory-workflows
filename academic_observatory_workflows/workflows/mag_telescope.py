@@ -167,7 +167,6 @@ def list_mag_release_dates(
     project_id: str,
     bucket_name: str,
     prefix: str = MAG_GCP_BUCKET_PATH,
-    delimiter: str = "/",
     mag_dataset_id: str = "mag",
     mag_table_name: str = "Affiliations",
 ) -> List[pendulum.Date]:
@@ -176,7 +175,6 @@ def list_mag_release_dates(
     :param project_id: the Google Cloud project id.
     :param bucket_name: the Google Cloud bucket name.
     :param prefix: the prefix to search on.
-    :param delimiter: ?
     :param mag_dataset_id: the MAG BigQuery dataset id.
     :param mag_table_name: the table name to use to check whether the MAG dataset has loaded.
     :return: a list of release dates.
@@ -185,7 +183,7 @@ def list_mag_release_dates(
     # Find releases on Google Cloud Storage
     release_dates = set()
     client = storage.Client()
-    blobs = client.list_blobs(bucket_name, prefix=prefix, delimiter=delimiter)
+    blobs = client.list_blobs(bucket_name, prefix=prefix)
     for blob in blobs:
         name = blob.name
         dt_str = re.search("\d{4}-\d{2}-\d{2}", name)
@@ -199,6 +197,7 @@ def list_mag_release_dates(
         table_id = bigquery_sharded_table_id(mag_table_name, release_date)
         if not bigquery_table_exists(project_id, mag_dataset_id, table_id):
             release_dates_out.append(release_date)
+            print(f"Discovered release: {release_date.format('YYYY-MM-DD')}")
 
     return release_dates_out
 
@@ -210,8 +209,7 @@ def make_release_name(release_date: pendulum.Date) -> str:
     :return: the release name.
     """
 
-    date_str = release_date.format("YYYY-MM-DD")
-    return f"mag-{date_str}"
+    return release_date.format("YYYY-MM-DD")
 
 
 class MagTelescope:
@@ -235,6 +233,7 @@ class MagTelescope:
     MAX_PROCESSES = cpu_count()
     MAX_CONNECTIONS = cpu_count()
     RETRIES = 3
+    MAG_CONTAINER = "mag_container"
 
     TASK_ID_CHECK_DEPENDENCIES = "check_dependencies"
     TASK_ID_LIST = "list_releases"
@@ -262,7 +261,7 @@ class MagTelescope:
             AirflowVars.DOWNLOAD_BUCKET,
             AirflowVars.TRANSFORM_BUCKET,
         )
-        conns_valid = check_connections(AirflowConns.MAG_RELEASES_TABLE, AirflowConns.MAG_SNAPSHOTS_CONTAINER)
+        conns_valid = check_connections(MagTelescope.MAG_CONTAINER)
 
         if not vars_valid or not conns_valid:
             raise AirflowException("Required variables or connections are missing")
@@ -288,7 +287,7 @@ class MagTelescope:
 
         # Get Azure connection information
         connection = BaseHook.get_connection("mag_container")
-        azure_container = connection.host
+        azure_container = "mag"
         azure_account_name = connection.login
         azure_sas_token = connection.password
 
