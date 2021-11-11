@@ -437,13 +437,11 @@ def make_publishers(
     """
 
     publishers = []
-    journal_id = 0
     for i, _ in enumerate(range(n_publishers)):
         n_journals_ = random.randint(min_journals_per_publisher, max_journals_per_publisher)
         journals_ = []
         for _ in range(n_journals_):
-            journals_.append(Journal(journal_id, name=faker.company(), license=random.choice(LICENSES)))
-            journal_id += 1
+            journals_.append(Journal(str(uuid.uuid4()), name=faker.company(), license=random.choice(LICENSES)))
 
         publishers.append(Publisher(i, name=faker.company(), doi_prefix=doi_prefix, journals=journals_))
         doi_prefix += 1
@@ -762,6 +760,7 @@ def make_unpaywall(dataset: ObservatoryDataset) -> List[Dict]:
                 "genre": random.choice(genre_lookup[paper.output_type]),
                 "publisher": paper.publisher.name,
                 "journal_name": paper.journal.name,
+                "journal_issn-l": paper.journal.id,
                 "is_oa": is_oa,
                 "journal_is_in_doaj": journal_is_in_doaj,
                 "best_oa_location": best_oa_location,
