@@ -119,7 +119,7 @@ class TestRorTelescope(ObservatoryTestCase):
         dataset_id = env.add_dataset()
 
         # Setup Telescope
-        execution_date = pendulum.datetime(year=2021, month=9, day=1)
+        execution_date = pendulum.datetime(year=2021, month=9, day=19)
         telescope = RorTelescope(dataset_id=dataset_id)
         dag = telescope.make_dag()
 
