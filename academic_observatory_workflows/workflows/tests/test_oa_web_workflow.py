@@ -24,7 +24,6 @@ import pandas as pd
 import pendulum
 import vcr
 from airflow.models.connection import Connection
-from airflow.models.variable import Variable
 from airflow.utils.state import State
 from click.testing import CliRunner
 
@@ -507,7 +506,6 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
         env = ObservatoryEnvironment(enable_api=False)
         with env.create():
-            env.add_variable(Variable(key=OaWebWorkflow.AIRFLOW_VAR_WEBSITE_FOLDER, val="/path/to/website"))
             env.add_connection(
                 Connection(
                     conn_id=OaWebWorkflow.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN,
@@ -538,7 +536,6 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
         env = ObservatoryEnvironment(project_id=self.project_id, data_location=self.data_location, enable_api=False)
         with env.create():
-            env.add_variable(Variable(key=OaWebWorkflow.AIRFLOW_VAR_WEBSITE_FOLDER, val="/path/to/website"))
             env.add_connection(
                 Connection(
                     conn_id=OaWebWorkflow.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN,
@@ -577,14 +574,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         env = ObservatoryEnvironment(project_id=self.project_id, data_location=self.data_location, enable_api=False)
         dataset_id = env.add_dataset("data")
         with env.create() as t:
-            # Copy test website
-            website_name = "open-access-web"
-            src_folder = test_fixtures_folder("oa_web_workflow", website_name)
-            dst_folder = os.path.join(t, "data", website_name)
-            shutil.copytree(src_folder, dst_folder)
-
             # Add required environment variables and connections
-            env.add_variable(Variable(key=OaWebWorkflow.AIRFLOW_VAR_WEBSITE_FOLDER, val=dst_folder))
             env.add_connection(
                 Connection(
                     conn_id=OaWebWorkflow.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN,
@@ -604,6 +594,12 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
             # Run workflow
             workflow = OaWebWorkflow(agg_dataset_id=dataset_id, grid_dataset_id=dataset_id)
+
+            # Copy test website
+            src_folder = test_fixtures_folder("oa_web_workflow", workflow.oa_website_name)
+            dst_folder = workflow.website_folder
+            shutil.copytree(src_folder, dst_folder)
+
             dag = workflow.make_dag()
             with env.create_dag_run(dag, execution_date):
                 # DOI Sensor
@@ -644,7 +640,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 # Copy static assets
                 ti = env.run_task(workflow.copy_static_assets.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
-                base_folder = os.path.join(t, "data", website_name, "static", "build")
+                base_folder = os.path.join(t, "data", workflow.website_folder, "static", "build")
                 expected_files = make_expected_build_files(base_folder)
                 print("Checking expected static assets")
                 for file in expected_files:

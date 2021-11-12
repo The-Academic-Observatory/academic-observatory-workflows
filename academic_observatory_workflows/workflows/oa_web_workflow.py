@@ -29,6 +29,7 @@ import pendulum
 from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
 from airflow.operators.bash import BashOperator
+from airflow.secrets.environment_variables import EnvironmentVariablesBackend
 from airflow.sensors.external_task import ExternalTaskSensor
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
@@ -422,7 +423,6 @@ class OaWebRelease(SnapshotRelease):
 class OaWebWorkflow(Workflow):
     TASK_ID_BUILD_WEBSITE = "build_website"
     TASK_ID_DEPLOY_WEBSITE = "deploy_website"
-    AIRFLOW_VAR_WEBSITE_FOLDER = "website_folder"
     AIRFLOW_CONN_CLOUDFLARE_API_TOKEN = "cloudflare_api_token"
     DEPLOY_WEBSITE_PATH = "/home/airflow/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/airflow/.yarn/bin"
 
@@ -436,9 +436,11 @@ class OaWebWorkflow(Workflow):
         ext_dag_id: str = "doi",
         table_ids: List[str] = None,
         airflow_vars: List[str] = None,
+        airflow_conns: List[str] = None,
         retries: int = 3,
         agg_dataset_id: str = "observatory",
         grid_dataset_id: str = "digital_science",
+        oa_website_name: str = "open-access-web",
     ):
         """Create the OaWebWorkflow.
 
@@ -459,16 +461,21 @@ class OaWebWorkflow(Workflow):
                 AirflowVars.TRANSFORM_BUCKET,
             ]
 
+        if airflow_conns is None:
+            airflow_conns = [self.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN]
+
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
             schedule_interval=schedule_interval,
             catchup=catchup,
             airflow_vars=airflow_vars,
+            airflow_conns=airflow_conns,
         )
         self.agg_dataset_id = agg_dataset_id
         self.grid_dataset_id = grid_dataset_id
         self.table_ids = table_ids
+        self.oa_website_name = oa_website_name
         if table_ids is None:
             self.table_ids = ["country", "institution"]
 
@@ -509,7 +516,11 @@ class OaWebWorkflow(Workflow):
         :return: the path to the oa website folder.
         """
 
-        return Variable.get(self.AIRFLOW_VAR_WEBSITE_FOLDER)
+        # Try to get value from env variable first, saving costs from GC secret usage
+        data_path = EnvironmentVariablesBackend().get_variable(AirflowVars.DATA_PATH)
+        if data_path is None:
+            data_path = Variable.get(AirflowVars.DATA_PATH)
+        return os.path.join(data_path, self.oa_website_name)
 
     def make_release(self, **kwargs) -> OaWebRelease:
         """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is

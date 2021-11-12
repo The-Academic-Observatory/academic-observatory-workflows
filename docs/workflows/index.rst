@@ -6,3 +6,4 @@ Analytic workflows process the data ingested by telescope workflows and are also
     :maxdepth: 1
 
     doi
+    oa_web
