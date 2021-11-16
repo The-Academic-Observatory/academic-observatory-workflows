@@ -14,15 +14,53 @@
 
 # Author: Aniek Roelofs
 
+import os
+import json
 from typing import Any, Tuple
-
 from academic_observatory_workflows_api.server.elastic import (
     get_pit_id,
     query_elasticsearch
 )
+from observatory.api.utils.auth_utils import set_auth_session, requires_auth
+from flask import session, redirect, render_template
+from six.moves.urllib.parse import urlencode
+from flask import url_for, current_app
+
 
 Response = Tuple[Any, int]
 session_ = None  # Global session
+
+
+# Here we're using the /callback route.
+def callback_handling():
+    set_auth_session(current_app.auth0)
+    return redirect("/dashboard")
+
+
+# Controllers API
+def home():
+    return render_template('home.html')
+
+
+def login():
+    return current_app.auth0.authorize_redirect(redirect_uri=url_for(
+        '.academic_observatory_workflows_api_server_api_callback_handling', _external=True),
+                                                audience="https://ao.api.observatory.academy") # audience of API
+    # to api audience.
+
+
+def logout():
+    # Clear session stored data
+    session.clear()
+    # Redirect user to logout endpoint
+    params = {'returnTo': url_for('.academic_observatory_workflows_api_server_api_home', _external=True), 'client_id': os.environ.get("AUTH0_CLIENT_ID")}
+    return redirect(current_app.auth0.api_base_url + '/v2/logout?' + urlencode(params))
+
+
+@requires_auth
+def dashboard():
+    return render_template('dashboard.html',
+                           userinfo_pretty=json.dumps(session['jwt_payload'], indent=4))
 
 
 def pit_id_agg(agg: str):

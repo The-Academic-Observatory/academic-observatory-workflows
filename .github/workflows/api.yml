@@ -157,6 +157,7 @@ jobs:
           cd ..
           pip install -e .
 
+      # TODO use CLI openapi renderer
       - name: Render openapi file
         run: |
           python ../server/openapi_renderer.py "../server/openapi.yaml.jinja2" "./openapi.yaml.tpl"

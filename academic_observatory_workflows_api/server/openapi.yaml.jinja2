@@ -10,65 +10,95 @@ info:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
 
-{# API Client specific settings #}
-{%- if api_client -%}
-host: api.observatory.academy
+{# Security settings #}
+{%- if type == 'cloud_endpoints' or type == 'openapi_generator' %}
 schemes:
   - https
 produces:
   - application/json
 securityDefinitions:
-  # This section configures basic authentication with an API key.
-  api_key:
-    type: "apiKey"
-    name: "key"
-    in: "query"
+  auth0_jwt:
+    authorizationUrl: "https://dev-canowprn.us.auth0.com/authorize"
+    flow: "implicit"
+    type: "oauth2"
+    x-google-issuer: "https://dev-canowprn.us.auth0.com/"
+    x-google-jwks_uri: "https://dev-canowprn.us.auth0.com/.well-known/jwks.json"
+    x-google-audiences: "CAk1QBBTG73pdITygXPd1FvXhKycoz1S"
 security:
-  - api_key: []
-{%- endif -%}
+  - auth0_jwt: []
+{%- endif %}
 
-{# Cloud Endpoints specific settings #}
-{%- if cloud_endpoints -%}
+{# Host settings #}
+{%- if type == 'openapi_generator' %}
+host: api.observatory.academy
+{%- elif type == 'cloud_endpoints' %}
 host: ${host}
 x-google-backend:
   address: ${backend_address}
   protocol: h2
-schemes:
-  - https
-produces:
-  - application/json
-securityDefinitions:
-  # This section configures basic authentication with an API key.
-  api_key:
-    type: "apiKey"
-    name: "key"
-    in: "query"
-security:
-  - api_key: []
-{%- endif -%}
-
+{%- else %}
+{%- endif %}
 
 {# Tag settings #}
-{% if api_client -%}
+{%- if type == 'openapi_generator' %}
 tags:
 - name: Observatory
   description: the Observatory API
 {%- set reports_tag="Observatory" -%}
-{% else -%}
+{% else %}
 tags:
 - name: Reports
   description: Test query data to build Open Access reports.
 {%- set reports_tag="Reports" -%}
-{%- endif -%}
+{%- endif %}
+
 
 {# Operation id namespace #}
-{%- if api_client -%}
+{%- if type == 'openapi_generator' -%}
 {%- set operation_id_namespace="" -%}
 {% else -%}
 {%- set operation_id_namespace="academic_observatory_workflows_api.server.api." -%}
 {%- endif %}
 
 paths:
+  /:
+    get:
+      operationId: {{ operation_id_namespace }}home
+      produces:
+        - text/html
+      responses:
+        200:
+          description: OK
+  /login:
+    get:
+      operationId: {{ operation_id_namespace }}login
+      produces:
+        - text/html
+      responses:
+        200:
+          description: OK
+  /logout:
+    get:
+      operationId: {{ operation_id_namespace }}logout
+      produces:
+        - text/html
+      responses:
+        200:
+          description: OK
+  /dashboard:
+    get:
+      operationId: {{ operation_id_namespace }}dashboard
+      produces:
+        - text/html
+      responses:
+        200:
+          description: OK
+  /callback:
+    get:
+      operationId: {{ operation_id_namespace }}callback_handling
+      responses:
+        200:
+          description: OK
   /v1/{agg}/pit:
     get:
       operationId: {{ operation_id_namespace }}pit_id_agg
@@ -103,6 +133,7 @@ paths:
         - $ref: '#/parameters/limit'
         - $ref: '#/parameters/searchAfter'
         - $ref: '#/parameters/pit'
+        - $ref: '#/parameters/prettyPrint'
       responses:
         200:
           description: Successfully return query results
@@ -151,6 +182,7 @@ paths:
         - $ref: '#/parameters/limit'
         - $ref: '#/parameters/searchAfter'
         - $ref: '#/parameters/pit'
+        - $ref: '#/parameters/prettyPrint'
       responses:
         200:
           description: Successfully return query results
@@ -273,6 +305,12 @@ parameters:
     maximum: 5
     description: >
         How long to keep the point in time id alive (in minutes)
+  prettyPrint:
+    in: query
+    name: pretty
+    required: false
+    type: boolean
+    description: If true, the endpoint returns only the user metadata.
 
 definitions:
   PitResponse:
