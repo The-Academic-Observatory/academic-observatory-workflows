@@ -101,6 +101,7 @@ class Institution:
     :param id: unique identifier.
     :param name: the institution's name.
     :param grid_id: the institution's GRID id.
+    :param ror_id: the institution's ROR id.
     :param country_code: the institution's country code.
     :param country_code_2: the institution's country code.
     :param subregion: the institution's subregion.
@@ -114,6 +115,7 @@ class Institution:
     id: int
     name: str = None
     grid_id: str = None
+    ror_id: str = None
     country_code: str = None
     country_code_2: str = None
     region: str = None

@@ -60,6 +60,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
         inst_curtin = Institution(
             1,
             name="Curtin University",
+            grid_id="grid.1032.0",
             ror_id="https://ror.org/02n415q13",
             country_code="AUS",
             country_code_2="AU",
@@ -73,6 +74,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
         inst_anu = Institution(
             2,
             name="Australian National University",
+            grid_id="grid.1001.0",
             ror_id="https://ror.org/019wvm592",
             country_code="AUS",
             country_code_2="AU",
@@ -86,6 +88,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
         inst_akl = Institution(
             3,
             name="University of Auckland",
+            grid_id="grid.9654.e",
             ror_id="https://ror.org/03b94tp07",
             country_code="NZL",
             country_code_2="NZ",
