@@ -1150,7 +1150,7 @@ def make_doi_grids(author_list: AuthorList) -> List[str]:
     :return: the grid ids for the paper.
     """
 
-    return list(set([author.institution.grid_id for author in author_list]))
+    return list(set([author.institution.ror_id for author in author_list]))
 
 
 def make_doi_funders(funder_list: FunderList) -> List[Dict]:
@@ -1266,9 +1266,9 @@ def make_doi_institutions(author_list: AuthorList) -> List[Dict]:
     for author in author_list:
         # Institution
         inst = author.institution
-        if inst.grid_id not in institutions:
-            institutions[inst.grid_id] = {
-                "identifier": inst.grid_id,
+        if inst.ror_id not in institutions:
+            institutions[inst.ror] = {
+                "identifier": inst.ror,
                 "types": [inst.types],
                 "name": inst.name,
                 "home_repo": {inst.home_repo},
@@ -1308,13 +1308,13 @@ def make_doi_countries(author_list: AuthorList):
                 "subregion": inst.subregion,
                 "coordinates": None,
                 "count": 0,
-                "members": {inst.grid_id},
-                "grids": {inst.grid_id},
+                "members": {inst.ror_id},
+                "rors": {inst.ror_id},
             }
         else:
-            countries[inst.country]["members"].add(inst.grid_id)
+            countries[inst.country]["members"].add(inst.ror_id)
             countries[inst.country]["home_repo"].add(inst.home_repo)
-            countries[inst.country]["grids"].add(inst.grid_id)
+            countries[inst.country]["rors"].add(inst.ror_id)
 
     return to_affiliations_list(countries)
 
@@ -1343,12 +1343,12 @@ def make_doi_regions(author_list: AuthorList):
                 "coordinates": None,
                 "count": 0,
                 "members": {inst.subregion},
-                "grids": {inst.grid_id},
+                "rors": {inst.ror_id},
             }
         else:
             regions[inst.region]["members"].add(inst.subregion)
             regions[inst.region]["home_repo"].add(inst.home_repo)
-            regions[inst.region]["grids"].add(inst.grid_id)
+            regions[inst.region]["rors"].add(inst.ror_id)
 
     return to_affiliations_list(regions)
 
@@ -1378,12 +1378,12 @@ def make_doi_subregions(author_list: AuthorList):
                 "coordinates": None,
                 "count": 0,
                 "members": {inst.country_code},
-                "grids": {inst.grid_id},
+                "rors": {inst.ror_id},
             }
         else:
             subregions[inst.subregion]["members"].add(inst.country_code)
             subregions[inst.subregion]["home_repo"].add(inst.home_repo)
-            subregions[inst.subregion]["grids"].add(inst.grid_id)
+            subregions[inst.subregion]["rors"].add(inst.ror_id)
 
     return to_affiliations_list(subregions)
 
