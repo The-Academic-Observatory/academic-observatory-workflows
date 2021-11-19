@@ -17,24 +17,24 @@
 import glob
 import os
 from typing import List
+from unittest.mock import patch
 from zipfile import ZipFile
 
 import natsort
 import pendulum
-from click.testing import CliRunner
-from google.cloud import bigquery
-from google.cloud import storage
-from google.cloud.storage import Blob
-
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.mag_telescope import (
+    MagTelescope,
     db_load_mag_release,
     list_mag_release_files,
     transform_mag_file,
     transform_mag_release,
 )
+from click.testing import CliRunner
+from google.cloud import bigquery, storage
+from google.cloud.storage import Blob
 from observatory.platform.utils.gc_utils import upload_files_to_cloud_storage
-from observatory.platform.utils.test_utils import random_id, ObservatoryTestCase
+from observatory.platform.utils.test_utils import ObservatoryTestCase, random_id
 
 
 def extract_mag_release(file_path: str, unzip_path: str):
@@ -292,3 +292,19 @@ class TestMagTelescope(ObservatoryTestCase):
                 blobs: List[Blob] = list(bucket.list_blobs(prefix=base_folder))
                 for blob in blobs:
                     blob.delete()
+
+    @patch("academic_observatory_workflows.workflows.mag_telescope.delete_old_xcoms")
+    @patch("academic_observatory_workflows.workflows.mag_telescope.pull_release_dates")
+    def test_delete_old_xcoms_called(self, m_pull_release_dates, m_delete_xcoms):
+        """Just test that delete_old_xcoms is called with the expected parameters"""
+
+        m_pull_release_dates.return_value = []
+
+        execution_date = pendulum.datetime(2021, 1, 1)
+        kwargs = {"ti": None, "execution_date": execution_date}
+        MagTelescope.cleanup(**kwargs)
+
+        self.assertEqual(m_delete_xcoms.call_count, 1)
+        _, call_args = m_delete_xcoms.call_args
+        self.assertEqual(call_args["dag_id"], MagTelescope.DAG_ID)
+        self.assertEqual(call_args["execution_date"], execution_date)
