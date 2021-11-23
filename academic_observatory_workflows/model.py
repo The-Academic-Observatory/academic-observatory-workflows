@@ -911,7 +911,7 @@ def bq_load_observatory_dataset(
 
     # Load fake GRID and settings datasets
     test_doi_path = test_fixtures_folder("doi")
-    grid = load_jsonl(os.path.join(test_doi_path, "grid.jsonl"))
+    ror = load_jsonl(os.path.join(test_doi_path, "ror.jsonl"))
     iso3166_countries_and_regions = load_jsonl(os.path.join(test_doi_path, "iso3166_countries_and_regions.jsonl"))
     grid_to_home_url = load_jsonl(os.path.join(test_doi_path, "ror_to_home_url.jsonl"))
     groupings = load_jsonl(os.path.join(test_doi_path, "groupings.jsonl"))
@@ -946,7 +946,7 @@ def bq_load_observatory_dataset(
             Table("Papers", True, dataset_id_all, mag.papers, "MagPapers", analysis_schema_path),
             Table("open_citations", True, dataset_id_all, open_citations, "open_citations", analysis_schema_path),
             Table("unpaywall", False, dataset_id_all, unpaywall, "unpaywall", analysis_schema_path),
-            Table("grid", True, dataset_id_all, grid, "grid", analysis_schema_path),
+            Table("ror", True, dataset_id_all, ror, "ror", analysis_schema_path),
             Table(
                 "iso3166_countries_and_regions",
                 False,
