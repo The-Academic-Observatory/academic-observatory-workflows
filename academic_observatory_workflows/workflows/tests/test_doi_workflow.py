@@ -265,8 +265,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     self.assertEqual(expected_state, ti.state)
 
             # Run Dummy Dags
-            execution_date = pendulum.datetime(year=2021, month=5, day=16)
-            release_date = pendulum.datetime(year=2021, month=5, day=22)
+            execution_date = pendulum.datetime(year=2021, month=10, day=16)
+            release_date = pendulum.datetime(year=2021, month=10, day=22)
             release_suffix = release_date.strftime("%Y%m%d")
             expected_state = "success"
             for dag_id in DoiWorkflow.SENSOR_DAG_IDS:
