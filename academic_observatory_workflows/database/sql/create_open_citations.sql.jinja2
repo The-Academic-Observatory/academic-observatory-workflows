@@ -14,6 +14,7 @@
 
 # Author: Richard Hosking, James Diprose #}
 
+{# This query takes the raw OpenCitations dataset, and creates a range of helpful fields that are easier to work with #}
 SELECT
   UPPER(TRIM(cited)) as doi,
   COUNT(cited) as citations_total, 
