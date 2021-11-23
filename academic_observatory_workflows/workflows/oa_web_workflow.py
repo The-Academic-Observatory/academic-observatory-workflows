@@ -14,13 +14,17 @@
 
 # Author: James Diprose
 
+from __future__ import annotations
 
+import dataclasses
+import datetime
 import json
 import os
 import os.path
 import shutil
 import urllib.parse
-from typing import Optional, List, Dict, Tuple
+from dataclasses import field
+from typing import Optional, List, Dict, Union
 from urllib.parse import urlparse
 
 import google.cloud.bigquery as bigquery
@@ -33,13 +37,14 @@ from airflow.secrets.environment_variables import EnvironmentVariablesBackend
 from airflow.sensors.external_task import ExternalTaskSensor
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
-from observatory.platform.utils.airflow_utils import get_airflow_connection_password, AirflowVars
+from observatory.platform.utils.airflow_utils import AirflowVars
+from observatory.platform.utils.airflow_utils import get_airflow_connection_password
+from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import (
     select_table_shard_dates,
     bigquery_sharded_table_id,
     download_blobs_from_cloud_storage,
 )
-from observatory.platform.utils.url_utils import get_url_domain_suffix
 from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
 from observatory.platform.workflows.workflow import Workflow
@@ -53,15 +58,24 @@ SELECT
   agg.id,
   agg.name,
   agg.time_period as year,
-  (SELECT * from grid.links LIMIT 1) AS url,
-  (SELECT * from grid.types LIMIT 1) AS type,
   DATE(agg.time_period, 12, 31) as date,
+  (SELECT * from grid.links LIMIT 1) AS url,
+  grid.wikipedia_url as wikipedia_url,
+  agg.country as country,
+  agg.subregion as subregion,
+  agg.region as region,
+  grid.types AS institution_types,
   agg.total_outputs as n_outputs,
-  agg.access_types.oa.total_outputs AS n_outputs_oa,
+  agg.access_types.oa.total_outputs AS n_outputs_open,
+  agg.citations.mag.total_citations as n_citations,  
+  agg.access_types.publisher.total_outputs AS n_outputs_publisher_open,
+  NULL AS n_outputs_publisher_open_only,
+  agg.access_types.green.total_outputs AS n_outputs_other_platform_open,
+  agg.access_types.green_only.total_outputs AS n_outputs_other_platform_open_only,
   agg.access_types.gold.total_outputs AS n_outputs_gold,
-  agg.access_types.green.total_outputs AS n_outputs_green,
   agg.access_types.hybrid.total_outputs AS n_outputs_hybrid,
-  agg.access_types.bronze.total_outputs AS n_outputs_bronze
+  agg.access_types.bronze.total_outputs AS n_outputs_bronze,
+  grid.external_ids AS identifiers
 FROM
   `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg 
   LEFT OUTER JOIN `{project_id}.{grid_dataset_id}.{grid_table_id}` as grid ON agg.id = grid.id
@@ -70,7 +84,7 @@ ORDER BY year DESC, name ASC
 """
 
 # Overrides for country names
-NAME_OVERRIDES = {
+COUNTRY_OVERRIDES = {
     "Bolivia (Plurinational State of)": "Bolivia",
     "Bosnia and Herzegovina": "Bosnia",
     "Brunei Darussalam": "Brunei",
@@ -102,6 +116,204 @@ NAME_OVERRIDES = {
 }
 
 
+@dataclasses.dataclass
+class PublicationStats:
+    n_citations: int = None
+    n_outputs: int = None
+    n_outputs_open: int = None
+    n_outputs_publisher_open: int = None
+    n_outputs_publisher_open_only: int = None
+    n_outputs_other_platform_open: int = None
+    n_outputs_other_platform_open_only: int = None
+    n_outputs_gold: int = None
+    n_outputs_hybrid: int = None
+    n_outputs_bronze: int = None
+    p_outputs_open: float = None
+    p_outputs_publisher_open: float = None
+    p_outputs_publisher_open_only: float = None
+    p_outputs_other_platform_open: float = None
+    p_outputs_other_platform_open_only: float = None
+    p_outputs_gold: float = None
+    p_outputs_hybrid: float = None
+    p_outputs_bronze: float = None
+
+    @staticmethod
+    def from_dict(dict_: Dict) -> PublicationStats:
+        n_citations = dict_.get("n_citations")
+        n_outputs = dict_.get("n_outputs")
+        n_outputs_open = dict_.get("n_outputs_open")
+        n_outputs_publisher_open = dict_.get("n_outputs_publisher_open")
+        n_outputs_publisher_open_only = dict_.get("n_outputs_publisher_open_only")
+        n_outputs_other_platform_open = dict_.get("n_outputs_other_platform_open")
+        n_outputs_other_platform_open_only = dict_.get("n_outputs_other_platform_open_only")
+        n_outputs_gold = dict_.get("n_outputs_gold")
+        n_outputs_hybrid = dict_.get("n_outputs_hybrid")
+        n_outputs_bronze = dict_.get("n_outputs_bronze")
+        p_outputs_open = dict_.get("p_outputs_open")
+        p_outputs_publisher_open = dict_.get("p_outputs_publisher_open")
+        p_outputs_publisher_open_only = dict_.get("p_outputs_publisher_open_only")
+        p_outputs_other_platform_open = dict_.get("p_outputs_other_platform_open")
+        p_outputs_other_platform_open_only = dict_.get("p_outputs_other_platform_open_only")
+        p_outputs_gold = dict_.get("p_outputs_gold")
+        p_outputs_hybrid = dict_.get("p_outputs_hybrid")
+        p_outputs_bronze = dict_.get("p_outputs_bronze")
+
+        return PublicationStats(
+            n_citations=n_citations,
+            n_outputs=n_outputs,
+            n_outputs_open=n_outputs_open,
+            n_outputs_publisher_open=n_outputs_publisher_open,
+            n_outputs_publisher_open_only=n_outputs_publisher_open_only,
+            n_outputs_other_platform_open=n_outputs_other_platform_open,
+            n_outputs_other_platform_open_only=n_outputs_other_platform_open_only,
+            n_outputs_gold=n_outputs_gold,
+            n_outputs_hybrid=n_outputs_hybrid,
+            n_outputs_bronze=n_outputs_bronze,
+            p_outputs_open=p_outputs_open,
+            p_outputs_publisher_open=p_outputs_publisher_open,
+            p_outputs_publisher_open_only=p_outputs_publisher_open_only,
+            p_outputs_other_platform_open=p_outputs_other_platform_open,
+            p_outputs_other_platform_open_only=p_outputs_other_platform_open_only,
+            p_outputs_gold=p_outputs_gold,
+            p_outputs_hybrid=p_outputs_hybrid,
+            p_outputs_bronze=p_outputs_bronze,
+        )
+
+    def to_dict(self) -> Dict:
+        return {
+            "n_citations": self.n_citations,
+            "n_outputs": self.n_outputs,
+            "n_outputs_open": self.n_outputs_open,
+            "n_outputs_publisher_open": self.n_outputs_publisher_open,
+            "n_outputs_publisher_open_only": self.n_outputs_publisher_open_only,
+            "n_outputs_other_platform_open": self.n_outputs_other_platform_open,
+            "n_outputs_other_platform_open_only": self.n_outputs_other_platform_open_only,
+            "n_outputs_gold": self.n_outputs_gold,
+            "n_outputs_hybrid": self.n_outputs_hybrid,
+            "n_outputs_bronze": self.n_outputs_bronze,
+            "p_outputs_open": self.p_outputs_open,
+            "p_outputs_publisher_open": self.p_outputs_publisher_open,
+            "p_outputs_publisher_open_only": self.p_outputs_publisher_open_only,
+            "p_outputs_other_platform_open": self.p_outputs_other_platform_open,
+            "p_outputs_other_platform_open_only": self.p_outputs_other_platform_open_only,
+            "p_outputs_gold": self.p_outputs_other_platform_open_only,
+            "p_outputs_hybrid": self.p_outputs_other_platform_open_only,
+            "p_outputs_bronze": self.p_outputs_other_platform_open_only,
+        }
+
+
+@dataclasses.dataclass
+class Subject:
+    name: str
+    n_outputs: float
+
+    def to_dict(self) -> Dict:
+        return {"name": self.name, "n_outputs": self.n_outputs}
+
+
+@dataclasses.dataclass
+class Collaborator:
+    name: str
+    n_outputs: float
+
+    def to_dict(self) -> Dict:
+        return {"name": self.name, "n_outputs": self.n_outputs}
+
+
+@dataclasses.dataclass
+class Identifier:
+    id: str
+    type: str
+
+    def to_dict(self) -> Dict:
+        return {"id": self.id, "type": self.type}
+
+
+@dataclasses.dataclass
+class Year:
+    year: int
+    date: datetime.datetime
+    stats: PublicationStats
+
+    def to_dict(self) -> Dict:
+        return {"year": self.year, "date": self.date.strftime("%Y-%m-%d"), "stats": self.stats.to_dict()}
+
+
+def save_json(path: str, data: Union[Dict, List]):
+    with open(path, mode="w") as f:
+        json.dump(data, f, separators=(",", ":"))
+
+
+@dataclasses.dataclass
+class Entity:
+    id: str
+    name: str
+    description: str = None  # todo
+    category: str = None  # todo
+    logo: str = None  # todo
+    url: str = None
+    wikipedia_url: str = None
+    country: Optional[str] = None
+    subregion: str = None
+    region: str = None
+    institution_types: Optional[str] = field(default_factory=lambda: [])
+    stats: PublicationStats = None
+    identifiers: List[Identifier] = field(default_factory=lambda: [])  # todo
+    collaborators: List[Collaborator] = field(default_factory=lambda: [])  # todo
+    subjects: List[Subject] = field(default_factory=lambda: [])  # todo
+    other_platform_locations: List[str] = field(default_factory=lambda: [])  # todo
+    timeseries: List[Year] = field(default_factory=lambda: [])
+
+    @staticmethod
+    def from_dict(dict_: Dict) -> Entity:
+        id = dict_.get("id")
+        name = dict_.get("name")
+        description = dict_.get("description")
+        category = dict_.get("category")
+        logo = dict_.get("logo")
+        url = dict_.get("url")
+        wikipedia_url = dict_.get("wikipedia_url")
+        country = dict_.get("country")
+        subregion = dict_.get("subregion")
+        region = dict_.get("region")
+        institution_types = dict_.get("institution_types")
+
+        return Entity(
+            id,
+            name,
+            description=description,
+            category=category,
+            logo=logo,
+            url=url,
+            wikipedia_url=wikipedia_url,
+            country=country,
+            subregion=subregion,
+            region=region,
+            institution_types=institution_types,
+        )
+
+    def to_dict(self) -> Dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "category": self.category,
+            "logo": self.logo,
+            "url": self.url,
+            "wikipedia_url": self.wikipedia_url,
+            "region": self.region,
+            "subregion": self.subregion,
+            "country": self.country,
+            "institution_types": self.institution_types,
+            "stats": self.stats.to_dict(),
+            "identifiers": [obj.to_dict() for obj in self.identifiers],
+            "collaborators": [obj.to_dict() for obj in self.collaborators],
+            "subjects": [obj.to_dict() for obj in self.subjects],
+            "other_platform_locations": self.other_platform_locations,
+            "timeseries": [obj.to_dict() for obj in self.timeseries],
+        }
+
+
 def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, location: str = "us") -> bool:
     """Run a BigQuery query and save the results on Google Cloud Storage.
 
@@ -121,7 +333,7 @@ def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, locati
     # Create and run extraction job
     source_table_id = f"{project_id}.{query_job.destination.dataset_id}.{query_job.destination.table_id}"
     extract_job_config = bigquery.ExtractJobConfig()
-    extract_job_config.destination_format = bigquery.DestinationFormat.CSV
+    extract_job_config.destination_format = bigquery.DestinationFormat.NEWLINE_DELIMITED_JSON
     extract_job: bigquery.ExtractJob = client.extract_table(
         source_table_id, destination_uri, job_config=extract_job_config, location=location
     )
@@ -142,7 +354,16 @@ def clean_url(url: str) -> str:
 
 
 class OaWebRelease(SnapshotRelease):
-    PERCENTAGE_FIELD_KEYS = ["outputs_oa", "outputs_gold", "outputs_green", "outputs_hybrid", "outputs_bronze"]
+    PERCENTAGE_FIELD_KEYS = [
+        "outputs_open",
+        "outputs_publisher_open",
+        "outputs_publisher_open_only",
+        "outputs_other_platform_open",
+        "outputs_other_platform_open_only",
+        "outputs_gold",
+        "outputs_hybrid",
+        "outputs_bronze",
+    ]
 
     def __init__(
         self,
@@ -174,43 +395,46 @@ class OaWebRelease(SnapshotRelease):
     def build_path(self):
         return os.path.join(self.transform_folder, "build")
 
-    def load_csv(self, category: str) -> pd.DataFrame:
-        """Load the CSV file for a given category.
+    def load_data(self, category: str) -> pd.DataFrame:
+        """Load the data file for a given category.
 
         :param category: the category, i.e. country or institution.
         :return: the Pandas Dataframe.
         """
 
-        # Load CSV
-        csv_path = os.path.join(self.download_folder, f"{category}.csv")
-        df = pd.read_csv(csv_path)
+        path = os.path.join(self.download_folder, f"{category}.jsonl")
+        data = load_jsonl(path)
+        df = pd.DataFrame(data)
+
+        # Convert data types
+        df["n_outputs_publisher_open_only"] = 0
         df["date"] = pd.to_datetime(df["date"])
         df.fillna("", inplace=True)
+        for column in df.columns:
+            if column.startswith("n_"):
+                df[column] = pd.to_numeric(df[column])
 
         return df
 
-    def make_index(self, df: pd.DataFrame, category: str):
+    def make_index(self, category: str, df: pd.DataFrame):
         """Make the data for the index tables.
 
-        :param df: Pandas dataframe with all data points.
         :param category: the category, i.e. country or institution.
+        :param df: Pandas dataframe with all data points.
         :return:
         """
 
-        # Aggregate
+        # Create aggregate
+        agg = {}
+        for column in df.columns:
+            if column.startswith("n_"):
+                agg[column] = "sum"
+            else:
+                agg[column] = "first"
+
+        # Create aggregate
         df_index_table = df.groupby(["id"]).agg(
-            {
-                "id": "first",
-                "name": "first",
-                "url": "first",
-                "type": "first",
-                "n_outputs": "sum",
-                "n_outputs_oa": "sum",
-                "n_outputs_gold": "sum",
-                "n_outputs_green": "sum",
-                "n_outputs_hybrid": "sum",
-                "n_outputs_bronze": "sum",
-            },
+            agg,
             index=False,
         )
 
@@ -221,29 +445,23 @@ class OaWebRelease(SnapshotRelease):
         self.update_df_with_percentages(df_index_table, self.PERCENTAGE_FIELD_KEYS)
 
         # Sort from highest oa percentage to lowest
-        df_index_table.sort_values(by=["p_outputs_oa"], ascending=False, inplace=True)
-
-        # Add ranks
-        df_index_table["rank"] = list(range(1, len(df_index_table) + 1))
+        df_index_table.sort_values(by=["n_outputs_open"], ascending=False, inplace=True)
 
         # Add category
         df_index_table["category"] = category
 
-        # Name overrides
-        df_index_table["name"] = df_index_table["name"].apply(
-            lambda name: NAME_OVERRIDES[name] if name in NAME_OVERRIDES else name
-        )
-
-        # Clean URLs
-        df_index_table["friendly_url"] = df_index_table["url"].apply(
-            lambda u: get_url_domain_suffix(u) if not pd.isnull(u) else u
-        )
-
-        # If country add wikipedia url
-        if category == "country":
-            df_index_table["url"] = df_index_table["name"].apply(
-                lambda name: f"https://en.wikipedia.org/wiki/{urllib.parse.quote(name)}"
+        # Country overrides
+        for key in ["name", "country"]:
+            df_index_table[key] = df_index_table[key].apply(
+                lambda name: COUNTRY_OVERRIDES[name] if name in COUNTRY_OVERRIDES else name
             )
+
+        # If country add url and wikipedia url
+        if category == "country":
+            for key in ["url", "wikipedia_url"]:
+                df_index_table[key] = df_index_table["name"].apply(
+                    lambda name: f"https://en.wikipedia.org/wiki/{urllib.parse.quote(name)}"
+                )
 
         return df_index_table
 
@@ -258,11 +476,11 @@ class OaWebRelease(SnapshotRelease):
         for key in keys:
             df[f"p_{key}"] = round(df[f"n_{key}"] / df["n_outputs"] * 100, 0)
 
-    def update_index_with_logos(self, df_index_table: pd.DataFrame, category: str, size=32, fmt="jpg"):
+    def update_index_with_logos(self, category: str, df_index_table: pd.DataFrame, size=32, fmt="jpg"):
         """Update the index with logos, downloading logos if the don't exist.
 
-        :param df_index_table: the index table Pandas dataframe.
         :param category: the category, i.e. country or institution.
+        :param df_index_table: the index table Pandas dataframe.
         :param size: the image size.
         :param fmt: the image format.
         :return: None.
@@ -294,102 +512,92 @@ class OaWebRelease(SnapshotRelease):
                 logos.append(logo_path)
             df_index_table["logo"] = logos
 
-    def save_index(self, df_index_table: pd.DataFrame, category: str):
+    def save_index(self, category: str, df_index_table: pd.DataFrame):
         """Save the index table.
 
-        :param df_index_table: the index table Pandas Dataframe.
         :param category: the category, i.e. country or institution.
+        :param df_index_table: the index table Pandas Dataframe.
         :return: None.
         """
 
         # Save subset
-        base_path = os.path.join(self.build_path, "data", category)
+        base_path = os.path.join(self.build_path, "data")
         os.makedirs(base_path, exist_ok=True)
-        summary_path = os.path.join(base_path, "summary.json")
-        columns = [
-            "id",
-            "rank",
-            "name",
-            "category",
-            "logo",
-            "p_outputs_oa",
-            "p_outputs_gold",
-            "p_outputs_green",
-            "n_outputs",
-            "n_outputs_oa",
-        ]
-        df_subset = df_index_table[columns]
-        df_subset.to_json(summary_path, orient="records")
-
-    def save_entity_details(self, df_index_table: pd.DataFrame, category: str):
-        """Save the summary data for each entity, saving the result for each entity as a JSON file.
-
-        :param df_index_table: a Pandas dataframe.
-        :param category: the category, i.e. country or institution.
-        :return: None.
-        """
-
-        base_path = os.path.join(self.build_path, "data", category)
-        os.makedirs(base_path, exist_ok=True)
-        df_index_table["category"] = category
+        summary_path = os.path.join(base_path, f"{category}.json")
+        df_index_table = df_index_table.drop(
+            [
+                "year",
+                "date",
+                "institution_types",
+                "identifiers",
+                "collaborators",
+                "subjects",
+                "other_platform_locations",
+                "timeseries",
+            ],
+            axis=1,
+            errors="ignore",
+        )
         records = df_index_table.to_dict("records")
-        for row in records:
-            entity_id = row["id"]
-            output_path = os.path.join(base_path, f"{entity_id}_summary.json")
-            with open(output_path, mode="w") as f:
-                json.dump(row, f, separators=(",", ":"))
+        save_json(summary_path, records)
 
-    def make_timeseries(self, df: pd.DataFrame) -> List[Tuple[str, pd.DataFrame]]:
-        """Make timeseries data for each entity, returning them.
+    def make_entities(self, df_index_table: pd.DataFrame, df: pd.DataFrame) -> List[Entity]:
+        """Make entities.
 
-        :param df: the Pandas dataframe containing all data points for a particular category.
-        :return: a dictionary with keys for each entity and change points data for each value.
+        :param df_index_table: the index table Pandas Dataframe.
+        :param df: the Pandas dataframe.
+        :return: the Entity objects.
         """
 
-        results = []
-        ts_groups = df.groupby(["id"])
+        entities = []
+        key_id = "id"
+        key_year = "year"
+        key_date = "date"
+        key_records = "records"
+        ts_groups = df.groupby([key_id])
         for entity_id, df_group in ts_groups:
             # Exclude institutions with small num outputs
             total_outputs = df_group["n_outputs"].sum()
             if total_outputs >= INCLUSION_THRESHOLD:
                 self.update_df_with_percentages(df_group, self.PERCENTAGE_FIELD_KEYS)
-                df_group = df_group.sort_values(by=["year"])
+                df_group = df_group.sort_values(by=[key_year])
                 df_group = df_group.loc[:, ~df_group.columns.str.contains("^Unnamed")]
 
-                # Save to csv
-                df_ts: pd.DataFrame = df_group[
-                    [
-                        "year",
-                        "n_outputs",
-                        "n_outputs_oa",
-                        "p_outputs_oa",
-                        "p_outputs_gold",
-                        "p_outputs_green",
-                        "p_outputs_hybrid",
-                        "p_outputs_bronze",
-                    ]
-                ]
+                # Create entity
+                entity_dict: Dict = df_index_table.loc[df_index_table[key_id] == entity_id].to_dict(key_records)[0]
+                entity = Entity.from_dict(entity_dict)
+                entity.stats = PublicationStats.from_dict(entity_dict)
 
-                results.append((entity_id, df_ts))
+                # Make timeseries data
+                years = []
+                rows: List[Dict] = df_group.to_dict(key_records)
+                for row in rows:
+                    year = row.get(key_year)
+                    date = row.get(key_date)
+                    stats = PublicationStats.from_dict(row)
+                    years.append(Year(year=year, date=date, stats=stats))
+                entity.timeseries = years
 
-        return results
+                entities.append(entity)
 
-    def save_timeseries(self, timeseries: List[Tuple[str, pd.DataFrame]], category: str):
-        """Save the timeseries data.
+        return entities
 
-        :param timeseries: the timeseries data for each entity. A list of tuples, with (entity id, entity dataframe).
-        :param category: the category, i.e. country or institution.
+    def save_entities(self, category: str, entities: List[Entity]):
+        """Save the data for each entity as a JSON file.
+
+        :param category: the entity category.
+        :param entities: the list of Entity objects.
         :return: None.
         """
 
         base_path = os.path.join(self.build_path, "data", category)
         os.makedirs(base_path, exist_ok=True)
+        for entity in entities:
+            output_path = os.path.join(base_path, f"{entity.id}.json")
+            entity_dict = entity.to_dict()
+            save_json(output_path, entity_dict)
 
-        for entity_id, df_ts in timeseries:
-            ts_path = os.path.join(base_path, f"{entity_id}_ts.json")
-            df_ts.to_json(ts_path, orient="records")
-
-    def make_auto_complete(self, df_index_table: pd.DataFrame, category: str):
+    def make_auto_complete(self, df_index_table: pd.DataFrame, category: str) -> List[Dict]:
         """Build the autocomplete data.
 
         :param df_index_table: index table Pandas dataframe.
@@ -417,7 +625,8 @@ class OaWebRelease(SnapshotRelease):
 
         output_path = os.path.join(base_path, "autocomplete.json")
         df_ac = pd.DataFrame(auto_complete)
-        df_ac.to_json(output_path, orient="records")
+        records = df_ac.to_dict("records")
+        save_json(output_path, records)
 
 
 class OaWebWorkflow(Workflow):
@@ -575,7 +784,7 @@ class OaWebWorkflow(Workflow):
             grid_sharded_table_id = bigquery_sharded_table_id(grid_table_id, grid_release_date)
 
             # Fetch data
-            destination_uri = f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{agg_table_id}.csv"
+            destination_uri = f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{agg_table_id}.jsonl"
             success = bq_query_to_gcs(
                 query=QUERY.format(
                     project_id=release.project_id,
@@ -624,22 +833,19 @@ class OaWebWorkflow(Workflow):
         auto_complete = []
         for category in self.table_ids:
             # Load data
-            df = release.load_csv(category)
+            df = release.load_data(category)
 
             # Make index table
-            df_index_table = release.make_index(df, category)
-            release.update_index_with_logos(df_index_table, category)
+            df_index_table = release.make_index(category, df)
+            release.update_index_with_logos(category, df_index_table)
+            entities = release.make_entities(df_index_table, df)
 
             # Make autocomplete data for this category
             auto_complete += release.make_auto_complete(df_index_table, category)
 
-            # Make timeseries
-            entity_timeseries = release.make_timeseries(df)
-
             # Save category data
-            release.save_index(df_index_table, category)
-            release.save_entity_details(df_index_table, category)
-            release.save_timeseries(entity_timeseries, category)
+            release.save_index(category, df_index_table)
+            release.save_entities(category, entities)
 
         # Save auto complete data as json
         release.save_autocomplete(auto_complete)
