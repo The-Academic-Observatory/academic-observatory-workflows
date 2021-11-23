@@ -14,6 +14,7 @@
 
 # Author: Richard Hosking#}
 
+{# This query extracts the key fields from ORCID, allowing the following query to be simplifed #}
 WITH orcid_processed as (SELECT 
   orcid.orcid_identifier.uri,
   orcid.person.name.given_names,
@@ -35,6 +36,7 @@ WITH orcid_processed as (SELECT
   ) as works
 FROM `{{ project_id }}.{{ orcid.dataset_id }}.{{ orcid.table_id }}` as orcid)
 
+{# This is the main query, which inverts the ORCID centered data, to be DOI cetentric with a list of ORCID authors #}
 SELECT
   doi,
   ARRAY_AGG(orcid) as orcid
