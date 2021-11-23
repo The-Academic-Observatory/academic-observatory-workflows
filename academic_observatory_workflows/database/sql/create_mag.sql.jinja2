@@ -14,6 +14,7 @@
 
 # Author: Richard Hosking, James Diprose #}
 
+{# This query allows affiliation IDs recorded in MAG to be modified when problems are discovered #}
 WITH affiliations_processed as (
   SELECT
     affiliation.AffiliationId,
@@ -23,6 +24,7 @@ WITH affiliations_processed as (
   LEFT JOIN `{{ project_id }}.{{ settings.dataset_id }}.mag_affiliation_override` as override on override.AffiliationId = affiliation.AffiliationId
 ),
 
+{# This query preprocesses the Fields of Study to simply the later queries #}
 fields_of_study as (
     SELECT
         fields.*,
@@ -35,6 +37,7 @@ fields_of_study as (
     FROM `{{ project_id }}.{{ mag.dataset_id }}.FieldsOfStudy{{ mag.release_date.strftime('%Y%m%d') }}` as fields
 )
 
+{# Main Query that takes the range of normalised MAG tables and creates single, DOI indexed, table that is easier to join with Crossref #}
 SELECT 
   papers.* EXCEPT (journalId, ConferenceSeriesId, ConferenceInstanceId, CreatedDate) REPLACE ( UPPER(TRIM(Doi)) AS Doi),
   REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REGEXP_REPLACE(JSON_EXTRACT(IndexedAbstract, '$.InvertedIndex'), "[0-9]+", ""), ":", ""), ",", " "), '"', ""), "{", ""), "}", ""), "[", ""), "]", "") as abstract,
