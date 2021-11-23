@@ -13,7 +13,7 @@
 # limitations under the License.
 # Author: Richard Hosking #}
 
-# Processing Output Types
+# Helper Function: Processing Output Types
 CREATE TEMP FUNCTION compute_percentiles(counts ARRAY<INT64>) AS (
   (SELECT as STRUCT
     ROUND(PERCENTILE_CONT(count, 0.25) OVER(), 2) as per_25th,
@@ -23,7 +23,7 @@ CREATE TEMP FUNCTION compute_percentiles(counts ARRAY<INT64>) AS (
   FROM UNNEST(counts) as count LIMIT 1)
 );
 
-# Common Function for Counting Access Types
+# Helper Function: Counting Access Types
 CREATE TEMP FUNCTION count_access_types(unpaywall ANY TYPE) as (
     (SELECT as STRUCT
       COUNTIF(is_oa) as num_oa_outputs,
@@ -40,6 +40,7 @@ CREATE TEMP FUNCTION count_access_types(unpaywall ANY TYPE) as (
     FROM UNNEST(unpaywall))
 );
 
+# Helper Function: Count distribution of access types and citations for a single output type
 CREATE TEMP FUNCTION count_single_output_type(output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type STRING) AS (
   (SELECT as STRUCT
     output_type,
@@ -59,6 +60,7 @@ CREATE TEMP FUNCTION count_single_output_type(output_type STRING, items ARRAY<ST
   FROM UNNEST(items) as item)
 );
 
+# Helper Function: Count distribution of access types, bucketing a number of individual output types into a new bucket
 CREATE TEMP FUNCTION count_array_output_type(output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type ARRAY<STRING>) AS (
   (SELECT as STRUCT
     output_type,
@@ -79,6 +81,7 @@ CREATE TEMP FUNCTION count_array_output_type(output_type STRING, items ARRAY<STR
   FROM UNNEST(items) as item)
 );
 
+# Helper Function: Count distribution of access types, where outputtype does not match any from a list
 CREATE TEMP FUNCTION count_not_in_array_output_type(output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type ARRAY<STRING>) AS (
   (SELECT as STRUCT
     output_type,
@@ -98,7 +101,7 @@ CREATE TEMP FUNCTION count_not_in_array_output_type(output_type STRING, items AR
   FROM UNNEST(items) as item)
 );
 
--- Count Output Types
+# Helper Function: Count Output Types
 CREATE TEMP FUNCTION count_output_types(items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>) as (
     [
       count_single_output_type("journal_articles", items, 'journal-article'),
@@ -112,7 +115,7 @@ CREATE TEMP FUNCTION count_output_types(items ARRAY<STRUCT<type STRING, citation
     ]
 );
 
--- Compute Citation Analysis
+# Helper Function: Compute Citation Analysis
 CREATE TEMP FUNCTION compute_conditional_citations(items ARRAY<STRUCT<citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, is_x BOOL>>, access_type STRING, positive_label STRING, negative_label STRING) as (
   ARRAY((
     SELECT as STRUCT
@@ -146,6 +149,7 @@ CREATE TEMP FUNCTION compute_conditional_citations(items ARRAY<STRUCT<citations 
   ))
 );
 
+# Helper Function: Compute a citation analysis across the array of passed in objects
 CREATE TEMP FUNCTION compute_citations(items ARRAY<STRUCT<doi STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>>>) as (
   (SELECT AS STRUCT
     -- Citation counts
@@ -173,6 +177,7 @@ CREATE TEMP FUNCTION compute_citations(items ARRAY<STRUCT<doi STRING, citations 
   FROM UNNEST(items))
 );
 
+# Helper Function: Compute the count of various Open Access Types from a passed in array of Objects
 CREATE TEMP FUNCTION compute_access_types(items ARRAY<STRUCT<doi STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>) as (
   (SELECT AS STRUCT
     STRUCT(
@@ -228,7 +233,7 @@ CREATE TEMP FUNCTION compute_access_types(items ARRAY<STRUCT<doi STRING, citatio
   FROM UNNEST(items))
 );
 
-
+# Helper Function:  Compute summary statistic, grouped by a field of study for an array of passed in items
 CREATE TEMP FUNCTION compute_disciplines(fields ARRAY<STRUCT<DisplayName STRING, Score FLOAT64, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, funding BOOL, international_funding BOOL, domestic_funding BOOL, government_funding BOOL, private_funding BOOL, international_colab BOOL>>) as (
   ARRAY(
     (SELECT AS STRUCT
@@ -272,6 +277,7 @@ CREATE TEMP FUNCTION compute_disciplines(fields ARRAY<STRUCT<DisplayName STRING,
   )
 );
 
+# Helper Function: Function to help with the process_relations function below. Simlifed summary, grouped by field of study
 CREATE TEMP FUNCTION group_disciplines(fields ARRAY<STRUCT<DisplayName STRING, Score FLOAT64, is_oa BOOL>>) as (
   ARRAY(
     (SELECT AS STRUCT
@@ -284,6 +290,7 @@ CREATE TEMP FUNCTION group_disciplines(fields ARRAY<STRUCT<DisplayName STRING, S
   )
 );
 
+# Helper Function: Compute a summary of OA types, citations and fields of study. Use for compute collaborations and various other relationship to the primiary entity
 CREATE TEMP FUNCTION process_relations(relationships ANY TYPE, total INT64, total_oa INT64) as (
   ARRAY(SELECT AS STRUCT
           relation.identifier as id,
@@ -309,6 +316,7 @@ CREATE TEMP FUNCTION process_relations(relationships ANY TYPE, total INT64, tota
       LIMIT 1000)
 );
 
+# Helper Function: Create a summary of events, grouped into the event type
 CREATE TEMP FUNCTION process_events(events ANY TYPE) as (
     ARRAY( 
     SELECT as STRUCT
@@ -327,6 +335,7 @@ CREATE TEMP FUNCTION process_events(events ANY TYPE) as (
   )
 );
 
+# Helper Function: Creates a summary count for how many objects where hosted at a given repository
 CREATE TEMP FUNCTION process_repositories(repositories ARRAY<STRING>, total_green INT64) as (
   ARRAY(SELECT AS STRUCT
           repository as id,
@@ -344,10 +353,9 @@ CREATE TEMP FUNCTION process_repositories(repositories ARRAY<STRING>, total_gree
 -- Main SQL Function
 ----
 SELECT
+  -- Common Metadata
   aggregrate.identifier as id,
   dois.crossref.{{ group_by_time_field }} as time_period,
-
-  --ARRAY_CONCAT_AGG(aggregrate.types) as types,
   MAX(aggregrate.name) as name,
   MAX(aggregrate.country) as country,
   MAX(aggregrate.country_code) as country_code,
@@ -379,18 +387,16 @@ SELECT
             dois.open_citations.citations_total as open_citations
           ) as citations,
           unpaywall.is_oa as is_oa, unpaywall.green as green, unpaywall.gold as gold, unpaywall.gold_just_doaj, unpaywall.hybrid, unpaywall.bronze, unpaywall.green_only,
-
+          -- Total Funding
           (SELECT COUNT(funder) > 0 from UNNEST(affiliations.funders) as funder) as funding,
           -- Domestic, international, both, none or unknown funding
           (SELECT COUNT(funder) > 0 from UNNEST(affiliations.funders) as funder WHERE funder.country_code <> aggregrate.country_code_2) as international_funding,
           (SELECT COUNT(funder) > 1 from UNNEST(affiliations.funders) as funder WHERE funder.country_code = aggregrate.country_code_2) as domestic_funding,
-          -- has Industry or Government or both funding
+          -- Has Industry or Government or both funding
           (SELECT COUNT(funder) > 0 from UNNEST(affiliations.funders) as funder WHERE funder.funding_body_subtype = 'gov') as government_funding,
           (SELECT COUNT(funder) > 0 from UNNEST(affiliations.funders) as funder WHERE funder.funding_body_subtype = 'pri') as private_funding,
-
           -- Domestic collaboration only or international collaboration or single institution only
           (SELECT COUNT(collab) > 0 FROM UNNEST(affiliations.countries) as collab WHERE collab.country <> aggregrate.country) as international_collab
-
         FROM UNNEST(dois.mag.fields.level_0) as fields)) )) as level0
   ) as disciplines,
 
@@ -533,4 +539,4 @@ SELECT
 
 FROM `{{ project_id }}.{{ dataset_id }}.doi{{ release_date.strftime('%Y%m%d') }}` as dois, UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
 WHERE aggregrate.identifier IS NOT NULL
-GROUP BY aggregrate.identifier, crossref.{{ group_by_time_field }} 
+GROUP BY aggregrate.identifier, crossref.{{ group_by_time_field }}
