@@ -49,6 +49,7 @@ to the queries themselves. Strive for clarity and precision over
 brevity where necessary
 #}
 
+{# This query creates a list of ISSN-L to Normalised Journal Names. The name chosen for each ISSN-L is the most common occurance #}
 WITH name as (
 SELECT
     identifier,
@@ -64,6 +65,7 @@ FROM(
     ORDER BY journal_issn_l, count DESC)
 GROUP BY identifier)
 
+{# The main query, which processes Unpaywall and derived COKI derived OA determinations #}
 SELECT
   UPPER(TRIM(doi)) as doi,
   year,
