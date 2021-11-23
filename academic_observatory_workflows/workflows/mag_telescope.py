@@ -26,6 +26,7 @@ from subprocess import Popen
 from typing import List
 
 import pendulum
+from academic_observatory_workflows.config import schema_folder
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
 from airflow.models.taskinstance import TaskInstance
@@ -34,10 +35,8 @@ from google.cloud import storage
 from google.cloud.bigquery import SourceFormat
 from google.cloud.storage import Blob
 from natsort import natsorted
-
-from academic_observatory_workflows.config import schema_folder
-from observatory.platform.utils.airflow_utils import AirflowConns
 from observatory.platform.utils.airflow_utils import (
+    AirflowConns,
     AirflowVars,
     check_connections,
     check_variables,
@@ -56,8 +55,10 @@ from observatory.platform.utils.gc_utils import (
 from observatory.platform.utils.proc_utils import wait_for_process
 from observatory.platform.utils.workflow_utils import (
     SubFolder,
+    delete_old_xcoms,
     workflow_path,
 )
+from sqlalchemy.sql.expression import delete
 
 MAG_GCP_BUCKET_PATH = "telescopes/mag"
 
@@ -518,6 +519,9 @@ class MagTelescope:
                 shutil.rmtree(release_transformed_path)
             except FileNotFoundError as e:
                 logging.warning(f"No such file or directory {release_transformed_path}: {e}")
+
+        execution_date = kwargs["execution_date"]
+        delete_old_xcoms(dag_id=MagTelescope.DAG_ID, execution_date=execution_date)
 
 
 def db_load_mag_release(
