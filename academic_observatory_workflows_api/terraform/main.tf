@@ -37,15 +37,22 @@ data "terraform_remote_state" "observatory" {
 
 locals {
   # Set the environment variables for the Cloud Run backend
-  env_vars = (
-    var.api_type.type == "observatory_api" ?
-    tomap({
-      "OBSERVATORY_DB_URI" = data.terraform_remote_state.observatory[0].outputs.observatory_db_uri
-    }) :
-    tomap({
-      "ES_HOST"    = var.api_type.elasticsearch_host,
-      "ES_API_KEY" = var.api_type.elasticsearch_api_key,
-    })
+  env_vars = merge(
+    {
+      "AUTH0_CLIENT_ID" = var.api.auth0_client_id,
+      "AUTH0_CLIENT_SECRET" = var.api.auth0_client_secret,
+      "SESSION_SECRET_KEY" = var.api.session_secret_key
+    },
+    (
+      var.api_type.type == "observatory_api" ?
+      tomap({
+        "OBSERVATORY_DB_URI" = data.terraform_remote_state.observatory[0].outputs.observatory_db_uri
+      }) :
+      tomap({
+        "ES_HOST"    = var.api_type.elasticsearch_host,
+        "ES_API_KEY" = var.api_type.elasticsearch_api_key,
+      })
+    )
   )
 
   # Set the annotations for the cloud run backend.

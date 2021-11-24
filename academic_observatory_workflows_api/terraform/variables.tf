@@ -38,6 +38,9 @@ EOF
     domain_name = string
     subdomain   = string
     image_tag   = string
+    auth0_client_id = string
+    auth0_client_secret = string
+    session_secret_key = string
   })
 }
 

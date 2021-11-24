@@ -40,7 +40,7 @@ def create_app() -> connexion.App:
     conn_app.app.config["JSON_SORT_KEYS"] = False
     conn_app.app.config["JSONIFY_PRETTYPRINT_REGULAR"] = False
     # Use os.urandom(24).hex() to generate secret key
-    conn_app.app.secret_key = os.environ.get("SECRET_KEY")
+    conn_app.app.secret_key = os.environ.get("SESSION_SECRET_KEY")
 
     # Add the OpenAPI specification
     specification_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "openapi.yaml.jinja2")
@@ -50,14 +50,14 @@ def create_app() -> connexion.App:
 
     oauth = OAuth(conn_app.app)
     auth0 = oauth.register(
-        'auth0',
+        "auth0",
         client_id=os.environ.get("AUTH0_CLIENT_ID"),
         client_secret=os.environ.get("AUTH0_CLIENT_SECRET"),
-        api_base_url='https://dev-canowprn.us.auth0.com',
-        access_token_url='https://dev-canowprn.us.auth0.com/oauth/token',
-        authorize_url='https://dev-canowprn.us.auth0.com/authorize',
+        api_base_url="https://dev-canowprn.us.auth0.com",
+        access_token_url="https://dev-canowprn.us.auth0.com/oauth/token",
+        authorize_url="https://dev-canowprn.us.auth0.com/authorize",
         client_kwargs={
-            'scope': 'openid profile email offline_access',
+            "scope": "openid profile email offline_access",
         },
     )
     with conn_app.app.app_context():
@@ -89,4 +89,4 @@ def handle_exception(err):
 
 # Only called when testing locally
 if __name__ == "__main__":
-    app.run(host='0.0.0.0')
+    app.run(host="localhost")

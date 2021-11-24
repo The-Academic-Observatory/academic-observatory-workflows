@@ -63,6 +63,7 @@ tags:
 paths:
   /:
     get:
+      security: []
       operationId: {{ operation_id_namespace }}home
       produces:
         - text/html
@@ -71,6 +72,7 @@ paths:
           description: OK
   /login:
     get:
+      security: []
       operationId: {{ operation_id_namespace }}login
       produces:
         - text/html
@@ -79,6 +81,7 @@ paths:
           description: OK
   /logout:
     get:
+      security: []
       operationId: {{ operation_id_namespace }}logout
       produces:
         - text/html
@@ -87,6 +90,7 @@ paths:
           description: OK
   /dashboard:
     get:
+      security: []
       operationId: {{ operation_id_namespace }}dashboard
       produces:
         - text/html
@@ -95,6 +99,7 @@ paths:
           description: OK
   /callback:
     get:
+      security: []
       operationId: {{ operation_id_namespace }}callback_handling
       responses:
         200:
