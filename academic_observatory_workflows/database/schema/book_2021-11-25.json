@@ -1,0 +1,139 @@
+[
+  {
+    "mode": "NULLABLE",
+    "name": "isbn",
+    "type": "STRING"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "doi",
+        "type": "STRING"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "title",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "type",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "publisher",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "published_year",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "published_year_month",
+        "type": "STRING"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "work_isbns",
+        "type": "STRING"
+      }
+    ],
+    "mode": "REPEATED",
+    "name": "crossref_objects",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "doi",
+        "type": "STRING"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "title",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "type",
+        "type": "STRING"
+      }
+    ],
+    "mode": "REPEATED",
+    "name": "chapters",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "source",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "count",
+            "type": "INTEGER"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "overall",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "month",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "source",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "count",
+            "type": "INTEGER"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "months",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "year",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "source",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "count",
+            "type": "INTEGER"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "years",
+        "type": "RECORD"
+      }
+    ],
+    "mode": "NULLABLE",
+    "name": "events",
+    "type": "RECORD"
+  }
+]
