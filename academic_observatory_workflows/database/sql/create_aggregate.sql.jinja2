@@ -377,6 +377,15 @@ SELECT
   count_output_types(ARRAY_AGG(STRUCT(unpaywall.output_type, STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations, unpaywall.is_oa, unpaywall.green, unpaywall.gold, unpaywall.gold_just_doaj, unpaywall.hybrid, unpaywall.bronze, unpaywall.green_only))) as output_types,
 
   -- Discipline
+  {#
+  The main thing to understand with this section, is that the logic is just building input that is passed into the compute_disciplines function
+
+  Because this whole section of SQL is inside the GROUP BY aggregrate.identifier, crossref.{{ group_by_time_field }} it must include an aggregation
+
+  The ARRAY_CONCAT_AGG performs this task. The reason it is not just an ARRAY_AGG, is because it is aggregrating multiple arrays, created from the UNNEST(dois.mag.fields.level_0) as fields
+
+  Ultimately, what is passed into the compute_disciplines function is an array of STRUCTS, with each struct keyed off an individual fieldName
+  #}
   STRUCT(
     compute_disciplines( ARRAY_CONCAT_AGG( ARRAY(
       (SELECT AS STRUCT
