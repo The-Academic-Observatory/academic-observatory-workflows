@@ -378,11 +378,11 @@ SELECT
 
   -- Discipline
   {#
-  The main thing to understand with this section, is that the logic is just building input that is passed into the compute_disciplines function
+  The key thing to understand about the logic below is all about building input that is passed into the compute_disciplines function
 
-  Because this whole section of SQL is inside the GROUP BY aggregrate.identifier, crossref.{{ group_by_time_field }} it must include an aggregation
-
-  The ARRAY_CONCAT_AGG performs this task. The reason it is not just an ARRAY_AGG, is because it is aggregrating multiple arrays, created from the UNNEST(dois.mag.fields.level_0) as fields
+  This whole block of SQL lives inside the 'GROUP BY aggregrate.identifier, crossref.{{ group_by_time_field }}' so it must include an aggregation
+  The ARRAY_CONCAT_AGG performs this task. The reason it is not just an ARRAY_AGG, is because it is aggregrating multiple arrays,
+  These are each created from the 'UNNEST(dois.mag.fields.level_0) as fields'
 
   Ultimately, what is passed into the compute_disciplines function is an array of STRUCTS, with each struct keyed off an individual fieldName
   #}
@@ -410,6 +410,10 @@ SELECT
   ) as disciplines,
 
   -- Repoistories
+  {#
+  This SQL block aggregrates the repository names, remebering we are inside a larger GROUP BY statement,
+  So what is being passed into the process_repositories function is a list of repository names and a count of total green for a given GROUP in the GROUP BY clause
+  #}
   process_repositories(
     ARRAY_CONCAT_AGG(
       dois.unpaywall.repository_names
@@ -418,6 +422,13 @@ SELECT
 
   {% if relate_to_institutions %}
   -- Institutions
+  {#
+  This SQL block UNNESTS the 'UNNEST(affiliations.institutions)' section of the DOI table. By doing this, it creates a new rows for each institution listed
+  The WHERE statement 'relation.identifier <> aggregrate.identifier' ignores the identifer that is the subject of the overall GROUP BY statement
+  The aggregrate.identifer is only relevant where this is creating the institutions table, as this code is used to create a range of dervied tables
+
+  The end goal is to pass on a list of objects to the process_relations function, which is able to compute summaries for each identified insitution
+  #}
   process_relations(
     ARRAY_CONCAT_AGG( 
       ARRAY(
@@ -435,6 +446,13 @@ SELECT
 
   {% if relate_to_countries %}
   -- Countries
+  {#
+  This SQL block UNNESTS the 'UNNEST(affiliations.countries)' section of the DOI table. By doing this, it creates a new rows for each country listed
+  The WHERE statement 'relation.identifier <> aggregrate.identifier' ignores the identifer that is the subject of the overall GROUP BY statement
+  The aggregrate.identifer is only relevant where this is creating the country table, as this code is used to create a range of dervied tables
+
+  The end goal is to pass on a list of objects to the process_relations function, which is able to compute summaries for each country insitution
+  #}
   process_relations(
     ARRAY_CONCAT_AGG( 
       ARRAY(
@@ -452,6 +470,13 @@ SELECT
 
   {% if relate_to_groups %}
   -- Groupings
+  {#
+  This SQL block UNNESTS the 'UNNEST(affiliations.groupings)' section of the DOI table. By doing this, it creates a new rows for each group listed
+  The WHERE statement 'relation.identifier <> aggregrate.identifier' ignores the identifer that is the subject of the overall GROUP BY statement
+  The aggregrate.identifer is only relevant where this is creating the groups table, as this code is used to create a range of dervied tables
+
+  The end goal is to pass on a list of objects to the process_relations function, which is able to compute summaries for each identified insitution
+  #}
   process_relations(
     ARRAY_CONCAT_AGG( 
       ARRAY(
@@ -469,6 +494,13 @@ SELECT
 
   {% if relate_to_funders %}
   -- Funders
+  {#
+  This SQL block UNNESTS the 'UNNEST(affiliations.funders)' section of the DOI table. By doing this, it creates a new rows for each funder listed
+  The WHERE statement 'relation.identifier <> aggregrate.identifier' ignores the identifer that is the subject of the overall GROUP BY statement
+  The aggregrate.identifer is only relevant where this is creating the funders table, as this code is used to create a range of dervied tables
+
+  The end goal is to pass on a list of objects to the process_relations function, which is able to compute summaries for each identified funder
+  #}
   process_relations(
     ARRAY_CONCAT_AGG( 
       ARRAY(
@@ -486,6 +518,12 @@ SELECT
 
   {% if relate_to_members %}
   -- Members
+  {#
+  This SQL block UNNESTS the 'UNNEST(affiliations.members)' section of the DOI table. By doing this, it creates a new rows for each member listed
+  Members are only relevant for generating the country and groups tables, as both of these types have 'members' that make up the whole
+
+  The end goal is to pass on a list of objects to the process_relations function, which is able to compute summaries for each identified member
+  #}
   process_relations(
     ARRAY_CONCAT_AGG( 
       ARRAY(
@@ -502,6 +540,13 @@ SELECT
 
   {% if relate_to_publishers %}
   -- Publishers
+  {#
+  This SQL block UNNESTS the 'UNNEST(affiliations.publishers)' section of the DOI table. By doing this, it creates a new rows for each publihser listed
+  The WHERE statement 'relation.identifier <> aggregrate.identifier' ignores the identifer that is the subject of the overall GROUP BY statement
+  The aggregrate.identifer is only relevant where this is creating the publishers table, as this code is used to create a range of dervied tables
+
+  The end goal is to pass on a list of objects to the process_relations function, which is able to compute summaries for each identified publisher
+  #}
   process_relations(
     ARRAY_CONCAT_AGG( 
       ARRAY(
@@ -519,6 +564,13 @@ SELECT
 
   {% if relate_to_journals %}
   -- Journals
+  {#
+  This SQL block UNNESTS the 'UNNEST(affiliations.journals)' section of the DOI table. By doing this, it creates a new rows for each journal listed
+  The WHERE statement 'relation.identifier <> aggregrate.identifier' ignores the identifer that is the subject of the overall GROUP BY statement
+  The aggregrate.identifer is only relevant where this is creating the journals table, as this code is used to create a range of dervied tables
+
+  The end goal is to pass on a list of objects to the process_relations function, which is able to compute summaries for each identified journal
+  #}
   process_relations(
     ARRAY_CONCAT_AGG( 
       ARRAY(
@@ -535,6 +587,11 @@ SELECT
   {% endif %}
 
   -- Events
+  {#
+  This SQL block UNNESTS the 'UNNEST(dois.events.events)' section of the DOI table.
+  It concatinates all the individual event types and counts, along with the OA status of the DOIs those events are linked too
+  The end goal of this block is to pass the resulting list into the process_events function to create the summary you see in the final output
+  #}
   process_events(
     ARRAY_CONCAT_AGG( 
       ARRAY((
