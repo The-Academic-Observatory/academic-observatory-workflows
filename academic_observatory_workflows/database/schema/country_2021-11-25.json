@@ -2,7 +2,8 @@
   {
     "mode": "NULLABLE",
     "name": "id",
-    "type": "STRING"
+    "type": "STRING",
+    "description": "The Country ID expressed as an ISO-3166 Alpha3 Code"
   },
   {
     "mode": "NULLABLE",

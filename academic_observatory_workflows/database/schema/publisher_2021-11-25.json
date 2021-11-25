@@ -2,7 +2,8 @@
   {
     "mode": "NULLABLE",
     "name": "id",
-    "type": "STRING"
+    "type": "STRING",
+    "description": "The Publisher ID expressed as a Publisher's name as found in Crossref Metadata"
   },
   {
     "mode": "NULLABLE",

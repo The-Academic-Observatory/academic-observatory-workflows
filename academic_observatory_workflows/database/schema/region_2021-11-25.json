@@ -2,7 +2,8 @@
   {
     "mode": "NULLABLE",
     "name": "id",
-    "type": "STRING"
+    "type": "STRING",
+    "description": "The Region ID expressed as an ISO-3166 Region"
   },
   {
     "mode": "NULLABLE",
