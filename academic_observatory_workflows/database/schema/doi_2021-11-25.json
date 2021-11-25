@@ -17,21 +17,25 @@
         "type": "STRING"
       },
       {
+        "description": "Published year in YYYY",
         "mode": "NULLABLE",
         "name": "published_year",
         "type": "INTEGER"
       },
       {
+        "description": "Published month MM",
         "mode": "NULLABLE",
         "name": "published_month",
         "type": "INTEGER"
       },
       {
+        "description": "Published Year and Month YYYY-MM",
         "mode": "NULLABLE",
         "name": "published_year_month",
         "type": "STRING"
       },
       {
+        "description": "Enumeration, one of the type ids from https://api.crossref.org/v1/types.",
         "mode": "NULLABLE",
         "name": "type",
         "type": "STRING"
@@ -337,21 +341,25 @@
         "type": "STRING"
       },
       {
+        "description": "The name of this resource's publisher. Keep in mind that publisher name strings change over time, particularly as publishers are acquired or split up.",
         "mode": "NULLABLE",
         "name": "publisher",
         "type": "STRING"
       },
       {
+        "description": "The name of the journal publishing this resource. The same journal may have multiple name strings (eg, \"J. Foo\", \"Journal of Foo\", \"JOURNAL OF FOO\", etc). These have not been fully normalized within our database, so use with care.",
         "mode": "NULLABLE",
         "name": "journal_name",
         "type": "STRING"
       },
       {
+        "description": "Derived Field that assigns a normalised name based on the ISSN-L. Effectively Choosing the most common name for any given ISSN-L across the dataset",
         "mode": "NULLABLE",
         "name": "normalised_journal_name",
         "type": "STRING"
       },
       {
+        "description": "A single ISSN for the journal publishing this resource. An ISSN-L can be used as a primary key for a journal when more than one ISSN is assigned to it. Resources' journal_issns are mapped to ISSN-Ls using the issn.org table, with some manual corrections.",
         "mode": "NULLABLE",
         "name": "journal_issn_l",
         "type": "STRING"
@@ -454,6 +462,7 @@
         "type": "INTEGER"
       },
       {
+        "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities",
         "mode": "NULLABLE",
         "name": "Rank",
         "type": "INTEGER"
@@ -464,6 +473,7 @@
         "type": "STRING"
       },
       {
+        "description": "Book, BookChapter, Conference, Dataset, Journal, Patent, Repository, Thesis, NULL : unknown",
         "mode": "NULLABLE",
         "name": "DocType",
         "type": "STRING"
@@ -554,6 +564,7 @@
         "type": "INTEGER"
       },
       {
+        "description": "\"Retracted Publication\", \"Retraction Notice\"",
         "mode": "NULLABLE",
         "name": "DocSubTypes",
         "type": "STRING"
