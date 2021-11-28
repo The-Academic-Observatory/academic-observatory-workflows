@@ -14,6 +14,13 @@
 # Author: Richard Hosking #}
 
 # Helper Function: Processing Output Types
+{#
+Output Schema:
+per_25th	FLOAT	NULLABLE
+median	    FLOAT	NULLABLE
+per_90th	FLOAT	NULLABLE
+per_95th	FLOAT	NULLABLE
+#}
 CREATE TEMP FUNCTION compute_percentiles(counts ARRAY<INT64>) AS (
   (SELECT as STRUCT
     ROUND(PERCENTILE_CONT(count, 0.25) OVER(), 2) as per_25th,
@@ -24,6 +31,20 @@ CREATE TEMP FUNCTION compute_percentiles(counts ARRAY<INT64>) AS (
 );
 
 # Helper Function: Counting Access Types
+{#
+Output Schema:
+num_oa_outputs	                        INTEGER	NULLABLE
+num_in_doaj	                            INTEGER	NULLABLE
+num_green_outputs	                    INTEGER	NULLABLE
+num_gold_outputs	                    INTEGER	NULLABLE
+num_gold_just_doaj_outputs	            INTEGER	NULLABLE
+num_hybrid_outputs	                    INTEGER	NULLABLE
+num_bronze_outputs	                    INTEGER	NULLABLE
+num_green_only_outputs	                INTEGER	NULLABLE
+num_green_only_ignoring_bronze_outputs	INTEGER	NULLABLE
+num_has_license	                        INTEGER	NULLABLE
+num_is_cclicensed	                    INTEGER	NULLABLE
+#}
 CREATE TEMP FUNCTION count_access_types(unpaywall ANY TYPE) as (
     (SELECT as STRUCT
       COUNTIF(is_oa) as num_oa_outputs,
@@ -41,6 +62,22 @@ CREATE TEMP FUNCTION count_access_types(unpaywall ANY TYPE) as (
 );
 
 # Helper Function: Count distribution of access types and citations for a single output type
+{#
+Output Schema:
+output_type	                STRING	NULLABLE
+total_outputs	            INTEGER	NULLABLE
+num_oa_outputs	            INTEGER	NULLABLE
+num_green_outputs	        INTEGER	NULLABLE
+num_gold_outputs	        INTEGER	NULLABLE
+num_gold_just_doaj_outputs	INTEGER	NULLABLE
+num_hybrid_outputs	        INTEGER	NULLABLE
+num_bronze_outputs	        INTEGER	NULLABLE
+num_green_only_outputs	    INTEGER	NULLABLE
+citations	                RECORD	NULLABLE
+citations.total_mag_citations	            INTEGER	NULLABLE
+citations.total_open_citations_citations	INTEGER	NULLABLE
+citations.total_crossref_citations	        INTEGER	NULLABLE
+#}
 CREATE TEMP FUNCTION count_single_output_type(output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type STRING) AS (
   (SELECT as STRUCT
     output_type,
@@ -61,6 +98,22 @@ CREATE TEMP FUNCTION count_single_output_type(output_type STRING, items ARRAY<ST
 );
 
 # Helper Function: Count distribution of access types, bucketing a number of individual output types into a new bucket
+{#
+Output Schema:
+output_type	                STRING	NULLABLE
+total_outputs	            INTEGER	NULLABLE
+num_oa_outputs	            INTEGER	NULLABLE
+num_green_outputs	        INTEGER	NULLABLE
+num_gold_outputs	        INTEGER	NULLABLE
+num_gold_just_doaj_outputs	INTEGER	NULLABLE
+num_hybrid_outputs	        INTEGER	NULLABLE
+num_bronze_outputs	        INTEGER	NULLABLE
+num_green_only_outputs	    INTEGER	NULLABLE
+citations	                RECORD	NULLABLE
+citations.total_mag_citations	            INTEGER	NULLABLE
+citations.total_open_citations_citations	INTEGER	NULLABLE
+citations.total_crossref_citations	        INTEGER	NULLABLE
+#}
 CREATE TEMP FUNCTION count_array_output_type(output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type ARRAY<STRING>) AS (
   (SELECT as STRUCT
     output_type,
@@ -82,6 +135,22 @@ CREATE TEMP FUNCTION count_array_output_type(output_type STRING, items ARRAY<STR
 );
 
 # Helper Function: Count distribution of access types, where outputtype does not match any from a list
+{#
+Output Schema:
+output_type	                STRING	NULLABLE
+total_outputs	            INTEGER	NULLABLE
+num_oa_outputs	            INTEGER	NULLABLE
+num_green_outputs	        INTEGER	NULLABLE
+num_gold_outputs	        INTEGER	NULLABLE
+num_gold_just_doaj_outputs	INTEGER	NULLABLE
+num_hybrid_outputs	        INTEGER	NULLABLE
+num_bronze_outputs	        INTEGER	NULLABLE
+num_green_only_outputs	    INTEGER	NULLABLE
+citations	                RECORD	NULLABLE
+citations.total_mag_citations	            INTEGER	NULLABLE
+citations.total_open_citations_citations	INTEGER	NULLABLE
+citations.total_crossref_citations	        INTEGER	NULLABLE
+#}
 CREATE TEMP FUNCTION count_not_in_array_output_type(output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type ARRAY<STRING>) AS (
   (SELECT as STRUCT
     output_type,
@@ -102,6 +171,12 @@ CREATE TEMP FUNCTION count_not_in_array_output_type(output_type STRING, items AR
 );
 
 # Helper Function: Count Output Types
+{#
+Output Schema:
+output_types	RECORD	REPEATED
+
+* Each record has the same schema, and is captured in the count_* methods
+#}
 CREATE TEMP FUNCTION count_output_types(items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>) as (
     [
       count_single_output_type("journal_articles", items, 'journal-article'),
@@ -116,6 +191,27 @@ CREATE TEMP FUNCTION count_output_types(items ARRAY<STRUCT<type STRING, citation
 );
 
 # Helper Function: Compute Citation Analysis
+{#
+Output Schema:
+label	                    STRING	NULLABLE
+access_type	                STRING	NULLABLE
+status	                    BOOLEAN	NULLABLE
+total_outputs	            INTEGER	NULLABLE
+outputs_with_citations	    INTEGER	NULLABLE
+outputs_without_citations	INTEGER	NULLABLE
+citations	                RECORD	NULLABLE
+citations.mag	                    RECORD	NULLABLE
+citations.mag.total_citations	    INTEGER	NULLABLE
+citations.mag.percentiles	        RECORD	NULLABLE
+citations.open_citations	                RECORD	NULLABLE
+citations.open_citations.total_citations	INTEGER	NULLABLE
+citations.open_citations.percentiles	    RECORD	NULLABLE
+citations.crossref                  RECORD	NULLABLE
+citations.crossref.total_citations	INTEGER	NULLABLE
+citations.crossref.percentiles	    RECORD	NULLABLE
+
+*percetiles schema captured above
+#}
 CREATE TEMP FUNCTION compute_conditional_citations(items ARRAY<STRUCT<citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, is_x BOOL>>, access_type STRING, positive_label STRING, negative_label STRING) as (
   ARRAY((
     SELECT as STRUCT
@@ -150,6 +246,27 @@ CREATE TEMP FUNCTION compute_conditional_citations(items ARRAY<STRUCT<citations 
 );
 
 # Helper Function: Compute a citation analysis across the array of passed in objects
+{#
+Output Schema:
+mag	                        RECORD	NULLABLE
+mag.total_citations	            INTEGER	NULLABLE
+mag.citations_per_output	    FLOAT	NULLABLE
+mag.outputs_with_citations	    INTEGER	NULLABLE
+mag.outputs_without_citations	INTEGER	NULLABLE
+mag.citations_per_cited_output	FLOAT	NULLABLE
+crossref	                            RECORD	NULLABLE
+crossref.total_citations	            INTEGER	NULLABLE
+crossref.citations_per_output	        FLOAT	NULLABLE
+crossref.outputs_with_citations	        INTEGER	NULLABLE
+crossref.outputs_without_citations	    INTEGER	NULLABLE
+crossref.citations_per_cited_output	    FLOAT	NULLABLE
+open_citations	                            RECORD	NULLABLE
+open_citations.total_citations	            INTEGER	NULLABLE
+open_citations.citations_per_output	        FLOAT	NULLABLE
+open_citations.output_with_citations	    INTEGER	NULLABLE
+open_citations.outputs_without_citations	INTEGER	NULLABLE
+open_citations.citations_per_cited_output	FLOAT	NULLABLE
+#}
 CREATE TEMP FUNCTION compute_citations(items ARRAY<STRUCT<doi STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>>>) as (
   (SELECT AS STRUCT
     -- Citation counts
@@ -178,6 +295,36 @@ CREATE TEMP FUNCTION compute_citations(items ARRAY<STRUCT<doi STRING, citations 
 );
 
 # Helper Function: Compute the count of various Open Access Types from a passed in array of Objects
+{#
+Output Schema:
+oa	                    RECORD	NULLABLE
+oa.total_outputs	        INTEGER	NULLABLE
+oa.percent	                FLOAT	NULLABLE
+green	                RECORD	NULLABLE
+green.total_outputs	        INTEGER	NULLABLE
+green.percent	            FLOAT	NULLABLE
+gold	                RECORD	NULLABLE
+gold.total_outputs	        INTEGER	NULLABLE
+gold.percent	            FLOAT	NULLABLE
+gold_doaj	            RECORD	NULLABLE
+gold_doaj.total_outputs	    INTEGER	NULLABLE
+gold_doaj.percent	        FLOAT	NULLABLE
+hybrid	                RECORD	NULLABLE
+hybrid.total_outputs	    INTEGER	NULLABLE
+hybrid.percent	            FLOAT	NULLABLE
+bronze	                RECORD	NULLABLE
+bronze.total_outputs	    INTEGER	NULLABLE
+bronze.percent	            FLOAT	NULLABLE
+green_only	            RECORD	NULLABLE
+green_only.total_outputs	INTEGER	NULLABLE
+green_only.percent	        FLOAT	NULLABLE
+publisher	            RECORD	NULLABLE
+publisher.total_outputs	    INTEGER	NULLABLE
+publisher.percent	        FLOAT	NULLABLE
+breakdown	            RECORD	REPEATED
+
+* breakdown object array captured in compute_conditional_citations schema above
+#}
 CREATE TEMP FUNCTION compute_access_types(items ARRAY<STRUCT<doi STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>) as (
   (SELECT AS STRUCT
     STRUCT(
@@ -234,6 +381,10 @@ CREATE TEMP FUNCTION compute_access_types(items ARRAY<STRUCT<doi STRING, citatio
 );
 
 # Helper Function:  Compute summary statistic, grouped by a field of study for an array of passed in items
+{#
+Output Schema:
+
+#}
 CREATE TEMP FUNCTION compute_disciplines(fields ARRAY<STRUCT<DisplayName STRING, Score FLOAT64, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, funding BOOL, international_funding BOOL, domestic_funding BOOL, government_funding BOOL, private_funding BOOL, international_colab BOOL>>) as (
   ARRAY(
     (SELECT AS STRUCT
@@ -278,6 +429,10 @@ CREATE TEMP FUNCTION compute_disciplines(fields ARRAY<STRUCT<DisplayName STRING,
 );
 
 # Helper Function: Function to help with the process_relations function below. Simlifed summary, grouped by field of study
+{#
+Output Schema:
+
+#}
 CREATE TEMP FUNCTION group_disciplines(fields ARRAY<STRUCT<DisplayName STRING, Score FLOAT64, is_oa BOOL>>) as (
   ARRAY(
     (SELECT AS STRUCT
@@ -290,7 +445,11 @@ CREATE TEMP FUNCTION group_disciplines(fields ARRAY<STRUCT<DisplayName STRING, S
   )
 );
 
-# Helper Function: Compute a summary of OA types, citations and fields of study. Use for compute collaborations and various other relationship to the primiary entity
+# Helper Function: Compute a summary of OA types, citations and fields of study. Use for compute collaborations and various other relationship to the primary entity
+{#
+Output Schema:
+
+#}
 CREATE TEMP FUNCTION process_relations(relationships ANY TYPE, total INT64, total_oa INT64) as (
   ARRAY(SELECT AS STRUCT
           relation.identifier as id,
@@ -317,6 +476,10 @@ CREATE TEMP FUNCTION process_relations(relationships ANY TYPE, total INT64, tota
 );
 
 # Helper Function: Create a summary of events, grouped into the event type
+{#
+Output Schema:
+
+#}
 CREATE TEMP FUNCTION process_events(events ANY TYPE) as (
     ARRAY( 
     SELECT as STRUCT
@@ -336,6 +499,12 @@ CREATE TEMP FUNCTION process_events(events ANY TYPE) as (
 );
 
 # Helper Function: Creates a summary count for how many objects where hosted at a given repository
+{#
+Output Schema:
+id	                            STRING	NULLABLE
+total_outputs	                INTEGER	NULLABLE
+percentage_of_all_green	FLOAT	NULLABLE
+#}
 CREATE TEMP FUNCTION process_repositories(repositories ARRAY<STRING>, total_green INT64) as (
   ARRAY(SELECT AS STRUCT
           repository as id,
