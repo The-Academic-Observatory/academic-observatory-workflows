@@ -21,4 +21,3 @@ SELECT
 FROM `{{ project_id }}.{{ ror.dataset_id }}.ror{{ ror.release_date.strftime('%Y%m%d') }}` as rors
 LEFT JOIN `{{ project_id }}.{{ iso.dataset_id }}.iso3166_countries_and_regions` as regions ON (rors.country.country_code = regions.alpha2)
 LEFT JOIN `{{ project_id }}.{{ settings.dataset_id }}.ror_to_home_url` as home_repo ON rors.id = home_repo.ror_id
-WHERE ARRAY_LENGTH(grids.addresses) > 0
