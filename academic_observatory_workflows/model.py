@@ -956,7 +956,7 @@ def bq_load_observatory_dataset(
                 analysis_schema_path,
             ),
             Table(
-                "grid_to_home_url",
+                "ror_to_home_url",
                 False,
                 dataset_id_settings,
                 ror_to_home_url,
