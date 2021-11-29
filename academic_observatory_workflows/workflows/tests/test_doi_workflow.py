@@ -518,6 +518,10 @@ class TestDoiWorkflow(ObservatoryTestCase):
         items_expected_ = expected[key]
         items_actual_ = actual[key]
         self.assertEqual(len(items_expected_), len(items_actual_))
+        print("items actual")
+        print(items_actual_)
+        print("items expected")
+        print(items_expected_)
         items_actual_.sort(key=lambda x: x["identifier"])
         for item_ in items_actual_:
             item_["home_repo"].sort()
