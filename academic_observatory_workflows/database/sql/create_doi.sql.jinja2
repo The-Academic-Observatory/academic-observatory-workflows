@@ -141,7 +141,7 @@ SELECT
 )
 
 SELECT
-  dois.*,
+  dois.* EXCEPT (mag_grids),
   affiliations
 FROM dois_temp_table as dois
 LEFT JOIN affiliations_temp_table as affiliations on affiliations.doi = dois.doi
