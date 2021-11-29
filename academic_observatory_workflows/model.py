@@ -1071,7 +1071,6 @@ def make_doi_table(dataset: ObservatoryDataset) -> List[Dict]:
         # Doi, events and grids
         doi = paper.doi.upper()
         events = make_doi_events(doi, paper.events)
-        grids = make_doi_grids(paper.authors)
 
         # Affiliations: institutions, countries, regions, subregion, funders, journals, publishers
         institutions = make_doi_institutions(paper.authors)
@@ -1098,7 +1097,6 @@ def make_doi_table(dataset: ObservatoryDataset) -> List[Dict]:
                 "mag": {},
                 "open_citations": {},
                 "events": events,
-                "grids": grids,
                 "affiliations": {
                     "doi": doi,
                     "institutions": institutions,
@@ -1141,16 +1139,6 @@ def make_doi_events(doi: str, event_list: EventsList) -> Dict:
         }
 
     return events
-
-
-def make_doi_grids(author_list: AuthorList) -> List[str]:
-    """Make the grid ids for a DOI table row.
-
-    :param author_list: the list of authors for the paper.
-    :return: the grid ids for the paper.
-    """
-
-    return list(set([author.institution.ror_id for author in author_list]))
 
 
 def make_doi_funders(funder_list: FunderList) -> List[Dict]:
