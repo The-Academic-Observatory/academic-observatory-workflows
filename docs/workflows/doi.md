@@ -23,23 +23,23 @@ Description of these phase...
 Description of these phase...
 
 ```eval_rst
-+---------------------+------------------------------------------------------+---------------+---------------+
-| Name                | Table                                                | Primary PID   | Query Link    |
-+=====================+======================================================+===============+===============+
-| Crossref Events     | `observatory_intermediate.crossref_eventsYYYYMMDD`   | DOI           |               |
-+---------------------+------------------------------------------------------+---------------+---------------+
-| Crosref Fundref     | `observatory_intermediate.crossref_fundrefYYYYMMDD`  | DOI           |               |
-+---------------------+------------------------------------------------------+---------------+---------------+
-| Grid                | `observatory_intermediate.gridYYYYMMDD`              | GRID          |               |
-+---------------------+------------------------------------------------------+---------------+---------------+
-| MAG                 | `observatory_intermediate.magYYYYMMDD`               | DOI           |               |
-+---------------------+------------------------------------------------------+---------------+---------------+
-| Open Citations      | `observatory_intermediate.open_citationsYYYYMMDD`    | DOI           |               |
-+---------------------+------------------------------------------------------+---------------+---------------+
-| ORCID               | `observatory_intermediate.orcidYYYYMMDD`             | DOI           |               |
-+---------------------+------------------------------------------------------+---------------+---------------+
-| Unpaywall           | `observatory_intermediate.unpaywallYYYYMMDD`         | DOI           |               |
-+---------------------+------------------------------------------------------+---------------+---------------+
++------------------+----------------------------------------------------+--------+------------+
+| Name             | Table                                               | PID   | Query Link |
++==================+=====================================================+=======+============+
+| Crossref Events  | `observatory_intermediate.crossref_eventsYYYYMMDD`  | DOI   | [link](https://github.com/The-Academic-Observatory/academic-observatory-workflows/blob/develop/academic_observatory_workflows/database/sql/create_crossref_events.sql.jinja2)       |
++------------------+-----------------------------------------------------+-------+------------+
+| Crosref Fundref  | `observatory_intermediate.crossref_fundrefYYYYMMDD` | DOI   |        |
++------------------+-----------------------------------------------------+-------+------------+
+| Grid             | `observatory_intermediate.gridYYYYMMDD`             | GRID  |        |
++------------------+-----------------------------------------------------+-------+------------+
+| MAG              | `observatory_intermediate.magYYYYMMDD`              | DOI   |        |
++------------------+-----------------------------------------------------+-------+------------+
+| Open Citations   | `observatory_intermediate.open_citationsYYYYMMDD`   | DOI   |        |
++------------------+-----------------------------------------------------+-------+------------+
+| ORCID            | `observatory_intermediate.orcidYYYYMMDD`            | DOI   |        |
++------------------+-----------------------------------------------------+-------+------------+
+| Unpaywall        | `observatory_intermediate.unpaywallYYYYMMDD`        | DOI   |        |
++------------------+-----------------------------------------------------+-------+------------+
 
 ```
 
