@@ -909,7 +909,7 @@ def bq_load_observatory_dataset(
     unpaywall = make_unpaywall(observatory_dataset)
     crossref_metadata = make_crossref_metadata(observatory_dataset)
 
-    # Load fake GRID and settings datasets
+    # Load fake ROR and settings datasets
     test_doi_path = test_fixtures_folder("doi")
     ror = load_jsonl(os.path.join(test_doi_path, "ror.jsonl"))
     iso3166_countries_and_regions = load_jsonl(os.path.join(test_doi_path, "iso3166_countries_and_regions.jsonl"))
@@ -1222,7 +1222,7 @@ def to_affiliations_list(dict_: Dict):
         v["home_repo"] = list(v["home_repo"])
         v["members"].sort()
         if "count" in v:
-            v["count"] = len(v["grids"])
+            v["count"] = len(v["rors"])
             v.pop("grids", None)
         v["home_repo"].sort()
         l_.append(v)
