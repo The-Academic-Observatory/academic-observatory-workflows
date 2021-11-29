@@ -134,7 +134,7 @@ SELECT
 
   FROM dois_temp_table as dois, UNNEST(mag_grids) as grid_id
   LEFT JOIN `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.ror{{ release_date.strftime('%Y%m%d') }}` as institution on grid_id = institution.external_ids.GRID.preferred
-  LEFT JOIN (SELECT grid, ARRAY_AGG(STRUCT(group_id, group_name, country_code)) as groupings FROM `{{ project_id }}.{{ settings.dataset_id }}.groupings` CROSS JOIN UNNEST(mag_grids) as grid GROUP BY grid) as ror_groups on institution.id = ror_groups.grid
+  LEFT JOIN (SELECT ror, ARRAY_AGG(STRUCT(group_id, group_name, country_code)) as groupings FROM `{{ project_id }}.{{ settings.dataset_id }}.groupings` CROSS JOIN UNNEST(rors) as ror GROUP BY ror) as ror_groups on institution.id = ror_groups.ror
   GROUP BY doi) as base on extras.doi = base.doi
   LEFT JOIN `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.crossref_fundref{{ release_date.strftime('%Y%m%d') }}` as fundref on fundref.doi = extras.doi
   LEFT JOIN `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.orcid{{ release_date.strftime('%Y%m%d') }}` as orcid on UPPER(TRIM(orcid.doi)) = UPPER(TRIM(extras.doi))
