@@ -383,7 +383,36 @@ CREATE TEMP FUNCTION compute_access_types(items ARRAY<STRUCT<doi STRING, citatio
 # Helper Function:  Compute summary statistic, grouped by a field of study for an array of passed in items
 {#
 Output Schema:
-
+field	                        STRING	NULLABLE
+total_outputs	                INTEGER	NULLABLE
+sum_of_scores	                FLOAT	NULLABLE
+citations	                    RECORD	NULLABLE
+mag	                            RECORD	NULLABLE
+total_citations	                INTEGER	NULLABLE
+percentiles	                    RECORD	NULLABLE
+open_citations	                RECORD	NULLABLE
+total_citations	                INTEGER	NULLABLE
+percentiles	                    RECORD	NULLABLE
+crossref	                    RECORD	NULLABLE
+total_citations	                INTEGER	NULLABLE
+percentiles	                    RECORD	NULLABLE
+num_oa_outputs	                INTEGER	NULLABLE
+num_green_outputs	            INTEGER	NULLABLE
+num_gold_outputs	            INTEGER	NULLABLE
+num_gold_just_doaj_outputs	    INTEGER	NULLABLE
+num_hybrid_outputs	            INTEGER	NULLABLE
+num_bronze_outputs	            INTEGER	NULLABLE
+num_green_only_outputs	        INTEGER	NULLABLE
+funding	                                        RECORD	NULLABLE
+total_funded_outputs	                            INTEGER	NULLABLE
+num_international_outputs	                        INTEGER	NULLABLE
+num_domestic_outputs	                            INTEGER	NULLABLE
+num_international_and_domestic_outputs	            INTEGER	NULLABLE
+num_government_outputs	                            INTEGER	NULLABLE
+num_private_outputs	                                INTEGER	NULLABLE
+num_government_and_private_outputs	                INTEGER	NULLABLE
+num_international_collaboration_outputs	            INTEGER	NULLABLE
+international_collaboration_with_funding_outputs	INTEGER	NULLABLE
 #}
 CREATE TEMP FUNCTION compute_disciplines(fields ARRAY<STRUCT<DisplayName STRING, Score FLOAT64, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, funding BOOL, international_funding BOOL, domestic_funding BOOL, government_funding BOOL, private_funding BOOL, international_colab BOOL>>) as (
   ARRAY(
@@ -431,7 +460,10 @@ CREATE TEMP FUNCTION compute_disciplines(fields ARRAY<STRUCT<DisplayName STRING,
 # Helper Function: Function to help with the process_relations function below. Simlifed summary, grouped by field of study
 {#
 Output Schema:
-
+field	        STRING	NULLABLE
+total_outputs	INTEGER	NULLABLE
+num_oa_outputs	INTEGER	NULLABLE
+sum_of_scores	FLOAT	NULLABLE
 #}
 CREATE TEMP FUNCTION group_disciplines(fields ARRAY<STRUCT<DisplayName STRING, Score FLOAT64, is_oa BOOL>>) as (
   ARRAY(
@@ -448,7 +480,34 @@ CREATE TEMP FUNCTION group_disciplines(fields ARRAY<STRUCT<DisplayName STRING, S
 # Helper Function: Compute a summary of OA types, citations and fields of study. Use for compute collaborations and various other relationship to the primary entity
 {#
 Output Schema:
+id	                                    STRING	NULLABLE
+total_outputs	                        INTEGER	NULLABLE
+percentage_of_all_outputs	            FLOAT	NULLABLE
+percentage_of_all_oa	                FLOAT	NULLABLE
+name	                                STRING	NULLABLE
+country	                                STRING	NULLABLE
+country_code	                        STRING	NULLABLE
+region	                                STRING	NULLABLE
+subregion	                            STRING	NULLABLE
+coordinates	                            STRING	NULLABLE
+num_oa_outputs	                        INTEGER	NULLABLE
+num_in_doaj	                            INTEGER	NULLABLE
+num_green_outputs	                    INTEGER	NULLABLE
+num_gold_outputs	                    INTEGER	NULLABLE
+num_gold_just_doaj_outputs	            INTEGER	NULLABLE
+num_hybrid_outputs	                    INTEGER	NULLABLE
+num_bronze_outputs	                    INTEGER	NULLABLE
+num_green_only_outputs	                INTEGER	NULLABLE
+num_green_only_ignoring_bronze_outputs	INTEGER	NULLABLE
+num_has_license	                        INTEGER	NULLABLE
+num_is_cclicensed	                    INTEGER	NULLABLE
+citations	                            RECORD	NULLABLE
+citations.mag	                        INTEGER	NULLABLE
+citations.crosssref	                    INTEGER	NULLABLE
+citations.open_citations	            INTEGER	NULLABLE
+disciplines	                            RECORD	REPEATED
 
+* Schema for disciplines captured above
 #}
 CREATE TEMP FUNCTION process_relations(relationships ANY TYPE, total INT64, total_oa INT64) as (
   ARRAY(SELECT AS STRUCT
@@ -478,7 +537,15 @@ CREATE TEMP FUNCTION process_relations(relationships ANY TYPE, total INT64, tota
 # Helper Function: Create a summary of events, grouped into the event type
 {#
 Output Schema:
-
+source	                    STRING	NULLABLE
+total_outputs	            INTEGER	NULLABLE
+num_oa_outputs	            INTEGER	NULLABLE
+num_green_outputs	        INTEGER	NULLABLE
+num_gold_outputs	        INTEGER	NULLABLE
+num_gold_just_doaj_outputs	INTEGER	NULLABLE
+num_hybrid_outputs	        INTEGER	NULLABLE
+num_bronze_outputs	        INTEGER	NULLABLE
+num_green_only_outputs	    INTEGER	NULLABLE
 #}
 CREATE TEMP FUNCTION process_events(events ANY TYPE) as (
     ARRAY( 
