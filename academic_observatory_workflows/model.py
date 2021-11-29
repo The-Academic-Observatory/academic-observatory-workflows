@@ -1267,8 +1267,8 @@ def make_doi_institutions(author_list: AuthorList) -> List[Dict]:
         # Institution
         inst = author.institution
         if inst.ror_id not in institutions:
-            institutions[inst.ror] = {
-                "identifier": inst.ror,
+            institutions[inst.ror_id] = {
+                "identifier": inst.ror_id,
                 "types": [inst.types],
                 "name": inst.name,
                 "home_repo": {inst.home_repo},
