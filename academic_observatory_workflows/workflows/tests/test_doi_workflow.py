@@ -466,9 +466,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
             # Check events
             self.assert_doi_events(expected_record["events"], actual_record["events"])
 
-            # Check rors
-            self.assertSetEqual(set(expected_record["rors"]), set(actual_record["rors"]))
-
             # Check affiliations
             self.assert_doi_affiliations(expected_record["affiliations"], actual_record["affiliations"])
 
