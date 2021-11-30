@@ -37,7 +37,7 @@ Description of this phase...
 +-------------------+-----------------------------------------------------+-----------+
 | Grid              | `digital_science.gridYYYYMMDD`                      | GRID      |
 +-------------------+-----------------------------------------------------+-----------+
-| MAG               | `mag.*YYYYMMDD` (multiple individual tables)         | GRID/DOI |
+| MAG               | `mag.*YYYYMMDD` (multiple individual tables)        | GRID/DOI  |
 +-------------------+-----------------------------------------------------+-----------+
 | Open Citations    | `open_citations.open_citationsYYYYMMDD`             | DOI       |
 +-------------------+-----------------------------------------------------+-----------+
