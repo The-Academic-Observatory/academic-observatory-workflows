@@ -23,7 +23,7 @@ The primary purpose of the DOI workflow is to link together open datasets of hig
 
 ## Input datasets
 
-Description of these phase...
+Description of this phase...
 
 ```eval_rst
 +-------------------+-----------------------------------------------------+-----------+
@@ -37,7 +37,7 @@ Description of these phase...
 +-------------------+-----------------------------------------------------+-----------+
 | Grid              | `digital_science.gridYYYYMMDD`                      | GRID      |
 +-------------------+-----------------------------------------------------+-----------+
-| MAG               | `mag.*YYYYMMDD` (multiple individual tables)         | GRID/DOI  |
+| MAG               | `mag.*YYYYMMDD` (multiple individual tables)         | GRID/DOI |
 +-------------------+-----------------------------------------------------+-----------+
 | Open Citations    | `open_citations.open_citationsYYYYMMDD`             | DOI       |
 +-------------------+-----------------------------------------------------+-----------+
@@ -51,7 +51,7 @@ Description of these phase...
 
 ## Intermediate datasets
 
-Description of these phase...
+Description of this phase...
 
 ```eval_rst
 +----------------+----------------------------------------------------+-----+-----------------------------------+
@@ -76,7 +76,7 @@ Description of these phase...
 
 ## Output datasets
 
-Description of these phase...
+Description of this phase...
 
 ```eval_rst
 +-----------------+---------------------------------------------+-----------+---------------------------------+
