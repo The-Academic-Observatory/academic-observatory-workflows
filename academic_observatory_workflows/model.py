@@ -1331,12 +1331,10 @@ def make_doi_regions(author_list: AuthorList):
                 "coordinates": None,
                 "count": 0,
                 "members": {inst.subregion},
-                "rors": {inst.ror_id},
             }
         else:
             regions[inst.region]["members"].add(inst.subregion)
             regions[inst.region]["home_repo"].add(inst.home_repo)
-            regions[inst.region]["rors"].add(inst.ror_id)
 
     return to_affiliations_list(regions)
 
@@ -1366,12 +1364,10 @@ def make_doi_subregions(author_list: AuthorList):
                 "coordinates": None,
                 "count": 0,
                 "members": {inst.country_code},
-                "rors": {inst.ror_id},
             }
         else:
             subregions[inst.subregion]["members"].add(inst.country_code)
             subregions[inst.subregion]["home_repo"].add(inst.home_repo)
-            subregions[inst.subregion]["rors"].add(inst.ror_id)
 
     return to_affiliations_list(subregions)
 
