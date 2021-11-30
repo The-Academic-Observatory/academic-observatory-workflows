@@ -2,28 +2,9 @@
 
 The primary purpose of the DOI workflow is to link together open datasets of higher education through the use of persistent identifiers, and to then produce useful summary statistics across a variety of common aggregations
 
-``` eval_rst
-.. image:: ../static/diagrams/workflow_summary.png
-   :width: 600
-```
-
-## Persistent Identifier Workflow
-
-``` eval_rst
-.. image:: ../static/diagrams/pid_workflow.png
-   :width: 600
-```
-
-## Aggregations Logic
-
-``` eval_rst
-.. image:: ../static/diagrams/aggregate_publications.png
-   :width: 600
-```
-
 ## Input datasets
 
-Description of this phase...
+Each a number of specialised research publication datasets are collected. These include Crossref Metadata, Crossref Funder Registry, Crossref Events, Microsoft Academic Graph, Unpaywall, the Research Organization Registry, Open Citations and Geonames. The table below illustrates each of these datesets and the PIDs that are exposed within them.
 
 ```eval_rst
 +-------------------+-----------------------------------------------------+-----------+
@@ -49,9 +30,37 @@ Description of this phase...
 +-------------------+-----------------------------------------------------+-----------+
 ```
 
-## Intermediate datasets
+## Synthesis
 
-Description of this phase...
+After fetching the datasets, they are synthesised to produce aggregate time series statistics for each country and institution (entity type) in the dataset. The aggregate timeseries statistics include publication count, open access status, citation count and alt-metrics. 
+
+The synthesis occurs in three steps: 
+- Creating a table of publications.
+- Grouping the publications by entity type and year of publication.
+- Computing aggregated summaries for each group. Each step of the process is explained below with examples.
+
+``` eval_rst
+.. image:: ../static/diagrams/workflow_summary.png
+   :width: 650
+```
+
+The table of publications is created by joining records from the research publication datasets on Digital Object Identifiers (DOIs); unique digital identifiers given to the majority of publications. Figure 2 illustrates how each dataset contributes to the publications table during the joining process, using the example of a single publication. Unique publications are discovered with Crossref Metadata, from which the publication’s DOI, Journal, Publisher, Funder identifiers and citation counts are derived. The publication’s Open Access status is computed using Unpaywall. The authors of the paper and their institutional affiliations are derived with Microsoft Academic Graph. The Research Organisation Registry (ROR) is used to enrich the institutional affiliation records with institution details and GeoNames maps institutions to countries and regions.  
+
+``` eval_rst
+.. image:: ../static/diagrams/pid_workflow.png
+   :width: 600
+```
+
+Once the publications table has been created, the publications are grouped by entity type and publication year. For instance publications are grouped by institution and publication year. The last step involves creating aggregate timeseries statistics based on the yearly groups of publications.
+
+``` eval_rst
+.. image:: ../static/diagrams/aggregate_publications.png
+   :width: 650
+```
+
+### Intermediate Datasets
+
+Digging into the mechanics of the workflow, there are a number of intermediate tables that are created. Much of the time, these are not relevant as the information is better organised in the final output tables. However, for specific analysis they may be useful so are included here for completeness 
 
 ```eval_rst
 +----------------+----------------------------------------------------+-----+-----------------------------------+
@@ -74,9 +83,9 @@ Description of this phase...
 
 ```
 
-## Output datasets
+### Output datasets
 
-Description of this phase...
+The final set of output dataset are as followed. Aside from the DOI table, which is an integrated set of all the input datasets linked by DOI, they each share a very similar, or identical, schema. The difference is around the entity being aggregated against.
 
 ```eval_rst
 +-----------------+---------------------------------------------+-----------+---------------------------------+
