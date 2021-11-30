@@ -3,21 +3,21 @@
 The primary purpose of the DOI workflow is to link together open datasets of higher education through the use of persistent identifiers, and to then produce useful summary statistics across a variety of common aggregations
 
 ``` eval_rst
-.. image:: static/diagrams/workflow_summary.png
+.. image:: ../static/diagrams/workflow_summary.png
    :width: 600
 ```
 
 ## Persistent Identifier Workflow
 
 ``` eval_rst
-.. image:: static/diagrams/pid_workflow.png
+.. image:: ../static/diagrams/pid_workflow.png
    :width: 600
 ```
 
 ## Aggregations Logic
 
 ``` eval_rst
-.. image:: static/diagrams/aggregate_publications.png
+.. image:: ../static/diagrams/aggregate_publications.png
    :width: 600
 ```
 
