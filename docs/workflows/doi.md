@@ -34,7 +34,7 @@ Description of these phase...
 +-------------------+-----------------------------------------------------+-----------+
 ```
 
-## Intermedia datasets
+## Intermediate datasets
 
 Description of these phase...
 
