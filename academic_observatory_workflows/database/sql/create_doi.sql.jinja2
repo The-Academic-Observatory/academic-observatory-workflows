@@ -62,7 +62,7 @@ FROM
 LEFT JOIN(
 SELECT
     doi,
-    {# Chooses the fields that are passed along in the institutional affiliations #}
+    {# Chooses the values that are passed along in the institutional affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates #}
     ARRAY_AGG(
       STRUCT(
         institution.id as identifier,
@@ -78,7 +78,7 @@ SELECT
       )
     ) as institutions,
 
-    {# Chooses the fields that are passed along in the country affiliations #}
+    {# Chooses the values that are passed along in the country affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates #}
     ARRAY_AGG(
       STRUCT(
         institution.iso3166.regions.alpha3 as identifier,
@@ -94,7 +94,7 @@ SELECT
       )
     ) as countries,
 
-    {# Chooses the fields that are passed along in the subregional affiliations #}
+    {# Chooses the values that are passed along in the subregional affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates #}
     ARRAY_AGG(
       STRUCT(
         institution.iso3166.regions.subregion as identifier,
@@ -110,7 +110,7 @@ SELECT
       )
     ) as subregions,
 
-    {# Chooses the fields that are passed along in the regional affiliations #}
+    {# Chooses the values that are passed along in the regional affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates #}
     ARRAY_AGG(
       STRUCT(
         institution.iso3166.regions.region as identifier,
