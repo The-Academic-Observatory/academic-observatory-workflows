@@ -107,7 +107,6 @@ class Institution:
     :param subregion: the institution's subregion.
     :param papers: the papers published by the institution.
     :param types: the institution type.
-    :param home_repo: the institution type.
     :param country: the institution country name.
     :param coordinates: the institution's coordinates.
     """
@@ -122,7 +121,6 @@ class Institution:
     subregion: str = None
     papers: List[Paper] = None
     types: str = None
-    home_repo: str = None
     country: str = None
     coordinates: str = None
 
@@ -1156,7 +1154,6 @@ def make_doi_funders(funder_list: FunderList) -> List[Dict]:
             "name": funder.name,
             "doi": funder.doi,
             "types": ["Funder"],
-            "home_repo": [],
             "country": None,
             "country_code": funder.country_code,
             "country_code_2": None,
@@ -1185,7 +1182,6 @@ def make_doi_journals(journal: Journal) -> List[Dict]:
             "identifier": journal.id,
             "types": ["Journal"],
             "name": journal.name,
-            "home_repo": [],
             "country": None,
             "country_code": None,
             "country_code_2": None,
@@ -1207,12 +1203,10 @@ def to_affiliations_list(dict_: Dict):
     l_ = []
     for k, v in dict_.items():
         v["members"] = list(v["members"])
-        v["home_repo"] = list(v["home_repo"])
         v["members"].sort()
         if "count" in v:
             v["count"] = len(v["rors"])
             v.pop("rors", None)
-        v["home_repo"].sort()
         l_.append(v)
     l_.sort(key=lambda x: x["identifier"])
     return l_
@@ -1230,7 +1224,6 @@ def make_doi_publishers(publisher: Publisher) -> List[Dict]:
             "identifier": publisher.name,
             "types": ["Publisher"],
             "name": publisher.name,
-            "home_repo": [],
             "country": None,
             "country_code": None,
             "country_code_2": None,
@@ -1259,7 +1252,6 @@ def make_doi_institutions(author_list: AuthorList) -> List[Dict]:
                 "identifier": inst.ror_id,
                 "types": [inst.types],
                 "name": inst.name,
-                "home_repo": {inst.home_repo},
                 "country": inst.country,
                 "country_code": inst.country_code,
                 "country_code_2": inst.country_code_2,
@@ -1288,7 +1280,6 @@ def make_doi_countries(author_list: AuthorList):
                 "identifier": inst.country_code,
                 "name": inst.country,
                 "types": ["Country"],
-                "home_repo": {inst.home_repo},
                 "country": inst.country,
                 "country_code": inst.country_code,
                 "country_code_2": inst.country_code_2,
@@ -1301,7 +1292,6 @@ def make_doi_countries(author_list: AuthorList):
             }
         else:
             countries[inst.country]["members"].add(inst.ror_id)
-            countries[inst.country]["home_repo"].add(inst.home_repo)
             countries[inst.country]["rors"].add(inst.ror_id)
 
     return to_affiliations_list(countries)
@@ -1322,7 +1312,6 @@ def make_doi_regions(author_list: AuthorList):
                 "identifier": inst.region,
                 "name": inst.region,
                 "types": ["Region"],
-                "home_repo": {inst.home_repo},
                 "country": None,
                 "country_code": None,
                 "country_code_2": None,
@@ -1335,7 +1324,6 @@ def make_doi_regions(author_list: AuthorList):
             }
         else:
             regions[inst.region]["members"].add(inst.subregion)
-            regions[inst.region]["home_repo"].add(inst.home_repo)
             regions[inst.region]["rors"].add(inst.ror_id)
 
     return to_affiliations_list(regions)
@@ -1357,7 +1345,6 @@ def make_doi_subregions(author_list: AuthorList):
                 "identifier": inst.subregion,
                 "name": inst.subregion,
                 "types": ["Subregion"],
-                "home_repo": {inst.home_repo},
                 "country": None,
                 "country_code": None,
                 "country_code_2": None,
@@ -1370,7 +1357,6 @@ def make_doi_subregions(author_list: AuthorList):
             }
         else:
             subregions[inst.subregion]["members"].add(inst.country_code)
-            subregions[inst.subregion]["home_repo"].add(inst.home_repo)
             subregions[inst.subregion]["rors"].add(inst.ror_id)
 
     return to_affiliations_list(subregions)
@@ -1405,7 +1391,6 @@ def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
                     "id": inst.country_code,
                     "time_period": paper.published_date.year,
                     "name": inst.country,
-                    "home_repo": None,
                     "country": inst.country,
                     "country_code": inst.country_code,
                     "country_code_2": inst.country_code_2,
@@ -1429,7 +1414,6 @@ def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
         "id": "first",
         "time_period": "first",
         "name": "first",
-        "home_repo": "first",
         "country": "first",
         "country_code": "first",
         "country_code_2": "first",
@@ -1462,7 +1446,6 @@ def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
                 "id": row["id"],
                 "time_period": row["time_period"],
                 "name": row["name"],
-                "home_repo": row["home_repo"],
                 "country": row["country"],
                 "country_code": row["country_code"],
                 "country_code_2": row["country_code_2"],
