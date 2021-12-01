@@ -67,7 +67,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
             region="Oceania",
             subregion="Australia and New Zealand",
             types="Education",
-            home_repo="curtin.edu.au",
             country="Australia",
             coordinates="-32.005931, 115.894397",
         )
@@ -81,7 +80,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
             region="Oceania",
             subregion="Australia and New Zealand",
             types="Education",
-            home_repo="anu.edu.au",
             country="Australia",
             coordinates="-35.2778, 149.1205",
         )
@@ -95,7 +93,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
             region="Oceania",
             subregion="Australia and New Zealand",
             types="Education",
-            home_repo="auckland.ac.nz",
             country="New Zealand",
             coordinates="-36.852304, 174.767734",
         )
@@ -520,6 +517,5 @@ class TestDoiWorkflow(ObservatoryTestCase):
         self.assertEqual(len(items_expected_), len(items_actual_))
         items_actual_.sort(key=lambda x: x["identifier"])
         for item_ in items_actual_:
-            item_["home_repo"].sort()
             item_["members"].sort()
         self.assertListEqual(items_expected_, items_actual_)
