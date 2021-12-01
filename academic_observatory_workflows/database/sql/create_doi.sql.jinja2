@@ -133,6 +133,13 @@ SELECT
       )
     ) as ror_groups,
 
+  {#
+   dois_temp_table is created as the first sub-query in this script. It contains the data from crossref, unpaywall, mag, open_citations and crossref events
+   This is then LEFT JOINed against the grid dataset to take the raw GRID IDs that come from the MAG dataset, with a more detailed view of that institution and its location. The county and region information comes from here
+   This Instituional information is JOINed against a COKI created dataset, groupings, which allows for arbitary grouping of institutions (or really GRIDs).
+
+   Lastly, Fundref and ORCID are also LEFT JOINed in order to drive the Funder and Author relationships
+  #}
   FROM dois_temp_table as dois, UNNEST(mag_grids) as grid_id
   LEFT JOIN `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.ror{{ release_date.strftime('%Y%m%d') }}` as institution on grid_id = institution.external_ids.GRID.preferred
   LEFT JOIN (SELECT ror, ARRAY_AGG(STRUCT(group_id, group_name, country_code)) as groupings FROM `{{ project_id }}.{{ settings.dataset_id }}.groupings` CROSS JOIN UNNEST(rors) as ror GROUP BY ror) as ror_groups on institution.id = ror_groups.ror
