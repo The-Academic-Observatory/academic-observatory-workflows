@@ -20,7 +20,8 @@ SELECT
   *,
   (SELECT ARRAY(SELECT DISTINCT grid FROM UNNEST( IF(mag.grids IS NOT NULL, mag.grids, [])) AS grid)) as mag_grids
 FROM
-  (SELECT 
+  (SELECT
+    {# This SQL block links unpaywall, mag, open citations and crossref events to the DOI and the metadata found in the crossref metadata dataset #}
     UPPER(TRIM(ref.doi)) as doi,
     STRUCT( title, abstract, issued.date_parts[offset(0)] as published_year, CASE WHEN ARRAY_LENGTH(issued.date_parts) > 1 THEN issued.date_parts[offset(1)] ELSE 13 END as published_month, CONCAT(issued.date_parts[offset(0)], "-", CASE WHEN ARRAY_LENGTH(issued.date_parts) > 1 THEN issued.date_parts[offset(1)] ELSE 13 END) as published_year_month, type, ISSN, ISBN, issn_type, publisher_location, publisher, member, prefix, container_title, short_container_title, group_title, references_count, is_referenced_by_count, subject, published_print, license, volume, funder, page, author, link, clinical_trial_number, alternative_id ) as crossref,
     (SELECT as STRUCT * from `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.unpaywall{{ release_date.strftime('%Y%m%d') }}` as oa WHERE oa.doi = UPPER(TRIM(ref.doi))) as unpaywall,
