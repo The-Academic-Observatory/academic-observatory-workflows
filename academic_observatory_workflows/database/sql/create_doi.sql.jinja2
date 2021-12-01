@@ -141,7 +141,11 @@ SELECT
   LEFT JOIN `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.orcid{{ release_date.strftime('%Y%m%d') }}` as orcid on UPPER(TRIM(orcid.doi)) = UPPER(TRIM(extras.doi))
 )
 
-{# Brings together the two temporary tables above. #}
+{#
+Brings together the two temporary tables above.
+- dois.* is the collective metadata linked to the doi in question
+- affiliations is the derived data that neatly organises all the relationships a doi has to authors, their institutions, countries and regions of those institutions, publisher, journal, funders
+#}
 SELECT
   dois.* EXCEPT (mag_grids),
   affiliations
