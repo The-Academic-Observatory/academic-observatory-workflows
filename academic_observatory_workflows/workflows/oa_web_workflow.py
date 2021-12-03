@@ -28,13 +28,17 @@ from typing import Optional, List, Dict, Union
 from urllib.parse import urlparse
 
 import google.cloud.bigquery as bigquery
+import jsonlines
 import pandas as pd
 import pendulum
+import pyarrow as pa
+import pyarrow.parquet as pq
 from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
 from airflow.operators.bash import BashOperator
 from airflow.secrets.environment_variables import EnvironmentVariablesBackend
 from airflow.sensors.external_task import ExternalTaskSensor
+from pyarrow import json as pa_json
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
 from observatory.platform.utils.airflow_utils import AirflowVars
@@ -244,6 +248,13 @@ def save_json(path: str, data: Union[Dict, List]):
         json.dump(data, f, separators=(",", ":"))
 
 
+def val_empty(val):
+    if isinstance(val, list):
+        return len(val) == 0
+    else:
+        return val is None or val == ""
+
+
 @dataclasses.dataclass
 class Entity:
     id: str
@@ -293,7 +304,7 @@ class Entity:
         )
 
     def to_dict(self) -> Dict:
-        return {
+        dict_ = {
             "id": self.id,
             "name": self.name,
             "description": self.description,
@@ -312,6 +323,9 @@ class Entity:
             "other_platform_locations": self.other_platform_locations,
             "timeseries": [obj.to_dict() for obj in self.timeseries],
         }
+        # Filter out key val pairs with empty lists and values
+        dict_ = {k: v for k, v in dict_.items() if not val_empty(v)}
+        return dict_
 
 
 def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, location: str = "us") -> bool:
@@ -351,6 +365,17 @@ def clean_url(url: str) -> str:
 
     p = urlparse(url)
     return f"{p.scheme}://{p.netloc}/"
+
+
+def save_as_jsonl(output_path: str, iterable: List[Dict]):
+    with open(output_path, "w") as f:
+        with jsonlines.Writer(f) as writer:
+            writer.write_all(iterable)
+
+
+def jsonl_to_pyarrow(jsonl_path: str, output_path: str):
+    table = pa_json.read_json(jsonl_path)
+    pq.write_table(table, output_path)
 
 
 class OaWebRelease(SnapshotRelease):
@@ -413,7 +438,6 @@ class OaWebRelease(SnapshotRelease):
         for column in df.columns:
             if column.startswith("n_"):
                 df[column] = pd.to_numeric(df[column])
-
         return df
 
     def make_index(self, category: str, df: pd.DataFrame):
@@ -523,7 +547,6 @@ class OaWebRelease(SnapshotRelease):
         # Save subset
         base_path = os.path.join(self.build_path, "data")
         os.makedirs(base_path, exist_ok=True)
-        summary_path = os.path.join(base_path, f"{category}.json")
         df_index_table = df_index_table.drop(
             [
                 "year",
@@ -538,8 +561,29 @@ class OaWebRelease(SnapshotRelease):
             axis=1,
             errors="ignore",
         )
+
+        # Make entities
         records = df_index_table.to_dict("records")
-        save_json(summary_path, records)
+        entities = []
+        for record in records:
+            entity = Entity.from_dict(record)
+            entity.stats = PublicationStats.from_dict(record)
+            entities.append(entity)
+        # Sort by Open %
+        entities = sorted(entities, key=lambda e: e.stats.p_outputs_open, reverse=True)
+        entities = [e.to_dict() for e in entities]
+
+        # Save as JSON
+        json_path = os.path.join(base_path, f"{category}.json")
+        save_json(json_path, entities)
+
+        # Save JSONL
+        jsonl_path = os.path.join(base_path, f"{category}.jsonl")
+        save_as_jsonl(jsonl_path, entities)
+
+        # Save as PyArrow
+        pyarrow_path = os.path.join(base_path, f"{category}.parquet")
+        jsonl_to_pyarrow(jsonl_path, pyarrow_path)
 
     def make_entities(self, df_index_table: pd.DataFrame, df: pd.DataFrame) -> List[Entity]:
         """Make entities.
@@ -623,10 +667,16 @@ class OaWebRelease(SnapshotRelease):
         base_path = os.path.join(self.build_path, "data")
         os.makedirs(base_path, exist_ok=True)
 
+        # Save as JSON
         output_path = os.path.join(base_path, "autocomplete.json")
         df_ac = pd.DataFrame(auto_complete)
         records = df_ac.to_dict("records")
         save_json(output_path, records)
+
+        # Save as PyArrow
+        table = pa.Table.from_pandas(df_ac)
+        pyarrow_path = os.path.join(base_path, f"autocomplete.parquet")
+        pq.write_table(table, pyarrow_path)
 
 
 class OaWebWorkflow(Workflow):
