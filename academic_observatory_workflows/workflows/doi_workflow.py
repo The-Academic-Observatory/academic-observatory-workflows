@@ -82,7 +82,7 @@ def make_dataset_transforms(
     dataset_id_crossref_events: str = "crossref",
     dataset_id_crossref_metadata: str = "crossref",
     dataset_id_crossref_fundref: str = "crossref",
-    dataset_id_grid: str = "digital_science",
+    dataset_id_ror: str = "ror",
     dataset_id_iso: str = "iso",
     dataset_id_mag: str = "mag",
     dataset_id_orcid: str = "orcid",
@@ -111,11 +111,11 @@ def make_dataset_transforms(
             ),
             Transform(
                 inputs={
-                    "grid": Table(dataset_id_grid, "grid", sharded=True),
+                    "ror": Table(dataset_id_ror, "ror", sharded=True),
                     "iso": Table(dataset_id_iso),
                     "settings": Table(dataset_id_settings),
                 },
-                output_table=Table(dataset_id_observatory_intermediate, "grid"),
+                output_table=Table(dataset_id_observatory_intermediate, "ror"),
             ),
             Transform(
                 inputs={
@@ -290,7 +290,7 @@ class DoiWorkflow(Workflow):
         "crossref_metadata",
         "crossref_fundref",
         "geonames",
-        "grid",
+        "ror",
         "mag",
         "open_citations",
         "unpaywall",

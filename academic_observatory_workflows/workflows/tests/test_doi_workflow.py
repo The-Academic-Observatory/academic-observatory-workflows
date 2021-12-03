@@ -61,12 +61,12 @@ class TestDoiWorkflow(ObservatoryTestCase):
             1,
             name="Curtin University",
             grid_id="grid.1032.0",
+            ror_id="https://ror.org/02n415q13",
             country_code="AUS",
             country_code_2="AU",
             region="Oceania",
             subregion="Australia and New Zealand",
             types="Education",
-            home_repo="curtin.edu.au",
             country="Australia",
             coordinates="-32.005931, 115.894397",
         )
@@ -74,12 +74,12 @@ class TestDoiWorkflow(ObservatoryTestCase):
             2,
             name="Australian National University",
             grid_id="grid.1001.0",
+            ror_id="https://ror.org/019wvm592",
             country_code="AUS",
             country_code_2="AU",
             region="Oceania",
             subregion="Australia and New Zealand",
             types="Education",
-            home_repo="anu.edu.au",
             country="Australia",
             coordinates="-35.2778, 149.1205",
         )
@@ -87,12 +87,12 @@ class TestDoiWorkflow(ObservatoryTestCase):
             3,
             name="University of Auckland",
             grid_id="grid.9654.e",
+            ror_id="https://ror.org/03b94tp07",
             country_code="NZL",
             country_code_2="NZ",
             region="Oceania",
             subregion="Australia and New Zealand",
             types="Education",
-            home_repo="auckland.ac.nz",
             country="New Zealand",
             coordinates="-36.852304, 174.767734",
         )
@@ -120,7 +120,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "crossref_metadata_sensor": ["check_dependencies"],
                 "crossref_fundref_sensor": ["check_dependencies"],
                 "geonames_sensor": ["check_dependencies"],
-                "grid_sensor": ["check_dependencies"],
+                "ror_sensor": ["check_dependencies"],
                 "mag_sensor": ["check_dependencies"],
                 "open_citations_sensor": ["check_dependencies"],
                 "unpaywall_sensor": ["check_dependencies"],
@@ -130,7 +130,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "create_datasets": [
                     "create_crossref_events",
                     "create_crossref_fundref",
-                    "create_grid",
+                    "create_ror",
                     "create_mag",
                     "create_orcid",
                     "create_open_citations",
@@ -138,7 +138,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 ],
                 "create_crossref_events": ["create_doi"],
                 "create_crossref_fundref": ["create_doi"],
-                "create_grid": ["create_doi"],
+                "create_ror": ["create_doi"],
                 "create_mag": ["create_doi"],
                 "create_orcid": ["create_doi"],
                 "create_open_citations": ["create_doi"],
@@ -222,7 +222,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
             dataset_id_crossref_events=fake_dataset_id,
             dataset_id_crossref_metadata=fake_dataset_id,
             dataset_id_crossref_fundref=fake_dataset_id,
-            dataset_id_grid=fake_dataset_id,
+            dataset_id_ror=fake_dataset_id,
             dataset_id_iso=fake_dataset_id,
             dataset_id_mag=fake_dataset_id,
             dataset_id_orcid=fake_dataset_id,
@@ -236,7 +236,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
         with env.create(task_logging=True):
             # Make dag
-            start_date = pendulum.datetime(year=2021, month=5, day=9)
+            start_date = pendulum.datetime(year=2021, month=10, day=10)
             workflow = DoiWorkflow(
                 intermediate_dataset_id=intermediate_dataset_id,
                 dashboards_dataset_id=dashboards_dataset_id,
@@ -262,8 +262,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     self.assertEqual(expected_state, ti.state)
 
             # Run Dummy Dags
-            execution_date = pendulum.datetime(year=2021, month=5, day=16)
-            release_date = pendulum.datetime(year=2021, month=5, day=22)
+            execution_date = pendulum.datetime(year=2021, month=10, day=17)
+            release_date = pendulum.datetime(year=2021, month=10, day=23)
             release_suffix = release_date.strftime("%Y%m%d")
             expected_state = "success"
             for dag_id in DoiWorkflow.SENSOR_DAG_IDS:
@@ -463,9 +463,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
             # Check events
             self.assert_doi_events(expected_record["events"], actual_record["events"])
 
-            # Check grids
-            self.assertSetEqual(set(expected_record["grids"]), set(actual_record["grids"]))
-
             # Check affiliations
             self.assert_doi_affiliations(expected_record["affiliations"], actual_record["affiliations"])
 
@@ -520,6 +517,5 @@ class TestDoiWorkflow(ObservatoryTestCase):
         self.assertEqual(len(items_expected_), len(items_actual_))
         items_actual_.sort(key=lambda x: x["identifier"])
         for item_ in items_actual_:
-            item_["home_repo"].sort()
             item_["members"].sort()
         self.assertListEqual(items_expected_, items_actual_)

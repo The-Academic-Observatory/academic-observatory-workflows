@@ -101,12 +101,12 @@ class Institution:
     :param id: unique identifier.
     :param name: the institution's name.
     :param grid_id: the institution's GRID id.
+    :param ror_id: the institution's ROR id.
     :param country_code: the institution's country code.
     :param country_code_2: the institution's country code.
     :param subregion: the institution's subregion.
     :param papers: the papers published by the institution.
     :param types: the institution type.
-    :param home_repo: the institution type.
     :param country: the institution country name.
     :param coordinates: the institution's coordinates.
     """
@@ -114,13 +114,13 @@ class Institution:
     id: int
     name: str = None
     grid_id: str = None
+    ror_id: str = None
     country_code: str = None
     country_code_2: str = None
     region: str = None
     subregion: str = None
     papers: List[Paper] = None
     types: str = None
-    home_repo: str = None
     country: str = None
     coordinates: str = None
 
@@ -907,11 +907,10 @@ def bq_load_observatory_dataset(
     unpaywall = make_unpaywall(observatory_dataset)
     crossref_metadata = make_crossref_metadata(observatory_dataset)
 
-    # Load fake GRID and settings datasets
+    # Load fake ROR and settings datasets
     test_doi_path = test_fixtures_folder("doi")
-    grid = load_jsonl(os.path.join(test_doi_path, "grid.jsonl"))
+    ror = load_jsonl(os.path.join(test_doi_path, "ror.jsonl"))
     iso3166_countries_and_regions = load_jsonl(os.path.join(test_doi_path, "iso3166_countries_and_regions.jsonl"))
-    grid_to_home_url = load_jsonl(os.path.join(test_doi_path, "grid_to_home_url.jsonl"))
     groupings = load_jsonl(os.path.join(test_doi_path, "groupings.jsonl"))
     mag_affiliation_override = load_jsonl(os.path.join(test_doi_path, "mag_affiliation_override.jsonl"))
 
@@ -944,21 +943,13 @@ def bq_load_observatory_dataset(
             Table("Papers", True, dataset_id_all, mag.papers, "MagPapers", analysis_schema_path),
             Table("open_citations", True, dataset_id_all, open_citations, "open_citations", analysis_schema_path),
             Table("unpaywall", False, dataset_id_all, unpaywall, "unpaywall", analysis_schema_path),
-            Table("grid", True, dataset_id_all, grid, "grid", analysis_schema_path),
+            Table("ror", True, dataset_id_all, ror, "ror", analysis_schema_path),
             Table(
                 "iso3166_countries_and_regions",
                 False,
                 dataset_id_all,
                 iso3166_countries_and_regions,
                 "iso3166_countries_and_regions",
-                analysis_schema_path,
-            ),
-            Table(
-                "grid_to_home_url",
-                False,
-                dataset_id_settings,
-                grid_to_home_url,
-                "grid_to_home_url",
                 analysis_schema_path,
             ),
             Table("groupings", False, dataset_id_settings, groupings, "groupings", analysis_schema_path),
@@ -1069,7 +1060,6 @@ def make_doi_table(dataset: ObservatoryDataset) -> List[Dict]:
         # Doi, events and grids
         doi = paper.doi.upper()
         events = make_doi_events(doi, paper.events)
-        grids = make_doi_grids(paper.authors)
 
         # Affiliations: institutions, countries, regions, subregion, funders, journals, publishers
         institutions = make_doi_institutions(paper.authors)
@@ -1096,7 +1086,6 @@ def make_doi_table(dataset: ObservatoryDataset) -> List[Dict]:
                 "mag": {},
                 "open_citations": {},
                 "events": events,
-                "grids": grids,
                 "affiliations": {
                     "doi": doi,
                     "institutions": institutions,
@@ -1141,16 +1130,6 @@ def make_doi_events(doi: str, event_list: EventsList) -> Dict:
     return events
 
 
-def make_doi_grids(author_list: AuthorList) -> List[str]:
-    """Make the grid ids for a DOI table row.
-
-    :param author_list: the list of authors for the paper.
-    :return: the grid ids for the paper.
-    """
-
-    return list(set([author.institution.grid_id for author in author_list]))
-
-
 def make_doi_funders(funder_list: FunderList) -> List[Dict]:
     """Make a DOI table row funders affiliation list.
 
@@ -1166,7 +1145,6 @@ def make_doi_funders(funder_list: FunderList) -> List[Dict]:
             "name": funder.name,
             "doi": funder.doi,
             "types": ["Funder"],
-            "home_repo": [],
             "country": None,
             "country_code": funder.country_code,
             "country_code_2": None,
@@ -1195,7 +1173,6 @@ def make_doi_journals(journal: Journal) -> List[Dict]:
             "identifier": journal.id,
             "types": ["Journal"],
             "name": journal.name,
-            "home_repo": [],
             "country": None,
             "country_code": None,
             "country_code_2": None,
@@ -1217,12 +1194,10 @@ def to_affiliations_list(dict_: Dict):
     l_ = []
     for k, v in dict_.items():
         v["members"] = list(v["members"])
-        v["home_repo"] = list(v["home_repo"])
         v["members"].sort()
         if "count" in v:
-            v["count"] = len(v["grids"])
-            v.pop("grids", None)
-        v["home_repo"].sort()
+            v["count"] = len(v["rors"])
+            v.pop("rors", None)
         l_.append(v)
     l_.sort(key=lambda x: x["identifier"])
     return l_
@@ -1240,7 +1215,6 @@ def make_doi_publishers(publisher: Publisher) -> List[Dict]:
             "identifier": publisher.name,
             "types": ["Publisher"],
             "name": publisher.name,
-            "home_repo": [],
             "country": None,
             "country_code": None,
             "country_code_2": None,
@@ -1264,12 +1238,11 @@ def make_doi_institutions(author_list: AuthorList) -> List[Dict]:
     for author in author_list:
         # Institution
         inst = author.institution
-        if inst.grid_id not in institutions:
-            institutions[inst.grid_id] = {
-                "identifier": inst.grid_id,
+        if inst.ror_id not in institutions:
+            institutions[inst.ror_id] = {
+                "identifier": inst.ror_id,
                 "types": [inst.types],
                 "name": inst.name,
-                "home_repo": {inst.home_repo},
                 "country": inst.country,
                 "country_code": inst.country_code,
                 "country_code_2": inst.country_code_2,
@@ -1298,7 +1271,6 @@ def make_doi_countries(author_list: AuthorList):
                 "identifier": inst.country_code,
                 "name": inst.country,
                 "types": ["Country"],
-                "home_repo": {inst.home_repo},
                 "country": inst.country,
                 "country_code": inst.country_code,
                 "country_code_2": inst.country_code_2,
@@ -1306,13 +1278,12 @@ def make_doi_countries(author_list: AuthorList):
                 "subregion": inst.subregion,
                 "coordinates": None,
                 "count": 0,
-                "members": {inst.grid_id},
-                "grids": {inst.grid_id},
+                "members": {inst.ror_id},
+                "rors": {inst.ror_id},
             }
         else:
-            countries[inst.country]["members"].add(inst.grid_id)
-            countries[inst.country]["home_repo"].add(inst.home_repo)
-            countries[inst.country]["grids"].add(inst.grid_id)
+            countries[inst.country]["members"].add(inst.ror_id)
+            countries[inst.country]["rors"].add(inst.ror_id)
 
     return to_affiliations_list(countries)
 
@@ -1332,7 +1303,6 @@ def make_doi_regions(author_list: AuthorList):
                 "identifier": inst.region,
                 "name": inst.region,
                 "types": ["Region"],
-                "home_repo": {inst.home_repo},
                 "country": None,
                 "country_code": None,
                 "country_code_2": None,
@@ -1341,12 +1311,11 @@ def make_doi_regions(author_list: AuthorList):
                 "coordinates": None,
                 "count": 0,
                 "members": {inst.subregion},
-                "grids": {inst.grid_id},
+                "rors": {inst.ror_id},
             }
         else:
             regions[inst.region]["members"].add(inst.subregion)
-            regions[inst.region]["home_repo"].add(inst.home_repo)
-            regions[inst.region]["grids"].add(inst.grid_id)
+            regions[inst.region]["rors"].add(inst.ror_id)
 
     return to_affiliations_list(regions)
 
@@ -1367,7 +1336,6 @@ def make_doi_subregions(author_list: AuthorList):
                 "identifier": inst.subregion,
                 "name": inst.subregion,
                 "types": ["Subregion"],
-                "home_repo": {inst.home_repo},
                 "country": None,
                 "country_code": None,
                 "country_code_2": None,
@@ -1376,12 +1344,11 @@ def make_doi_subregions(author_list: AuthorList):
                 "coordinates": None,
                 "count": 0,
                 "members": {inst.country_code},
-                "grids": {inst.grid_id},
+                "rors": {inst.ror_id},
             }
         else:
             subregions[inst.subregion]["members"].add(inst.country_code)
-            subregions[inst.subregion]["home_repo"].add(inst.home_repo)
-            subregions[inst.subregion]["grids"].add(inst.grid_id)
+            subregions[inst.subregion]["rors"].add(inst.ror_id)
 
     return to_affiliations_list(subregions)
 
@@ -1415,7 +1382,6 @@ def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
                     "id": inst.country_code,
                     "time_period": paper.published_date.year,
                     "name": inst.country,
-                    "home_repo": None,
                     "country": inst.country,
                     "country_code": inst.country_code,
                     "country_code_2": inst.country_code_2,
@@ -1439,7 +1405,6 @@ def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
         "id": "first",
         "time_period": "first",
         "name": "first",
-        "home_repo": "first",
         "country": "first",
         "country_code": "first",
         "country_code_2": "first",
@@ -1472,7 +1437,6 @@ def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
                 "id": row["id"],
                 "time_period": row["time_period"],
                 "name": row["name"],
-                "home_repo": row["home_repo"],
                 "country": row["country"],
                 "country_code": row["country_code"],
                 "country_code_2": row["country_code_2"],

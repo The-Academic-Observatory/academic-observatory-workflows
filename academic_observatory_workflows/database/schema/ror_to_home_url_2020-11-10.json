@@ -2,7 +2,7 @@
   {
     "description": "",
     "mode": "NULLABLE",
-    "name": "grid_id",
+    "name": "ror_id",
     "type": "STRING"
   },
   {
