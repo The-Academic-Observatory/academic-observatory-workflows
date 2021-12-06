@@ -63,12 +63,12 @@ SELECT
   agg.name,
   agg.time_period as year,
   DATE(agg.time_period, 12, 31) as date,
-  (SELECT * from grid.links LIMIT 1) AS url,
-  grid.wikipedia_url as wikipedia_url,
+  (SELECT * from ror.links LIMIT 1) AS url,
+  ror.wikipedia_url as wikipedia_url,
   agg.country as country,
   agg.subregion as subregion,
   agg.region as region,
-  grid.types AS institution_types,
+  ror.types AS institution_types,
   agg.total_outputs as n_outputs,
   agg.access_types.oa.total_outputs AS n_outputs_open,
   agg.citations.mag.total_citations as n_citations,  
@@ -79,10 +79,10 @@ SELECT
   agg.access_types.gold.total_outputs AS n_outputs_gold,
   agg.access_types.hybrid.total_outputs AS n_outputs_hybrid,
   agg.access_types.bronze.total_outputs AS n_outputs_bronze,
-  grid.external_ids AS identifiers
+  ror.external_ids AS identifiers
 FROM
   `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg 
-  LEFT OUTER JOIN `{project_id}.{grid_dataset_id}.{grid_table_id}` as grid ON agg.id = grid.id
+  LEFT OUTER JOIN `{project_id}.{ror_dataset_id}.{ror_table_id}` as ror ON agg.id = ror.id
 WHERE agg.time_period <= EXTRACT(YEAR FROM CURRENT_DATE())
 ORDER BY year DESC, name ASC
 """
@@ -244,6 +244,13 @@ class Year:
 
 
 def save_json(path: str, data: Union[Dict, List]):
+    """ Save data to JSON.
+
+    :param path: the output path.
+    :param data: the data to save.
+    :return: None.
+    """
+
     with open(path, mode="w") as f:
         json.dump(data, f, separators=(",", ":"))
 
@@ -253,6 +260,16 @@ def val_empty(val):
         return len(val) == 0
     else:
         return val is None or val == ""
+
+
+def clean_ror_id(ror_id: str):
+    """Remove the https://ror.org/ prefix from a ROR id.
+
+    :param ror_id: original ROR id.
+    :return: cleaned ROR id.
+    """
+
+    return ror_id.replace("https://ror.org/", "")
 
 
 @dataclasses.dataclass
@@ -398,7 +415,7 @@ class OaWebRelease(SnapshotRelease):
         release_date: pendulum.DateTime,
         change_chart_years: int = 10,
         agg_dataset_id: str = "observatory",
-        grid_dataset_id: str = "digital_science",
+        ror_dataset_id: str = "ror",
     ):
         """Create an OaWebRelease instance.
 
@@ -407,14 +424,14 @@ class OaWebRelease(SnapshotRelease):
         :param release_date: the release date.
         :param change_chart_years: the number of years to include in the change charts.
         :param agg_dataset_id: the dataset to use for aggregation.
-        :param grid_dataset_id: the GRID dataset id.
+        :param ror_dataset_id: the ROR dataset id.
         """
 
         super().__init__(dag_id=dag_id, release_date=release_date)
         self.project_id = project_id
         self.change_chart_years = change_chart_years
         self.agg_dataset_id = agg_dataset_id
-        self.grid_dataset_id = grid_dataset_id
+        self.ror_dataset_id = ror_dataset_id
 
     @property
     def build_path(self):
@@ -438,6 +455,11 @@ class OaWebRelease(SnapshotRelease):
         for column in df.columns:
             if column.startswith("n_"):
                 df[column] = pd.to_numeric(df[column])
+
+        # Clean RoR ids
+        if category == "institution":
+            df["id"] = df["id"].apply(lambda i: clean_ror_id(i))
+
         return df
 
     def make_index(self, category: str, df: pd.DataFrame):
@@ -521,17 +543,17 @@ class OaWebRelease(SnapshotRelease):
             os.makedirs(base_path, exist_ok=True)
             logos = []
             for i, row in df_index_table.iterrows():
-                grid_id = row["id"]
+                ror_id = row["id"]
                 url = clean_url(row["url"])
 
                 logo_path = logo_path_unknown
                 if not pd.isnull(url):
-                    file_path = os.path.join(base_path, f"{grid_id}.{fmt}")
+                    file_path = os.path.join(base_path, f"{ror_id}.{fmt}")
                     if not os.path.isfile(file_path):
                         clearbit_download_logo(company_url=url, file_path=file_path, size=size, fmt=fmt)
 
                     if os.path.isfile(file_path):
-                        logo_path = f"/logos/{category}/{grid_id}.{fmt}"
+                        logo_path = f"/logos/{category}/{ror_id}.{fmt}"
 
                 logos.append(logo_path)
             df_index_table["logo"] = logos
@@ -698,7 +720,7 @@ class OaWebWorkflow(Workflow):
         airflow_conns: List[str] = None,
         retries: int = 3,
         agg_dataset_id: str = "observatory",
-        grid_dataset_id: str = "digital_science",
+        ror_dataset_id: str = "ror",
         oa_website_name: str = "open-access-web",
     ):
         """Create the OaWebWorkflow.
@@ -732,7 +754,7 @@ class OaWebWorkflow(Workflow):
             airflow_conns=airflow_conns,
         )
         self.agg_dataset_id = agg_dataset_id
-        self.grid_dataset_id = grid_dataset_id
+        self.ror_dataset_id = ror_dataset_id
         self.table_ids = table_ids
         self.oa_website_name = oa_website_name
         if table_ids is None:
@@ -788,7 +810,7 @@ class OaWebWorkflow(Workflow):
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
-        :return: A list of grid release instances
+        :return: A list of OaWebRelease instances
         """
 
         project_id = Variable.get(AirflowVars.PROJECT_ID)
@@ -798,7 +820,7 @@ class OaWebWorkflow(Workflow):
             dag_id=self.dag_id,
             project_id=project_id,
             release_date=release_date,
-            grid_dataset_id=self.grid_dataset_id,
+            ror_dataset_id=self.ror_dataset_id,
             agg_dataset_id=self.agg_dataset_id,
         )
 
@@ -823,15 +845,15 @@ class OaWebWorkflow(Workflow):
             )[0]
             agg_sharded_table_id = bigquery_sharded_table_id(agg_table_id, agg_release_date)
 
-            # GRID release date
-            grid_table_id = "grid"
-            grid_release_date = select_table_shard_dates(
+            # ROR release date
+            ror_table_id = "ror"
+            ror_release_date = select_table_shard_dates(
                 project_id=release.project_id,
-                dataset_id=release.grid_dataset_id,
-                table_id=grid_table_id,
+                dataset_id=release.ror_dataset_id,
+                table_id=ror_table_id,
                 end_date=release.release_date,
             )[0]
-            grid_sharded_table_id = bigquery_sharded_table_id(grid_table_id, grid_release_date)
+            ror_sharded_table_id = bigquery_sharded_table_id(ror_table_id, ror_release_date)
 
             # Fetch data
             destination_uri = f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{agg_table_id}.jsonl"
@@ -840,8 +862,8 @@ class OaWebWorkflow(Workflow):
                     project_id=release.project_id,
                     agg_dataset_id=release.agg_dataset_id,
                     agg_table_id=agg_sharded_table_id,
-                    grid_dataset_id=release.grid_dataset_id,
-                    grid_table_id=grid_sharded_table_id,
+                    ror_dataset_id=release.ror_dataset_id,
+                    ror_table_id=ror_sharded_table_id,
                 ),
                 project_id=release.project_id,
                 destination_uri=destination_uri,
