@@ -593,7 +593,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             self.setup_tables(dataset_id_all=dataset_id, bucket_name=env.download_bucket, release_date=execution_date)
 
             # Run workflow
-            workflow = OaWebWorkflow(agg_dataset_id=dataset_id, grid_dataset_id=dataset_id)
+            workflow = OaWebWorkflow(agg_dataset_id=dataset_id, ror_dataset_id=dataset_id)
 
             # Copy test website
             src_folder = test_fixtures_folder("oa_web_workflow", workflow.oa_website_name)
