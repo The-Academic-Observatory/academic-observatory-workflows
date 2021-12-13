@@ -1296,82 +1296,98 @@
       {
         "mode": "NULLABLE",
         "name": "citations_total",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "Count of total citations"
       },
       {
         "mode": "NULLABLE",
         "name": "citations_before_publication",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "Count of Citations recorded before the stated publication date"
       },
       {
         "mode": "NULLABLE",
         "name": "citations_one_year",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "Count of Citations recorded in the first year since publication"
       },
       {
         "mode": "NULLABLE",
         "name": "citations_two_years",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "Count of Citations recorded in the first two years since publication"
       },
       {
         "mode": "NULLABLE",
         "name": "citations_five_years",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "Count of Citations recorded in the first five years since publication"
       },
       {
         "mode": "NULLABLE",
         "name": "journal_sc_total",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "For Journal Self Citations: Count of total citations"
       },
       {
         "mode": "NULLABLE",
         "name": "journal_sc_before_publication",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "For Journal Self Citations: Count of Citations recorded before the stated publication date"
       },
       {
         "mode": "NULLABLE",
         "name": "journal_sc_one_year",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "For Journal Self Citations: Count of Citations recorded in the first year since publication"
       },
       {
         "mode": "NULLABLE",
         "name": "journal_sc_two_years",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "For Journal Self Citations: Count of Citations recorded in the first two years since publication"
       },
       {
         "mode": "NULLABLE",
         "name": "journal_sc_five_years",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "For Journal Self Citations: Count of Citations recorded in the first five years since publication"
       },
       {
         "mode": "NULLABLE",
         "name": "author_sc_total",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "For Author Self Citations: Count of total citations"
       },
       {
         "mode": "NULLABLE",
         "name": "author_sc_before_publication",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "For Author Self Citations: Count of Citations recorded before the stated publication date"
       },
       {
         "mode": "NULLABLE",
         "name": "author_sc_one_year",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "For Author Self Citations: Count of Citations recorded in the first year since publication"
       },
       {
         "mode": "NULLABLE",
         "name": "author_sc_two_years",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "For Author Self Citations: Count of Citations recorded in the first two years since publication"
       },
       {
         "mode": "NULLABLE",
         "name": "author_sc_five_years",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "For Author Self Citations: Count of Citations recorded in the first five years since publication"
       }
     ],
     "mode": "NULLABLE",
     "name": "open_citations",
-    "type": "RECORD"
+    "type": "RECORD",
+    "description": "Data Derived from Open Citations"
   },
   {
     "fields": [
