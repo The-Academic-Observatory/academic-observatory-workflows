@@ -298,6 +298,9 @@ class OrcidTelescope(StreamTelescope):
             airflow_vars=airflow_vars,
             airflow_conns=airflow_conns,
             batch_load=batch_load,
+            load_bigquery_table_kwargs={
+                "ignore_unknown_values": True
+            }
         )
         self.max_processes = max_processes
 
