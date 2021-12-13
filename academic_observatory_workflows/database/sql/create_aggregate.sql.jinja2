@@ -78,7 +78,11 @@ citations.total_mag_citations	            INTEGER	NULLABLE
 citations.total_open_citations_citations	INTEGER	NULLABLE
 citations.total_crossref_citations	        INTEGER	NULLABLE
 #}
-CREATE TEMP FUNCTION count_single_output_type(output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type STRING) AS (
+CREATE TEMP FUNCTION count_single_output_type(
+        output_type STRING,
+        items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>,
+        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type STRING)
+  AS (
   (SELECT as STRUCT
     output_type,
     COUNTIF(item.type = measured_type ) as total_outputs,
@@ -114,7 +118,10 @@ citations.total_mag_citations	            INTEGER	NULLABLE
 citations.total_open_citations_citations	INTEGER	NULLABLE
 citations.total_crossref_citations	        INTEGER	NULLABLE
 #}
-CREATE TEMP FUNCTION count_array_output_type(output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type ARRAY<STRING>) AS (
+CREATE TEMP FUNCTION count_array_output_type(
+        output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>,
+        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type ARRAY<STRING>)
+  AS (
   (SELECT as STRUCT
     output_type,
     COUNTIF(item.type in UNNEST(measured_type) ) as total_outputs,
@@ -151,7 +158,10 @@ citations.total_mag_citations	            INTEGER	NULLABLE
 citations.total_open_citations_citations	INTEGER	NULLABLE
 citations.total_crossref_citations	        INTEGER	NULLABLE
 #}
-CREATE TEMP FUNCTION count_not_in_array_output_type(output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type ARRAY<STRING>) AS (
+CREATE TEMP FUNCTION count_not_in_array_output_type(
+        output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>,
+        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type ARRAY<STRING>)
+  AS (
   (SELECT as STRUCT
     output_type,
     COUNTIF(item.type not in UNNEST(measured_type) ) as total_outputs,
@@ -177,7 +187,10 @@ output_types	RECORD	REPEATED
 
 * Each record has the same schema, and is captured in the count_* methods
 #}
-CREATE TEMP FUNCTION count_output_types(items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>) as (
+CREATE TEMP FUNCTION count_output_types(
+        items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>,
+        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>)
+    AS (
     [
       count_single_output_type("journal_articles", items, 'journal-article'),
       count_array_output_type("book_sections", items, ['book-section', 'book-part', 'book-chapter']),
@@ -212,7 +225,10 @@ citations.crossref.percentiles	    RECORD	NULLABLE
 
 *percetiles schema captured above
 #}
-CREATE TEMP FUNCTION compute_conditional_citations(items ARRAY<STRUCT<citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, is_x BOOL>>, access_type STRING, positive_label STRING, negative_label STRING) as (
+CREATE TEMP FUNCTION compute_conditional_citations(
+           items ARRAY<STRUCT<citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, is_x BOOL>>,
+           access_type STRING, positive_label STRING, negative_label STRING)
+  AS (
   ARRAY((
     SELECT as STRUCT
       CASE
@@ -297,35 +313,38 @@ CREATE TEMP FUNCTION compute_citations(items ARRAY<STRUCT<doi STRING, citations 
 # Helper Function: Compute the count of various Open Access Types from a passed in array of Objects
 {#
 Output Schema:
-oa	                    RECORD	NULLABLE
+oa	                        RECORD	NULLABLE
 oa.total_outputs	        INTEGER	NULLABLE
 oa.percent	                FLOAT	NULLABLE
-green	                RECORD	NULLABLE
+green	                    RECORD	NULLABLE
 green.total_outputs	        INTEGER	NULLABLE
 green.percent	            FLOAT	NULLABLE
-gold	                RECORD	NULLABLE
+gold	                    RECORD	NULLABLE
 gold.total_outputs	        INTEGER	NULLABLE
 gold.percent	            FLOAT	NULLABLE
-gold_doaj	            RECORD	NULLABLE
+gold_doaj	                RECORD	NULLABLE
 gold_doaj.total_outputs	    INTEGER	NULLABLE
 gold_doaj.percent	        FLOAT	NULLABLE
-hybrid	                RECORD	NULLABLE
+hybrid	                    RECORD	NULLABLE
 hybrid.total_outputs	    INTEGER	NULLABLE
 hybrid.percent	            FLOAT	NULLABLE
-bronze	                RECORD	NULLABLE
+bronze	                    RECORD	NULLABLE
 bronze.total_outputs	    INTEGER	NULLABLE
 bronze.percent	            FLOAT	NULLABLE
-green_only	            RECORD	NULLABLE
+green_only	                RECORD	NULLABLE
 green_only.total_outputs	INTEGER	NULLABLE
 green_only.percent	        FLOAT	NULLABLE
-publisher	            RECORD	NULLABLE
+publisher	                RECORD	NULLABLE
 publisher.total_outputs	    INTEGER	NULLABLE
 publisher.percent	        FLOAT	NULLABLE
-breakdown	            RECORD	REPEATED
+breakdown	                RECORD	REPEATED
 
 * breakdown object array captured in compute_conditional_citations schema above
 #}
-CREATE TEMP FUNCTION compute_access_types(items ARRAY<STRUCT<doi STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>) as (
+CREATE TEMP FUNCTION compute_access_types(
+           items ARRAY<STRUCT<doi STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>,
+           is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>)
+  AS (
   (SELECT AS STRUCT
     STRUCT(
       COUNTIF(is_oa = True) as total_outputs,
@@ -414,7 +433,11 @@ num_government_and_private_outputs	                INTEGER	NULLABLE
 num_international_collaboration_outputs	            INTEGER	NULLABLE
 international_collaboration_with_funding_outputs	INTEGER	NULLABLE
 #}
-CREATE TEMP FUNCTION compute_disciplines(fields ARRAY<STRUCT<DisplayName STRING, Score FLOAT64, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, funding BOOL, international_funding BOOL, domestic_funding BOOL, government_funding BOOL, private_funding BOOL, international_colab BOOL>>) as (
+CREATE TEMP FUNCTION compute_disciplines(
+            fields ARRAY<STRUCT<DisplayName STRING, Score FLOAT64, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>,
+            is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL,
+            funding BOOL, international_funding BOOL, domestic_funding BOOL, government_funding BOOL, private_funding BOOL, international_colab BOOL>>)
+  AS (
   ARRAY(
     (SELECT AS STRUCT
         DisplayName as field,
@@ -604,13 +627,33 @@ SELECT
   COUNT(dois.doi) as total_outputs,
 
   -- Access Types
-  compute_access_types(ARRAY_AGG(STRUCT(dois.doi, STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations, unpaywall.is_oa, unpaywall.green, unpaywall.gold, unpaywall.gold_just_doaj, unpaywall.hybrid, unpaywall.bronze, unpaywall.green_only))) as access_types,
+  compute_access_types(
+     ARRAY_AGG(
+        STRUCT(
+            dois.doi, STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
+            unpaywall.is_oa, unpaywall.green, unpaywall.gold, unpaywall.gold_just_doaj, unpaywall.hybrid, unpaywall.bronze, unpaywall.green_only
+        )
+     )
+  ) as access_types,
   
   -- Citations
-  compute_citations(ARRAY_AGG(STRUCT(dois.doi, STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations))) as citations,
+  compute_citations(
+     ARRAY_AGG(
+        STRUCT(
+            dois.doi, STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations
+        )
+     )
+  ) as citations,
 
   -- Output Types
-  count_output_types(ARRAY_AGG(STRUCT(unpaywall.output_type, STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations, unpaywall.is_oa, unpaywall.green, unpaywall.gold, unpaywall.gold_just_doaj, unpaywall.hybrid, unpaywall.bronze, unpaywall.green_only))) as output_types,
+  count_output_types(
+     ARRAY_AGG(
+        STRUCT(
+            unpaywall.output_type, STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
+            unpaywall.is_oa, unpaywall.green, unpaywall.gold, unpaywall.gold_just_doaj, unpaywall.hybrid, unpaywall.bronze, unpaywall.green_only
+        )
+     )
+  ) as output_types,
 
   -- Discipline
   {#
@@ -764,9 +807,14 @@ SELECT
     ARRAY_CONCAT_AGG( 
       ARRAY(
         (SELECT as STRUCT 
-          STRUCT(relation as identifier, relation as name, CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates) as relation, 
+          STRUCT(
+                relation as identifier, relation as name, CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code,
+                CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates
+          ) as relation,
           unpaywall,
-          STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
+          STRUCT(
+                dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations
+          ) as citations,
           ARRAY( SELECT as STRUCT DisplayName, Score, unpaywall.is_oa FROM UNNEST(dois.mag.fields.level_0)) as disciplines
         FROM UNNEST(aggregrate.members) as relation) 
       )
