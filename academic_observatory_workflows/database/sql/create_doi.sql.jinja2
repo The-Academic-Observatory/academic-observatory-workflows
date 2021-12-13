@@ -23,7 +23,12 @@ FROM
   (SELECT
     {# This SQL block links unpaywall, mag, open citations and crossref events to the DOI and the metadata found in the crossref metadata dataset #}
     UPPER(TRIM(ref.doi)) as doi,
-    STRUCT( title, abstract, issued.date_parts[offset(0)] as published_year, CASE WHEN ARRAY_LENGTH(issued.date_parts) > 1 THEN issued.date_parts[offset(1)] ELSE 13 END as published_month, CONCAT(issued.date_parts[offset(0)], "-", CASE WHEN ARRAY_LENGTH(issued.date_parts) > 1 THEN issued.date_parts[offset(1)] ELSE 13 END) as published_year_month, type, ISSN, ISBN, issn_type, publisher_location, publisher, member, prefix, container_title, short_container_title, group_title, references_count, is_referenced_by_count, subject, published_print, license, volume, funder, page, author, link, clinical_trial_number, alternative_id ) as crossref,
+    STRUCT( title, abstract, issued.date_parts[offset(0)] as published_year,
+            CASE WHEN ARRAY_LENGTH(issued.date_parts) > 1 THEN issued.date_parts[offset(1)] ELSE 13 END as published_month,
+            CONCAT(issued.date_parts[offset(0)], "-", CASE WHEN ARRAY_LENGTH(issued.date_parts) > 1 THEN issued.date_parts[offset(1)] ELSE 13 END) as published_year_month,
+            type, ISSN, ISBN, issn_type, publisher_location, publisher, member, prefix, container_title, short_container_title, group_title, references_count,
+            is_referenced_by_count, subject, published_print, license, volume, funder, page, author, link, clinical_trial_number, alternative_id
+            ) as crossref,
     (SELECT as STRUCT * from `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.unpaywall{{ release_date.strftime('%Y%m%d') }}` as oa WHERE oa.doi = UPPER(TRIM(ref.doi))) as unpaywall,
     (SELECT as STRUCT * from `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.mag{{ release_date.strftime('%Y%m%d') }}` as mag WHERE mag.doi = UPPER(TRIM(ref.doi))) as mag,
     (SELECT as STRUCT * from `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.open_citations{{ release_date.strftime('%Y%m%d') }}` as oa WHERE oa.doi = UPPER(TRIM(ref.doi))) as open_citations,
@@ -38,31 +43,72 @@ SELECT
   extras.doi as doi,
 
   institutions,
+
   {# The four affiliation types below (Country, SubRegion, Region and Grouping, take their values from the SubQuery Below 'LEFT JOIN( SELECT...' however they need to be GROUPed to ensure only unique lists. For example, two institutions in one country result in two records of the same counry and a squashed into a single instance #}
-  ARRAY(SELECT as STRUCT identifier, MAX(name) as name, ["Country"] as types, CAST(MAX(country) as STRING) as country, CAST(MAX(country_code) as STRING) as country_code, CAST(MAX(country_code_2) as STRING) as country_code_2, CAST(MAX(region) as STRING) as region, CAST(MAX(subregion) as STRING) as subregion, CAST(NULL as STRING) as coordinates, COUNT(*) as count, ARRAY_AGG(DISTINCT member_identifier IGNORE NULLS) as members FROM UNNEST(countries) GROUP BY identifier) as countries,
-  ARRAY(SELECT as STRUCT identifier, MAX(name) as name, ["Subregion"] as types, CAST(MAX(country) as STRING) as country, CAST(MAX(country_code) as STRING) as country_code, CAST(MAX(country_code_2) as STRING) as country_code_2, CAST(MAX(region) as STRING) as region, CAST(MAX(subregion) as STRING) as subregion, CAST(NULL as STRING) as coordinates, COUNT(*) as count, ARRAY_AGG(DISTINCT member_identifier IGNORE NULLS) as members  FROM UNNEST(subregions) GROUP BY identifier) as subregions,
-  ARRAY(SELECT as STRUCT identifier, MAX(name) as name, ["Region"] as types, CAST(MAX(country) as STRING) as country, CAST(MAX(country_code) as STRING) as country_code, CAST(MAX(country_code_2) as STRING) as country_code_2, CAST(MAX(region) as STRING) as region, CAST(MAX(subregion) as STRING) as subregion, CAST(NULL as STRING) as coordinates, COUNT(*) as count, ARRAY_AGG(DISTINCT member_identifier IGNORE NULLS) as members FROM UNNEST(regions) GROUP BY identifier) as regions,
-  ARRAY( SELECT as STRUCT grouping_entity.group_id as identifier, MAX(grouping_entity.group_name) as name, ["Grouping"] as types, CAST(NULL as STRING) as country, MAX(grouping_entity.country_code) as country_code, MAX(grouping_entity.country_code) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, ARRAY_AGG(DISTINCT grid_group.member_identifier IGNORE NULLS) as members FROM UNNEST(ror_groups) as grid_group, UNNEST(grid_group.groupings) as grouping_entity GROUP BY grouping_entity.group_id) as groupings,
+  ARRAY(SELECT as STRUCT identifier, MAX(name) as name, ["Country"] as types, CAST(MAX(country) as STRING) as country, CAST(MAX(country_code) as STRING) as country_code,
+        CAST(MAX(country_code_2) as STRING) as country_code_2, CAST(MAX(region) as STRING) as region, CAST(MAX(subregion) as STRING) as subregion, CAST(NULL as STRING) as coordinates,
+        COUNT(*) as count, ARRAY_AGG(DISTINCT member_identifier IGNORE NULLS) as members FROM UNNEST(countries) GROUP BY identifier
+        ) as countries,
+  ARRAY(SELECT as STRUCT identifier, MAX(name) as name, ["Subregion"] as types, CAST(MAX(country) as STRING) as country, CAST(MAX(country_code) as STRING) as country_code,
+        CAST(MAX(country_code_2) as STRING) as country_code_2, CAST(MAX(region) as STRING) as region, CAST(MAX(subregion) as STRING) as subregion, CAST(NULL as STRING) as coordinates,
+        COUNT(*) as count, ARRAY_AGG(DISTINCT member_identifier IGNORE NULLS) as members  FROM UNNEST(subregions) GROUP BY identifier
+        ) as subregions,
+  ARRAY(SELECT as STRUCT identifier, MAX(name) as name, ["Region"] as types, CAST(MAX(country) as STRING) as country, CAST(MAX(country_code) as STRING) as country_code,
+        CAST(MAX(country_code_2) as STRING) as country_code_2, CAST(MAX(region) as STRING) as region, CAST(MAX(subregion) as STRING) as subregion, CAST(NULL as STRING) as coordinates,
+        COUNT(*) as count, ARRAY_AGG(DISTINCT member_identifier IGNORE NULLS) as members FROM UNNEST(regions) GROUP BY identifier
+        ) as regions,
+  ARRAY(SELECT as STRUCT grouping_entity.group_id as identifier, MAX(grouping_entity.group_name) as name, ["Grouping"] as types, CAST(NULL as STRING) as country,
+        MAX(grouping_entity.country_code) as country_code, MAX(grouping_entity.country_code) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion,
+        CAST(NULL as STRING) as coordinates, ARRAY_AGG(DISTINCT grid_group.member_identifier IGNORE NULLS) as members FROM UNNEST(ror_groups) as grid_group,
+        UNNEST(grid_group.groupings) as grouping_entity GROUP BY grouping_entity.group_id
+        ) as groupings,
 
   -- Funder
-  {# Chooses the values that are passed along in the funder affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates. The values from JOINING the funder reference in Crossref metada with the Fundref dataset #}
-  ARRAY(SELECT as STRUCT funder.funder.name as identifier, funder.funder.name as name, funder.funder.doi as doi, ["Funder"] as types, CAST([] AS ARRAY<STRING>) as home_repo, CAST(funder.fundref.country as STRING) as country, CAST(funder.fundref.country_code as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(funder.fundref.region as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, funder.fundref.funding_body_type as funding_body_type, funder.fundref.funding_body_sub_type as funding_body_subtype, CAST([] AS ARRAY<STRING>) as members FROM UNNEST(fundref.funders) as funder) as funders,
+  {# Chooses the values that are passed along in the funder affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates.
+  The values from JOINING the funder reference in Crossref metada with the Fundref dataset
+  #}
+  ARRAY(SELECT as STRUCT funder.funder.name as identifier, funder.funder.name as name, funder.funder.doi as doi, ["Funder"] as types, CAST([] AS ARRAY<STRING>) as home_repo,
+        CAST(funder.fundref.country as STRING) as country, CAST(funder.fundref.country_code as STRING) as country_code, CAST(NULL as STRING) as country_code_2,
+        CAST(funder.fundref.region as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, funder.fundref.funding_body_type as funding_body_type,
+        funder.fundref.funding_body_sub_type as funding_body_subtype, CAST([] AS ARRAY<STRING>) as members FROM UNNEST(fundref.funders) as funder
+        ) as funders,
 
   -- Discipline
-  {# Chooses the values that are passed along in the discipline affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates. The values come from the fields of study in the MAG dataset #}
-  ARRAY(SELECT as STRUCT field.DisplayName as identifier, field.DisplayName as name, ["Discipline"] as types, CAST([] AS ARRAY<STRING>) as home_repo, CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, CAST([] AS ARRAY<STRING>) as members FROM UNNEST(mag.fields.level_0) as field) as disciplines,
+  {# Chooses the values that are passed along in the discipline affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates.
+     The values come from the fields of study in the MAG dataset
+  #}
+  ARRAY(SELECT as STRUCT field.DisplayName as identifier, field.DisplayName as name, ["Discipline"] as types, CAST([] AS ARRAY<STRING>) as home_repo,
+        CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region,
+        CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, CAST([] AS ARRAY<STRING>) as members FROM UNNEST(mag.fields.level_0) as field
+        ) as disciplines,
 
   -- Authors
-  {# Chooses the values that are passed along in the author affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates. The values come from the ORCID dataset, which is pivotted to index by DOI, which is the primary index in this table #}
-  ARRAY(SELECT as STRUCT author.uri as identifier, CONCAT(author.given_names, " ", author.family_name) as name, author.given_names as given_names, author.family_name as family_name,["Author"] as types, CAST([] AS ARRAY<STRING>) as home_repo, CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, CAST([] AS ARRAY<STRING>) as members FROM UNNEST(orcid.orcid) as author) as authors,
+  {# Chooses the values that are passed along in the author affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates.
+     The values come from the ORCID dataset, which is pivotted to index by DOI, which is the primary index in this table
+  #}
+  ARRAY(SELECT as STRUCT author.uri as identifier, CONCAT(author.given_names, " ", author.family_name) as name, author.given_names as given_names,
+        author.family_name as family_name,["Author"] as types, CAST([] AS ARRAY<STRING>) as home_repo, CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code,
+        CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, CAST([] AS ARRAY<STRING>) as members
+        FROM UNNEST(orcid.orcid) as author
+        ) as authors,
 
   -- Journal
-  {# While there is only ever one Journal for a pubication, this single struct is placed inside of an array '[ ]' to ensure it conforms to the same schema as other affiliation types. This enables templated queries downstream to be greatly simplified #}
-  [ STRUCT( unpaywall.journal_issn_l as identifier, unpaywall.normalised_journal_name as name, ["Journal"] as types, CAST([] AS ARRAY<STRING>) as home_repo, CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, CAST([] AS ARRAY<STRING>) as members )] as journals,
+  {# While there is only ever one Journal for a pubication, this single struct is placed inside of an array '[ ]' to ensure it conforms to the same schema as other affiliation types.
+     This enables templated queries downstream to be greatly simplified
+  #}
+  [ STRUCT( unpaywall.journal_issn_l as identifier, unpaywall.normalised_journal_name as name, ["Journal"] as types, CAST([] AS ARRAY<STRING>) as home_repo, CAST(NULL as STRING) as country,
+    CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates,
+    CAST([] AS ARRAY<STRING>) as members )
+   ] as journals,
   
   -- Publisher
-  {# While there is only ever one Publisher for a pubication, this single struct is placed inside of an array '[ ]' to ensure it conforms to the same schema as other affiliation types. This enables templated queries downstream to be greatly simplified #}
-  [ STRUCT( crossref.publisher as identifier,crossref.publisher as name, ["Publisher"] as types, CAST([] AS ARRAY<STRING>) as home_repo, CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, CAST([] AS ARRAY<STRING>) as members)] as publishers,
+  {# While there is only ever one Publisher for a pubication, this single struct is placed inside of an array '[ ]' to ensure it conforms to the same schema as other affiliation types.
+     This enables templated queries downstream to be greatly simplified
+  #}
+  [ STRUCT( crossref.publisher as identifier,crossref.publisher as name, ["Publisher"] as types, CAST([] AS ARRAY<STRING>) as home_repo, CAST(NULL as STRING) as country,
+    CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates,
+    CAST([] AS ARRAY<STRING>) as members)
+  ] as publishers,
   
 FROM
   dois_temp_table as extras
