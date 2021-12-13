@@ -1401,12 +1401,14 @@
           {
             "mode": "NULLABLE",
             "name": "source",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "A name for the source."
           },
           {
             "mode": "NULLABLE",
             "name": "count",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "Count of the number of events for the corresponding source"
           }
         ],
         "mode": "REPEATED",
@@ -1423,12 +1425,14 @@
           {
             "mode": "NULLABLE",
             "name": "source",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "A name for the source."
           },
           {
             "mode": "NULLABLE",
             "name": "count",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "Count of the number of events for the corresponding source"
           }
         ],
         "mode": "REPEATED",
@@ -1445,12 +1449,14 @@
           {
             "mode": "NULLABLE",
             "name": "source",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "A name for the source."
           },
           {
             "mode": "NULLABLE",
             "name": "count",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "Count of the number of events for the corresponding source"
           }
         ],
         "mode": "REPEATED",
@@ -1460,7 +1466,8 @@
     ],
     "mode": "NULLABLE",
     "name": "events",
-    "type": "RECORD"
+    "type": "RECORD",
+    "descriptions": "Data Derived from Crossref Events"
   },
   {
     "mode": "REPEATED",
