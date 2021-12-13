@@ -2,19 +2,22 @@
   {
     "mode": "NULLABLE",
     "name": "doi",
-    "type": "STRING"
+    "type": "STRING",
+    "description": "DOI of the work."
   },
   {
     "fields": [
       {
         "mode": "REPEATED",
         "name": "title",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Work titles, including translated titles."
       },
       {
         "mode": "NULLABLE",
         "name": "abstract",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Abstract as a JSON string or a JATS XML snippet encoded into a JSON string."
       },
       {
         "description": "Published year in YYYY",
@@ -55,12 +58,14 @@
           {
             "mode": "NULLABLE",
             "name": "type",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "ISSN type, can either be print ISSN or electronic ISSN."
           },
           {
             "mode": "NULLABLE",
             "name": "value",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "ISSN value"
           }
         ],
         "mode": "REPEATED",
@@ -70,103 +75,122 @@
       {
         "mode": "NULLABLE",
         "name": "publisher_location",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Location of work's publisher"
       },
       {
         "mode": "NULLABLE",
         "name": "publisher",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Name of work's publisher."
       },
       {
         "mode": "NULLABLE",
         "name": "member",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "Member identifier of the form http://id.crossref.org/member/MEMBER_ID"
       },
       {
         "mode": "NULLABLE",
         "name": "prefix",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "DOI prefix identifier of the form http://id.crossref.org/prefix/DOI_PREFIX."
       },
       {
         "mode": "REPEATED",
         "name": "container_title",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Full titles of the containing work (usually a book or journal)"
       },
       {
         "mode": "REPEATED",
         "name": "short_container_title",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Abbreviated titles of the containing work."
       },
       {
         "mode": "NULLABLE",
         "name": "group_title",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Group title for posted content."
       },
       {
         "mode": "NULLABLE",
         "name": "references_count",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "Count of outbound references deposited with Crossref"
       },
       {
         "mode": "NULLABLE",
         "name": "is_referenced_by_count",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "Count of inbound references deposited with Crossref."
       },
       {
         "mode": "REPEATED",
         "name": "subject",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Subject category names, a controlled vocabulary from Sci-Val. Available for most journal articles"
       },
       {
         "fields": [
           {
             "mode": "REPEATED",
             "name": "date_parts",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "Contains an ordered array of year, month, day of month. Only year is required. Note that the field contains a nested array, e.g. [ [ 2006, 5, 19 ] ] to conform to citeproc JSON dates"
           }
         ],
         "mode": "NULLABLE",
         "name": "published_print",
-        "type": "RECORD"
+        "type": "RECORD",
+        "description": "Date on which content was published in print."
       },
       {
         "fields": [
           {
             "mode": "NULLABLE",
             "name": "URL",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Link to a web page describing this license"
           },
           {
             "mode": "NULLABLE",
             "name": "content_version",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Either vor (version of record,) am (accepted manuscript,) tdm (text and data mining) or unspecified."
           },
           {
             "mode": "NULLABLE",
             "name": "delay_in_days",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "Number of days between the publication date of the work and the start date of this license."
           },
           {
             "fields": [
               {
                 "mode": "REPEATED",
                 "name": "date_parts",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "Contains an ordered array of year, month, day of month. Only year is required. Note that the field contains a nested array, e.g. [ [ 2006, 5, 19 ] ] to conform to citeproc JSON dates"
               },
               {
                 "mode": "NULLABLE",
                 "name": "date_time",
-                "type": "TIMESTAMP"
+                "type": "TIMESTAMP",
+                "description": "ISO 8601 date time."
               },
               {
                 "mode": "NULLABLE",
                 "name": "timestamp",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "Seconds since UNIX epoch."
               }
             ],
             "mode": "NULLABLE",
             "name": "start",
-            "type": "RECORD"
+            "type": "RECORD",
+            "description": "Date on which this license begins to take effect"
           }
         ],
         "mode": "REPEATED",
@@ -176,29 +200,34 @@
       {
         "mode": "NULLABLE",
         "name": "volume",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Volume number of an article's journal."
       },
       {
         "fields": [
           {
             "mode": "NULLABLE",
             "name": "DOI",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Optional Open Funder Registry DOI uniquely identifing the funding body (http://www.crossref.org/fundingdata/registry.html)"
           },
           {
             "mode": "REPEATED",
             "name": "award",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Award number(s) for awards given by the funding body."
           },
           {
             "mode": "NULLABLE",
             "name": "doi_asserted_by",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Either crossref or publisher"
           },
           {
             "mode": "NULLABLE",
             "name": "name",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Funding body primary name"
           }
         ],
         "mode": "REPEATED",
@@ -208,14 +237,16 @@
       {
         "mode": "NULLABLE",
         "name": "page",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Pages numbers of an article within its journal."
       },
       {
         "fields": [
           {
             "mode": "NULLABLE",
             "name": "ORCID",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "URL-form of an ORCID identifier"
           },
           {
             "fields": [
@@ -232,7 +263,8 @@
           {
             "mode": "NULLABLE",
             "name": "authenticated_orcid",
-            "type": "BOOLEAN"
+            "type": "BOOLEAN",
+            "description": "If true, record owner asserts that the ORCID user completed ORCID OAuth authentication."
           },
           {
             "mode": "NULLABLE",
@@ -269,44 +301,52 @@
           {
             "mode": "NULLABLE",
             "name": "URL",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Direct link to a full-text download location."
           },
           {
             "mode": "NULLABLE",
             "name": "content_type",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Content type (or MIME type) of the full-text object."
           },
           {
             "mode": "NULLABLE",
             "name": "content_version",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Either vor (version of record,) am (accepted manuscript) or unspecified."
           },
           {
             "mode": "NULLABLE",
             "name": "intended_application",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Either text-mining, similarity-checking or unspecified."
           }
         ],
         "mode": "REPEATED",
         "name": "link",
-        "type": "RECORD"
+        "type": "RECORD",
+        "description": "URLs to full-text locations."
       },
       {
         "fields": [
           {
             "mode": "NULLABLE",
             "name": "clinical_trial_number",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Identifier of the clinical trial."
           },
           {
             "mode": "NULLABLE",
             "name": "registry",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "DOI of the clinical trial regsitry that assigned the trial number."
           },
           {
             "mode": "NULLABLE",
             "name": "type",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "One of preResults, results or postResults"
           }
         ],
         "mode": "REPEATED",
@@ -316,7 +356,8 @@
       {
         "mode": "REPEATED",
         "name": "alternative_id",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Other identifiers for the work provided by the depositing member"
       }
     ],
     "mode": "NULLABLE",
