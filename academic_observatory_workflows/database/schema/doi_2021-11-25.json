@@ -328,17 +328,20 @@
       {
         "mode": "NULLABLE",
         "name": "doi",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "The DOI of this resource. This is always lowercase."
       },
       {
         "mode": "NULLABLE",
         "name": "year",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "The year this resource was published. Just the year part of the published_date"
       },
       {
         "mode": "NULLABLE",
         "name": "output_type",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Renamed from Genre in Unpaywall: The type of resource. Currently the genre is identical to the Crossref-reported type of a given resource. The \"journal-article\" type is most common, but there are many others."
       },
       {
         "description": "The name of this resource's publisher. Keep in mind that publisher name strings change over time, particularly as publishers are acquired or split up.",
@@ -367,92 +370,110 @@
       {
         "mode": "NULLABLE",
         "name": "is_oa",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "description": "Is there an OA copy of this resource. Convenience attribute; returns true when best_oa_location is not null."
       },
       {
         "mode": "NULLABLE",
         "name": "is_in_doaj",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "description": "Is this resource published in a DOAJ-indexed journal. Useful for defining whether a resource is Gold OA (depending on your definition, see also journal_is_oa)."
       },
       {
         "mode": "NULLABLE",
         "name": "journal_is_oa",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "description": "Is this resource published in a completely OA journal.\tUseful for defining whether a resource is Gold OA. Includes any fully-OA journal, regardless of inclusion in DOAJ. This includes journals by all-OA publishers and journals that would otherwise be all Hybrid or Bronze OA."
       },
       {
         "mode": "NULLABLE",
         "name": "unpaywall_oa_status",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "The OA status, or color, of this resource. Classifies OA resources by location and license terms as one of: gold, hybrid, bronze, green or closed. See here for more information on how we assign an oa_status: https://support.unpaywall.org/support/solutions/articles/44001777288-what-do-the-types-of-oa-status-green-gold-hybrid-and-bronze-mean-"
       },
       {
         "mode": "NULLABLE",
         "name": "gold",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "description": "COKI determinations of gold OA status"
       },
       {
         "mode": "NULLABLE",
         "name": "gold_just_doaj",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "description": "COKI determinations of gold_just_doaj OA status"
       },
       {
         "mode": "NULLABLE",
         "name": "hybrid",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "description": "COKI determinations of hybrid OA status"
       },
       {
         "mode": "NULLABLE",
         "name": "bronze",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "description": "COKI determinations of bronze OA status"
       },
       {
         "mode": "NULLABLE",
         "name": "green",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "description": "COKI determinations of green OA status"
       },
       {
         "mode": "NULLABLE",
         "name": "green_only",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "description": "COKI determinations of green_only OA status"
       },
       {
         "mode": "NULLABLE",
         "name": "green_only_ignoring_bronze",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "description": "COKI determinations of green_only_ignoring_bronze OA status"
       },
       {
         "mode": "NULLABLE",
         "name": "has_license",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "description": "COKI determinations of where there is a license"
       },
       {
         "mode": "NULLABLE",
         "name": "is_cclicensed",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "description": "COKI determinations of where there is a Creative Commons license"
       },
       {
         "mode": "REPEATED",
         "name": "repository_locations",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "List of outputs from the url fields, in oa_locations where host_type = \"repository\""
       },
       {
         "mode": "REPEATED",
         "name": "repository_names",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "List of outputs from the repository_institution field, in oa_locations where host_type = \"repository\" AND repository_institution IS NOT NULL"
       },
       {
         "mode": "NULLABLE",
         "name": "url_for_landing_page",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "The URL for a landing page describing this OA copy. When the host_type is \"publisher\" the landing page usually includes HTML fulltext."
       },
       {
         "mode": "NULLABLE",
         "name": "url_for_pdf",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "The URL with a PDF version of this OA copy."
       }
     ],
     "mode": "NULLABLE",
     "name": "unpaywall",
-    "type": "RECORD"
+    "type": "RECORD",
+    "description":  "Data derived from Unpaywall"
   },
   {
     "fields": [
