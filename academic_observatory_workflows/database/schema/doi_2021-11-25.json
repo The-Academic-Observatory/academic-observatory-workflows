@@ -521,7 +521,8 @@
       {
         "mode": "NULLABLE",
         "name": "PaperId",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "PRIMARY KEY in mag"
       },
       {
         "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities",
@@ -532,7 +533,8 @@
       {
         "mode": "NULLABLE",
         "name": "Doi",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Doi values are upper-cased per DOI standard"
       },
       {
         "description": "Book, BookChapter, Conference, Dataset, Journal, Patent, Repository, Thesis, NULL : unknown",
@@ -543,27 +545,32 @@
       {
         "mode": "NULLABLE",
         "name": "PaperTitle",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "The title of the Paper"
       },
       {
         "mode": "NULLABLE",
         "name": "OriginalTitle",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "The Original Title of the Paper"
       },
       {
         "mode": "NULLABLE",
         "name": "BookTitle",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "The Book Title (optional)"
       },
       {
         "mode": "NULLABLE",
         "name": "Year",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "The year of publication"
       },
       {
         "mode": "NULLABLE",
         "name": "Date",
-        "type": "DATETIME"
+        "type": "DATETIME",
+        "description": "The date of publication"
       },
       {
         "mode": "NULLABLE",
@@ -573,52 +580,62 @@
       {
         "mode": "NULLABLE",
         "name": "Publisher",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "The name of the publisher"
       },
       {
         "mode": "NULLABLE",
         "name": "Volume",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "The volume (optional)"
       },
       {
         "mode": "NULLABLE",
         "name": "Issue",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "The Issue (optional)"
       },
       {
         "mode": "NULLABLE",
         "name": "FirstPage",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "The First Page (optional)"
       },
       {
         "mode": "NULLABLE",
         "name": "LastPage",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "The Last page (optional)"
       },
       {
         "mode": "NULLABLE",
         "name": "ReferenceCount",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "The number of Papers this Paper references"
       },
       {
         "mode": "NULLABLE",
         "name": "CitationCount",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "The number of Papers that cite this Paper"
       },
       {
         "mode": "NULLABLE",
         "name": "EstimatedCitation",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "An estimation of objects citing this paper beyond what MAG has in it's database"
       },
       {
         "mode": "NULLABLE",
         "name": "OriginalVenue",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "The original venue of publication"
       },
       {
         "mode": "NULLABLE",
         "name": "FamilyId",
-        "type": "INTEGER"
+        "type": "INTEGER",
+        "description": "A paper 'family' is defined as a group of papers that have been determined to be the same fundamental paper, but published in different venues - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-familyid-in-papers"
       },
       {
         "mode": "NULLABLE",
@@ -634,7 +651,8 @@
       {
         "mode": "NULLABLE",
         "name": "abstract",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "Paper Abstract (this has been normalised but see - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-format-are-paper-abstracts-published-in)"
       },
       {
         "fields": [
@@ -643,39 +661,46 @@
               {
                 "mode": "NULLABLE",
                 "name": "DisplayName",
-                "type": "STRING"
+                "type": "STRING",
+                "description": "The displayed name of the Field of Study"
               },
               {
                 "mode": "NULLABLE",
                 "name": "FieldOfStudyId",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "PRIMARY KEY"
               },
               {
                 "mode": "NULLABLE",
                 "name": "Rank",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities"
               },
               {
                 "mode": "NULLABLE",
                 "name": "MainType",
-                "type": "STRING"
+                "type": "STRING",
+                "description": "Optional: The type or category of entity this field of study belongs within "
               },
               {
                 "mode": "NULLABLE",
                 "name": "Score",
-                "type": "FLOAT"
+                "type": "FLOAT",
+                "description": "Confidence range between 0 and 1. Bigger number representing higher confidence"
               },
               {
                 "fields": [
                   {
                     "mode": "NULLABLE",
                     "name": "AttributeType",
-                    "type": "INTEGER"
+                    "type": "INTEGER",
+                    "description": "1: AUI: Atom Unique Identifier defined in Unified Medical Language System (UMLS), version 2018AA. 2: SourceUrl"
                   },
                   {
                     "mode": "NULLABLE",
                     "name": "AttributeValue",
-                    "type": "STRING"
+                    "type": "STRING",
+                    "description": "The value of the attribute"
                   }
                 ],
                 "mode": "REPEATED",
@@ -685,46 +710,54 @@
             ],
             "mode": "REPEATED",
             "name": "level_0",
-            "type": "RECORD"
+            "type": "RECORD",
+            "description": "Links fields of study at level 0"
           },
           {
             "fields": [
               {
                 "mode": "NULLABLE",
                 "name": "DisplayName",
-                "type": "STRING"
+                "type": "STRING",
+                "description": "The displayed name of the Field of Study"
               },
               {
                 "mode": "NULLABLE",
                 "name": "FieldOfStudyId",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "PRIMARY KEY"
               },
               {
                 "mode": "NULLABLE",
                 "name": "Rank",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities"
               },
               {
                 "mode": "NULLABLE",
                 "name": "MainType",
-                "type": "STRING"
+                "type": "STRING",
+                "description": "Optional: The type or category of entity this field of study belongs within "
               },
               {
                 "mode": "NULLABLE",
                 "name": "Score",
-                "type": "FLOAT"
+                "type": "FLOAT",
+                "description": "Confidence range between 0 and 1. Bigger number representing higher confidence"
               },
               {
                 "fields": [
                   {
                     "mode": "NULLABLE",
                     "name": "AttributeType",
-                    "type": "INTEGER"
+                    "type": "INTEGER",
+                    "description": "1: AUI: Atom Unique Identifier defined in Unified Medical Language System (UMLS), version 2018AA. 2: SourceUrl"
                   },
                   {
                     "mode": "NULLABLE",
                     "name": "AttributeValue",
-                    "type": "STRING"
+                    "type": "STRING",
+                    "description": "The value of the attribute"
                   }
                 ],
                 "mode": "REPEATED",
@@ -734,46 +767,54 @@
             ],
             "mode": "REPEATED",
             "name": "level_1",
-            "type": "RECORD"
+            "type": "RECORD",
+            "description": "Links fields of study at level 1"
           },
           {
             "fields": [
               {
                 "mode": "NULLABLE",
                 "name": "DisplayName",
-                "type": "STRING"
+                "type": "STRING",
+                "description": "The displayed name of the Field of Study"
               },
               {
                 "mode": "NULLABLE",
                 "name": "FieldOfStudyId",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "PRIMARY KEY"
               },
               {
                 "mode": "NULLABLE",
                 "name": "Rank",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities"
               },
               {
                 "mode": "NULLABLE",
                 "name": "MainType",
-                "type": "STRING"
+                "type": "STRING",
+                "description": "Optional: The type or category of entity this field of study belongs within "
               },
               {
                 "mode": "NULLABLE",
                 "name": "Score",
-                "type": "FLOAT"
+                "type": "FLOAT",
+                "description": "Confidence range between 0 and 1. Bigger number representing higher confidence"
               },
               {
                 "fields": [
                   {
                     "mode": "NULLABLE",
                     "name": "AttributeType",
-                    "type": "INTEGER"
+                    "type": "INTEGER",
+                    "description": "1: AUI: Atom Unique Identifier defined in Unified Medical Language System (UMLS), version 2018AA. 2: SourceUrl"
                   },
                   {
                     "mode": "NULLABLE",
                     "name": "AttributeValue",
-                    "type": "STRING"
+                    "type": "STRING",
+                    "description": "The value of the attribute"
                   }
                 ],
                 "mode": "REPEATED",
@@ -783,46 +824,54 @@
             ],
             "mode": "REPEATED",
             "name": "level_2",
-            "type": "RECORD"
+            "type": "RECORD",
+            "description": "Links fields of study at level 2"
           },
           {
             "fields": [
               {
                 "mode": "NULLABLE",
                 "name": "DisplayName",
-                "type": "STRING"
+                "type": "STRING",
+                "description": "The displayed name of the Field of Study"
               },
               {
                 "mode": "NULLABLE",
                 "name": "FieldOfStudyId",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "PRIMARY KEY"
               },
               {
                 "mode": "NULLABLE",
                 "name": "Rank",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities"
               },
               {
                 "mode": "NULLABLE",
                 "name": "MainType",
-                "type": "STRING"
+                "type": "STRING",
+                "description": "Optional: The type or category of entity this field of study belongs within "
               },
               {
                 "mode": "NULLABLE",
                 "name": "Score",
-                "type": "FLOAT"
+                "type": "FLOAT",
+                "description": "Confidence range between 0 and 1. Bigger number representing higher confidence"
               },
               {
                 "fields": [
                   {
                     "mode": "NULLABLE",
                     "name": "AttributeType",
-                    "type": "INTEGER"
+                    "type": "INTEGER",
+                    "description": "1: AUI: Atom Unique Identifier defined in Unified Medical Language System (UMLS), version 2018AA. 2: SourceUrl"
                   },
                   {
                     "mode": "NULLABLE",
                     "name": "AttributeValue",
-                    "type": "STRING"
+                    "type": "STRING",
+                    "description": "The value of the attribute"
                   }
                 ],
                 "mode": "REPEATED",
@@ -832,46 +881,54 @@
             ],
             "mode": "REPEATED",
             "name": "level_3",
-            "type": "RECORD"
+            "type": "RECORD",
+            "description": "Links fields of study at level 3"
           },
           {
             "fields": [
               {
                 "mode": "NULLABLE",
                 "name": "DisplayName",
-                "type": "STRING"
+                "type": "STRING",
+                "description": "The displayed name of the Field of Study"
               },
               {
                 "mode": "NULLABLE",
                 "name": "FieldOfStudyId",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "PRIMARY KEY"
               },
               {
                 "mode": "NULLABLE",
                 "name": "Rank",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities"
               },
               {
                 "mode": "NULLABLE",
                 "name": "MainType",
-                "type": "STRING"
+                "type": "STRING",
+                "description": "Optional: The type or category of entity this field of study belongs within "
               },
               {
                 "mode": "NULLABLE",
                 "name": "Score",
-                "type": "FLOAT"
+                "type": "FLOAT",
+                "description": "Confidence range between 0 and 1. Bigger number representing higher confidence"
               },
               {
                 "fields": [
                   {
                     "mode": "NULLABLE",
                     "name": "AttributeType",
-                    "type": "INTEGER"
+                    "type": "INTEGER",
+                    "description": "1: AUI: Atom Unique Identifier defined in Unified Medical Language System (UMLS), version 2018AA. 2: SourceUrl"
                   },
                   {
                     "mode": "NULLABLE",
                     "name": "AttributeValue",
-                    "type": "STRING"
+                    "type": "STRING",
+                    "description": "The value of the attribute"
                   }
                 ],
                 "mode": "REPEATED",
@@ -881,46 +938,54 @@
             ],
             "mode": "REPEATED",
             "name": "level_4",
-            "type": "RECORD"
+            "type": "RECORD",
+            "description": "Links fields of study at level 4"
           },
           {
             "fields": [
               {
                 "mode": "NULLABLE",
                 "name": "DisplayName",
-                "type": "STRING"
+                "type": "STRING",
+                "description": "The displayed name of the Field of Study"
               },
               {
                 "mode": "NULLABLE",
                 "name": "FieldOfStudyId",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "PRIMARY KEY"
               },
               {
                 "mode": "NULLABLE",
                 "name": "Rank",
-                "type": "INTEGER"
+                "type": "INTEGER",
+                "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities"
               },
               {
                 "mode": "NULLABLE",
                 "name": "MainType",
-                "type": "STRING"
+                "type": "STRING",
+                "description": "Optional: The type or category of entity this field of study belongs within "
               },
               {
                 "mode": "NULLABLE",
                 "name": "Score",
-                "type": "FLOAT"
+                "type": "FLOAT",
+                "description": "Confidence range between 0 and 1. Bigger number representing higher confidence"
               },
               {
                 "fields": [
                   {
                     "mode": "NULLABLE",
                     "name": "AttributeType",
-                    "type": "INTEGER"
+                    "type": "INTEGER",
+                    "description": "1: AUI: Atom Unique Identifier defined in Unified Medical Language System (UMLS), version 2018AA. 2: SourceUrl"
                   },
                   {
                     "mode": "NULLABLE",
                     "name": "AttributeValue",
-                    "type": "STRING"
+                    "type": "STRING",
+                    "description": "The value of the attribute"
                   }
                 ],
                 "mode": "REPEATED",
@@ -930,7 +995,8 @@
             ],
             "mode": "REPEATED",
             "name": "level_5",
-            "type": "RECORD"
+            "type": "RECORD",
+            "description": "Links fields of study at level 5"
           }
         ],
         "mode": "NULLABLE",
@@ -942,22 +1008,26 @@
           {
             "mode": "NULLABLE",
             "name": "DescriptorUI",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Descriptor Unique Identifier. Seven-character alpha-numeric string - https://www.nlm.nih.gov/mesh/mbinfo.html"
           },
           {
             "mode": "NULLABLE",
             "name": "DescriptorName",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "A term that uniquely refers to its <DescriptorRecord>"
           },
           {
             "mode": "NULLABLE",
             "name": "QualifierUI",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Qualifier Unique Identifier. Seven-character alpha-numeric string uniquely identifying a <QualifierRecord>"
           },
           {
             "mode": "NULLABLE",
             "name": "QualifierName",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Term that uniquely names its <QualifierRecord> "
           },
           {
             "mode": "NULLABLE",
@@ -974,37 +1044,44 @@
           {
             "mode": "NULLABLE",
             "name": "AuthorSequenceNumber",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "1-based author sequence number. 1: the 1st author listed on paper, 2: the 2nd author listed on paper, etc."
           },
           {
             "mode": "NULLABLE",
             "name": "AuthorID",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "PRIMARY KEY: Unique Identifier for an Author"
           },
           {
             "mode": "NULLABLE",
             "name": "OriginalAuthor",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Original Author Name"
           },
           {
             "mode": "NULLABLE",
             "name": "AffiliationId",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "PRIMARY KEY: Unique Identifier for an Organisation"
           },
           {
             "mode": "NULLABLE",
             "name": "OriginalAffiliation",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Original Author Affiliation String"
           },
           {
             "mode": "NULLABLE",
             "name": "GridId",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "The Grid ID of the Organisation"
           },
           {
             "mode": "NULLABLE",
             "name": "DisplayName",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "The Displayed name of the Author"
           }
         ],
         "mode": "REPEATED",
@@ -1016,22 +1093,26 @@
           {
             "mode": "NULLABLE",
             "name": "JournalId",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "PRIMARY KEY"
           },
           {
             "mode": "NULLABLE",
             "name": "DisplayName",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "The displayed name of the Journal"
           },
           {
             "mode": "NULLABLE",
             "name": "Issn",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "The Journals ISSN"
           },
           {
             "mode": "NULLABLE",
             "name": "Publisher",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "The Publisher of this Journal"
           }
         ],
         "mode": "NULLABLE",
@@ -1043,52 +1124,62 @@
           {
             "mode": "NULLABLE",
             "name": "ConferenceInstanceId",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "PRIMARY KEY: Unique Identifier for a Conference Instance"
           },
           {
             "mode": "NULLABLE",
             "name": "NormalizedName",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Normalised name of the Conference"
           },
           {
             "mode": "NULLABLE",
             "name": "DisplayName",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "The Displayed name of the Conference"
           },
           {
             "mode": "NULLABLE",
             "name": "Location",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "The location of the Conference"
           },
           {
             "mode": "NULLABLE",
             "name": "OfficialUrl",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "The URL of the Offical Conference Website"
           },
           {
             "mode": "NULLABLE",
             "name": "StartDate",
-            "type": "DATETIME"
+            "type": "DATETIME",
+            "description": "The start date of the Conference Instance"
           },
           {
             "mode": "NULLABLE",
             "name": "EndDate",
-            "type": "DATETIME"
+            "type": "DATETIME",
+            "description": "The end date of the Conference Instance"
           },
           {
             "mode": "NULLABLE",
             "name": "PaperCount",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "The number of Papers that have been identified from this Conference Instance"
           },
           {
             "mode": "NULLABLE",
             "name": "Latitude",
-            "type": "FLOAT"
+            "type": "FLOAT",
+            "description": "The Latitude of the Conference Instance"
           },
           {
             "mode": "NULLABLE",
             "name": "Longitude",
-            "type": "FLOAT"
+            "type": "FLOAT",
+            "description": "The Longitude of the Conference Instance"
           }
         ],
         "mode": "NULLABLE",
@@ -1100,17 +1191,20 @@
           {
             "mode": "NULLABLE",
             "name": "ConferenceSeriesId",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "PRIMARY KEY: Unique Identifier for a Conference Series"
           },
           {
             "mode": "NULLABLE",
             "name": "NormalizedName",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Normalised name of the Conference Series"
           },
           {
             "mode": "NULLABLE",
             "name": "DisplayName",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "The Displayed name of the Conference Series"
           }
         ],
         "mode": "NULLABLE",
@@ -1122,12 +1216,14 @@
           {
             "mode": "NULLABLE",
             "name": "AttributeType",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "1: PatentId, 2: PubMedId, 3: PmcId, 4: Alternative Title"
           },
           {
             "mode": "NULLABLE",
             "name": "AttributeValue",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "The value of the attribute"
           }
         ],
         "mode": "REPEATED",
@@ -1139,12 +1235,14 @@
           {
             "mode": "NULLABLE",
             "name": "ResourceType",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "Bit flags. 1 = Project, 2 = Data, 4 = Code"
           },
           {
             "mode": "NULLABLE",
             "name": "ResourceUrl",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "URL of the resource"
           }
         ],
         "mode": "REPEATED",
@@ -1156,17 +1254,20 @@
           {
             "mode": "NULLABLE",
             "name": "SourceType",
-            "type": "INTEGER"
+            "type": "INTEGER",
+            "description": "1 = Html, 2 = Text, 3 = Pdf, 4 = Doc, 5 = Ppt, 6 = Xls, 8 = Rtf, 12 = Xml, 13 = Rss, 20 = Swf, 27 = Ics, 31 = Pub, 33 = Ods, 34 = Odp, 35 = Odt, 36 = Zip, 40 = Mp3, 0/999/NULL = unknown"
           },
           {
             "mode": "NULLABLE",
             "name": "SourceUrl",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "PRIMARY KEY"
           },
           {
             "mode": "NULLABLE",
             "name": "LanguageCode",
-            "type": "STRING"
+            "type": "STRING",
+            "description": "Language Code"
           }
         ],
         "mode": "REPEATED",
@@ -1176,12 +1277,14 @@
       {
         "mode": "REPEATED",
         "name": "grids",
-        "type": "STRING"
+        "type": "STRING",
+        "description": "list of grid id's extracted from the authors fields for easier access"
       }
     ],
     "mode": "NULLABLE",
     "name": "mag",
-    "type": "RECORD"
+    "type": "RECORD",
+    "description": "Data derived from Microsoft Academic Graph"
   },
   {
     "fields": [
