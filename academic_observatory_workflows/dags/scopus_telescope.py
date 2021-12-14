@@ -29,10 +29,11 @@ telescopes = api.get_telescopes(telescope_type_id=telescope_type.id, limit=1000)
 # Create workflows for each organisation
 for telescope in telescopes:
     dag_id = make_dag_id(ScopusTelescope.DAG_ID, telescope.organisation.name)
-    airflow_conns = [telescope.extra.get("airflow_connections")]
+    airflow_conns = telescope.extra.get("airflow_connections")
     institution_ids = telescope.extra.get("institution_ids")
     view = telescope.extra.get("view")
 
+    # earliest_date is parsed into a datetime.date object by the Python API client
     earliest_date_str = telescope.extra.get("earliest_date").isoformat()
     earliest_date = pendulum.parse(earliest_date_str)
 

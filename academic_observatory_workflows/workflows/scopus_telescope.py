@@ -178,7 +178,7 @@ class ScopusTelescope(SnapshotTelescope):
         airflow_conns: List[AirflowConns],
         airflow_vars: List[AirflowVars],
         institution_ids: List[str],
-        view: str = "standard",
+        view: str = "STANDARD",
         earliest_date: pendulum.DateTime = pendulum.datetime(1800, 1, 1),
         start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
         schedule_interval: str = "@monthly",
