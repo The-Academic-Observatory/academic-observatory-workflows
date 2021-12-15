@@ -603,14 +603,16 @@ class TestScopusTelescope(ObservatoryTestCase):
         conn = Connection(conn_id=self.conn_id, uri=f"http://login:password@localhost")
         env.add_connection(conn)
 
-    def setup_api(self, env):
+    def setup_api(self, env, extra=None):
         dt = pendulum.now("UTC")
 
-        extra = {
-            "airflow_connections": self.conn_id,
-            "institution_ids": ["123"],
-            "earliest_date": self.earliest_date.isoformat(),
-        }
+        if extra is None:
+            extra = {
+                "airflow_connections": [self.conn_id],
+                "institution_ids": ["123"],
+                "earliest_date": self.earliest_date.isoformat(),
+                "view": "STANDARD",
+            }
 
         name = "Scopus Telescope"
         telescope_type = orm.TelescopeType(name=name, type_id=ScopusTelescope.DAG_ID, created=dt, modified=dt)
@@ -644,9 +646,9 @@ class TestScopusTelescope(ObservatoryTestCase):
         self.assertEqual(len(telescopes), 1)
 
         dag_id = make_dag_id(ScopusTelescope.DAG_ID, telescopes[0].organisation.name)
-        airflow_conns = [telescopes[0].extra.get("airflow_connections")]
+        airflow_conns = telescopes[0].extra.get("airflow_connections")
         institution_ids = telescopes[0].extra.get("institution_ids")
-        earliest_date_str = telescopes[0].extra.get("earliest_date").isoformat()
+        earliest_date_str = telescopes[0].extra.get("earliest_date")
         earliest_date = pendulum.parse(earliest_date_str)
 
         airflow_vars = [
@@ -695,7 +697,7 @@ class TestScopusTelescope(ObservatoryTestCase):
         """
         dag = ScopusTelescope(
             dag_id="dag",
-            airflow_conns="conn",
+            airflow_conns=["conn"],
             airflow_vars=[],
             institution_ids=["10"],
             earliest_date=pendulum.now("UTC"),
@@ -728,6 +730,25 @@ class TestScopusTelescope(ObservatoryTestCase):
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
             dag_id = make_dag_id(ScopusTelescope.DAG_ID, self.org_name)
             self.assert_dag_load(dag_id, dag_file)
+
+    def test_dag_load_missing_params(self):
+        """Test that the DAG can be loaded from a DAG bag."""
+
+        dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
+        extra = {
+            "airflow_connections": [self.conn_id],
+            "institution_ids": ["123"],
+            "earliest_date": self.earliest_date.isoformat(),
+        }
+
+        with env.create():
+            self.setup_connections(env)
+            self.setup_api(env, extra=extra)
+
+            dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
+            dag_id = make_dag_id(ScopusTelescope.DAG_ID, self.org_name)
+            self.assertRaises(AssertionError, self.assert_dag_load, dag_id, dag_file)
 
     def test_telescope(self):
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
