@@ -4,7 +4,9 @@ The primary purpose of the DOI workflow is to link together open datasets of hig
 
 ## Input datasets
 
-Each a number of specialised research publication datasets are collected. These include Crossref Metadata, Crossref Funder Registry, Crossref Events, Microsoft Academic Graph, Unpaywall, the Research Organization Registry, Open Citations and Geonames. The table below illustrates each of these datesets and the PIDs that are exposed within them.
+A number of specialised research publication datasets are collected. These include Crossref Metadata, Crossref Funder Registry, Crossref Events, Microsoft Academic Graph, Unpaywall, the Research Organization Registry, Open Citations and Geonames. The table below illustrates each of these datesets and the PIDs that are exposed within them.
+
+PIDs in this case refer to persistent identifiers. Commonly used identifier schemas that normalised how we refer to unique entities across a range of independent systems.
 
 ```eval_rst
 +-------------------+-----------------------------------------------------+-----------+
@@ -62,6 +64,10 @@ Once the publications table has been created, the publications are grouped by en
 
 Digging into the mechanics of the workflow, there are a number of intermediate tables that are created. Much of the time, these are not relevant as the information is better organised in the final output tables. However, for specific analysis they may be useful so are included here for completeness 
 
+The primary purpose of these tables is to pre-process some of the raw datasets, creating a new format that is easier to work with downstream. In the case of GRID, it adds additional information around county and region from the iso3166 dataset, and for unpaywall it computes some COKI defined logic for OA status types.
+
+For each of the scripts, they can be found in the following [folder](https://github.com/The-Academic-Observatory/academic-observatory-workflows/tree/develop/academic_observatory_workflows/database/sql)
+
 ```eval_rst
 +----------------+----------------------------------------------------+-----+-----------------------------------+
 | Name           | Table                                              | PID | SQL File Name                     |
@@ -85,7 +91,7 @@ Digging into the mechanics of the workflow, there are a number of intermediate t
 
 ### Output datasets
 
-The final set of output dataset are as followed. Aside from the DOI table, which is an integrated set of all the input datasets linked by DOI, they each share a very similar, or identical, schema. The difference is around the entity being aggregated against.
+The final set of output dataset are as follows. Aside from the DOI table, which is an integrated set of all the input datasets linked by DOI, they each share a very similar, or identical, schema. The difference is around the entity being aggregated against.
 
 ```eval_rst
 +-----------------+---------------------------------------------+-----------+---------------------------------+
@@ -111,10 +117,13 @@ The final set of output dataset are as followed. Aside from the DOI table, which
 +-----------------+---------------------------------------------+-----------+---------------------------------+
 | Region          | `observatory.regionYYYYMMDD`                | Region    | create_aggregate.sql.jinja2     |
 +-----------------+---------------------------------------------+-----------+---------------------------------+
-| Sub Region      | `observatory.subregionYYYYMMDD`             | SubRegion | create_aggregate.sql.jinja2     |
+| Sub-region      | `observatory.subregionYYYYMMDD`             | SubRegion | create_aggregate.sql.jinja2     |
 +-----------------+---------------------------------------------+-----------+---------------------------------+
 ```
 
-## Testing
+### Output Schemas
 
-Overview of how the tests work here...
+The following Links provide details in to the schemas behind the doi, book and various other aggregration tables schemas:
+- [Doi table](./doi_output_schema.md)
+- [Books table](./book_output_schema.md)
+- [Shared Schema for Aggregration Output tables](./aggregate_output_schema.md)
