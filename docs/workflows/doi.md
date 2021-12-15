@@ -18,7 +18,7 @@ PIDs in this case refer to persistent identifiers. Commonly used identifier sche
 +-------------------+-----------------------------------------------------+-----------+
 | Crosref Fundref   | `crossref.crossref_fundrefYYYYMMDD`                 | FunderDOI |
 +-------------------+-----------------------------------------------------+-----------+
-| Grid              | `digital_science.gridYYYYMMDD`                      | GRID      |
+| RoR               | `ror.rorYYYYMMDD`                                   | ROR       |
 +-------------------+-----------------------------------------------------+-----------+
 | MAG               | `mag.*YYYYMMDD` (multiple individual tables)        | GRID/DOI  |
 +-------------------+-----------------------------------------------------+-----------+
@@ -76,7 +76,7 @@ For each of the scripts, they can be found in the following [folder](https://git
 +----------------+----------------------------------------------------+-----+-----------------------------------+
 | Crosref Fundref| `observatory_intermediate.crossref_fundrefYYYYMMDD`| DOI | create_crossref_fundref.sql.jinja2|
 +----------------+----------------------------------------------------+-----+-----------------------------------+
-| Grid           | `observatory_intermediate.gridYYYYMMDD`            | GRID| create_grid.sql.jinja2            |
+| RoR            | `observatory_intermediate.rorYYYYMMDD`             | ROR | create_ror.sql.jinja2             |
 +----------------+----------------------------------------------------+-----+-----------------------------------+
 | MAG            | `observatory_intermediate.magYYYYMMDD`             | DOI | create_mag.sql.jinja2             |
 +----------------+----------------------------------------------------+-----+-----------------------------------+
@@ -109,7 +109,7 @@ The final set of output dataset are as follows. Aside from the DOI table, which 
 +-----------------+---------------------------------------------+-----------+---------------------------------+
 | Group           | `observatory.groupYYYYMMDD`                 | Name      | create_aggregate.sql.jinja2     |
 +-----------------+---------------------------------------------+-----------+---------------------------------+
-| Institution     | `observatory.institutionYYYYMMDD`           | GRID      | create_aggregate.sql.jinja2     |
+| Institution     | `observatory.institutionYYYYMMDD`           | ROR       | create_aggregate.sql.jinja2     |
 +-----------------+---------------------------------------------+-----------+---------------------------------+
 | Journal         | `observatory.journalYYYYMMDD`               | ISSN-l    | create_aggregate.sql.jinja2     |
 +-----------------+---------------------------------------------+-----------+---------------------------------+
