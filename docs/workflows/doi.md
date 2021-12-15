@@ -4,7 +4,7 @@ The primary purpose of the DOI workflow is to link together open datasets of hig
 
 ## Input datasets
 
-A number of specialised research publication datasets are collected. These include Crossref Metadata, Crossref Funder Registry, Crossref Events, Microsoft Academic Graph, Unpaywall, the Research Organization Registry, Open Citations and Geonames. The table below illustrates each of these datesets and the PIDs that are exposed within them.
+A number of specialised research publication datasets are collected. These include Crossref Metadata, Crossref Funder Registry, Crossref Events, Microsoft Academic Graph, Unpaywall, the Research Organization Registry, Open Citations. The table below illustrates each of these datesets and the PIDs that are exposed within them.
 
 PIDs in this case refer to persistent identifiers. Commonly used identifier schemas that normalised how we refer to unique entities across a range of independent systems.
 
@@ -46,7 +46,7 @@ The synthesis occurs in three steps:
    :width: 650
 ```
 
-The table of publications is created by joining records from the research publication datasets on Digital Object Identifiers (DOIs); unique digital identifiers given to the majority of publications. Figure 2 illustrates how each dataset contributes to the publications table during the joining process, using the example of a single publication. Unique publications are discovered with Crossref Metadata, from which the publication’s DOI, Journal, Publisher, Funder identifiers and citation counts are derived. The publication’s Open Access status is computed using Unpaywall. The authors of the paper and their institutional affiliations are derived with Microsoft Academic Graph. The Research Organisation Registry (ROR) is used to enrich the institutional affiliation records with institution details and GeoNames maps institutions to countries and regions.  
+The table of publications is created by joining records from the research publication datasets on Digital Object Identifiers (DOIs); unique digital identifiers given to the majority of publications. Figure 2 illustrates how each dataset contributes to the publications table during the joining process, using the example of a single publication. Unique publications are discovered with Crossref Metadata, from which the publication’s DOI, Journal, Publisher, Funder identifiers and citation counts are derived. The publication’s Open Access status is computed using Unpaywall. The authors of the paper and their institutional affiliations are derived with Microsoft Academic Graph. The Research Organisation Registry (ROR) is used to enrich the institutional affiliation records with institution details and iso3166 maps institutions to countries and regions.  
 
 ``` eval_rst
 .. image:: ../static/diagrams/pid_workflow.png
