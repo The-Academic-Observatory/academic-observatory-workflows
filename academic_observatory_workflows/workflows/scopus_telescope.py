@@ -374,10 +374,14 @@ class ScopusClient:
             if len(results) == total_results:
                 break
 
+            if total_results == 0:
+                results = list()
+                break
+
             url = ScopusClient.get_next_page_url(response_dict["search-results"]["link"])
             if url is None:
                 raise AirflowException(
-                    f"ScopusClient: no next url found. Only have {len(results)} of {total_results} results"
+                    f"ScopusClient: no next url found. Only have {len(results)} of {total_results} results."
                 )
 
             request = urllib.request.Request(url, headers=self._headers)
@@ -534,16 +538,24 @@ class ScopusUtility:
                 logging.info(f"{conn} worker {worker.client_id}: download done for {task}")
             except Exception as e:
                 logging.error(f"Received error: {e}")
+                taskq.task_done()
+
                 error_msg = str(e)
                 if error_msg.startswith(ScopusClient.QUOTA_EXCEED_ERROR_PREFIX):
                     ScopusUtility.update_reset_date(conn=conn, error_msg=error_msg, worker=worker)
                     taskq.put(task)
-                    taskq.task_done()
 
                     ScopusUtility.sleep_if_needed(reset_date=worker.quota_reset_date, conn=conn)
                     continue
 
-                raise AirflowException(e)
+                # Need to clear the queue before we raise exception otherwise join blocks forever
+                while not taskq.empty():
+                    try:
+                        taskq.get(False)
+                    except Empty:
+                        continue
+                    taskq.task_done()
+                raise AirflowException(error_msg)
 
     @staticmethod
     def download_parallel(
