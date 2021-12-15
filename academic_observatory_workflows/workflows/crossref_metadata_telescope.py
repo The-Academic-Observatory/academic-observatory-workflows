@@ -399,6 +399,9 @@ def transform_item(item):
                 if None in v:
                     # "date-parts" : [ [ null ] ]
                     v = []
+            elif k == "award":
+                if isinstance(v, str):
+                    v = [v]
 
             new[k] = transform_item(v)
         return new
