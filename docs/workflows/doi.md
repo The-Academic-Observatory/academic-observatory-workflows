@@ -9,27 +9,27 @@ A number of specialised research publication datasets are collected. These inclu
 PIDs in this case refer to persistent identifiers. Commonly used identifier schemas that normalised how we refer to unique entities across a range of independent systems.
 
 ```eval_rst
-+-------------------+-----------------------------------------------------+-----------+
-| Name              | Table                                               | PID       |
-+===================+=====================================================+===========+
-| Crossref Metadata | `crossref.crossref_metadataYYYYMMDD`                | DOI       |
-+-------------------+-----------------------------------------------------+-----------+
-| Crossref Events   | `crossref.crossref_events`                          | DOI       |
-+-------------------+-----------------------------------------------------+-----------+
-| Crosref Fundref   | `crossref.crossref_fundrefYYYYMMDD`                 | FunderDOI |
-+-------------------+-----------------------------------------------------+-----------+
-| RoR               | `ror.rorYYYYMMDD`                                   | ROR       |
-+-------------------+-----------------------------------------------------+-----------+
-| MAG               | `mag.*YYYYMMDD` (multiple individual tables)        | GRID/DOI  |
-+-------------------+-----------------------------------------------------+-----------+
-| Open Citations    | `open_citations.open_citationsYYYYMMDD`             | DOI       |
-+-------------------+-----------------------------------------------------+-----------+
-| ORCID             | `orcid.orcid`                                       | ORCID/DOI |
-+-------------------+-----------------------------------------------------+-----------+
-| Unpaywall         | `our_research.unpaywall`                            | DOI       |
-+-------------------+-----------------------------------------------------+-----------+
-| iso3166           | `ios.iso3166_countries_and_regions`                 | Country   |
-+-------------------+-----------------------------------------------------+-----------+
++-------------------+-----------------------------------------------------+------------+
+| Name              | Table                                               | PID        |
++===================+=====================================================+============+
+| Crossref Metadata | `crossref.crossref_metadataYYYYMMDD`                | DOI        |
++-------------------+-----------------------------------------------------+------------+
+| Crossref Events   | `crossref.crossref_events`                          | DOI        |
++-------------------+-----------------------------------------------------+------------+
+| Crosref Fundref   | `crossref.crossref_fundrefYYYYMMDD`                 | FunderDOI  |
++-------------------+-----------------------------------------------------+------------+
+| RoR               | `ror.rorYYYYMMDD`                                   | ROR/Country|
++-------------------+-----------------------------------------------------+------------+
+| MAG               | `mag.*YYYYMMDD` (multiple individual tables)        | GRID/DOI   |
++-------------------+-----------------------------------------------------+------------+
+| Open Citations    | `open_citations.open_citationsYYYYMMDD`             | DOI        |
++-------------------+-----------------------------------------------------+------------+
+| ORCID             | `orcid.orcid`                                       | ORCID/DOI  |
++-------------------+-----------------------------------------------------+------------+
+| Unpaywall         | `our_research.unpaywall`                            | DOI        |
++-------------------+-----------------------------------------------------+------------+
+| iso3166           | `ios.iso3166_countries_and_regions`                 | Country    |
++-------------------+-----------------------------------------------------+------------+
 ```
 
 ## Synthesis
