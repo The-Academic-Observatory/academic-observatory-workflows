@@ -34,6 +34,9 @@ for telescope in telescopes:
     airflow_conns = telescope.extra.get("airflow_connections")
     institution_ids = telescope.extra.get("institution_ids")
 
+    if airflow_conns is None or institution_ids is None:
+        raise Exception(f"airflow_conns: {airflow_conns} or institution_ids: {institution_ids} is None")
+
     # earliest_date is parsed into a datetime.date object by the Python API client
     earliest_date_str = telescope.extra.get("earliest_date")
     earliest_date = pendulum.parse(earliest_date_str)
