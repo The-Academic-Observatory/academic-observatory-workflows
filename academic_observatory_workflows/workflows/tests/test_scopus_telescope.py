@@ -143,6 +143,25 @@ class TestScopusClient(unittest.TestCase):
         self.assertEqual(remaining, 0)
         self.assertEqual(reset, 10)
 
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.json.loads")
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.Request")
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.urlopen")
+    def test_retrieve_totalresults_zero(self, m_urlopen, m_request, m_json):
+        m_urlopen.return_value = MockUrlResponse(code=200, response=b"{}")
+
+        m_json.return_value = {
+            "search-results": {
+                "entry": [None],
+                "opensearch:totalResults": 0,
+            }
+        }
+
+        client = ScopusClient(api_key=self.api_key)
+        results, remaining, reset = client.retrieve(self.query)
+        self.assertEqual(results, [])
+        self.assertEqual(remaining, 0)
+        self.assertEqual(reset, 10)
+
     @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.Request")
     @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.urlopen")
     def test_retrieve_unexpected_httpcode(self, m_urlopen, m_request):
@@ -363,6 +382,7 @@ class TestScopusUtilWorker(unittest.TestCase):
         m_download.side_effect = AirflowException("Some other error")
         conn = "conn"
         queue = Queue()
+        queue.put(pendulum.period(now, now))
         queue.put(pendulum.period(now, now))
         event = Event()
         institution_ids = ["123"]
