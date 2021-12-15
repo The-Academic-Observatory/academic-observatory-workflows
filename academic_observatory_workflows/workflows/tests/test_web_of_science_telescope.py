@@ -789,15 +789,15 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
 
         self.org_name = "Curtin University"
         self.conn_id = "web_of_science_curtin_university"
-        self.earliest_date = pendulum.datetime(2021, 1, 1)
+        self.earliest_date = pendulum.datetime(2021, 1, 1).isoformat()
 
     def setup_api(self, env):
         dt = pendulum.now("UTC")
 
         extra = {
-            "airflow_connection": self.conn_id,
+            "airflow_connections": [self.conn_id],
             "institution_ids": ["Curtin University"],
-            "earliest_date": self.earliest_date.isoformat(),
+            "earliest_date": self.earliest_date,
         }
 
         name = "Web of Science Telescope"
@@ -841,9 +841,9 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
         self.assertEqual(len(telescopes), 1)
 
         dag_id = make_dag_id(WebOfScienceTelescope.DAG_ID, telescopes[0].organisation.name)
-        airflow_conns = [telescopes[0].extra.get("airflow_connection")]
+        airflow_conns = telescopes[0].extra.get("airflow_connections")
         institution_ids = telescopes[0].extra.get("institution_ids")
-        earliest_date_str = telescopes[0].extra.get("earliest_date").isoformat()
+        earliest_date_str = telescopes[0].extra.get("earliest_date")
         earliest_date = pendulum.parse(earliest_date_str)
 
         airflow_vars = [
