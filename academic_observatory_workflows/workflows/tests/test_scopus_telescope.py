@@ -19,7 +19,7 @@ import os
 import unittest
 import unittest.mock as mock
 from logging import error
-from queue import Queue
+from queue import Empty, Queue
 from threading import Event, Thread
 from time import sleep
 from unittest.mock import MagicMock, patch
@@ -56,6 +56,22 @@ from observatory.platform.utils.workflow_utils import (
     make_dag_id,
     make_observatory_api,
 )
+
+
+class TestScopusUtility(unittest.TestCase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.Queue.empty")
+    def test_clear_task_queue(self, m_empty):
+        m_empty.side_effect = [False, False, True]
+
+        q = Queue()
+        q.put(1)
+
+        ScopusUtility.clear_task_queue(q)
+        self.assertRaises(Empty, q.get, False)
+        q.join()  # Make sure no block
 
 
 class MockUrlResponse:

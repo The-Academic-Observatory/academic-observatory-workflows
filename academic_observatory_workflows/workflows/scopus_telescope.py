@@ -498,6 +498,20 @@ class ScopusUtility:
         logging.warning(f"{conn} worker {worker.client_id}: quoted exceeded. New reset date: {worker.quota_reset_date}")
 
     @staticmethod
+    def clear_task_queue(queue: Queue):
+        """Clear a queue.
+
+        :param queue: Queue to clear.
+        """
+
+        while not queue.empty():
+            try:
+                queue.get(False)
+            except Empty:
+                continue
+            queue.task_done()
+
+    @staticmethod
     def download_worker(
         *,
         worker: ScopusUtilWorker,
@@ -549,12 +563,7 @@ class ScopusUtility:
                     continue
 
                 # Need to clear the queue before we raise exception otherwise join blocks forever
-                while not taskq.empty():
-                    try:
-                        taskq.get(False)
-                    except Empty:
-                        continue
-                    taskq.task_done()
+                ScopusUtility.clear_task_queue(taskq)
                 raise AirflowException(error_msg)
 
     @staticmethod
