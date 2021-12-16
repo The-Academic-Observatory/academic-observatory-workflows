@@ -18,7 +18,7 @@ The following fields need to be set in the extra field of the telescope:
  * `airflow_connections` which is a list of Airflow connection ID names with API keys set in the password field.
  * `institution_ids` which is a list of strings containing the institution IDs to search in SCOPUS, e.g., ['60031226'] for Curtin University.
  * `earliest_date` which is the earliest `datetime` to query.
-
+ * `view` SCOPUS view, i.e., "STANDARD" or "COMPLETE".
 
 ## Storage location
 
@@ -31,6 +31,7 @@ The telescope downloads SCOPUS data in parallel sessions up to the number of API
  * Number of results returned per call is capped at 25 (Elsevier limit).
  * Maximum number of results per query is 5000 (Elsevier limit).
 
+ ```eval_rst
 +------------------------------+--------------------------------------+
 | Summary                      |                                      |
 +==============================+======================================+
@@ -52,12 +53,12 @@ The telescope downloads SCOPUS data in parallel sessions up to the number of API
 +------------------------------+--------------------------------------+
 | Each shard includes all data | Yes                                  |
 +------------------------------+--------------------------------------+
-
+```
 
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/scopus_scopus1_latest.csv
+   :file: ../schemas/scopus_latest.csv
    :width: 100%
    :header-rows: 1
 ```

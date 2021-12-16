@@ -789,16 +789,17 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
 
         self.org_name = "Curtin University"
         self.conn_id = "web_of_science_curtin_university"
-        self.earliest_date = pendulum.datetime(2021, 1, 1)
+        self.earliest_date = pendulum.datetime(2021, 1, 1).isoformat()
 
-    def setup_api(self, env):
+    def setup_api(self, env, extra=None):
         dt = pendulum.now("UTC")
 
-        extra = {
-            "airflow_connection": self.conn_id,
-            "institution_ids": ["Curtin University"],
-            "earliest_date": self.earliest_date.isoformat(),
-        }
+        if extra is None:
+            extra = {
+                "airflow_connections": [self.conn_id],
+                "institution_ids": ["Curtin University"],
+                "earliest_date": self.earliest_date,
+            }
 
         name = "Web of Science Telescope"
         telescope_type = orm.TelescopeType(name=name, type_id=WebOfScienceTelescope.DAG_ID, created=dt, modified=dt)
@@ -841,9 +842,9 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
         self.assertEqual(len(telescopes), 1)
 
         dag_id = make_dag_id(WebOfScienceTelescope.DAG_ID, telescopes[0].organisation.name)
-        airflow_conns = [telescopes[0].extra.get("airflow_connection")]
+        airflow_conns = telescopes[0].extra.get("airflow_connections")
         institution_ids = telescopes[0].extra.get("institution_ids")
-        earliest_date_str = telescopes[0].extra.get("earliest_date").isoformat()
+        earliest_date_str = telescopes[0].extra.get("earliest_date")
         earliest_date = pendulum.parse(earliest_date_str)
 
         airflow_vars = [
@@ -907,7 +908,6 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
         """Test that the DAG can be loaded from a DAG bag."""
 
         dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "web_of_science_telescope.py")
-
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
 
         with env.create():
@@ -919,6 +919,21 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
             )
             dag_id = make_dag_id(WebOfScienceTelescope.DAG_ID, self.org_name)
             self.assert_dag_load(dag_id, dag_file)
+
+    def test_dag_load_missing_params(self):
+        """Make sure an exception is thrown if essential parameters are missing."""
+
+        dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "web_of_science_telescope.py")
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
+        with env.create():
+            self.setup_connections(env)
+            extra = {"airflow_connections": [self.conn_id]}
+            self.setup_api(env, extra=extra)
+            dag_file = os.path.join(
+                module_file_path("academic_observatory_workflows.dags"), "web_of_science_telescope.py"
+            )
+            dag_id = make_dag_id(WebOfScienceTelescope.DAG_ID, self.org_name)
+            self.assertRaises(AssertionError, self.assert_dag_load, dag_id, dag_file)
 
     def test_telescope_bad_schema(self):
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)

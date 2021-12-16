@@ -40,6 +40,8 @@ from observatory.platform.utils.airflow_utils import (
 from observatory.platform.utils.file_utils import load_file, write_to_file
 from observatory.platform.utils.url_utils import get_user_agent
 from observatory.platform.utils.workflow_utils import (
+    blob_name,
+    bq_load_shard,
     build_schedule,
     get_as_list,
     get_entry_or_none,
@@ -178,7 +180,7 @@ class ScopusTelescope(SnapshotTelescope):
         airflow_conns: List[AirflowConns],
         airflow_vars: List[AirflowVars],
         institution_ids: List[str],
-        view: str = "standard",
+        view: str = "STANDARD",
         earliest_date: pendulum.DateTime = pendulum.datetime(1800, 1, 1),
         start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
         schedule_interval: str = "@monthly",
@@ -264,6 +266,30 @@ class ScopusTelescope(SnapshotTelescope):
             )
         ]
 
+    def bq_load(self, releases: List[SnapshotRelease], **kwargs):
+        """Task to load each transformed release to BigQuery.
+        The table_id is set to the file name without the extension.
+        :param releases: a list of releases.
+        :return: None.
+        """
+
+        # Load each transformed release
+        for release in releases:
+            transform_blob = f"{blob_name(release.transform_folder)}/*"
+            table_description = self.table_descriptions.get(self.dag_id, "")
+            bq_load_shard(
+                self.schema_folder,
+                release.release_date,
+                transform_blob,
+                self.dataset_id,
+                ScopusTelescope.DAG_ID,
+                self.source_format,
+                prefix=self.schema_prefix,
+                schema_version=self.schema_version,
+                dataset_description=self.dataset_description,
+                table_description=table_description,
+                **self.load_bigquery_table_kwargs,
+            )
 
 class ScopusClientThrottleLimits:
     """API throttling constants for ScopusClient."""
@@ -374,10 +400,14 @@ class ScopusClient:
             if len(results) == total_results:
                 break
 
+            if total_results == 0:
+                results = list()
+                break
+
             url = ScopusClient.get_next_page_url(response_dict["search-results"]["link"])
             if url is None:
                 raise AirflowException(
-                    f"ScopusClient: no next url found. Only have {len(results)} of {total_results} results"
+                    f"ScopusClient: no next url found. Only have {len(results)} of {total_results} results."
                 )
 
             request = urllib.request.Request(url, headers=self._headers)
@@ -494,6 +524,20 @@ class ScopusUtility:
         logging.warning(f"{conn} worker {worker.client_id}: quoted exceeded. New reset date: {worker.quota_reset_date}")
 
     @staticmethod
+    def clear_task_queue(queue: Queue):
+        """Clear a queue.
+
+        :param queue: Queue to clear.
+        """
+
+        while not queue.empty():
+            try:
+                queue.get(False)
+            except Empty:
+                continue
+            queue.task_done()
+
+    @staticmethod
     def download_worker(
         *,
         worker: ScopusUtilWorker,
@@ -534,16 +578,19 @@ class ScopusUtility:
                 logging.info(f"{conn} worker {worker.client_id}: download done for {task}")
             except Exception as e:
                 logging.error(f"Received error: {e}")
+                taskq.task_done()
+
                 error_msg = str(e)
                 if error_msg.startswith(ScopusClient.QUOTA_EXCEED_ERROR_PREFIX):
                     ScopusUtility.update_reset_date(conn=conn, error_msg=error_msg, worker=worker)
                     taskq.put(task)
-                    taskq.task_done()
 
                     ScopusUtility.sleep_if_needed(reset_date=worker.quota_reset_date, conn=conn)
                     continue
 
-                raise AirflowException(e)
+                # Need to clear the queue before we raise exception otherwise join blocks forever
+                ScopusUtility.clear_task_queue(taskq)
+                raise AirflowException(error_msg)
 
     @staticmethod
     def download_parallel(

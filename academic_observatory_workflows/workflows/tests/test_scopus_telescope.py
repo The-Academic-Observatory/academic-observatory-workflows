@@ -19,7 +19,7 @@ import os
 import unittest
 import unittest.mock as mock
 from logging import error
-from queue import Queue
+from queue import Empty, Queue
 from threading import Event, Thread
 from time import sleep
 from unittest.mock import MagicMock, patch
@@ -56,6 +56,22 @@ from observatory.platform.utils.workflow_utils import (
     make_dag_id,
     make_observatory_api,
 )
+
+
+class TestScopusUtility(unittest.TestCase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.Queue.empty")
+    def test_clear_task_queue(self, m_empty):
+        m_empty.side_effect = [False, False, True]
+
+        q = Queue()
+        q.put(1)
+
+        ScopusUtility.clear_task_queue(q)
+        self.assertRaises(Empty, q.get, False)
+        q.join()  # Make sure no block
 
 
 class MockUrlResponse:
@@ -136,6 +152,25 @@ class TestScopusClient(unittest.TestCase):
     @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.urlopen")
     def test_retrieve_noresults(self, m_urlopen, m_request):
         m_urlopen.return_value = MockUrlResponse(code=200, response=b"{}")
+
+        client = ScopusClient(api_key=self.api_key)
+        results, remaining, reset = client.retrieve(self.query)
+        self.assertEqual(results, [])
+        self.assertEqual(remaining, 0)
+        self.assertEqual(reset, 10)
+
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.json.loads")
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.Request")
+    @patch("academic_observatory_workflows.workflows.scopus_telescope.urllib.request.urlopen")
+    def test_retrieve_totalresults_zero(self, m_urlopen, m_request, m_json):
+        m_urlopen.return_value = MockUrlResponse(code=200, response=b"{}")
+
+        m_json.return_value = {
+            "search-results": {
+                "entry": [None],
+                "opensearch:totalResults": 0,
+            }
+        }
 
         client = ScopusClient(api_key=self.api_key)
         results, remaining, reset = client.retrieve(self.query)
@@ -363,6 +398,7 @@ class TestScopusUtilWorker(unittest.TestCase):
         m_download.side_effect = AirflowException("Some other error")
         conn = "conn"
         queue = Queue()
+        queue.put(pendulum.period(now, now))
         queue.put(pendulum.period(now, now))
         event = Event()
         institution_ids = ["123"]
@@ -603,14 +639,16 @@ class TestScopusTelescope(ObservatoryTestCase):
         conn = Connection(conn_id=self.conn_id, uri=f"http://login:password@localhost")
         env.add_connection(conn)
 
-    def setup_api(self, env):
+    def setup_api(self, env, extra=None):
         dt = pendulum.now("UTC")
 
-        extra = {
-            "airflow_connections": self.conn_id,
-            "institution_ids": ["123"],
-            "earliest_date": self.earliest_date.isoformat(),
-        }
+        if extra is None:
+            extra = {
+                "airflow_connections": [self.conn_id],
+                "institution_ids": ["123"],
+                "earliest_date": self.earliest_date.isoformat(),
+                "view": "STANDARD",
+            }
 
         name = "Scopus Telescope"
         telescope_type = orm.TelescopeType(name=name, type_id=ScopusTelescope.DAG_ID, created=dt, modified=dt)
@@ -644,9 +682,9 @@ class TestScopusTelescope(ObservatoryTestCase):
         self.assertEqual(len(telescopes), 1)
 
         dag_id = make_dag_id(ScopusTelescope.DAG_ID, telescopes[0].organisation.name)
-        airflow_conns = [telescopes[0].extra.get("airflow_connections")]
+        airflow_conns = telescopes[0].extra.get("airflow_connections")
         institution_ids = telescopes[0].extra.get("institution_ids")
-        earliest_date_str = telescopes[0].extra.get("earliest_date").isoformat()
+        earliest_date_str = telescopes[0].extra.get("earliest_date")
         earliest_date = pendulum.parse(earliest_date_str)
 
         airflow_vars = [
@@ -695,7 +733,7 @@ class TestScopusTelescope(ObservatoryTestCase):
         """
         dag = ScopusTelescope(
             dag_id="dag",
-            airflow_conns="conn",
+            airflow_conns=["conn"],
             airflow_vars=[],
             institution_ids=["10"],
             earliest_date=pendulum.now("UTC"),
@@ -728,6 +766,25 @@ class TestScopusTelescope(ObservatoryTestCase):
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
             dag_id = make_dag_id(ScopusTelescope.DAG_ID, self.org_name)
             self.assert_dag_load(dag_id, dag_file)
+
+    def test_dag_load_missing_params(self):
+        """Test that the DAG can be loaded from a DAG bag."""
+
+        dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
+        extra = {
+            "airflow_connections": [self.conn_id],
+            "institution_ids": ["123"],
+            "earliest_date": self.earliest_date.isoformat(),
+        }
+
+        with env.create():
+            self.setup_connections(env)
+            self.setup_api(env, extra=extra)
+
+            dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
+            dag_id = make_dag_id(ScopusTelescope.DAG_ID, self.org_name)
+            self.assertRaises(AssertionError, self.assert_dag_load, dag_id, dag_file)
 
     def test_telescope(self):
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
