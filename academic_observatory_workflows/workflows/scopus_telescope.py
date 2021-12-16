@@ -40,6 +40,8 @@ from observatory.platform.utils.airflow_utils import (
 from observatory.platform.utils.file_utils import load_file, write_to_file
 from observatory.platform.utils.url_utils import get_user_agent
 from observatory.platform.utils.workflow_utils import (
+    blob_name,
+    bq_load_shard,
     build_schedule,
     get_as_list,
     get_entry_or_none,
@@ -264,6 +266,30 @@ class ScopusTelescope(SnapshotTelescope):
             )
         ]
 
+    def bq_load(self, releases: List[SnapshotRelease], **kwargs):
+        """Task to load each transformed release to BigQuery.
+        The table_id is set to the file name without the extension.
+        :param releases: a list of releases.
+        :return: None.
+        """
+
+        # Load each transformed release
+        for release in releases:
+            transform_blob = f"{blob_name(release.transform_folder)}/*"
+            table_description = self.table_descriptions.get(self.dag_id, "")
+            bq_load_shard(
+                self.schema_folder,
+                release.release_date,
+                transform_blob,
+                self.dataset_id,
+                ScopusTelescope.DAG_ID,
+                self.source_format,
+                prefix=self.schema_prefix,
+                schema_version=self.schema_version,
+                dataset_description=self.dataset_description,
+                table_description=table_description,
+                **self.load_bigquery_table_kwargs,
+            )
 
 class ScopusClientThrottleLimits:
     """API throttling constants for ScopusClient."""
