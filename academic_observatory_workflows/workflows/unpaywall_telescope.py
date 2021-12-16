@@ -218,9 +218,7 @@ class UnpaywallTelescope(StreamTelescope):
             catchup=catchup,
             airflow_vars=airflow_vars,
             airflow_conns=[UnpaywallTelescope.AIRFLOW_CONNECTION],
-            load_bigquery_table_kwargs={
-                "ignore_unknown_values": True
-            }
+            load_bigquery_table_kwargs={"ignore_unknown_values": True},
         )
 
         self.add_setup_task(self.check_dependencies)
