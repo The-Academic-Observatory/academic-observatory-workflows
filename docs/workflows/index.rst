@@ -7,3 +7,7 @@ Analytic workflows process the data ingested by telescope workflows and are also
 
     doi
     oa_web
+    aggregate_output_schema
+    book_output_schema
+    doi_output_schema
+
