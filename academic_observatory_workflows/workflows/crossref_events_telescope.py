@@ -26,7 +26,9 @@ import jsonlines
 import pendulum
 import requests
 from airflow.exceptions import AirflowSkipException
-from airflow.models.taskinstance import TaskInstance
+from tenacity import RetryError, retry, stop_after_attempt, wait_exponential, wait_fixed
+
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.url_utils import get_user_agent
 from observatory.platform.utils.workflow_utils import upload_files_from_list
@@ -34,9 +36,6 @@ from observatory.platform.workflows.stream_telescope import (
     StreamRelease,
     StreamTelescope,
 )
-from tenacity import RetryError, retry, stop_after_attempt, wait_exponential, wait_fixed
-
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 
 
 class CrossrefEventsRelease(StreamRelease):
@@ -263,6 +262,7 @@ class CrossrefEventsTelescope(StreamTelescope):
             queue=queue,
             batch_load=batch_load,
             airflow_vars=airflow_vars,
+            load_bigquery_table_kwargs={"ignore_unknown_values": True},
         )
         self.mailto = mailto
         self.max_threads = max_threads
