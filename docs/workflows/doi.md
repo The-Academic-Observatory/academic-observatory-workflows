@@ -127,3 +127,51 @@ The following Links provide details in to the schemas behind the doi, book and v
 - [Doi table](./doi_output_schema.md)
 - [Books table](./book_output_schema.md)
 - [Shared Schema for Aggregration Output tables](./aggregate_output_schema.md)
+
+## Other Outputs
+
+There are also two additional output from this workflow
+
+### COKI Dashboards
+
+This dataset is a copy of the observatory output datasets, with two differences.
+- Firstly, the table naming removes the trailing date. It always replaces the current version with the new version each week. By keeping the names consistent, datastudio dashboards can reference this stable name, and continue to review updates
+- Secondly, it adds a range of database 'views'. These views are created to enable comparisons in Data Studio. Providing a secondary table to reference, which keeps only the bare minimum information for each table being compared. This is the common 'view' [query](https://github.com/The-Academic-Observatory/academic-observatory-workflows/blob/develop/academic_observatory_workflows/database/sql/comparison_view.sql.jinja2) that is shared across these comparison views.
+
+### Data Exports
+
+This dataset contains a range of tables that are exported specifically for Elasticsearch/Kibana. Because of the limitations within Kibana Dashboards, the output tables needs to be further broken down into individual sections. The follow table provides the list of queries that produce this output.
+
+The way to understand each of the below queries, as that each of them (except the dois one) are run for every output table. For for example, where the table below says `data_export.ao_*_access_typesYYYYMMDD` this will result in a range of table, one of which will take the form `data_export.ao_author_access_typesYYYYMMDD`.
+
+A final note, for the 'Relations' output query applies to a range of exports, due to them all sharing the same schema. Those types are:
+- Countries
+- Funders
+- Groupings
+- Institutions
+- Journals
+- Publishers
+
+For each of the scripts, they can be found in the following [folder](https://github.com/The-Academic-Observatory/academic-observatory-workflows/tree/develop/academic_observatory_workflows/database/sql)
+
+```eval_rst
++-----------------+---------------------------------------------+---------------------------------+
+| Name            | Table                                       | SQL File Name                   |
++=================+=============================================+=================================+
+| Access Types    | `data_export.ao_*_access_typesYYYYMMDD`     | export_access_types.sql.jinja2  |
++-----------------+---------------------------------------------+---------------------------------+
+| Disciplines     | `data_export.ao_*_disciplinesYYYYMMDD`      | export_disciplines.sql.jinja2   |
++-----------------+---------------------------------------------+---------------------------------+
+| Events          | `data_export.ao_*_eventsYYYYMMDD`           | export_events.sql.jinja2        |
++-----------------+---------------------------------------------+---------------------------------+
+| Metrics         | `data_export.ao_*_metricsYYYYMMDD`          | export_metrics.sql.jinja2       |
++-----------------+---------------------------------------------+---------------------------------+
+| Output Types    | `data_export.ao_*_output_typesYYYYMMDD`     | export_output_types.sql.jinja2  |
++-----------------+---------------------------------------------+---------------------------------+
+| Relations       | `data_export.ao_*_[relation]YYYYMMDD`       | export_relations.sql.jinja2     |
++-----------------+---------------------------------------------+---------------------------------+
+| Unique Lists    | `data_export.ao_*_unique_listYYYYMMDD`      | export_unique_list.sql.jinja2   |
++-----------------+---------------------------------------------+---------------------------------+
+| Dois            | `data_export.ao_doisYYYYMMDD`               | export_dois.sql.jinja2          |
++-----------------+---------------------------------------------+---------------------------------+
+```
