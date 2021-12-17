@@ -22,18 +22,17 @@ from types import SimpleNamespace
 from unittest.mock import ANY, patch
 
 import pendulum
-from airflow.exceptions import AirflowException, AirflowSkipException
-from airflow.models.connection import Connection
-from airflow.models.variable import Variable
-from botocore.response import StreamingBody
-from click.testing import CliRunner
-
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.orcid_telescope import (
     OrcidRelease,
     OrcidTelescope,
     transform_single_file,
 )
+from airflow.exceptions import AirflowException, AirflowSkipException
+from airflow.models.connection import Connection
+from airflow.models.variable import Variable
+from botocore.response import StreamingBody
+from click.testing import CliRunner
 from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars, BaseHook
 from observatory.platform.utils.gc_utils import (
     upload_file_to_cloud_storage,
@@ -226,7 +225,8 @@ class TestOrcidTelescope(ObservatoryTestCase):
                 self.assertEqual(ti.state, "skipped")
 
                 # Test delete old task is skipped for the first release
-                ti = env.run_task(telescope.bq_delete_old.__name__)
+                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                    ti = env.run_task(telescope.bq_delete_old.__name__)
                 self.assertEqual(ti.state, "skipped")
 
                 # Test append new creates table
@@ -334,7 +334,8 @@ class TestOrcidTelescope(ObservatoryTestCase):
                 self.assert_table_integrity(table_id, expected_rows)
 
                 # Test task deleted rows from main table
-                env.run_task(telescope.bq_delete_old.__name__)
+                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                    env.run_task(telescope.bq_delete_old.__name__)
                 table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
                 expected_rows = 1
                 self.assert_table_integrity(table_id, expected_rows)

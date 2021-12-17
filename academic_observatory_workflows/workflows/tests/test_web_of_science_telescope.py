@@ -39,6 +39,7 @@ from airflow.models import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
 from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
+from observatory.platform.utils.api import make_observatory_api
 from observatory.platform.utils.gc_utils import run_bigquery_query
 from observatory.platform.utils.test_utils import (
     HttpServer,
@@ -50,7 +51,6 @@ from observatory.platform.utils.workflow_utils import (
     bigquery_sharded_table_id,
     blob_name,
     make_dag_id,
-    make_observatory_api,
 )
 
 
@@ -1056,7 +1056,8 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
 
                 # Sample some fields to check in the first row
                 sql = f"SELECT * FROM {self.project_id}.{dataset_id}.web_of_science20210201"
-                records = list(run_bigquery_query(sql))
+                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                    records = list(run_bigquery_query(sql))
                 self.assertEqual(records[0]["abstract"], [])
                 self.assertEqual(records[0]["ref_count"], 1)
                 self.assertEqual(records[0]["harvest_datetime"].strftime("%Y%m%d"), "20210201")

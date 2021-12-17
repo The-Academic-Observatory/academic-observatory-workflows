@@ -19,10 +19,9 @@ from __future__ import annotations
 import os
 from datetime import timedelta
 from typing import Dict, List
+from unittest.mock import patch
 
 import pendulum
-from airflow.exceptions import AirflowException
-
 from academic_observatory_workflows.model import (
     Institution,
     bq_load_observatory_dataset,
@@ -36,6 +35,7 @@ from academic_observatory_workflows.workflows.doi_workflow import (
     make_dataset_transforms,
     make_elastic_tables,
 )
+from airflow.exceptions import AirflowException
 from observatory.platform.utils.airflow_utils import set_task_state
 from observatory.platform.utils.gc_utils import run_bigquery_query
 from observatory.platform.utils.test_utils import (
@@ -316,7 +316,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
                 # DOI assert correctness of output
                 expected_output = make_doi_table(observatory_dataset)
-                actual_output = self.query_table(observatory_dataset_id, f"doi{release_suffix}", "doi")
+                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                    actual_output = self.query_table(observatory_dataset_id, f"doi{release_suffix}", "doi")
                 self.assert_doi(expected_output, actual_output)
 
                 # Test create book
@@ -338,7 +339,10 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
                 # Assert country aggregation output
                 expected_output = make_country_table(observatory_dataset)
-                actual_output = self.query_table(observatory_dataset_id, f"country{release_suffix}", "id, time_period")
+                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                    actual_output = self.query_table(
+                        observatory_dataset_id, f"country{release_suffix}", "id, time_period"
+                    )
                 self.assert_aggregate(expected_output, actual_output)
                 # TODO: test correctness of remaining outputs
 

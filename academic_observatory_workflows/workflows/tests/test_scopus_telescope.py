@@ -41,6 +41,7 @@ from airflow.utils.state import State
 from click.testing import CliRunner
 from freezegun import freeze_time
 from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
+from observatory.platform.utils.api import make_observatory_api
 from observatory.platform.utils.gc_utils import run_bigquery_query
 from observatory.platform.utils.test_utils import (
     HttpServer,
@@ -54,7 +55,6 @@ from observatory.platform.utils.workflow_utils import (
     blob_name,
     build_schedule,
     make_dag_id,
-    make_observatory_api,
 )
 
 
@@ -853,7 +853,8 @@ class TestScopusTelescope(ObservatoryTestCase):
 
                 # Sample some fields to check in the first row
                 sql = f"SELECT * FROM {self.project_id}.{dataset_id}.scopus20210201"
-                records = list(run_bigquery_query(sql))
+                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                    records = list(run_bigquery_query(sql))
                 self.assertEqual(records[0]["aggregation_type"], "Journal")
                 self.assertEqual(records[0]["source_id"], 1)
                 self.assertEqual(records[0]["eid"], "somedoi")

@@ -19,7 +19,7 @@ import shutil
 import unittest
 from datetime import timedelta
 from unittest.mock import patch
-from google.cloud import bigquery
+
 import pendulum
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.unpaywall_telescope import (
@@ -30,6 +30,7 @@ from airflow.exceptions import AirflowException
 from airflow.models.connection import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
+from google.cloud import bigquery
 from observatory.platform.utils.file_utils import validate_file_hash
 from observatory.platform.utils.jinja2_utils import render_template
 from observatory.platform.utils.test_utils import (
@@ -393,7 +394,8 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                             self.assertEqual(ti.state, State.SKIPPED)
 
                             # Delete changed data from main table
-                            ti = env.run_task(telescope.bq_delete_old.__name__)
+                            with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                                ti = env.run_task(telescope.bq_delete_old.__name__)
                             self.assertEqual(ti.state, State.SKIPPED)
 
                             # Add new changes
@@ -457,7 +459,8 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                             self.assertEqual(ti.state, State.SKIPPED)
 
                             # Delete changed data from main table
-                            ti = env.run_task(telescope.bq_delete_old.__name__)
+                            with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                                ti = env.run_task(telescope.bq_delete_old.__name__)
                             self.assertEqual(ti.state, State.SUCCESS)
 
                             # Add new changes
@@ -528,7 +531,8 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                             self.assert_table_integrity(table_id, expected_rows)
 
                             # Delete changed data from main table
-                            ti = env.run_task(telescope.bq_delete_old.__name__)
+                            with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                                ti = env.run_task(telescope.bq_delete_old.__name__)
                             self.assertEqual(ti.state, State.SUCCESS)
                             table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
                             expected_rows = 99

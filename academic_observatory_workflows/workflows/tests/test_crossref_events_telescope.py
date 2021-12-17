@@ -20,10 +20,6 @@ from unittest.mock import patch
 
 import pendulum
 import vcr
-from airflow.exceptions import AirflowSkipException
-from google.cloud import bigquery
-from click.testing import CliRunner
-
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.crossref_events_telescope import (
     CrossrefEventsRelease,
@@ -31,6 +27,9 @@ from academic_observatory_workflows.workflows.crossref_events_telescope import (
     parse_event_url,
     transform_batch,
 )
+from airflow.exceptions import AirflowSkipException
+from click.testing import CliRunner
+from google.cloud import bigquery
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
@@ -182,7 +181,8 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
                 self.assertEqual(ti.state, "skipped")
 
                 # Test delete old task is skipped for the first release
-                ti = env.run_task(telescope.bq_delete_old.__name__)
+                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                    ti = env.run_task(telescope.bq_delete_old.__name__)
                 self.assertEqual(ti.state, "skipped")
 
                 # Test append new creates table
@@ -274,7 +274,8 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
                 self.assert_table_integrity(table_id, expected_rows)
 
                 # Test task deleted rows from main table
-                env.run_task(telescope.bq_delete_old.__name__)
+                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                    env.run_task(telescope.bq_delete_old.__name__)
                 table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
                 expected_rows = 60
                 self.assert_table_integrity(table_id, expected_rows)
