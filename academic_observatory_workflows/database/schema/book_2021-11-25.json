@@ -1,0 +1,164 @@
+[
+  {
+    "mode": "NULLABLE",
+    "name": "isbn",
+    "type": "STRING",
+    "description": "ISBN of the Book"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "doi",
+        "type": "STRING",
+        "description": "DOI"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "title",
+        "type": "STRING",
+        "description": "Title of the Book"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "type",
+        "type": "STRING",
+        "description": "Crossref Type"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "publisher",
+        "type": "STRING",
+        "description": "Publisher Name"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "published_year",
+        "type": "INTEGER",
+        "description": "Year of Publication"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "published_year_month",
+        "type": "STRING",
+        "description": "Month and Year of Publication"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "work_isbns",
+        "type": "STRING",
+        "description": "Full list of Assoicated ISBNs"
+      }
+    ],
+    "mode": "REPEATED",
+    "name": "crossref_objects",
+    "type": "RECORD",
+    "description": "Crossref Objects (that are not chapter types) associated with the primary ISBN"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "doi",
+        "type": "STRING",
+        "description": "DOI of chapter"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "title",
+        "type": "STRING",
+        "description": "Title of Chapter"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "type",
+        "type": "STRING",
+        "description": "Crossref Type"
+      }
+    ],
+    "mode": "REPEATED",
+    "name": "chapters",
+    "type": "RECORD",
+    "description": "Crossref Objects (that are of type chapter) associated with the primary ISBN"
+  },
+  {
+    "fields": [
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "source",
+            "type": "STRING",
+            "description": "Event Source"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "count",
+            "type": "INTEGER",
+            "description": "Count of Events"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "overall",
+        "type": "RECORD",
+        "description": "Overall Event Count"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "month",
+            "type": "STRING",
+            "description": "Month of the count"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "source",
+            "type": "STRING",
+            "description": "Event Source"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "count",
+            "type": "INTEGER",
+            "description": "Event Count in time period"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "months",
+        "type": "RECORD",
+        "description": "Event counts broken down by month"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "year",
+            "type": "INTEGER",
+            "description": "Year of count"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "source",
+            "type": "STRING",
+            "description": "Event Source"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "count",
+            "type": "INTEGER",
+            "description": "Event count in time period"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "years",
+        "type": "RECORD",
+        "description": "Event counts broken down by month"
+      }
+    ],
+    "mode": "NULLABLE",
+    "name": "events",
+    "type": "RECORD",
+    "description": "Crossref events assoicated with ISBN"
+  }
+]

@@ -1,0 +1,2149 @@
+[
+  {
+    "mode": "NULLABLE",
+    "name": "doi",
+    "type": "STRING",
+    "description": "DOI of the work."
+  },
+  {
+    "fields": [
+      {
+        "mode": "REPEATED",
+        "name": "title",
+        "type": "STRING",
+        "description": "Work titles, including translated titles."
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "abstract",
+        "type": "STRING",
+        "description": "Abstract as a JSON string or a JATS XML snippet encoded into a JSON string."
+      },
+      {
+        "description": "Published year in YYYY",
+        "mode": "NULLABLE",
+        "name": "published_year",
+        "type": "INTEGER"
+      },
+      {
+        "description": "Published month MM",
+        "mode": "NULLABLE",
+        "name": "published_month",
+        "type": "INTEGER"
+      },
+      {
+        "description": "Published Year and Month YYYY-MM",
+        "mode": "NULLABLE",
+        "name": "published_year_month",
+        "type": "STRING"
+      },
+      {
+        "description": "Enumeration, one of the type ids from https://api.crossref.org/v1/types.",
+        "mode": "NULLABLE",
+        "name": "type",
+        "type": "STRING"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "ISSN",
+        "type": "STRING"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "ISBN",
+        "type": "STRING"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "type",
+            "type": "STRING",
+            "description": "ISSN type, can either be print ISSN or electronic ISSN."
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "value",
+            "type": "STRING",
+            "description": "ISSN value"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "issn_type",
+        "type": "RECORD"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "publisher_location",
+        "type": "STRING",
+        "description": "Location of work's publisher"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "publisher",
+        "type": "STRING",
+        "description": "Name of work's publisher."
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "member",
+        "type": "INTEGER",
+        "description": "Member identifier of the form http://id.crossref.org/member/MEMBER_ID"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "prefix",
+        "type": "STRING",
+        "description": "DOI prefix identifier of the form http://id.crossref.org/prefix/DOI_PREFIX."
+      },
+      {
+        "mode": "REPEATED",
+        "name": "container_title",
+        "type": "STRING",
+        "description": "Full titles of the containing work (usually a book or journal)"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "short_container_title",
+        "type": "STRING",
+        "description": "Abbreviated titles of the containing work."
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "group_title",
+        "type": "STRING",
+        "description": "Group title for posted content."
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "references_count",
+        "type": "INTEGER",
+        "description": "Count of outbound references deposited with Crossref"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "is_referenced_by_count",
+        "type": "INTEGER",
+        "description": "Count of inbound references deposited with Crossref."
+      },
+      {
+        "mode": "REPEATED",
+        "name": "subject",
+        "type": "STRING",
+        "description": "Subject category names, a controlled vocabulary from Sci-Val. Available for most journal articles"
+      },
+      {
+        "fields": [
+          {
+            "mode": "REPEATED",
+            "name": "date_parts",
+            "type": "INTEGER",
+            "description": "Contains an ordered array of year, month, day of month. Only year is required. Note that the field contains a nested array, e.g. [ [ 2006, 5, 19 ] ] to conform to citeproc JSON dates"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "published_print",
+        "type": "RECORD",
+        "description": "Date on which content was published in print."
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "URL",
+            "type": "STRING",
+            "description": "Link to a web page describing this license"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "content_version",
+            "type": "STRING",
+            "description": "Either vor (version of record,) am (accepted manuscript,) tdm (text and data mining) or unspecified."
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "delay_in_days",
+            "type": "INTEGER",
+            "description": "Number of days between the publication date of the work and the start date of this license."
+          },
+          {
+            "fields": [
+              {
+                "mode": "REPEATED",
+                "name": "date_parts",
+                "type": "INTEGER",
+                "description": "Contains an ordered array of year, month, day of month. Only year is required. Note that the field contains a nested array, e.g. [ [ 2006, 5, 19 ] ] to conform to citeproc JSON dates"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "date_time",
+                "type": "TIMESTAMP",
+                "description": "ISO 8601 date time."
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "timestamp",
+                "type": "INTEGER",
+                "description": "Seconds since UNIX epoch."
+              }
+            ],
+            "mode": "NULLABLE",
+            "name": "start",
+            "type": "RECORD",
+            "description": "Date on which this license begins to take effect"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "license",
+        "type": "RECORD"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "volume",
+        "type": "STRING",
+        "description": "Volume number of an article's journal."
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "DOI",
+            "type": "STRING",
+            "description": "Optional Open Funder Registry DOI uniquely identifing the funding body (http://www.crossref.org/fundingdata/registry.html)"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "award",
+            "type": "STRING",
+            "description": "Award number(s) for awards given by the funding body."
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "doi_asserted_by",
+            "type": "STRING",
+            "description": "Either crossref or publisher"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "name",
+            "type": "STRING",
+            "description": "Funding body primary name"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "funder",
+        "type": "RECORD"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "page",
+        "type": "STRING",
+        "description": "Pages numbers of an article within its journal."
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "ORCID",
+            "type": "STRING",
+            "description": "URL-form of an ORCID identifier"
+          },
+          {
+            "fields": [
+              {
+                "mode": "NULLABLE",
+                "name": "name",
+                "type": "STRING"
+              }
+            ],
+            "mode": "REPEATED",
+            "name": "affiliation",
+            "type": "RECORD"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "authenticated_orcid",
+            "type": "BOOLEAN",
+            "description": "If true, record owner asserts that the ORCID user completed ORCID OAuth authentication."
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "family",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "given",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "name",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "sequence",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "suffix",
+            "type": "STRING"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "author",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "URL",
+            "type": "STRING",
+            "description": "Direct link to a full-text download location."
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "content_type",
+            "type": "STRING",
+            "description": "Content type (or MIME type) of the full-text object."
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "content_version",
+            "type": "STRING",
+            "description": "Either vor (version of record,) am (accepted manuscript) or unspecified."
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "intended_application",
+            "type": "STRING",
+            "description": "Either text-mining, similarity-checking or unspecified."
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "link",
+        "type": "RECORD",
+        "description": "URLs to full-text locations."
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "clinical_trial_number",
+            "type": "STRING",
+            "description": "Identifier of the clinical trial."
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "registry",
+            "type": "STRING",
+            "description": "DOI of the clinical trial regsitry that assigned the trial number."
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "type",
+            "type": "STRING",
+            "description": "One of preResults, results or postResults"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "clinical_trial_number",
+        "type": "RECORD"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "alternative_id",
+        "type": "STRING",
+        "description": "Other identifiers for the work provided by the depositing member"
+      }
+    ],
+    "mode": "NULLABLE",
+    "name": "crossref",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "doi",
+        "type": "STRING",
+        "description": "The DOI of this resource. This is always lowercase."
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "year",
+        "type": "INTEGER",
+        "description": "The year this resource was published. Just the year part of the published_date"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "output_type",
+        "type": "STRING",
+        "description": "Renamed from Genre in Unpaywall: The type of resource. Currently the genre is identical to the Crossref-reported type of a given resource. The \"journal-article\" type is most common, but there are many others."
+      },
+      {
+        "description": "The name of this resource's publisher. Keep in mind that publisher name strings change over time, particularly as publishers are acquired or split up.",
+        "mode": "NULLABLE",
+        "name": "publisher",
+        "type": "STRING"
+      },
+      {
+        "description": "The name of the journal publishing this resource. The same journal may have multiple name strings (eg, \"J. Foo\", \"Journal of Foo\", \"JOURNAL OF FOO\", etc). These have not been fully normalized within our database, so use with care.",
+        "mode": "NULLABLE",
+        "name": "journal_name",
+        "type": "STRING"
+      },
+      {
+        "description": "Derived Field that assigns a normalised name based on the ISSN-L. Effectively Choosing the most common name for any given ISSN-L across the dataset",
+        "mode": "NULLABLE",
+        "name": "normalised_journal_name",
+        "type": "STRING"
+      },
+      {
+        "description": "A single ISSN for the journal publishing this resource. An ISSN-L can be used as a primary key for a journal when more than one ISSN is assigned to it. Resources' journal_issns are mapped to ISSN-Ls using the issn.org table, with some manual corrections.",
+        "mode": "NULLABLE",
+        "name": "journal_issn_l",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "description": "Is there an OA copy of this resource. Convenience attribute; returns true when best_oa_location is not null."
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "is_in_doaj",
+        "type": "BOOLEAN",
+        "description": "Is this resource published in a DOAJ-indexed journal. Useful for defining whether a resource is Gold OA (depending on your definition, see also journal_is_oa)."
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "journal_is_oa",
+        "type": "BOOLEAN",
+        "description": "Is this resource published in a completely OA journal.\tUseful for defining whether a resource is Gold OA. Includes any fully-OA journal, regardless of inclusion in DOAJ. This includes journals by all-OA publishers and journals that would otherwise be all Hybrid or Bronze OA."
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "unpaywall_oa_status",
+        "type": "STRING",
+        "description": "The OA status, or color, of this resource. Classifies OA resources by location and license terms as one of: gold, hybrid, bronze, green or closed. See here for more information on how we assign an oa_status: https://support.unpaywall.org/support/solutions/articles/44001777288-what-do-the-types-of-oa-status-green-gold-hybrid-and-bronze-mean-"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gold",
+        "type": "BOOLEAN",
+        "description": "COKI determinations of gold OA status"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gold_just_doaj",
+        "type": "BOOLEAN",
+        "description": "COKI determinations of gold_just_doaj OA status"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "hybrid",
+        "type": "BOOLEAN",
+        "description": "COKI determinations of hybrid OA status"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "bronze",
+        "type": "BOOLEAN",
+        "description": "COKI determinations of bronze OA status"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "green",
+        "type": "BOOLEAN",
+        "description": "COKI determinations of green OA status"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "green_only",
+        "type": "BOOLEAN",
+        "description": "COKI determinations of green_only OA status"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "green_only_ignoring_bronze",
+        "type": "BOOLEAN",
+        "description": "COKI determinations of green_only_ignoring_bronze OA status"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "has_license",
+        "type": "BOOLEAN",
+        "description": "COKI determinations of where there is a license"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "is_cclicensed",
+        "type": "BOOLEAN",
+        "description": "COKI determinations of where there is a Creative Commons license"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "repository_locations",
+        "type": "STRING",
+        "description": "List of outputs from the url fields, in oa_locations where host_type = \"repository\""
+      },
+      {
+        "mode": "REPEATED",
+        "name": "repository_names",
+        "type": "STRING",
+        "description": "List of outputs from the repository_institution field, in oa_locations where host_type = \"repository\" AND repository_institution IS NOT NULL"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "url_for_landing_page",
+        "type": "STRING",
+        "description": "The URL for a landing page describing this OA copy. When the host_type is \"publisher\" the landing page usually includes HTML fulltext."
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "url_for_pdf",
+        "type": "STRING",
+        "description": "The URL with a PDF version of this OA copy."
+      }
+    ],
+    "mode": "NULLABLE",
+    "name": "unpaywall",
+    "type": "RECORD",
+    "description":  "Data derived from Unpaywall"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "PaperId",
+        "type": "INTEGER",
+        "description": "PRIMARY KEY in mag"
+      },
+      {
+        "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities",
+        "mode": "NULLABLE",
+        "name": "Rank",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "Doi",
+        "type": "STRING",
+        "description": "Doi values are upper-cased per DOI standard"
+      },
+      {
+        "description": "Book, BookChapter, Conference, Dataset, Journal, Patent, Repository, Thesis, NULL : unknown",
+        "mode": "NULLABLE",
+        "name": "DocType",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "PaperTitle",
+        "type": "STRING",
+        "description": "The title of the Paper"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "OriginalTitle",
+        "type": "STRING",
+        "description": "The Original Title of the Paper"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "BookTitle",
+        "type": "STRING",
+        "description": "The Book Title (optional)"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "Year",
+        "type": "INTEGER",
+        "description": "The year of publication"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "Date",
+        "type": "DATETIME",
+        "description": "The date of publication"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "OnlineDate",
+        "type": "DATETIME"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "Publisher",
+        "type": "STRING",
+        "description": "The name of the publisher"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "Volume",
+        "type": "STRING",
+        "description": "The volume (optional)"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "Issue",
+        "type": "STRING",
+        "description": "The Issue (optional)"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "FirstPage",
+        "type": "STRING",
+        "description": "The First Page (optional)"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "LastPage",
+        "type": "STRING",
+        "description": "The Last page (optional)"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "ReferenceCount",
+        "type": "INTEGER",
+        "description": "The number of Papers this Paper references"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "CitationCount",
+        "type": "INTEGER",
+        "description": "The number of Papers that cite this Paper"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "EstimatedCitation",
+        "type": "INTEGER",
+        "description": "An estimation of objects citing this paper beyond what MAG has in it's database"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "OriginalVenue",
+        "type": "STRING",
+        "description": "The original venue of publication"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "FamilyId",
+        "type": "INTEGER",
+        "description": "A paper 'family' is defined as a group of papers that have been determined to be the same fundamental paper, but published in different venues - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-familyid-in-papers"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "FamilyRank",
+        "type": "INTEGER"
+      },
+      {
+        "description": "\"Retracted Publication\", \"Retraction Notice\"",
+        "mode": "NULLABLE",
+        "name": "DocSubTypes",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "abstract",
+        "type": "STRING",
+        "description": "Paper Abstract (this has been normalised but see - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-format-are-paper-abstracts-published-in)"
+      },
+      {
+        "fields": [
+          {
+            "fields": [
+              {
+                "mode": "NULLABLE",
+                "name": "DisplayName",
+                "type": "STRING",
+                "description": "The displayed name of the Field of Study"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "FieldOfStudyId",
+                "type": "INTEGER",
+                "description": "PRIMARY KEY"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "Rank",
+                "type": "INTEGER",
+                "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "MainType",
+                "type": "STRING",
+                "description": "Optional: The type or category of entity this field of study belongs within "
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "Score",
+                "type": "FLOAT",
+                "description": "Confidence range between 0 and 1. Bigger number representing higher confidence"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "AttributeType",
+                    "type": "INTEGER",
+                    "description": "1: AUI: Atom Unique Identifier defined in Unified Medical Language System (UMLS), version 2018AA. 2: SourceUrl"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "AttributeValue",
+                    "type": "STRING",
+                    "description": "The value of the attribute"
+                  }
+                ],
+                "mode": "REPEATED",
+                "name": "extended",
+                "type": "RECORD"
+              }
+            ],
+            "mode": "REPEATED",
+            "name": "level_0",
+            "type": "RECORD",
+            "description": "Links fields of study at level 0"
+          },
+          {
+            "fields": [
+              {
+                "mode": "NULLABLE",
+                "name": "DisplayName",
+                "type": "STRING",
+                "description": "The displayed name of the Field of Study"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "FieldOfStudyId",
+                "type": "INTEGER",
+                "description": "PRIMARY KEY"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "Rank",
+                "type": "INTEGER",
+                "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "MainType",
+                "type": "STRING",
+                "description": "Optional: The type or category of entity this field of study belongs within "
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "Score",
+                "type": "FLOAT",
+                "description": "Confidence range between 0 and 1. Bigger number representing higher confidence"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "AttributeType",
+                    "type": "INTEGER",
+                    "description": "1: AUI: Atom Unique Identifier defined in Unified Medical Language System (UMLS), version 2018AA. 2: SourceUrl"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "AttributeValue",
+                    "type": "STRING",
+                    "description": "The value of the attribute"
+                  }
+                ],
+                "mode": "REPEATED",
+                "name": "extended",
+                "type": "RECORD"
+              }
+            ],
+            "mode": "REPEATED",
+            "name": "level_1",
+            "type": "RECORD",
+            "description": "Links fields of study at level 1"
+          },
+          {
+            "fields": [
+              {
+                "mode": "NULLABLE",
+                "name": "DisplayName",
+                "type": "STRING",
+                "description": "The displayed name of the Field of Study"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "FieldOfStudyId",
+                "type": "INTEGER",
+                "description": "PRIMARY KEY"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "Rank",
+                "type": "INTEGER",
+                "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "MainType",
+                "type": "STRING",
+                "description": "Optional: The type or category of entity this field of study belongs within "
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "Score",
+                "type": "FLOAT",
+                "description": "Confidence range between 0 and 1. Bigger number representing higher confidence"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "AttributeType",
+                    "type": "INTEGER",
+                    "description": "1: AUI: Atom Unique Identifier defined in Unified Medical Language System (UMLS), version 2018AA. 2: SourceUrl"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "AttributeValue",
+                    "type": "STRING",
+                    "description": "The value of the attribute"
+                  }
+                ],
+                "mode": "REPEATED",
+                "name": "extended",
+                "type": "RECORD"
+              }
+            ],
+            "mode": "REPEATED",
+            "name": "level_2",
+            "type": "RECORD",
+            "description": "Links fields of study at level 2"
+          },
+          {
+            "fields": [
+              {
+                "mode": "NULLABLE",
+                "name": "DisplayName",
+                "type": "STRING",
+                "description": "The displayed name of the Field of Study"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "FieldOfStudyId",
+                "type": "INTEGER",
+                "description": "PRIMARY KEY"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "Rank",
+                "type": "INTEGER",
+                "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "MainType",
+                "type": "STRING",
+                "description": "Optional: The type or category of entity this field of study belongs within "
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "Score",
+                "type": "FLOAT",
+                "description": "Confidence range between 0 and 1. Bigger number representing higher confidence"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "AttributeType",
+                    "type": "INTEGER",
+                    "description": "1: AUI: Atom Unique Identifier defined in Unified Medical Language System (UMLS), version 2018AA. 2: SourceUrl"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "AttributeValue",
+                    "type": "STRING",
+                    "description": "The value of the attribute"
+                  }
+                ],
+                "mode": "REPEATED",
+                "name": "extended",
+                "type": "RECORD"
+              }
+            ],
+            "mode": "REPEATED",
+            "name": "level_3",
+            "type": "RECORD",
+            "description": "Links fields of study at level 3"
+          },
+          {
+            "fields": [
+              {
+                "mode": "NULLABLE",
+                "name": "DisplayName",
+                "type": "STRING",
+                "description": "The displayed name of the Field of Study"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "FieldOfStudyId",
+                "type": "INTEGER",
+                "description": "PRIMARY KEY"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "Rank",
+                "type": "INTEGER",
+                "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "MainType",
+                "type": "STRING",
+                "description": "Optional: The type or category of entity this field of study belongs within "
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "Score",
+                "type": "FLOAT",
+                "description": "Confidence range between 0 and 1. Bigger number representing higher confidence"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "AttributeType",
+                    "type": "INTEGER",
+                    "description": "1: AUI: Atom Unique Identifier defined in Unified Medical Language System (UMLS), version 2018AA. 2: SourceUrl"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "AttributeValue",
+                    "type": "STRING",
+                    "description": "The value of the attribute"
+                  }
+                ],
+                "mode": "REPEATED",
+                "name": "extended",
+                "type": "RECORD"
+              }
+            ],
+            "mode": "REPEATED",
+            "name": "level_4",
+            "type": "RECORD",
+            "description": "Links fields of study at level 4"
+          },
+          {
+            "fields": [
+              {
+                "mode": "NULLABLE",
+                "name": "DisplayName",
+                "type": "STRING",
+                "description": "The displayed name of the Field of Study"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "FieldOfStudyId",
+                "type": "INTEGER",
+                "description": "PRIMARY KEY"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "Rank",
+                "type": "INTEGER",
+                "description": "The static rank roughly reflects the log probability of an entity being 'important' - https://docs.microsoft.com/en-us/academic-services/graph/resources-faq#what-is-the-rank-value-on-entities"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "MainType",
+                "type": "STRING",
+                "description": "Optional: The type or category of entity this field of study belongs within "
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "Score",
+                "type": "FLOAT",
+                "description": "Confidence range between 0 and 1. Bigger number representing higher confidence"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "AttributeType",
+                    "type": "INTEGER",
+                    "description": "1: AUI: Atom Unique Identifier defined in Unified Medical Language System (UMLS), version 2018AA. 2: SourceUrl"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "AttributeValue",
+                    "type": "STRING",
+                    "description": "The value of the attribute"
+                  }
+                ],
+                "mode": "REPEATED",
+                "name": "extended",
+                "type": "RECORD"
+              }
+            ],
+            "mode": "REPEATED",
+            "name": "level_5",
+            "type": "RECORD",
+            "description": "Links fields of study at level 5"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "fields",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "DescriptorUI",
+            "type": "STRING",
+            "description": "Descriptor Unique Identifier. Seven-character alpha-numeric string - https://www.nlm.nih.gov/mesh/mbinfo.html"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "DescriptorName",
+            "type": "STRING",
+            "description": "A term that uniquely refers to its <DescriptorRecord>"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "QualifierUI",
+            "type": "STRING",
+            "description": "Qualifier Unique Identifier. Seven-character alpha-numeric string uniquely identifying a <QualifierRecord>"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "QualifierName",
+            "type": "STRING",
+            "description": "Term that uniquely names its <QualifierRecord> "
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "IsMajorTopic",
+            "type": "BOOLEAN"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "mesh",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "AuthorSequenceNumber",
+            "type": "INTEGER",
+            "description": "1-based author sequence number. 1: the 1st author listed on paper, 2: the 2nd author listed on paper, etc."
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "AuthorID",
+            "type": "INTEGER",
+            "description": "PRIMARY KEY: Unique Identifier for an Author"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "OriginalAuthor",
+            "type": "STRING",
+            "description": "Original Author Name"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "AffiliationId",
+            "type": "INTEGER",
+            "description": "PRIMARY KEY: Unique Identifier for an Organisation"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "OriginalAffiliation",
+            "type": "STRING",
+            "description": "Original Author Affiliation String"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "GridId",
+            "type": "STRING",
+            "description": "The Grid ID of the Organisation"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "DisplayName",
+            "type": "STRING",
+            "description": "The Displayed name of the Author"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "authors",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "JournalId",
+            "type": "INTEGER",
+            "description": "PRIMARY KEY"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "DisplayName",
+            "type": "STRING",
+            "description": "The displayed name of the Journal"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "Issn",
+            "type": "STRING",
+            "description": "The Journals ISSN"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "Publisher",
+            "type": "STRING",
+            "description": "The Publisher of this Journal"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "journal",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "ConferenceInstanceId",
+            "type": "INTEGER",
+            "description": "PRIMARY KEY: Unique Identifier for a Conference Instance"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "NormalizedName",
+            "type": "STRING",
+            "description": "Normalised name of the Conference"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "DisplayName",
+            "type": "STRING",
+            "description": "The Displayed name of the Conference"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "Location",
+            "type": "STRING",
+            "description": "The location of the Conference"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "OfficialUrl",
+            "type": "STRING",
+            "description": "The URL of the Offical Conference Website"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "StartDate",
+            "type": "DATETIME",
+            "description": "The start date of the Conference Instance"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "EndDate",
+            "type": "DATETIME",
+            "description": "The end date of the Conference Instance"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "PaperCount",
+            "type": "INTEGER",
+            "description": "The number of Papers that have been identified from this Conference Instance"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "Latitude",
+            "type": "FLOAT",
+            "description": "The Latitude of the Conference Instance"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "Longitude",
+            "type": "FLOAT",
+            "description": "The Longitude of the Conference Instance"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "conferenceInstance",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "ConferenceSeriesId",
+            "type": "INTEGER",
+            "description": "PRIMARY KEY: Unique Identifier for a Conference Series"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "NormalizedName",
+            "type": "STRING",
+            "description": "Normalised name of the Conference Series"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "DisplayName",
+            "type": "STRING",
+            "description": "The Displayed name of the Conference Series"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "conferenceSeries",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "AttributeType",
+            "type": "INTEGER",
+            "description": "1: PatentId, 2: PubMedId, 3: PmcId, 4: Alternative Title"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "AttributeValue",
+            "type": "STRING",
+            "description": "The value of the attribute"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "attributes",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "ResourceType",
+            "type": "INTEGER",
+            "description": "Bit flags. 1 = Project, 2 = Data, 4 = Code"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "ResourceUrl",
+            "type": "STRING",
+            "description": "URL of the resource"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "resources",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "SourceType",
+            "type": "INTEGER",
+            "description": "1 = Html, 2 = Text, 3 = Pdf, 4 = Doc, 5 = Ppt, 6 = Xls, 8 = Rtf, 12 = Xml, 13 = Rss, 20 = Swf, 27 = Ics, 31 = Pub, 33 = Ods, 34 = Odp, 35 = Odt, 36 = Zip, 40 = Mp3, 0/999/NULL = unknown"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "SourceUrl",
+            "type": "STRING",
+            "description": "PRIMARY KEY"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "LanguageCode",
+            "type": "STRING",
+            "description": "Language Code"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "urls",
+        "type": "RECORD"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "grids",
+        "type": "STRING",
+        "description": "list of grid id's extracted from the authors fields for easier access"
+      }
+    ],
+    "mode": "NULLABLE",
+    "name": "mag",
+    "type": "RECORD",
+    "description": "Data derived from Microsoft Academic Graph"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "doi",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "citations_total",
+        "type": "INTEGER",
+        "description": "Count of total citations"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "citations_before_publication",
+        "type": "INTEGER",
+        "description": "Count of Citations recorded before the stated publication date"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "citations_one_year",
+        "type": "INTEGER",
+        "description": "Count of Citations recorded in the first year since publication"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "citations_two_years",
+        "type": "INTEGER",
+        "description": "Count of Citations recorded in the first two years since publication"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "citations_five_years",
+        "type": "INTEGER",
+        "description": "Count of Citations recorded in the first five years since publication"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "journal_sc_total",
+        "type": "INTEGER",
+        "description": "For Journal Self Citations: Count of total citations"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "journal_sc_before_publication",
+        "type": "INTEGER",
+        "description": "For Journal Self Citations: Count of Citations recorded before the stated publication date"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "journal_sc_one_year",
+        "type": "INTEGER",
+        "description": "For Journal Self Citations: Count of Citations recorded in the first year since publication"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "journal_sc_two_years",
+        "type": "INTEGER",
+        "description": "For Journal Self Citations: Count of Citations recorded in the first two years since publication"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "journal_sc_five_years",
+        "type": "INTEGER",
+        "description": "For Journal Self Citations: Count of Citations recorded in the first five years since publication"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "author_sc_total",
+        "type": "INTEGER",
+        "description": "For Author Self Citations: Count of total citations"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "author_sc_before_publication",
+        "type": "INTEGER",
+        "description": "For Author Self Citations: Count of Citations recorded before the stated publication date"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "author_sc_one_year",
+        "type": "INTEGER",
+        "description": "For Author Self Citations: Count of Citations recorded in the first year since publication"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "author_sc_two_years",
+        "type": "INTEGER",
+        "description": "For Author Self Citations: Count of Citations recorded in the first two years since publication"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "author_sc_five_years",
+        "type": "INTEGER",
+        "description": "For Author Self Citations: Count of Citations recorded in the first five years since publication"
+      }
+    ],
+    "mode": "NULLABLE",
+    "name": "open_citations",
+    "type": "RECORD",
+    "description": "Data Derived from Open Citations"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "doi",
+        "type": "STRING"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "source",
+            "type": "STRING",
+            "description": "A name for the source."
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "count",
+            "type": "INTEGER",
+            "description": "Count of the number of events for the corresponding source"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "events",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "month",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "source",
+            "type": "STRING",
+            "description": "A name for the source."
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "count",
+            "type": "INTEGER",
+            "description": "Count of the number of events for the corresponding source"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "months",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "year",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "source",
+            "type": "STRING",
+            "description": "A name for the source."
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "count",
+            "type": "INTEGER",
+            "description": "Count of the number of events for the corresponding source"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "years",
+        "type": "RECORD"
+      }
+    ],
+    "mode": "NULLABLE",
+    "name": "events",
+    "type": "RECORD",
+    "descriptions": "Data Derived from Crossref Events"
+  },
+  {
+    "mode": "REPEATED",
+    "name": "grids",
+    "type": "STRING"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "doi",
+        "type": "STRING"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "identifier",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "types",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "name",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "home_repo",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code_2",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "subregion",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "coordinates",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "members",
+            "type": "STRING"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "institutions",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "identifier",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "name",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "types",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "home_repo",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code_2",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "subregion",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "coordinates",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "count",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "members",
+            "type": "STRING"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "countries",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "identifier",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "name",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "types",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "home_repo",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code_2",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "subregion",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "coordinates",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "count",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "members",
+            "type": "STRING"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "subregions",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "identifier",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "name",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "types",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "home_repo",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code_2",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "subregion",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "coordinates",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "count",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "members",
+            "type": "STRING"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "regions",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "identifier",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "name",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "types",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "home_repo",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code_2",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "subregion",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "coordinates",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "members",
+            "type": "STRING"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "groupings",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "identifier",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "name",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "doi",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "types",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "home_repo",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code_2",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "subregion",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "coordinates",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "funding_body_type",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "funding_body_subtype",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "members",
+            "type": "STRING"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "funders",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "identifier",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "name",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "types",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "home_repo",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code_2",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "subregion",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "coordinates",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "members",
+            "type": "STRING"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "disciplines",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "identifier",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "name",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "given_names",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "family_name",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "types",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "home_repo",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code_2",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "subregion",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "coordinates",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "members",
+            "type": "STRING"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "authors",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "identifier",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "name",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "types",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "home_repo",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code_2",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "subregion",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "coordinates",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "members",
+            "type": "STRING"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "journals",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "identifier",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "name",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "types",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "home_repo",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "country_code_2",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "subregion",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "coordinates",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "members",
+            "type": "STRING"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "publishers",
+        "type": "RECORD"
+      }
+    ],
+    "mode": "NULLABLE",
+    "name": "affiliations",
+    "type": "RECORD"
+  }
+]
