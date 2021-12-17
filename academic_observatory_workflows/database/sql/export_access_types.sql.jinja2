@@ -2,6 +2,10 @@
 Copyright 2020 Curtin University.
 Authors: James Diprose, Richard Hosking
 #}
+{#
+The purpose of this script it to export the access_types section from any of the aggregration tables (country, institution, group, etc)
+Primarily, the goal is to create what is a nested array, and turn that into a flat table that can be exported into Elasticsearch for use with Kibana
+#}
 
 SELECT
   id as {{ aggregate }}_id,

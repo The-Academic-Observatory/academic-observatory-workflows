@@ -2,6 +2,10 @@
 Copyright 2020 Curtin University.
 Authors: Richard Hosking
 #}
+{#
+The purpose of this script it to export a unique list of entities for each of the aggregation tables (institution, country, group, etc)
+This is to improve the performance of drop-down lists in Elasticsearch and Kibana
+#}
 
 SELECT
   entity.id as {{ aggregate }}_id,
