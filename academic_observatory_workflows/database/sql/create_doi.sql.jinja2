@@ -75,7 +75,7 @@ SELECT
   Chooses the values that are passed along in the funder affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates.
   The values from JOINING the funder reference in Crossref metada with the Fundref dataset
   #}
-  ARRAY(SELECT as STRUCT funder.funder.name as identifier, funder.funder.name as name, funder.funder.doi as doi, ["Funder"] as types, CAST([] AS ARRAY<STRING>) as home_repo,
+  ARRAY(SELECT as STRUCT funder.funder.name as identifier, funder.funder.name as name, funder.funder.doi as doi, ["Funder"] as types,
         CAST(funder.fundref.country as STRING) as country, CAST(funder.fundref.country_code as STRING) as country_code, CAST(NULL as STRING) as country_code_2,
         CAST(funder.fundref.region as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, funder.fundref.funding_body_type as funding_body_type,
         funder.fundref.funding_body_sub_type as funding_body_subtype, CAST([] AS ARRAY<STRING>) as members FROM UNNEST(fundref.funders) as funder
@@ -86,7 +86,7 @@ SELECT
   Chooses the values that are passed along in the discipline affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates.
   The values come from the fields of study in the MAG dataset
   #}
-  ARRAY(SELECT as STRUCT field.DisplayName as identifier, field.DisplayName as name, ["Discipline"] as types, CAST([] AS ARRAY<STRING>) as home_repo,
+  ARRAY(SELECT as STRUCT field.DisplayName as identifier, field.DisplayName as name, ["Discipline"] as types,
         CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region,
         CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, CAST([] AS ARRAY<STRING>) as members FROM UNNEST(mag.fields.level_0) as field
         ) as disciplines,
@@ -97,7 +97,7 @@ SELECT
   The values come from the ORCID dataset, which is pivotted to index by DOI, which is the primary index in this table
   #}
   ARRAY(SELECT as STRUCT author.uri as identifier, CONCAT(author.given_names, " ", author.family_name) as name, author.given_names as given_names,
-        author.family_name as family_name,["Author"] as types, CAST([] AS ARRAY<STRING>) as home_repo, CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code,
+        author.family_name as family_name,["Author"] as types, CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code,
         CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, CAST([] AS ARRAY<STRING>) as members
         FROM UNNEST(orcid.orcid) as author
         ) as authors,
@@ -107,7 +107,7 @@ SELECT
   While there is only ever one Journal for a pubication, this single struct is placed inside of an array '[ ]' to ensure it conforms to the same schema as other affiliation types.
   This enables templated queries downstream to be greatly simplified
   #}
-  [ STRUCT( unpaywall.journal_issn_l as identifier, unpaywall.normalised_journal_name as name, ["Journal"] as types, CAST([] AS ARRAY<STRING>) as home_repo, CAST(NULL as STRING) as country,
+  [ STRUCT( unpaywall.journal_issn_l as identifier, unpaywall.normalised_journal_name as name, ["Journal"] as types, CAST(NULL as STRING) as country,
     CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates,
     CAST([] AS ARRAY<STRING>) as members )
    ] as journals,
@@ -117,7 +117,7 @@ SELECT
   While there is only ever one Publisher for a pubication, this single struct is placed inside of an array '[ ]' to ensure it conforms to the same schema as other affiliation types.
   This enables templated queries downstream to be greatly simplified
   #}
-  [ STRUCT( crossref.publisher as identifier,crossref.publisher as name, ["Publisher"] as types, CAST([] AS ARRAY<STRING>) as home_repo, CAST(NULL as STRING) as country,
+  [ STRUCT( crossref.publisher as identifier,crossref.publisher as name, ["Publisher"] as types, CAST(NULL as STRING) as country,
     CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates,
     CAST([] AS ARRAY<STRING>) as members)
   ] as publishers,
