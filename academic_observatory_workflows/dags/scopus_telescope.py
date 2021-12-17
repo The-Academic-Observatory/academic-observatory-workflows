@@ -20,7 +20,8 @@
 import pendulum
 from academic_observatory_workflows.workflows.scopus_telescope import ScopusTelescope
 from observatory.platform.utils.airflow_utils import AirflowVars
-from observatory.platform.utils.workflow_utils import make_dag_id, make_observatory_api
+from observatory.platform.utils.api import make_observatory_api
+from observatory.platform.utils.workflow_utils import make_dag_id
 
 api = make_observatory_api()
 telescope_type = api.get_telescope_type(type_id=ScopusTelescope.DAG_ID)

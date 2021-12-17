@@ -297,7 +297,8 @@ class TestOpenCitationsTelescope(ObservatoryTestCase):
                     self.assert_table_integrity(table_id, expected_rows)
 
                     sql = f"SELECT * from {self.project_id}.{dataset_id}.open_citations20181113"
-                    records = run_bigquery_query(sql)
+                    with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                        records = run_bigquery_query(sql)
 
                     self.assertEqual(
                         records[0]["oci"],
