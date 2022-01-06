@@ -23,9 +23,13 @@ from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError
 from flask import jsonify, current_app
 from observatory.api.utils.exception_utils import APIError
-from observatory.api.utils.elasticsearch_utils import create_es_connection, \
-    ElasticsearchIndex, \
-    create_search_body, process_response, parse_args
+from observatory.api.utils.elasticsearch_utils import (
+    create_es_connection,
+    ElasticsearchIndex,
+    create_search_body,
+    process_response,
+    parse_args,
+)
 from observatory.api.utils.auth_utils import AuthError
 from typing import Dict
 
@@ -108,11 +112,13 @@ class AOElasticsearchIndex(ElasticsearchIndex):
             # Check if combination of aggregate and subaggregate is valid
             if self.subagg in self.invalid_combinations[self.agg]:
                 invalid_combinations_str = "\n".join(self.invalid_combinations[self.agg])
-                raise AuthError({"code": "index_error",
-                                 "description": "Combination of agg and subagg is invalid.\nInvalid "
-                                                f"subaggregates for '{self.agg}': {invalid_combinations_str}"
-                                 }
-                                )
+                raise AuthError(
+                    {
+                        "code": "index_error",
+                        "description": "Combination of agg and subagg is invalid.\nInvalid "
+                        f"subaggregates for '{self.agg}': {invalid_combinations_str}",
+                    }
+                )
             alias = f"ao-{self.agg}-{self.subagg}"
         else:
             alias = f"ao-{self.agg}-unique-list"
@@ -125,19 +131,6 @@ def create_schema():
     :return: schema of index
     """
     return {"schema": "to_be_created"}
-
-
-def initiate_elasticsearch_index(agg, subagg, index_date) -> ElasticsearchIndex:
-    """
-
-    :param agg:
-    :param subagg:
-    :param index_date:
-    :return:
-    """
-    es = create_es_connection()
-    es_index = AOElasticsearchIndex(es, agg, subagg, index_date)
-    return es_index
 
 
 def query_elasticsearch(agg: str, subagg: Optional[str]) -> Union[dict, Tuple[str, int]]:
