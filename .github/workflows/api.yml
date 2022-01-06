@@ -151,16 +151,17 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      # TODO remove version specification
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           cd ..
           pip install -e .
+          pip install observatory-api==0.0.0
 
-      # TODO use CLI openapi renderer
       - name: Render openapi file
         run: |
-          python ../server/openapi_renderer.py "../server/openapi.yaml.jinja2" "./openapi.yaml.tpl"
+          observatory-api generate-openapi-spec ../server/openapi.yaml.jinja2 ./openapi.yaml.tpl --usage-type cloud_endpoints
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
