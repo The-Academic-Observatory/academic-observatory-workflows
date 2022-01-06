@@ -34,13 +34,13 @@ image_tag: The image tag that will be used for the Cloud Run backend. If the val
 tag from a local file "./image_build.txt".
 EOF
   type = object({
-    name        = string
-    domain_name = string
-    subdomain   = string
-    image_tag   = string
-    auth0_client_id = string
+    name                = string
+    domain_name         = string
+    subdomain           = string
+    image_tag           = string
+    auth0_client_id     = string
     auth0_client_secret = string
-    session_secret_key = string
+    session_secret_key  = string
   })
 }
 

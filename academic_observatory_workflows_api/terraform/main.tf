@@ -39,9 +39,9 @@ locals {
   # Set the environment variables for the Cloud Run backend
   env_vars = merge(
     {
-      "AUTH0_CLIENT_ID" = var.api.auth0_client_id,
+      "AUTH0_CLIENT_ID"     = var.api.auth0_client_id,
       "AUTH0_CLIENT_SECRET" = var.api.auth0_client_secret,
-      "SESSION_SECRET_KEY" = var.api.session_secret_key
+      "SESSION_SECRET_KEY"  = var.api.session_secret_key
     },
     (
       var.api_type.type == "observatory_api" ?
