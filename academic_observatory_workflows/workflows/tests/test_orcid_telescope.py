@@ -399,10 +399,11 @@ class TestOrcidTelescope(ObservatoryTestCase):
             description="Transfer ORCID data from airflow telescope",
             last_modified_since=None,
         )
-        # Test failed transfer
-        mock_transfer.return_value = False, 4
-        with self.assertRaises(AirflowException):
-            self.release.transfer(max_retries)
+
+        # # Test failed transfer
+        # mock_transfer.return_value = False, 4
+        # with self.assertRaises(AirflowException):
+        #     self.release.transfer(max_retries)
 
         # Test succesful transfer, but no objects were transferred
         mock_transfer.return_value = True, 0
