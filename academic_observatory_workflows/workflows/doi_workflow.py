@@ -291,7 +291,6 @@ class DoiWorkflow(Workflow):
         "crossref_fundref",
         "geonames",
         "ror",
-        "mag",
         "open_citations",
         "unpaywall",
         "orcid",

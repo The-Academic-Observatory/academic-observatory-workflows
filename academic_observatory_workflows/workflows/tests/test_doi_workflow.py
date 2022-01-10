@@ -121,7 +121,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "crossref_fundref_sensor": ["check_dependencies"],
                 "geonames_sensor": ["check_dependencies"],
                 "ror_sensor": ["check_dependencies"],
-                "mag_sensor": ["check_dependencies"],
                 "open_citations_sensor": ["check_dependencies"],
                 "unpaywall_sensor": ["check_dependencies"],
                 "orcid_sensor": ["check_dependencies"],
