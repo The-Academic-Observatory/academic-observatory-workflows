@@ -19,12 +19,14 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import json
+import math
 import os
 import os.path
 import shutil
 import urllib.parse
 from dataclasses import field
-from typing import Optional, List, Dict, Union
+from operator import itemgetter
+from typing import Optional, List, Dict, Union, Tuple
 from urllib.parse import urlparse
 
 import google.cloud.bigquery as bigquery
@@ -38,9 +40,6 @@ from airflow.models.variable import Variable
 from airflow.operators.bash import BashOperator
 from airflow.secrets.environment_variables import EnvironmentVariablesBackend
 from airflow.sensors.external_task import ExternalTaskSensor
-from pyarrow import json as pa_json
-
-from academic_observatory_workflows.clearbit import clearbit_download_logo
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.airflow_utils import get_airflow_connection_password
 from observatory.platform.utils.file_utils import load_jsonl
@@ -52,6 +51,9 @@ from observatory.platform.utils.gc_utils import (
 from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
 from observatory.platform.workflows.workflow import Workflow
+from pyarrow import json as pa_json
+
+from academic_observatory_workflows.clearbit import clearbit_download_logo
 
 # The minimum number of outputs before including an entity in the analysis
 INCLUSION_THRESHOLD = 1000
@@ -73,12 +75,11 @@ SELECT
   agg.access_types.oa.total_outputs AS n_outputs_open,
   agg.citations.mag.total_citations as n_citations,  
   agg.access_types.publisher.total_outputs AS n_outputs_publisher_open,
-  NULL AS n_outputs_publisher_open_only,
   agg.access_types.green.total_outputs AS n_outputs_other_platform_open,
   agg.access_types.green_only.total_outputs AS n_outputs_other_platform_open_only,
-  agg.access_types.gold.total_outputs AS n_outputs_gold,
+  agg.access_types.gold.total_outputs AS n_outputs_oa_journal,
   agg.access_types.hybrid.total_outputs AS n_outputs_hybrid,
-  agg.access_types.bronze.total_outputs AS n_outputs_bronze,
+  agg.access_types.bronze.total_outputs AS n_outputs_no_guarantees,
   ror.external_ids AS identifiers
 FROM
   `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg 
@@ -122,24 +123,31 @@ COUNTRY_OVERRIDES = {
 
 @dataclasses.dataclass
 class PublicationStats:
+    # Number fields
     n_citations: int = None
     n_outputs: int = None
     n_outputs_open: int = None
     n_outputs_publisher_open: int = None
     n_outputs_publisher_open_only: int = None
+    n_outputs_both: int = None
     n_outputs_other_platform_open: int = None
     n_outputs_other_platform_open_only: int = None
-    n_outputs_gold: int = None
+    n_outputs_closed: int = None
+    n_outputs_oa_journal: int = None
     n_outputs_hybrid: int = None
-    n_outputs_bronze: int = None
-    p_outputs_open: float = None
-    p_outputs_publisher_open: float = None
-    p_outputs_publisher_open_only: float = None
-    p_outputs_other_platform_open: float = None
-    p_outputs_other_platform_open_only: float = None
-    p_outputs_gold: float = None
-    p_outputs_hybrid: float = None
-    p_outputs_bronze: float = None
+    n_outputs_no_guarantees: int = None
+
+    # Percentage fields
+    p_outputs_open: int = None
+    p_outputs_publisher_open: int = None
+    p_outputs_publisher_open_only: int = None
+    p_outputs_both: int = None
+    p_outputs_other_platform_open: int = None
+    p_outputs_other_platform_open_only: int = None
+    p_outputs_closed: int = None
+    p_outputs_oa_journal: int = None
+    p_outputs_hybrid: int = None
+    p_outputs_no_guarantees: int = None
 
     @staticmethod
     def from_dict(dict_: Dict) -> PublicationStats:
@@ -148,19 +156,24 @@ class PublicationStats:
         n_outputs_open = dict_.get("n_outputs_open")
         n_outputs_publisher_open = dict_.get("n_outputs_publisher_open")
         n_outputs_publisher_open_only = dict_.get("n_outputs_publisher_open_only")
+        n_outputs_both = dict_.get("n_outputs_both")
         n_outputs_other_platform_open = dict_.get("n_outputs_other_platform_open")
         n_outputs_other_platform_open_only = dict_.get("n_outputs_other_platform_open_only")
-        n_outputs_gold = dict_.get("n_outputs_gold")
+        n_outputs_closed = dict_.get("n_outputs_closed")
+        n_outputs_oa_journal = dict_.get("n_outputs_oa_journal")
         n_outputs_hybrid = dict_.get("n_outputs_hybrid")
-        n_outputs_bronze = dict_.get("n_outputs_bronze")
+        n_outputs_no_guarantees = dict_.get("n_outputs_no_guarantees")
+
         p_outputs_open = dict_.get("p_outputs_open")
         p_outputs_publisher_open = dict_.get("p_outputs_publisher_open")
         p_outputs_publisher_open_only = dict_.get("p_outputs_publisher_open_only")
+        p_outputs_both = dict_.get("p_outputs_both")
         p_outputs_other_platform_open = dict_.get("p_outputs_other_platform_open")
         p_outputs_other_platform_open_only = dict_.get("p_outputs_other_platform_open_only")
-        p_outputs_gold = dict_.get("p_outputs_gold")
+        p_outputs_closed = dict_.get("p_outputs_closed")
+        p_outputs_oa_journal = dict_.get("p_outputs_oa_journal")
         p_outputs_hybrid = dict_.get("p_outputs_hybrid")
-        p_outputs_bronze = dict_.get("p_outputs_bronze")
+        p_outputs_no_guarantees = dict_.get("p_outputs_no_guarantees")
 
         return PublicationStats(
             n_citations=n_citations,
@@ -168,19 +181,23 @@ class PublicationStats:
             n_outputs_open=n_outputs_open,
             n_outputs_publisher_open=n_outputs_publisher_open,
             n_outputs_publisher_open_only=n_outputs_publisher_open_only,
+            n_outputs_both=n_outputs_both,
             n_outputs_other_platform_open=n_outputs_other_platform_open,
             n_outputs_other_platform_open_only=n_outputs_other_platform_open_only,
-            n_outputs_gold=n_outputs_gold,
+            n_outputs_closed=n_outputs_closed,
+            n_outputs_oa_journal=n_outputs_oa_journal,
             n_outputs_hybrid=n_outputs_hybrid,
-            n_outputs_bronze=n_outputs_bronze,
+            n_outputs_no_guarantees=n_outputs_no_guarantees,
             p_outputs_open=p_outputs_open,
             p_outputs_publisher_open=p_outputs_publisher_open,
             p_outputs_publisher_open_only=p_outputs_publisher_open_only,
+            p_outputs_both=p_outputs_both,
             p_outputs_other_platform_open=p_outputs_other_platform_open,
             p_outputs_other_platform_open_only=p_outputs_other_platform_open_only,
-            p_outputs_gold=p_outputs_gold,
+            p_outputs_closed=p_outputs_closed,
+            p_outputs_oa_journal=p_outputs_oa_journal,
             p_outputs_hybrid=p_outputs_hybrid,
-            p_outputs_bronze=p_outputs_bronze,
+            p_outputs_no_guarantees=p_outputs_no_guarantees
         )
 
     def to_dict(self) -> Dict:
@@ -190,20 +207,46 @@ class PublicationStats:
             "n_outputs_open": self.n_outputs_open,
             "n_outputs_publisher_open": self.n_outputs_publisher_open,
             "n_outputs_publisher_open_only": self.n_outputs_publisher_open_only,
+            "n_outputs_both": self.n_outputs_both,
             "n_outputs_other_platform_open": self.n_outputs_other_platform_open,
             "n_outputs_other_platform_open_only": self.n_outputs_other_platform_open_only,
-            "n_outputs_gold": self.n_outputs_gold,
+            "n_outputs_closed": self.n_outputs_closed,
+            "n_outputs_oa_journal": self.n_outputs_oa_journal,
             "n_outputs_hybrid": self.n_outputs_hybrid,
-            "n_outputs_bronze": self.n_outputs_bronze,
+            "n_outputs_no_guarantees": self.n_outputs_no_guarantees,
             "p_outputs_open": self.p_outputs_open,
             "p_outputs_publisher_open": self.p_outputs_publisher_open,
             "p_outputs_publisher_open_only": self.p_outputs_publisher_open_only,
+            "p_outputs_both": self.p_outputs_both,
             "p_outputs_other_platform_open": self.p_outputs_other_platform_open,
             "p_outputs_other_platform_open_only": self.p_outputs_other_platform_open_only,
-            "p_outputs_gold": self.p_outputs_other_platform_open_only,
-            "p_outputs_hybrid": self.p_outputs_other_platform_open_only,
-            "p_outputs_bronze": self.p_outputs_other_platform_open_only,
+            "p_outputs_closed": self.p_outputs_closed,
+            "p_outputs_oa_journal": self.p_outputs_oa_journal,
+            "p_outputs_hybrid": self.p_outputs_hybrid,
+            "p_outputs_no_guarantees": self.p_outputs_no_guarantees
         }
+
+
+def split_largest_remainder(sample_size: int, *ratios) -> Tuple:
+    """Split a sample size into different groups based on a list of ratios (that add to 1.0) using the largest
+    remainder method: https://en.wikipedia.org/wiki/Largest_remainder_method.
+
+    :param sample_size: the absolute sample size.
+    :param ratios: the list of ratios, must add to 1.0.
+    :return: the absolute numbers of each group.
+    """
+
+    assert sum(ratios) == 1, "ratios must sum to 1.0"
+    sizes = [sample_size * ratio for ratio in ratios]
+    sizes_whole = [math.floor(size) for size in sizes]
+
+    while (sample_size - sum(sizes_whole)) > 0:
+        remainders = [size % 1 for size in sizes]
+        max_index = max(enumerate(remainders), key=itemgetter(1))[0]
+        sizes_whole[max_index] = sizes_whole[max_index] + 1
+        sizes[max_index] = sizes_whole[max_index]
+
+    return tuple(sizes_whole)
 
 
 @dataclasses.dataclass
@@ -244,7 +287,7 @@ class Year:
 
 
 def save_json(path: str, data: Union[Dict, List]):
-    """ Save data to JSON.
+    """Save data to JSON.
 
     :param path: the output path.
     :param data: the data to save.
@@ -279,6 +322,7 @@ class Entity:
     description: str = None  # todo
     category: str = None  # todo
     logo: str = None  # todo
+    logo_lg: str = None  # todo
     url: str = None
     wikipedia_url: str = None
     country: Optional[str] = None
@@ -299,6 +343,7 @@ class Entity:
         description = dict_.get("description")
         category = dict_.get("category")
         logo = dict_.get("logo")
+        logo_lg = dict_.get("logo_lg")
         url = dict_.get("url")
         wikipedia_url = dict_.get("wikipedia_url")
         country = dict_.get("country")
@@ -312,6 +357,7 @@ class Entity:
             description=description,
             category=category,
             logo=logo,
+            logo_lg=logo_lg,
             url=url,
             wikipedia_url=wikipedia_url,
             country=country,
@@ -397,14 +443,16 @@ def jsonl_to_pyarrow(jsonl_path: str, output_path: str):
 
 class OaWebRelease(SnapshotRelease):
     PERCENTAGE_FIELD_KEYS = [
-        "outputs_open",
-        "outputs_publisher_open",
-        "outputs_publisher_open_only",
-        "outputs_other_platform_open",
-        "outputs_other_platform_open_only",
-        "outputs_gold",
-        "outputs_hybrid",
-        "outputs_bronze",
+        ("outputs_open", "n_outputs"),
+        ("outputs_both", "n_outputs"),
+        ("outputs_closed", "n_outputs"),
+        ("outputs_publisher_open", "n_outputs"),
+        ("outputs_publisher_open_only", "n_outputs"),
+        ("outputs_other_platform_open", "n_outputs"),
+        ("outputs_other_platform_open_only", "n_outputs"),
+        ("outputs_oa_journal", "n_outputs_publisher_open"),
+        ("outputs_hybrid", "n_outputs_publisher_open"),
+        ("outputs_no_guarantees", "n_outputs_publisher_open"),
     ]
 
     def __init__(
@@ -449,12 +497,37 @@ class OaWebRelease(SnapshotRelease):
         df = pd.DataFrame(data)
 
         # Convert data types
-        df["n_outputs_publisher_open_only"] = 0
+        # df["n_outputs_publisher_open_only"] = 0
         df["date"] = pd.to_datetime(df["date"])
         df.fillna("", inplace=True)
         for column in df.columns:
             if column.startswith("n_"):
                 df[column] = pd.to_numeric(df[column])
+
+        # Create missing fields
+        publisher_open_only = []
+        both = []
+        closed = []
+        for i, row in df.iterrows():
+            # Closed
+            n_outputs = row["n_outputs"]
+            n_outputs_open = row["n_outputs_open"]
+            n_outputs_closed = n_outputs - n_outputs_open
+
+            # Both
+            n_outputs_both = row["n_outputs_other_platform_open"] - row["n_outputs_other_platform_open_only"]
+
+            # Publisher open only
+            n_outputs_publisher_open_only = row["n_outputs_publisher_open"] - n_outputs_both
+
+            # Add to arrays
+            publisher_open_only.append(n_outputs_publisher_open_only)
+            both.append(n_outputs_both)
+            closed.append(n_outputs_closed)
+
+        df["n_outputs_publisher_open_only"] = publisher_open_only
+        df["n_outputs_both"] = both
+        df["n_outputs_closed"] = closed
 
         # Clean RoR ids
         if category == "institution":
@@ -490,6 +563,9 @@ class OaWebRelease(SnapshotRelease):
         # Add percentages to dataframe
         self.update_df_with_percentages(df_index_table, self.PERCENTAGE_FIELD_KEYS)
 
+        # Make percentages add to 100% when integers
+        self.quantize_df_percentages(df_index_table)
+
         # Sort from highest oa percentage to lowest
         df_index_table.sort_values(by=["n_outputs_open"], ascending=False, inplace=True)
 
@@ -511,7 +587,7 @@ class OaWebRelease(SnapshotRelease):
 
         return df_index_table
 
-    def update_df_with_percentages(self, df: pd.DataFrame, keys: List[str]):
+    def update_df_with_percentages(self, df: pd.DataFrame, keys: List[Tuple[str, str]]):
         """Calculate percentages for fields in a Pandas dataframe.
 
         :param df: the Pandas dataframe.
@@ -519,16 +595,42 @@ class OaWebRelease(SnapshotRelease):
         :return: None.
         """
 
-        for key in keys:
-            df[f"p_{key}"] = round(df[f"n_{key}"] / df["n_outputs"] * 100, 0)
+        for numerator_key, denominator_key in keys:
+            df[f"p_{numerator_key}"] = df[f"n_{numerator_key}"] / df[denominator_key] * 100
 
-    def update_index_with_logos(self, category: str, df_index_table: pd.DataFrame, size=32, fmt="jpg"):
+    def quantize_df_percentages(self, df: pd.DataFrame):
+        """Makes percentages add too 100% when integers
+
+        :param df: the Pandas dataframe.
+        :return: None.
+        """
+
+        for i, row in df.iterrows():
+            # Make percentage publisher open only, both, other platform open only and closed add to 100
+            sample_size = 100
+            keys = ["p_outputs_publisher_open_only", "p_outputs_both", "p_other_platform_open_only", "p_closed"]
+            ratios = [row[key] / 100.0 for key in keys]
+            results = split_largest_remainder(sample_size, ratios)
+            for key, value in zip(keys, results):
+                df.loc[i, key] = value
+
+            # Make percentage oa_journal, hybrid and no_guarantees add to 100
+            keys = ["p_outputs_oa_journal", "p_outputs_hybrid", "p_no_guarantees"]
+            ratios = [row[key] / 100.0 for key in keys]
+            results = split_largest_remainder(sample_size, ratios)
+            for key, value in zip(keys, results):
+                df.loc[i, key] = value
+
+    def update_index_with_logos(
+        self, category: str, df_index_table: pd.DataFrame, size=32, fmt="jpg", size_lg: int = 128
+    ):
         """Update the index with logos, downloading logos if the don't exist.
 
         :param category: the category, i.e. country or institution.
         :param df_index_table: the index table Pandas dataframe.
-        :param size: the image size.
+        :param size: the image size of the small logo for tables etc.
         :param fmt: the image format.
+        :param size_lg: the image size of the large logo for details pages.
         :return: None.
         """
 
@@ -542,21 +644,33 @@ class OaWebRelease(SnapshotRelease):
             logo_path_unknown = f"/unknown.svg"
             os.makedirs(base_path, exist_ok=True)
             logos = []
+            logos_lg = []
             for i, row in df_index_table.iterrows():
                 ror_id = row["id"]
                 url = clean_url(row["url"])
 
                 logo_path = logo_path_unknown
+                logo_lg_path = logo_path_unknown
                 if not pd.isnull(url):
                     file_path = os.path.join(base_path, f"{ror_id}.{fmt}")
+                    lg_file_path = os.path.join(base_path, f"{ror_id}-lg.{fmt}")
                     if not os.path.isfile(file_path):
+                        # Download small logo
                         clearbit_download_logo(company_url=url, file_path=file_path, size=size, fmt=fmt)
+
+                        # Download large logo
+                        clearbit_download_logo(company_url=url, file_path=lg_file_path, size=size_lg, fmt=fmt)
 
                     if os.path.isfile(file_path):
                         logo_path = f"/logos/{category}/{ror_id}.{fmt}"
 
+                    if os.path.isfile(file_path):
+                        logo_lg_path = f"/logos/{category}/{ror_id}-lg.{fmt}"
+
                 logos.append(logo_path)
+                logos.append(logo_lg_path)
             df_index_table["logo"] = logos
+            df_index_table["logos_lg"] = logos_lg
 
     def save_index(self, category: str, df_index_table: pd.DataFrame):
         """Save the index table.
@@ -591,6 +705,7 @@ class OaWebRelease(SnapshotRelease):
             entity = Entity.from_dict(record)
             entity.stats = PublicationStats.from_dict(record)
             entities.append(entity)
+
         # Sort by Open %
         entities = sorted(entities, key=lambda e: e.stats.p_outputs_open, reverse=True)
         entities = [e.to_dict() for e in entities]
@@ -628,6 +743,9 @@ class OaWebRelease(SnapshotRelease):
                 self.update_df_with_percentages(df_group, self.PERCENTAGE_FIELD_KEYS)
                 df_group = df_group.sort_values(by=[key_year])
                 df_group = df_group.loc[:, ~df_group.columns.str.contains("^Unnamed")]
+
+                # Make percentages add to 100% when integers
+                self.quantize_df_percentages(df_group)
 
                 # Create entity
                 entity_dict: Dict = df_index_table.loc[df_index_table[key_id] == entity_id].to_dict(key_records)[0]
