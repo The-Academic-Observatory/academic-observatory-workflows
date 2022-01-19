@@ -94,32 +94,13 @@ SELECT
   -- Authors
   {#
   Chooses the values that are passed along in the author affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates.
-  The values come from the ORCID dataset, which is pivotted to index by DOI, which is the primary index in this table.
-  It is possible that there are duplicate authors in authors_agg, only unique authors are used by getting the DISTINCT identifier.
+  The values come from the ORCID dataset, which is pivotted to index by DOI, which is the primary index in this table
   #}
-  (
-    SELECT
-      ARRAY_AGG(STRUCT(identifier,
-          name,
-          given_names,
-          family_name,
-          ["Author"] AS types,
-          CAST([] AS ARRAY<STRING>) AS home_repo,
-          CAST(NULL AS STRING) AS country,
-          CAST(NULL AS STRING) AS country_code,
-          CAST(NULL AS STRING) AS country_code_2,
-          CAST(NULL AS STRING) AS region,
-          CAST(NULL AS STRING) AS subregion,
-          CAST(NULL AS STRING) AS coordinates,
-          CAST([] AS ARRAY<STRING>) AS members))
-    FROM (
-      SELECT
-        DISTINCT identifier,
-        name,
-        given_names,
-        family_name
-      FROM
-        UNNEST(authors_agg) c)) AS authors,
+  ARRAY(SELECT as STRUCT author.uri as identifier, CONCAT(author.given_names, " ", author.family_name) as name, author.given_names as given_names,
+        author.family_name as family_name,["Author"] as types, CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code,
+        CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, CAST([] AS ARRAY<STRING>) as members
+        FROM UNNEST(orcid.orcid) as author
+        ) as authors,
 
   -- Journal
   {#
@@ -222,28 +203,14 @@ SELECT
    This is then LEFT JOINed against the grid dataset to take the raw GRID IDs that come from the MAG dataset, with a more detailed view of that institution and its location. The county and region information comes from here
    This Instituional information is JOINed against a COKI created dataset, groupings, which allows for arbitary grouping of institutions (or really GRIDs).
 
-   Lastly, Fundref and ORCID are also LEFT JOINed in order to drive the Funder and Author relationships.
-   The ORCID table is first aggregated by DOI, so that an array of authors per DOI is created.
+   Lastly, Fundref and ORCID are also LEFT JOINed in order to drive the Funder and Author relationships
   #}
   FROM dois_temp_table as dois, UNNEST(mag_grids) as grid_id
   LEFT JOIN `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.ror{{ release_date.strftime('%Y%m%d') }}` as institution on grid_id = institution.external_ids.GRID.preferred
   LEFT JOIN (SELECT ror, ARRAY_AGG(STRUCT(group_id, group_name, country_code)) as groupings FROM `{{ project_id }}.{{ settings.dataset_id }}.groupings` CROSS JOIN UNNEST(rors) as ror GROUP BY ror) as ror_groups on institution.id = ror_groups.ror
   GROUP BY doi) as base on extras.doi = base.doi
   LEFT JOIN `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.crossref_fundref{{ release_date.strftime('%Y%m%d') }}` as fundref on fundref.doi = extras.doi
-  LEFT JOIN (
-    SELECT
-      UPPER(TRIM(doi)) AS doi,
-      ARRAY_AGG( STRUCT(author.uri AS identifier,
-          CONCAT(author.given_names, " ", author.family_name) AS name,
-          author.given_names AS given_names,
-          author.family_name AS family_name)) AS authors_agg
-    FROM
-      `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.orcid{{ release_date.strftime('%Y%m%d') }}` as orcid,
-      UNNEST(orcid.orcid) AS author
-    GROUP BY
-      UPPER(TRIM(doi))) AS authors
-  ON
-    authors.doi = extras.doi
+  LEFT JOIN `{{ project_id }}.{{ observatory_intermediate.dataset_id }}.orcid{{ release_date.strftime('%Y%m%d') }}` as orcid on UPPER(TRIM(orcid.doi)) = UPPER(TRIM(extras.doi))
 )
 
 {#
