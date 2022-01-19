@@ -23,7 +23,6 @@ import math
 import os
 import os.path
 import shutil
-import urllib.parse
 from dataclasses import field
 from operator import itemgetter
 from typing import Optional, List, Dict, Union, Tuple
@@ -37,11 +36,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
-from airflow.operators.bash import BashOperator
 from airflow.secrets.environment_variables import EnvironmentVariablesBackend
 from airflow.sensors.external_task import ExternalTaskSensor
 from observatory.platform.utils.airflow_utils import AirflowVars
-from observatory.platform.utils.airflow_utils import get_airflow_connection_password
+from observatory.platform.utils.config_utils import module_file_path
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import (
     select_table_shard_dates,
@@ -77,7 +75,7 @@ SELECT
   agg.access_types.publisher.total_outputs AS n_outputs_publisher_open,
   agg.access_types.green.total_outputs AS n_outputs_other_platform_open,
   agg.access_types.green_only.total_outputs AS n_outputs_other_platform_open_only,
-  agg.access_types.gold.total_outputs AS n_outputs_oa_journal,
+  agg.access_types.gold_doaj.total_outputs AS n_outputs_oa_journal,
   agg.access_types.hybrid.total_outputs AS n_outputs_hybrid,
   agg.access_types.bronze.total_outputs AS n_outputs_no_guarantees,
   ror.external_ids AS identifiers
@@ -87,38 +85,6 @@ FROM
 WHERE agg.time_period <= EXTRACT(YEAR FROM CURRENT_DATE())
 ORDER BY year DESC, name ASC
 """
-
-# Overrides for country names
-COUNTRY_OVERRIDES = {
-    "Bolivia (Plurinational State of)": "Bolivia",
-    "Bosnia and Herzegovina": "Bosnia",
-    "Brunei Darussalam": "Brunei",
-    "Congo": "Congo Republic",
-    "Congo, Democratic Republic of the": "DR Congo",
-    "Iran (Islamic Republic of)": "Iran",
-    "Korea (Democratic People's Republic of)": "North Korea",
-    "Korea, Republic of": "South Korea",
-    "Lao People's Democratic Republic": "Laos",
-    "Micronesia (Federated States of)": "Micronesia",
-    "Moldova, Republic of": "Moldova",
-    "Palestine, State of": "Palestine",
-    "Saint Kitts and Nevis": "St Kitts & Nevis",
-    "Saint Lucia": "St Lucia",
-    "Saint Vincent and the Grenadines": "St Vincent",
-    "Sint Maarten (Dutch part)": "Sint Maarten",
-    "Svalbard and Jan Mayen": "Svalbard & Jan Mayen",
-    "Syrian Arab Republic": "Syria",
-    "Taiwan, Province of China": "Taiwan",
-    "Tanzania, United Republic of": "Tanzania",
-    "Trinidad and Tobago": "Trinidad & Tobago",
-    "United Kingdom of Great Britain and Northern Ireland": "United Kingdom",
-    "United States of America": "United States",
-    "Venezuela (Bolivarian Republic of)": "Venezuela",
-    "Viet Nam": "Vietnam",
-    "Virgin Islands (British)": "Virgin Islands",
-    "Antigua and Barbuda": "Antigua & Barbuda",
-    "Russian Federation": "Russia",
-}
 
 
 @dataclasses.dataclass
@@ -197,7 +163,7 @@ class PublicationStats:
             p_outputs_closed=p_outputs_closed,
             p_outputs_oa_journal=p_outputs_oa_journal,
             p_outputs_hybrid=p_outputs_hybrid,
-            p_outputs_no_guarantees=p_outputs_no_guarantees
+            p_outputs_no_guarantees=p_outputs_no_guarantees,
         )
 
     def to_dict(self) -> Dict:
@@ -223,7 +189,7 @@ class PublicationStats:
             "p_outputs_closed": self.p_outputs_closed,
             "p_outputs_oa_journal": self.p_outputs_oa_journal,
             "p_outputs_hybrid": self.p_outputs_hybrid,
-            "p_outputs_no_guarantees": self.p_outputs_no_guarantees
+            "p_outputs_no_guarantees": self.p_outputs_no_guarantees,
         }
 
 
@@ -231,12 +197,26 @@ def split_largest_remainder(sample_size: int, *ratios) -> Tuple:
     """Split a sample size into different groups based on a list of ratios (that add to 1.0) using the largest
     remainder method: https://en.wikipedia.org/wiki/Largest_remainder_method.
 
+    Copyright 2021 James Diprose
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
     :param sample_size: the absolute sample size.
     :param ratios: the list of ratios, must add to 1.0.
     :return: the absolute numbers of each group.
     """
 
-    assert sum(ratios) == 1, "ratios must sum to 1.0"
+    assert math.isclose(sum(ratios), 1), "ratios must sum to 1.0"
     sizes = [sample_size * ratio for ratio in ratios]
     sizes_whole = [math.floor(size) for size in sizes]
 
@@ -321,8 +301,8 @@ class Entity:
     name: str
     description: str = None  # todo
     category: str = None  # todo
-    logo: str = None  # todo
-    logo_lg: str = None  # todo
+    logo_s: str = None  # todo
+    logo_l: str = None  # todo
     url: str = None
     wikipedia_url: str = None
     country: Optional[str] = None
@@ -342,8 +322,8 @@ class Entity:
         name = dict_.get("name")
         description = dict_.get("description")
         category = dict_.get("category")
-        logo = dict_.get("logo")
-        logo_lg = dict_.get("logo_lg")
+        logo_s = dict_.get("logo_s")
+        logo_l = dict_.get("logo_l")
         url = dict_.get("url")
         wikipedia_url = dict_.get("wikipedia_url")
         country = dict_.get("country")
@@ -356,8 +336,8 @@ class Entity:
             name,
             description=description,
             category=category,
-            logo=logo,
-            logo_lg=logo_lg,
+            logo_s=logo_s,
+            logo_l=logo_l,
             url=url,
             wikipedia_url=wikipedia_url,
             country=country,
@@ -372,7 +352,8 @@ class Entity:
             "name": self.name,
             "description": self.description,
             "category": self.category,
-            "logo": self.logo,
+            "logo_s": self.logo_s,
+            "logo_l": self.logo_l,
             "url": self.url,
             "wikipedia_url": self.wikipedia_url,
             "region": self.region,
@@ -441,6 +422,10 @@ def jsonl_to_pyarrow(jsonl_path: str, output_path: str):
     pq.write_table(table, output_path)
 
 
+def make_logo_url(*, category: str, entity_id: str, size: str, fmt: str) -> str:
+    return f"/logos/{category}/{size}/{entity_id}.{fmt}"
+
+
 class OaWebRelease(SnapshotRelease):
     PERCENTAGE_FIELD_KEYS = [
         ("outputs_open", "n_outputs"),
@@ -480,6 +465,7 @@ class OaWebRelease(SnapshotRelease):
         self.change_chart_years = change_chart_years
         self.agg_dataset_id = agg_dataset_id
         self.ror_dataset_id = ror_dataset_id
+        self.data_path = module_file_path("academic_observatory_workflows.workflows.data.oa_web_workflow")
 
     @property
     def build_path(self):
@@ -497,7 +483,6 @@ class OaWebRelease(SnapshotRelease):
         df = pd.DataFrame(data)
 
         # Convert data types
-        # df["n_outputs_publisher_open_only"] = 0
         df["date"] = pd.to_datetime(df["date"])
         df.fillna("", inplace=True)
         for column in df.columns:
@@ -532,6 +517,29 @@ class OaWebRelease(SnapshotRelease):
         # Clean RoR ids
         if category == "institution":
             df["id"] = df["id"].apply(lambda i: clean_ror_id(i))
+
+        # Add extra country info from country file
+        if category == "country":
+            country_index = {}
+            file_path = os.path.join(self.data_path, "country.json")
+            with open(file_path, mode="r") as f:
+                data = json.load(f)
+                for row in data:
+                    alpha3 = row["alpha3"]
+                    country_index[alpha3] = row
+
+            names = []
+            alpha2s = []
+            wikipedia_urls = []
+            for i, row in df.iterrows():
+                alpha3 = row["id"]
+                country = country_index[alpha3]
+                names.append(country["name"])
+                alpha2s.append(country["alpha2"])
+                wikipedia_urls.append(country["wikipedia_url"])
+            df["name"] = names
+            df["alpha2"] = alpha2s
+            df["wikipedia_url"] = wikipedia_urls
 
         return df
 
@@ -572,19 +580,6 @@ class OaWebRelease(SnapshotRelease):
         # Add category
         df_index_table["category"] = category
 
-        # Country overrides
-        for key in ["name", "country"]:
-            df_index_table[key] = df_index_table[key].apply(
-                lambda name: COUNTRY_OVERRIDES[name] if name in COUNTRY_OVERRIDES else name
-            )
-
-        # If country add url and wikipedia url
-        if category == "country":
-            for key in ["url", "wikipedia_url"]:
-                df_index_table[key] = df_index_table["name"].apply(
-                    lambda name: f"https://en.wikipedia.org/wiki/{urllib.parse.quote(name)}"
-                )
-
         return df_index_table
 
     def update_df_with_percentages(self, df: pd.DataFrame, keys: List[Tuple[str, str]]):
@@ -596,10 +591,14 @@ class OaWebRelease(SnapshotRelease):
         """
 
         for numerator_key, denominator_key in keys:
-            df[f"p_{numerator_key}"] = df[f"n_{numerator_key}"] / df[denominator_key] * 100
+            p_key = f"p_{numerator_key}"
+            df[p_key] = df[f"n_{numerator_key}"] / df[denominator_key] * 100
+
+            # Fill in NaN caused by denominator of zero
+            df[p_key] = df[p_key].fillna(0)
 
     def quantize_df_percentages(self, df: pd.DataFrame):
-        """Makes percentages add too 100% when integers
+        """Makes percentages add to 100% when integers
 
         :param df: the Pandas dataframe.
         :return: None.
@@ -608,22 +607,27 @@ class OaWebRelease(SnapshotRelease):
         for i, row in df.iterrows():
             # Make percentage publisher open only, both, other platform open only and closed add to 100
             sample_size = 100
-            keys = ["p_outputs_publisher_open_only", "p_outputs_both", "p_other_platform_open_only", "p_closed"]
+            keys = [
+                "p_outputs_publisher_open_only",
+                "p_outputs_both",
+                "p_outputs_other_platform_open_only",
+                "p_outputs_closed",
+            ]
             ratios = [row[key] / 100.0 for key in keys]
-            results = split_largest_remainder(sample_size, ratios)
+            results = split_largest_remainder(sample_size, *ratios)
             for key, value in zip(keys, results):
                 df.loc[i, key] = value
 
             # Make percentage oa_journal, hybrid and no_guarantees add to 100
-            keys = ["p_outputs_oa_journal", "p_outputs_hybrid", "p_no_guarantees"]
+            keys = ["p_outputs_oa_journal", "p_outputs_hybrid", "p_outputs_no_guarantees"]
             ratios = [row[key] / 100.0 for key in keys]
-            results = split_largest_remainder(sample_size, ratios)
-            for key, value in zip(keys, results):
-                df.loc[i, key] = value
+            has_publisher_open = row["n_outputs_publisher_open"] > 0
+            if has_publisher_open:
+                results = split_largest_remainder(sample_size, *ratios)
+                for key, value in zip(keys, results):
+                    df.loc[i, key] = value
 
-    def update_index_with_logos(
-        self, category: str, df_index_table: pd.DataFrame, size=32, fmt="jpg", size_lg: int = 128
-    ):
+    def update_index_with_logos(self, category: str, df_index_table: pd.DataFrame):
         """Update the index with logos, downloading logos if the don't exist.
 
         :param category: the category, i.e. country or institution.
@@ -634,43 +638,48 @@ class OaWebRelease(SnapshotRelease):
         :return: None.
         """
 
+        sizes = ["s", "l"]
+        for size in sizes:
+            base_path = os.path.join(self.build_path, "logos", category, size)
+            os.makedirs(base_path, exist_ok=True)
+
         # Make logos
         if category == "country":
-            df_index_table["logo"] = df_index_table["id"].apply(
-                lambda country_code: f"/logos/{category}/{country_code}.svg"
-            )
+            # Copy and rename logo images from using alpha2 to alpha3 country codes
+            for size in sizes:
+                base_path = os.path.join(self.build_path, "logos", category, size)
+                for i, row in df_index_table.iterrows():
+                    alpha3 = row["id"]
+                    alpha2 = row["alpha2"]
+                    src_path = os.path.join(self.data_path, "flags", size, f"{alpha2}.svg")
+                    dst_path = os.path.join(base_path, f"{alpha3}.svg")
+                    shutil.copy(src_path, dst_path)
+
+            # Add logo urls to index
+            for size in sizes:
+                df_index_table[f"logo_{size}"] = df_index_table["id"].apply(
+                    lambda country_code: make_logo_url(category=category, entity_id=country_code, size=size, fmt="svg")
+                )
         elif category == "institution":
-            base_path = os.path.join(self.build_path, "logos", category)
+            fmt = "jpg"
             logo_path_unknown = f"/unknown.svg"
-            os.makedirs(base_path, exist_ok=True)
-            logos = []
-            logos_lg = []
-            for i, row in df_index_table.iterrows():
-                ror_id = row["id"]
-                url = clean_url(row["url"])
+            for size, width in zip(sizes, [32, 128]):
+                base_path = os.path.join(self.build_path, "logos", category, size)
+                logos = []
+                for i, row in df_index_table.iterrows():
+                    ror_id = row["id"]
+                    url = clean_url(row["url"])
+                    logo_path = logo_path_unknown
+                    if not pd.isnull(url):
+                        file_path = os.path.join(base_path, f"{ror_id}.{fmt}")
+                        if not os.path.isfile(file_path):
+                            clearbit_download_logo(company_url=url, file_path=file_path, size=width, fmt=fmt)
 
-                logo_path = logo_path_unknown
-                logo_lg_path = logo_path_unknown
-                if not pd.isnull(url):
-                    file_path = os.path.join(base_path, f"{ror_id}.{fmt}")
-                    lg_file_path = os.path.join(base_path, f"{ror_id}-lg.{fmt}")
-                    if not os.path.isfile(file_path):
-                        # Download small logo
-                        clearbit_download_logo(company_url=url, file_path=file_path, size=size, fmt=fmt)
+                        if os.path.isfile(file_path):
+                            logo_path = make_logo_url(category=category, entity_id=ror_id, size=size, fmt=fmt)
 
-                        # Download large logo
-                        clearbit_download_logo(company_url=url, file_path=lg_file_path, size=size_lg, fmt=fmt)
-
-                    if os.path.isfile(file_path):
-                        logo_path = f"/logos/{category}/{ror_id}.{fmt}"
-
-                    if os.path.isfile(file_path):
-                        logo_lg_path = f"/logos/{category}/{ror_id}-lg.{fmt}"
-
-                logos.append(logo_path)
-                logos.append(logo_lg_path)
-            df_index_table["logo"] = logos
-            df_index_table["logos_lg"] = logos_lg
+                    logos.append(logo_path)
+                df_index_table[f"logo_{size}"] = logos
 
     def save_index(self, category: str, df_index_table: pd.DataFrame):
         """Save the index table.
@@ -756,12 +765,11 @@ class OaWebRelease(SnapshotRelease):
                 years = []
                 rows: List[Dict] = df_group.to_dict(key_records)
                 for row in rows:
-                    year = row.get(key_year)
+                    year = int(row.get(key_year))
                     date = row.get(key_date)
                     stats = PublicationStats.from_dict(row)
                     years.append(Year(year=year, date=date, stats=stats))
                 entity.timeseries = years
-
                 entities.append(entity)
 
         return entities
@@ -793,8 +801,8 @@ class OaWebRelease(SnapshotRelease):
         for i, row in df_index_table.iterrows():
             id = row["id"]
             name = row["name"]
-            logo = row["logo"]
-            records.append({"id": id, "name": name, "category": category, "logo": logo})
+            logo = row["logo_s"]
+            records.append({"id": id, "name": name, "category": category, "logo_s": logo})
         return records
 
     def save_autocomplete(self, auto_complete: List[Dict]):
@@ -886,27 +894,27 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.download)
         self.add_task(self.transform)
         # TODO: add in a task to clone a certain version of the website, when this is ready
-        self.add_task(self.copy_static_assets)
-        self.add_operator(
-            BashOperator(
-                task_id=self.TASK_ID_BUILD_WEBSITE,
-                params={"website_folder": self.website_folder},
-                bash_command="cd {{ params.website_folder }} && ./build.sh ",
-                retries=retries,
-            )
-        )
-        self.add_operator(
-            BashOperator(
-                task_id=self.TASK_ID_DEPLOY_WEBSITE,
-                params={"website_folder": self.website_folder},
-                env={
-                    "CF_API_TOKEN": get_airflow_connection_password(self.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN),
-                    "PATH": self.DEPLOY_WEBSITE_PATH,
-                },
-                bash_command="cd {{ params.website_folder }} && ./deploy.sh ",
-                retries=retries,
-            )
-        )
+        # self.add_task(self.copy_static_assets)
+        # self.add_operator(
+        #     BashOperator(
+        #         task_id=self.TASK_ID_BUILD_WEBSITE,
+        #         params={"website_folder": self.website_folder},
+        #         bash_command="cd {{ params.website_folder }} && ./build.sh ",
+        #         retries=retries,
+        #     )
+        # )
+        # self.add_operator(
+        #     BashOperator(
+        #         task_id=self.TASK_ID_DEPLOY_WEBSITE,
+        #         params={"website_folder": self.website_folder},
+        #         env={
+        #             "CF_API_TOKEN": get_airflow_connection_password(self.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN),
+        #             "PATH": self.DEPLOY_WEBSITE_PATH,
+        #         },
+        #         bash_command="cd {{ params.website_folder }} && ./deploy.sh ",
+        #         retries=retries,
+        #     )
+        # )
 
     @property
     def website_folder(self) -> str:
