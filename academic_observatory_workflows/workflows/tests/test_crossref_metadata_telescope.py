@@ -59,14 +59,14 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
         self.download_path = test_fixtures_folder("crossref_metadata", "crossref_metadata.json.tar.gz")
         self.extract_file_hashes = [
-            "4a55065d90aaa58c69bc5f5a54da3006",
+            "42cab8ed20ef20bed51dacd3dc364589",
             "c45901a52154789470410aad51485e9c",
             "4c0fd617224a557b9ef04313cca0bd4a",
             "d93dc613e299871925532d906c3a44a1",
             "dd1ab247c55191a14bcd1bf32719c337",
         ]
         self.transform_hashes = [
-            "065a8c0bd1ef4239be9f37c0ad199a31",
+            "a2be39d3c4d4c9dc20af768f8ae35476",
             "38b766ec494054e621787de00ff715c8",
             "70437aad7c4568ed07408baf034871e4",
             "c3e3285a48867c8b7c10b1c9c0c5ab8a",
@@ -149,7 +149,7 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
                     self.setup_mock_file_download(release.url, self.download_path)
                     env.run_task(telescope.download.__name__)
                 self.assertEqual(1, len(release.download_files))
-                expected_file_hash = "10210c33936f9ba6b7e053f6f457591b"
+                expected_file_hash = "047770ae386f3376c08e3975d7f06016"
                 self.assert_file_integrity(release.download_path, expected_file_hash, "md5")
 
                 # Test that file uploaded
