@@ -26,6 +26,7 @@ import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from subprocess import Popen
 from typing import Dict, List
+from datetime import datetime
 
 import jsonlines
 import pendulum
@@ -402,6 +403,11 @@ def transform_item(item):
             elif k == "award":
                 if isinstance(v, str):
                     v = [v]
+            elif k == "date_time":
+                try:
+                    datetime.strptime(v, "%Y-%m-%dT%H:%M:%SZ")
+                except ValueError:
+                    v = ""
 
             new[k] = transform_item(v)
         return new
