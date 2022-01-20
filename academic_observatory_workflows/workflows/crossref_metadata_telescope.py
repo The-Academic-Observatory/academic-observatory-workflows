@@ -24,9 +24,9 @@ import os
 import shutil
 import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import datetime
 from subprocess import Popen
 from typing import Dict, List
-from datetime import datetime
 
 import jsonlines
 import pendulum
@@ -35,8 +35,6 @@ from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
 from bs4 import BeautifulSoup
 from natsort import natsorted
-
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
 from observatory.platform.utils.proc_utils import wait_for_process
 from observatory.platform.utils.url_utils import retry_session
@@ -45,6 +43,8 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
+
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 
 
 class CrossrefMetadataRelease(SnapshotRelease):
