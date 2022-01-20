@@ -121,7 +121,7 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
         dataset_id = env.add_dataset()
 
         # Setup Telescope
-        execution_date = pendulum.datetime(year=2020, month=11, day=1)
+        execution_date = pendulum.datetime(year=2022, month=1, day=1)
         telescope = CrossrefMetadataTelescope(dataset_id=dataset_id)
         dag = telescope.make_dag()
 
