@@ -12,41 +12,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Richard Hosking#}
+# Author: Richard Hosking, Aniek Roelofs #}
 
-{# This query extracts the key fields from ORCID, allowing the following query to be simplifed #}
-WITH orcid_processed as (SELECT 
-  orcid.orcid_identifier.uri,
-  orcid.person.name.given_names,
-  orcid.person.name.family_name,
+{# This query extracts the uri, given_names, family_name and a list of DOIs for each author from ORCID, allowing the following query to be simplified #}
+WITH
+  orcid_processed AS (
+  SELECT
+    orcid.orcid_identifier.uri,
+    orcid.person.name.given_names,
+    orcid.person.name.family_name,
+    ARRAY(
+    SELECT
+      DISTINCT UPPER(TRIM(external_id.external_id_value))
+    FROM
+      UNNEST(activities_summary.works.group) AS work_group,
+      UNNEST(work_group.work_summary[OFFSET(0)].external_ids.external_id) AS external_id
+    WHERE
+      external_id.external_id_type = "doi" ) AS works
+  FROM
+    `{{ project_id }}.{{ orcid.dataset_id }}.{{ orcid.table_id }}` AS orcid )
 
-  ARRAY(
-    SELECT AS STRUCT
-      work_group.work_summary[OFFSET(0)].title.title, 
-      ARRAY(
-        SELECT as STRUCT 
-          external_id.external_id_type, 
-          external_id.external_id_value
-        FROM UNNEST(work_group.work_summary[OFFSET(0)].external_ids.external_id) as external_id
-      ) as external_ids,
-      
-      work_group.work_summary[OFFSET(0)].type,
-      work_group.work_summary[OFFSET(0)].publication_date
-    FROM UNNEST(activities_summary.works.group) as work_group
-  ) as works
-FROM `{{ project_id }}.{{ orcid.dataset_id }}.{{ orcid.table_id }}` as orcid)
-
-{# This is the main query, which inverts the ORCID centered data, to be DOI cetentric with a list of ORCID authors #}
+{# This is the main query, which inverts the ORCID centered data to be DOI centric, so it has a list of authors per DOI, instead of a list of DOIs per author#}
 SELECT
   doi,
-  ARRAY_AGG(orcid) as orcid
+  ARRAY_AGG(orcid) AS orcid
 FROM (
-  SELECT 
-    external_id.external_id_value as doi,
-    STRUCT(
-        orcid.uri,
-        orcid.given_names,
-        orcid.family_name) as orcid
-  FROM orcid_processed as orcid, UNNEST(works) as work, UNNEST(work.external_ids) as external_id 
-  WHERE external_id.external_id_type = "doi")
-GROUP BY doi
+  SELECT
+    doi,
+    STRUCT( orcid.uri,
+      orcid.given_names,
+      orcid.family_name) AS orcid
+  FROM
+    orcid_processed AS orcid,
+    UNNEST(works) AS doi)
+GROUP BY
+  doi
