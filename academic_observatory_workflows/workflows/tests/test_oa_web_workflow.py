@@ -19,16 +19,13 @@ import shutil
 from typing import List
 from unittest import TestCase
 from unittest.mock import patch
-
+import jsonlines
 import pandas as pd
 import pendulum
 import vcr
 from airflow.models.connection import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
-
-from academic_observatory_workflows.config import test_fixtures_folder, schema_folder
-from academic_observatory_workflows.workflows.oa_web_workflow import OaWebRelease, OaWebWorkflow, clean_url
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
@@ -40,129 +37,197 @@ from observatory.platform.utils.test_utils import (
     make_dummy_dag,
 )
 
+from academic_observatory_workflows.config import test_fixtures_folder, schema_folder
+from academic_observatory_workflows.workflows.oa_web_workflow import OaWebRelease, OaWebWorkflow, clean_url
+
 
 class TestOaWebRelease(TestCase):
     def setUp(self) -> None:
+        dt_fmt = "YYYY-MM-DD"
         self.release = OaWebRelease(dag_id="dag", project_id="project", release_date=pendulum.now())
         self.countries = [
             {
                 "id": "NZL",
                 "name": "New Zealand",
                 "year": 2020,
+                "date": pendulum.date(2020, 12, 31).format(dt_fmt),
                 "url": None,
-                "type": "",
-                "date": pendulum.date(2020, 12, 31),
+                "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
+                "country": None,
+                "subregion": "Australia and New Zealand",
+                "region": "Oceania",
+                "institution_types": None,
                 "n_outputs": 1000,
-                "n_outputs_oa": 500,
-                "n_outputs_gold": 300,
+                "n_outputs_open": 500,
+                "n_citations": 3000,
+                "n_outputs_publisher_open": 300,
+                "n_outputs_other_platform_open": 200,
+                "n_outputs_other_platform_open_only": 100,
+                "n_outputs_oa_journal": 200,
                 "n_outputs_hybrid": 50,
-                "n_outputs_bronze": 50,
-                "n_outputs_green": 200,
+                "n_outputs_no_guarantees": 50,
+                "identifiers": [],
             },
             {
                 "id": "NZL",
                 "name": "New Zealand",
                 "year": 2021,
+                "date": pendulum.date(2021, 12, 31).format(dt_fmt),
                 "url": None,
-                "type": "",
-                "date": pendulum.date(2021, 12, 31),
+                "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
+                "country": None,
+                "subregion": "Australia and New Zealand",
+                "region": "Oceania",
+                "institution_types": None,
                 "n_outputs": 2000,
-                "n_outputs_oa": 1200,
-                "n_outputs_gold": 800,
+                "n_outputs_open": 1200,
+                "n_citations": 4000,
+                "n_outputs_publisher_open": 800,
+                "n_outputs_other_platform_open": 250,
+                "n_outputs_other_platform_open_only": 150,
+                "n_outputs_oa_journal": 350,
                 "n_outputs_hybrid": 200,
-                "n_outputs_bronze": 50,
-                "n_outputs_green": 250,
+                "n_outputs_no_guarantees": 250,
+                "identifiers": [],
             },
             {
                 "id": "AUS",
                 "name": "Australia",
                 "year": 2020,
+                "date": pendulum.date(2020, 12, 31).format(dt_fmt),
                 "url": None,
-                "type": "",
-                "date": pendulum.date(2020, 12, 31),
+                "wikipedia_url": "https://en.wikipedia.org/wiki/Australia",
+                "country": None,
+                "subregion": "Australia and New Zealand",
+                "region": "Oceania",
+                "institution_types": None,
                 "n_outputs": 3000,
-                "n_outputs_oa": 2000,
-                "n_outputs_gold": 1500,
+                "n_outputs_open": 2000,
+                "n_citations": 4000,
+                "n_outputs_publisher_open": 1500,
+                "n_outputs_other_platform_open": 200,
+                "n_outputs_other_platform_open_only": 100,
+                "n_outputs_oa_journal": 1250,
                 "n_outputs_hybrid": 200,
-                "n_outputs_bronze": 50,
-                "n_outputs_green": 200,
+                "n_outputs_no_guarantees": 50,
+                "identifiers": [],
             },
             {
                 "id": "AUS",
                 "name": "Australia",
                 "year": 2021,
+                "date": pendulum.date(2021, 12, 31).format(dt_fmt),
                 "url": None,
-                "type": "",
-                "date": pendulum.date(2021, 12, 31),
+                "wikipedia_url": "https://en.wikipedia.org/wiki/Australia",
+                "country": None,
+                "subregion": "Australia and New Zealand",
+                "region": "Oceania",
+                "institution_types": None,
                 "n_outputs": 4000,
-                "n_outputs_oa": 3000,
-                "n_outputs_gold": 2000,
+                "n_outputs_open": 3000,
+                "n_citations": 5000,
+                "n_outputs_publisher_open": 2000,
+                "n_outputs_other_platform_open": 500,
+                "n_outputs_other_platform_open_only": 400,
+                "n_outputs_oa_journal": 1200,
                 "n_outputs_hybrid": 500,
-                "n_outputs_bronze": 300,
-                "n_outputs_green": 500,
+                "n_outputs_no_guarantees": 300,
+                "identifiers": [],
             },
         ]
         self.institutions = [
             {
-                "id": "grid.9654.e",
+                "id": "https://ror.org/03b94tp07",
                 "name": "The University of Auckland",
                 "year": 2020,
+                "date": pendulum.date(2020, 12, 31).format(dt_fmt),
                 "url": "https://www.auckland.ac.nz/",
-                "type": "",
-                "date": pendulum.date(2020, 12, 31),
+                "wikipedia_url": "https://en.wikipedia.org/wiki/University_of_Auckland",
+                "country": "New Zealand",
+                "subregion": "Australia and New Zealand",
+                "region": "Oceania",
+                "institution_types": ["Education"],
                 "n_outputs": 1000,
-                "n_outputs_oa": 500,
-                "n_outputs_gold": 300,
+                "n_outputs_open": 500,
+                "n_citations": 1000,
+                "n_outputs_publisher_open": 300,
+                "n_outputs_other_platform_open": 200,
+                "n_outputs_other_platform_open_only": 100,
+                "n_outputs_oa_journal": 200,
                 "n_outputs_hybrid": 50,
-                "n_outputs_bronze": 50,
-                "n_outputs_green": 200,
+                "n_outputs_no_guarantees": 50,
+                "identifiers": [],
             },
             {
-                "id": "grid.9654.e",
+                "id": "https://ror.org/03b94tp07",
                 "name": "The University of Auckland",
                 "year": 2021,
+                "date": pendulum.date(2021, 12, 31).format(dt_fmt),
                 "url": "https://www.auckland.ac.nz/",
-                "type": "",
-                "date": pendulum.date(2021, 12, 31),
+                "wikipedia_url": "https://en.wikipedia.org/wiki/University_of_Auckland",
+                "country": "New Zealand",
+                "subregion": "Australia and New Zealand",
+                "region": "Oceania",
+                "institution_types": ["Education"],
                 "n_outputs": 2000,
-                "n_outputs_oa": 1200,
-                "n_outputs_gold": 800,
+                "n_outputs_open": 1200,
+                "n_citations": 1500,
+                "n_outputs_publisher_open": 800,
+                "n_outputs_other_platform_open": 250,
+                "n_outputs_other_platform_open_only": 150,
+                "n_outputs_oa_journal": 550,
                 "n_outputs_hybrid": 200,
-                "n_outputs_bronze": 50,
-                "n_outputs_green": 250,
+                "n_outputs_no_guarantees": 50,
+                "identifiers": [],
             },
             {
-                "id": "grid.1032.0",
+                "id": "https://ror.org/02n415q13",
                 "name": "Curtin University",
                 "year": 2020,
+                "date": pendulum.date(2020, 12, 31).format(dt_fmt),
                 "url": "https://curtin.edu.au/",
-                "type": "",
-                "date": pendulum.date(2020, 12, 31),
+                "wikipedia_url": "https://en.wikipedia.org/wiki/Curtin_University",
+                "country": "Australia",
+                "subregion": "Australia and New Zealand",
+                "region": "Oceania",
+                "institution_types": ["Education"],
                 "n_outputs": 3000,
-                "n_outputs_oa": 2000,
-                "n_outputs_gold": 1500,
+                "n_outputs_open": 2000,
+                "n_citations": 800,
+                "n_outputs_publisher_open": 1500,
+                "n_outputs_other_platform_open": 200,
+                "n_outputs_other_platform_open_only": 100,
+                "n_outputs_oa_journal": 1250,
                 "n_outputs_hybrid": 200,
-                "n_outputs_bronze": 50,
-                "n_outputs_green": 200,
+                "n_outputs_no_guarantees": 50,
+                "identifiers": [],
             },
             {
-                "id": "grid.1032.0",
+                "id": "https://ror.org/02n415q13",
                 "name": "Curtin University",
                 "year": 2021,
+                "date": pendulum.date(2021, 12, 31).format(dt_fmt),
                 "url": "https://curtin.edu.au/",
-                "type": "",
-                "date": pendulum.date(2021, 12, 31),
+                "wikipedia_url": "https://en.wikipedia.org/wiki/Curtin_University",
+                "country": "Australia",
+                "subregion": "Australia and New Zealand",
+                "region": "Oceania",
+                "institution_types": ["Education"],
                 "n_outputs": 4000,
-                "n_outputs_oa": 3000,
-                "n_outputs_gold": 2000,
+                "n_outputs_open": 3000,
+                "n_citations": 1200,
+                "n_outputs_publisher_open": 2000,
+                "n_outputs_other_platform_open": 500,
+                "n_outputs_other_platform_open_only": 300,
+                "n_outputs_oa_journal": 1200,
                 "n_outputs_hybrid": 500,
-                "n_outputs_bronze": 300,
-                "n_outputs_green": 500,
+                "n_outputs_no_guarantees": 300,
+                "identifiers": [],
             },
         ]
         self.entities = [
             ("country", self.countries, ["NZL", "AUS"]),
-            ("institution", self.institutions, ["grid.9654.e", "grid.1032.0"]),
+            ("institution", self.institutions, ["https://ror.org/03b94tp07", "https://ror.org/02n415q13"]),
         ]
 
     def test_clean_url(self):
@@ -171,32 +236,36 @@ class TestOaWebRelease(TestCase):
         actual = clean_url(url)
         self.assertEqual(expected, actual)
 
-    def create_mock_csv(self, category, test_data):
-        csv_path = os.path.join(self.release.download_folder, f"{category}.csv")
+    def save_mock_data(self, category, test_data):
+        path = os.path.join(self.release.download_folder, f"{category}.jsonl")
+        with jsonlines.open(path, mode='w') as writer:
+            writer.write_all(test_data)
         df = pd.DataFrame(test_data)
-        df.to_csv(csv_path, index=False)
-        df.fillna("", inplace=True)
         return df
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_load_csv(self, mock_var_get):
+    def test_load_data(self, mock_var_get):
         category = "country"
         with CliRunner().isolated_filesystem() as t:
             mock_var_get.return_value = t
 
             # Save CSV
-            df = self.create_mock_csv(category, self.countries)
+            df = self.save_mock_data(category, self.countries)
 
             # Load csv
-            actual_df = self.release.load_csv(category)
+            actual_df = self.release.load_data(category)
 
             # Compare
             expected_countries = df.to_dict("records")
             actual_countries = actual_df.to_dict("records")
             self.assertEqual(expected_countries, actual_countries)
 
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
+    def test_preprocess_df(self, mock_var_get):
+        pass
+
     def test_update_df_with_percentages(self):
-        keys = ["hello", "world"]
+        keys = [("hello", "n_outputs"), ("world", "n_outputs")]
         df = pd.DataFrame([{"n_hello": 20, "n_world": 50, "n_outputs": 100}])
         self.release.update_df_with_percentages(df, keys)
         expected = {"n_hello": 20, "n_world": 50, "n_outputs": 100, "p_hello": 20, "p_world": 50}
@@ -204,7 +273,7 @@ class TestOaWebRelease(TestCase):
         self.assertEqual(expected, actual)
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_make_make_index(self, mock_var_get):
+    def test_make_index(self, mock_var_get):
         with CliRunner().isolated_filesystem() as t:
             mock_var_get.return_value = t
 
@@ -314,39 +383,46 @@ class TestOaWebRelease(TestCase):
     def test_update_index_with_logos(self, mock_var_get):
         with CliRunner().isolated_filesystem() as t:
             mock_var_get.return_value = t
+            sizes = ["l", "s"]
 
             # Country table
             category = "country"
             df = pd.DataFrame(self.countries)
-            self.release.update_index_with_logos(df, category)
+            df = self.release.preprocess_df(category, df)
+            self.release.update_index_with_logos(category, df)
             for i, row in df.iterrows():
-                # Check that logo key created
-                self.assertTrue("logo" in row)
+                for size in sizes:
+                    # Check that logo key created
+                    key = f"logo_{size}"
+                    self.assertTrue(key in row)
 
-                # Check that correct logo path exists
-                item_id = row["id"]
-                expected_path = f"/logos/{category}/{item_id}.svg"
-                actual_path = row["logo"]
-                self.assertEqual(expected_path, actual_path)
+                    # Check that correct logo path exists
+                    item_id = row["id"]
+                    expected_path = f"/logos/{category}/{size}/{item_id}.svg"
+                    actual_path = row[key]
+                    self.assertEqual(expected_path, actual_path)
 
             # Institution table
             category = "institution"
             df = pd.DataFrame(self.institutions)
+            df = self.release.preprocess_df(category, df)
             with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "test_make_logos.yaml")):
-                self.release.update_index_with_logos(df, category)
+                self.release.update_index_with_logos(category, df)
                 for i, row in df.iterrows():
-                    # Check that logo was added to dataframe
-                    self.assertTrue("logo" in row)
+                    for size in sizes:
+                        # Check that logo was added to dataframe
+                        key = f"logo_{size}"
+                        self.assertTrue(key in row)
 
-                    # Check that correct path created
-                    item_id = row["id"]
-                    expected_path = f"/logos/{category}/{item_id}.jpg"
-                    actual_path = row["logo"]
-                    self.assertEqual(expected_path, actual_path)
+                        # Check that correct path created
+                        item_id = row["id"]
+                        expected_path = f"/logos/{category}/{size}/{item_id}.jpg"
+                        actual_path = row[key]
+                        self.assertEqual(expected_path, actual_path)
 
-                    # Check that downloaded logo exists
-                    full_path = os.path.join(self.release.build_path, expected_path[1:])
-                    self.assertTrue(os.path.isfile(full_path))
+                        # Check that downloaded logo exists
+                        full_path = os.path.join(self.release.build_path, expected_path[1:])
+                        self.assertTrue(os.path.isfile(full_path))
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
     def test_save_index(self, mock_var_get):
@@ -362,22 +438,22 @@ class TestOaWebRelease(TestCase):
                 path = os.path.join(self.release.build_path, "data", category, "summary.json")
                 self.assertTrue(os.path.isfile(path))
 
+    # @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
+    # def test_save_entity_details(self, mock_var_get):
+    #     with CliRunner().isolated_filesystem() as t:
+    #         mock_var_get.return_value = t
+    #
+    #         for category, data, entity_ids in self.entities:
+    #             df = pd.DataFrame(data)
+    #             country_index = self.release.make_index(df, category)
+    #             self.release.save_entity_details(country_index, category)
+    #
+    #             for entity_id in entity_ids:
+    #                 path = os.path.join(self.release.build_path, "data", category, f"{entity_id}_summary.json")
+    #                 self.assertTrue(os.path.isfile(path))
+
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_save_entity_details(self, mock_var_get):
-        with CliRunner().isolated_filesystem() as t:
-            mock_var_get.return_value = t
-
-            for category, data, entity_ids in self.entities:
-                df = pd.DataFrame(data)
-                country_index = self.release.make_index(df, category)
-                self.release.save_entity_details(country_index, category)
-
-                for entity_id in entity_ids:
-                    path = os.path.join(self.release.build_path, "data", category, f"{entity_id}_summary.json")
-                    self.assertTrue(os.path.isfile(path))
-
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_make_timeseries(self, mock_var_get):
+    def test_make_entities(self, mock_var_get):
         with CliRunner().isolated_filesystem() as t:
             mock_var_get.return_value = t
 
@@ -448,7 +524,7 @@ class TestOaWebRelease(TestCase):
                 self.assertEqual(e_ts, a_ts)
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_save_timeseries(self, mock_var_get):
+    def test_save_entities(self, mock_var_get):
         with CliRunner().isolated_filesystem() as t:
             mock_var_get.return_value = t
 
@@ -464,9 +540,9 @@ class TestOaWebRelease(TestCase):
     def test_make_auto_complete(self):
         category = "country"
         expected = [
-            {"id": "NZL", "name": "New Zealand", "logo": "/logos/country/NZL.svg"},
-            {"id": "AUS", "name": "Australia", "logo": "/logos/country/AUS.svg"},
-            {"id": "USA", "name": "United States", "logo": "/logos/country/USA.svg"},
+            {"id": "NZL", "name": "New Zealand", "logo_s": "/logos/country/NZL.svg"},
+            {"id": "AUS", "name": "Australia", "logo_s": "/logos/country/AUS.svg"},
+            {"id": "USA", "name": "United States", "logo_s": "/logos/country/USA.svg"},
         ]
         df = pd.DataFrame(expected)
         records = self.release.make_auto_complete(df, category)
@@ -480,9 +556,9 @@ class TestOaWebRelease(TestCase):
             mock_var_get.return_value = t
             category = "country"
             expected = [
-                {"id": "NZL", "name": "New Zealand", "logo": "/logos/country/NZL.svg"},
-                {"id": "AUS", "name": "Australia", "logo": "/logos/country/AUS.svg"},
-                {"id": "USA", "name": "United States", "logo": "/logos/country/USA.svg"},
+                {"id": "NZL", "name": "New Zealand", "logo_s": "/logos/country/NZL.svg"},
+                {"id": "AUS", "name": "Australia", "logo_s": "/logos/country/AUS.svg"},
+                {"id": "USA", "name": "United States", "logo_s": "/logos/country/USA.svg"},
             ]
             df = pd.DataFrame(expected)
             records = self.release.make_auto_complete(df, category)
@@ -494,6 +570,9 @@ class TestOaWebRelease(TestCase):
 
 class TestOaWebWorkflow(ObservatoryTestCase):
     def setUp(self) -> None:
+        """TestOaWebWorkflow checks that the workflow functions correctly, i.e. outputs the correct files, but doesn't
+        check that the calculations are correct (data correctness is tested in TestOaWebRelease)."""
+
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
         self.oa_web_fixtures = "oa_web_workflow"
@@ -547,7 +626,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             self.assert_dag_load("oa_web_workflow", dag_file)
 
     def setup_tables(self, dataset_id_all: str, bucket_name: str, release_date: pendulum.DateTime):
-        grid = load_jsonl(test_fixtures_folder("doi", "grid.jsonl"))
+        ror = load_jsonl(test_fixtures_folder("doi", "ror.jsonl"))
         country = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "country.jsonl"))
         institution = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "institution.jsonl"))
 
@@ -555,7 +634,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         oa_web_schema_path = test_fixtures_folder(self.oa_web_fixtures, "schema")
         with CliRunner().isolated_filesystem() as t:
             tables = [
-                Table("grid", True, dataset_id_all, grid, "grid", analysis_schema_path),
+                Table("ror", True, dataset_id_all, ror, "ror", analysis_schema_path),
                 Table("country", True, dataset_id_all, country, "country", oa_web_schema_path),
                 Table("institution", True, dataset_id_all, institution, "institution", oa_web_schema_path),
             ]
@@ -620,7 +699,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 base_folder = os.path.join(
                     t, "data", "telescopes", "download", "oa_web_workflow", "oa_web_workflow_2021_11_13"
                 )
-                expected_file_names = ["country.csv", "institution.csv"]
+                expected_file_names = ["country.jsonl", "institution.jsonl"]
                 for file_name in expected_file_names:
                     path = os.path.join(base_folder, file_name)
                     self.assertTrue(os.path.isfile(path))
@@ -658,21 +737,37 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
 
 def make_expected_build_files(base_path: str) -> List[str]:
-    country_path = os.path.join(base_path, "data", "country")
-    institution_path = os.path.join(base_path, "data", "institution")
-    logos_path = os.path.join(base_path, "logos", "institution")
-    return [
-        os.path.join(country_path, "AUS_summary.json"),
-        os.path.join(country_path, "AUS_ts.json"),
-        os.path.join(country_path, "NZL_summary.json"),
-        os.path.join(country_path, "NZL_ts.json"),
-        os.path.join(country_path, "summary.json"),
-        os.path.join(institution_path, "grid.1032.0_summary.json"),
-        os.path.join(institution_path, "grid.1032.0_ts.json"),
-        os.path.join(institution_path, "grid.9654.e_summary.json"),
-        os.path.join(institution_path, "grid.9654.e_ts.json"),
-        os.path.join(institution_path, "summary.json"),
-        os.path.join(base_path, "data", "autocomplete.json"),
-        os.path.join(logos_path, "grid.1032.0.jpg"),
-        os.path.join(logos_path, "grid.9654.e.jpg"),
+    countries = ["AUS", "NZL"]
+    institutions = ["03b94tp07", "02n415q13"]  # Auckland, Curtin
+    categories = ["country"] * len(countries) + ["institution"] * len(institutions)
+    entity_ids = countries + institutions
+    expected = []
+
+    # Add base data files
+    data_path = os.path.join(base_path, "data")
+    file_names = [
+        "autocomplete.json",
+        "autocomplete.parquet",
+        "country.json",
+        "country.parquet",
+        "institution.json",
+        "institution.parquet",
     ]
+    for file_name in file_names:
+        expected.append(os.path.join(data_path, file_name))
+
+    # Add country and institution specific data files
+    for category, entity_id in zip(categories, entity_ids):
+        path = os.path.join(data_path, category, f"{entity_id}.json")
+        expected.append(path)
+
+    # Add logos
+    for category, entity_id in zip(categories, entity_ids):
+        file_name = f"{entity_id}.svg"
+        if category == "institution":
+            file_name = f"{entity_id}.jpg"
+        for size in ["l", "s"]:
+            path = os.path.join(base_path, "logos", category, size, file_name)
+            expected.append(path)
+
+    return expected
