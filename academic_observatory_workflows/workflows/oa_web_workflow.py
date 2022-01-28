@@ -36,9 +36,16 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
+from airflow.operators.bash import BashOperator
 from airflow.secrets.environment_variables import EnvironmentVariablesBackend
 from airflow.sensors.external_task import ExternalTaskSensor
+from pyarrow import json as pa_json
+
+from academic_observatory_workflows.clearbit import clearbit_download_logo
 from observatory.platform.utils.airflow_utils import AirflowVars
+from observatory.platform.utils.airflow_utils import (
+    get_airflow_connection_password,
+)
 from observatory.platform.utils.config_utils import module_file_path
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import (
@@ -49,9 +56,6 @@ from observatory.platform.utils.gc_utils import (
 from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
 from observatory.platform.workflows.workflow import Workflow
-from pyarrow import json as pa_json
-
-from academic_observatory_workflows.clearbit import clearbit_download_logo
 
 # The minimum number of outputs before including an entity in the analysis
 INCLUSION_THRESHOLD = 1000
@@ -82,7 +86,7 @@ SELECT
 FROM
   `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg 
   LEFT OUTER JOIN `{project_id}.{ror_dataset_id}.{ror_table_id}` as ror ON agg.id = ror.id
-WHERE agg.time_period <= EXTRACT(YEAR FROM CURRENT_DATE())
+WHERE agg.time_period >= 2000 AND agg.time_period <= EXTRACT(YEAR FROM CURRENT_DATE())
 ORDER BY year DESC, name ASC
 """
 
@@ -480,9 +484,18 @@ class OaWebRelease(SnapshotRelease):
 
         path = os.path.join(self.download_folder, f"{category}.jsonl")
         data = load_jsonl(path)
-        df = pd.DataFrame(data)
+        return pd.DataFrame(data)
+
+    def preprocess_df(self, category: str, df: pd.DataFrame) -> pd.DataFrame:
+        """Pre-process the data frame.
+
+        :param category: the category.
+        :param df: the dataframe.
+        :return: the Pandas Dataframe.
+        """
 
         # Convert data types
+        df = df.copy(deep=True)
         df["date"] = pd.to_datetime(df["date"])
         df.fillna("", inplace=True)
         for column in df.columns:
@@ -894,27 +907,27 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.download)
         self.add_task(self.transform)
         # TODO: add in a task to clone a certain version of the website, when this is ready
-        # self.add_task(self.copy_static_assets)
-        # self.add_operator(
-        #     BashOperator(
-        #         task_id=self.TASK_ID_BUILD_WEBSITE,
-        #         params={"website_folder": self.website_folder},
-        #         bash_command="cd {{ params.website_folder }} && ./build.sh ",
-        #         retries=retries,
-        #     )
-        # )
-        # self.add_operator(
-        #     BashOperator(
-        #         task_id=self.TASK_ID_DEPLOY_WEBSITE,
-        #         params={"website_folder": self.website_folder},
-        #         env={
-        #             "CF_API_TOKEN": get_airflow_connection_password(self.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN),
-        #             "PATH": self.DEPLOY_WEBSITE_PATH,
-        #         },
-        #         bash_command="cd {{ params.website_folder }} && ./deploy.sh ",
-        #         retries=retries,
-        #     )
-        # )
+        self.add_task(self.copy_static_assets)
+        self.add_operator(
+            BashOperator(
+                task_id=self.TASK_ID_BUILD_WEBSITE,
+                params={"website_folder": self.website_folder},
+                bash_command="cd {{ params.website_folder }} && ./build.sh ",
+                retries=retries,
+            )
+        )
+        self.add_operator(
+            BashOperator(
+                task_id=self.TASK_ID_DEPLOY_WEBSITE,
+                params={"website_folder": self.website_folder},
+                env={
+                    "CF_API_TOKEN": get_airflow_connection_password(self.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN),
+                    "PATH": self.DEPLOY_WEBSITE_PATH,
+                },
+                bash_command="cd {{ params.website_folder }} && ./deploy.sh ",
+                retries=retries,
+            )
+        )
 
     @property
     def website_folder(self) -> str:
@@ -1032,6 +1045,9 @@ class OaWebWorkflow(Workflow):
         for category in self.table_ids:
             # Load data
             df = release.load_data(category)
+
+            # Pre-process data
+            df = release.preprocess_df(category, df)
 
             # Make index table
             df_index_table = release.make_index(category, df)
