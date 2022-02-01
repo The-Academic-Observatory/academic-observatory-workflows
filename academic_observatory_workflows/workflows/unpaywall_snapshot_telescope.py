@@ -20,7 +20,6 @@ import re
 from typing import Dict, List, Union
 
 import pendulum
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from airflow.models import Variable
 from airflow.models.taskinstance import TaskInstance
 from observatory.platform.utils.airflow_utils import (
@@ -41,6 +40,8 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
+
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 
 
 class UnpaywallSnapshotRelease(SnapshotRelease):
@@ -146,6 +147,7 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
         dataset_id: str = "our_research",
         queue: str = "remote_queue",
         schema_folder: str = default_schema_folder(),
+        load_bigquery_table_kwargs: Dict = None,
         table_descriptions: Dict = None,
         catchup: bool = True,
         airflow_vars: Union[List[AirflowVars], None] = None,
@@ -158,6 +160,7 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
         :param dataset_id: GCP dataset ID.
         :param queue: Airflow worker queue to use.
         :param schema_folder: Folder containing the database schemas.
+        :param load_bigquery_table_kwargs: the customisation parameters for loading data into a BigQuery table.
         :param table_descriptions: Descriptions of the tables.
         :param catchup: Whether Airflow should catch up past dag runs.
         :param airflow_vars: List of Airflow variables to use.
@@ -177,12 +180,16 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
 
         airflow_conns = [UnpaywallSnapshotRelease.AIRFLOW_CONNECTION]
 
+        if load_bigquery_table_kwargs is None:
+            load_bigquery_table_kwargs = {"ignore_unknown_values": True}
+
         super().__init__(
             dag_id,
             start_date,
             schedule_interval,
             dataset_id,
             schema_folder,
+            load_bigquery_table_kwargs=load_bigquery_table_kwargs,
             table_descriptions=table_descriptions,
             catchup=catchup,
             airflow_vars=airflow_vars,

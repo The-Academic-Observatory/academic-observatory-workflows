@@ -903,6 +903,7 @@ class WebOfScienceTelescope(SnapshotTelescope):
 
         load_bigquery_table_kwargs = {
             "write_disposition": WriteDisposition.WRITE_APPEND,
+            "ignore_unknown_values": True
         }
 
         super().__init__(
