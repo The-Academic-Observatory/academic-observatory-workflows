@@ -19,13 +19,12 @@ from __future__ import annotations
 import json
 import logging
 import os
-import requests
 import shutil
-from typing import List
+from typing import List, Dict
 from zipfile import BadZipFile, ZipFile
 
 import pendulum
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
+import requests
 from airflow.exceptions import AirflowException
 from airflow.models.taskinstance import TaskInstance
 from google.cloud.bigquery import SourceFormat
@@ -38,6 +37,8 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
+
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 
 
 class RorRelease(SnapshotRelease):
@@ -133,6 +134,7 @@ class RorTelescope(SnapshotTelescope):
         schedule_interval: str = "@weekly",
         dataset_id: str = DATASET_ID,
         schema_folder: str = default_schema_folder(),
+        load_bigquery_table_kwargs: Dict = None,
         source_format: str = SourceFormat.NEWLINE_DELIMITED_JSON,
         dataset_description: str = "",
         catchup: bool = True,
@@ -145,6 +147,7 @@ class RorTelescope(SnapshotTelescope):
         :param schedule_interval: the schedule interval of the DAG.
         :param dataset_id: the BigQuery dataset id.
         :param schema_folder: the SQL schema path.
+        :param load_bigquery_table_kwargs: the customisation parameters for loading data into a BigQuery table.
         :param source_format: the format of the data to load into BigQuery.
         :param dataset_description: description for the BigQuery dataset.
         :param catchup: whether to catchup the DAG or not.
@@ -159,6 +162,10 @@ class RorTelescope(SnapshotTelescope):
                 AirflowVars.DOWNLOAD_BUCKET,
                 AirflowVars.TRANSFORM_BUCKET,
             ]
+
+        if load_bigquery_table_kwargs is None:
+            load_bigquery_table_kwargs = {"ignore_unknown_values": True}
+
         super().__init__(
             dag_id,
             start_date,
@@ -166,6 +173,7 @@ class RorTelescope(SnapshotTelescope):
             dataset_id,
             schema_folder,
             source_format=source_format,
+            load_bigquery_table_kwargs=load_bigquery_table_kwargs,
             dataset_description=dataset_description,
             catchup=catchup,
             airflow_vars=airflow_vars,

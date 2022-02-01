@@ -218,6 +218,10 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
             ]
         if airflow_conns is None:
             airflow_conns = [AirflowConns.CROSSREF]
+
+        if load_bigquery_table_kwargs is None:
+            load_bigquery_table_kwargs = {"ignore_unknown_values": True}
+
         super().__init__(
             dag_id,
             start_date,
@@ -225,8 +229,8 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
             dataset_id,
             schema_folder,
             queue=queue,
-            load_bigquery_table_kwargs=load_bigquery_table_kwargs,
             dataset_description=dataset_description,
+            load_bigquery_table_kwargs=load_bigquery_table_kwargs,
             table_descriptions=table_descriptions,
             airflow_vars=airflow_vars,
             airflow_conns=airflow_conns,
