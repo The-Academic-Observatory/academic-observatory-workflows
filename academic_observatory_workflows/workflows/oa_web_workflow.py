@@ -39,6 +39,9 @@ from airflow.models.variable import Variable
 from airflow.operators.bash import BashOperator
 from airflow.secrets.environment_variables import EnvironmentVariablesBackend
 from airflow.sensors.external_task import ExternalTaskSensor
+from pyarrow import json as pa_json
+
+from academic_observatory_workflows.clearbit import clearbit_download_logo
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.airflow_utils import (
     get_airflow_connection_password,
@@ -53,9 +56,6 @@ from observatory.platform.utils.gc_utils import (
 from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
 from observatory.platform.workflows.workflow import Workflow
-from pyarrow import json as pa_json
-
-from academic_observatory_workflows.clearbit import clearbit_download_logo
 
 # The minimum number of outputs before including an entity in the analysis
 INCLUSION_THRESHOLD = 1000
@@ -276,6 +276,20 @@ class Year:
         return {"year": self.year, "date": self.date.strftime("%Y-%m-%d"), "stats": self.stats.to_dict()}
 
 
+@dataclasses.dataclass
+class Stats:
+    min_year: int
+    max_year: int
+    last_updated: pendulum.Date
+
+    def to_dict(self) -> Dict:
+        return {
+            "min_year": self.min_year,
+            "max_year": self.max_year,
+            "last_updated": self.last_updated.strftime("%Y-%m-%d"),
+        }
+
+
 def save_json(path: str, data: Union[Dict, List]):
     """Save data to JSON.
 
@@ -318,6 +332,8 @@ class Entity:
     country: Optional[str] = None
     subregion: str = None
     region: str = None
+    min_year: int = None
+    max_year: int = None
     institution_types: Optional[str] = field(default_factory=lambda: [])
     stats: PublicationStats = None
     identifiers: List[Identifier] = field(default_factory=lambda: [])
@@ -339,6 +355,8 @@ class Entity:
         country = dict_.get("country")
         subregion = dict_.get("subregion")
         region = dict_.get("region")
+        min_year = dict_.get("min_year")
+        max_year = dict_.get("max_year")
         institution_types = dict_.get("institution_types", [])
         identifiers = [Identifier.from_dict(obj) for obj in dict_.get("identifiers", [])]
 
@@ -354,6 +372,8 @@ class Entity:
             country=country,
             subregion=subregion,
             region=region,
+            min_year=min_year,
+            max_year=max_year,
             institution_types=institution_types,
             identifiers=identifiers,
         )
@@ -372,6 +392,8 @@ class Entity:
             "subregion": self.subregion,
             "country": self.country,
             "institution_types": self.institution_types,
+            "min_year": self.min_year,
+            "max_year": self.max_year,
             "stats": self.stats.to_dict(),
             "identifiers": [obj.to_dict() for obj in self.identifiers],
             "collaborators": [obj.to_dict() for obj in self.collaborators],
@@ -843,6 +865,11 @@ class OaWebRelease(SnapshotRelease):
                     stats = PublicationStats.from_dict(row)
                     years.append(Year(year=year, date=date, stats=stats))
                 entity.timeseries = years
+
+                # Set min and max years for data
+                entity.min_year = years[0].year
+                entity.max_year = years[-1].year
+
                 entities.append(entity)
 
         return entities
@@ -898,6 +925,20 @@ class OaWebRelease(SnapshotRelease):
         table = pa.Table.from_pandas(df_ac)
         pyarrow_path = os.path.join(base_path, f"autocomplete.parquet")
         pq.write_table(table, pyarrow_path)
+
+    def save_stats(self, stats: Stats):
+        """Save overall stats.
+
+        :param stats: stats object.
+        :return: None.
+        """
+
+        base_path = os.path.join(self.build_path, "data")
+        os.makedirs(base_path, exist_ok=True)
+
+        # Save as JSON
+        output_path = os.path.join(base_path, "stats.json")
+        save_json(output_path, stats.to_dict())
 
 
 class OaWebWorkflow(Workflow):
@@ -1123,6 +1164,13 @@ class OaWebWorkflow(Workflow):
 
         # Save auto complete data as json
         release.save_autocomplete(auto_complete)
+
+        # Save stats as json
+        min_year = 2000
+        max_year = pendulum.now().year - 1
+        last_updated = pendulum.now()
+        stats = Stats(min_year, max_year, last_updated)
+        release.save_stats(stats)
 
     def copy_static_assets(self, release: OaWebRelease, **kwargs):
         """Remove previously generated static assets from website and copy newly generated assets.

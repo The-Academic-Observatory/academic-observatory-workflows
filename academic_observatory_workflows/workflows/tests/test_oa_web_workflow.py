@@ -27,16 +27,6 @@ import vcr
 from airflow.models.connection import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
-from observatory.platform.utils.file_utils import load_jsonl
-from observatory.platform.utils.test_utils import (
-    ObservatoryEnvironment,
-    ObservatoryTestCase,
-    module_file_path,
-)
-from observatory.platform.utils.test_utils import Table, bq_load_tables
-from observatory.platform.utils.test_utils import (
-    make_dummy_dag,
-)
 
 import academic_observatory_workflows.workflows.oa_web_workflow
 from academic_observatory_workflows.config import test_fixtures_folder, schema_folder
@@ -49,6 +39,16 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     split_largest_remainder,
     clean_ror_id,
     val_empty,
+)
+from observatory.platform.utils.file_utils import load_jsonl
+from observatory.platform.utils.test_utils import (
+    ObservatoryEnvironment,
+    ObservatoryTestCase,
+    module_file_path,
+)
+from observatory.platform.utils.test_utils import Table, bq_load_tables
+from observatory.platform.utils.test_utils import (
+    make_dummy_dag,
 )
 
 academic_observatory_workflows.workflows.oa_web_workflow.INCLUSION_THRESHOLD = 0
@@ -162,7 +162,7 @@ class TestOaWebRelease(TestCase):
                 "n_outputs_oa_journal": 19,
                 "n_outputs_hybrid": 10,
                 "n_outputs_no_guarantees": 8,
-                "identifiers": [],
+                "identifiers": None,
             },
             {
                 "id": "NZL",
@@ -187,7 +187,7 @@ class TestOaWebRelease(TestCase):
                 "n_outputs_oa_journal": 20,
                 "n_outputs_hybrid": 9,
                 "n_outputs_no_guarantees": 8,
-                "identifiers": [],
+                "identifiers": None,
             },
         ]
         self.institutions = [
@@ -214,7 +214,13 @@ class TestOaWebRelease(TestCase):
                 "n_outputs_oa_journal": 19,
                 "n_outputs_hybrid": 10,
                 "n_outputs_no_guarantees": 8,
-                "identifiers": [],
+                "identifiers": {
+                    "ISNI": {"all": ["0000 0004 0375 4078"]},
+                    "OrgRef": {"all": ["370725"]},
+                    "Wikidata": {"all": ["Q1145497"]},
+                    "GRID": {"preferred": "grid.1032.0"},
+                    "FundRef": {"all": ["501100001797"]},
+                },
             },
             {
                 "id": "https://ror.org/02n415q13",
@@ -239,7 +245,13 @@ class TestOaWebRelease(TestCase):
                 "n_outputs_oa_journal": 20,
                 "n_outputs_hybrid": 9,
                 "n_outputs_no_guarantees": 8,
-                "identifiers": [],
+                "identifiers": {
+                    "ISNI": {"all": ["0000 0004 0375 4078"]},
+                    "OrgRef": {"all": ["370725"]},
+                    "Wikidata": {"all": ["Q1145497"]},
+                    "GRID": {"preferred": "grid.1032.0"},
+                    "FundRef": {"all": ["501100001797"]},
+                },
             },
         ]
         self.entities = [
@@ -297,6 +309,7 @@ class TestOaWebRelease(TestCase):
                     "name": "New Zealand",
                     "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
                     "subregion": "Australia and New Zealand",
+                    "identifiers": [{"id": "Q664", "type": "Wikidata"}],
                     "region": "Oceania",
                     "n_citations": 354,
                     "n_outputs": 200,
@@ -366,7 +379,13 @@ class TestOaWebRelease(TestCase):
                     "p_outputs_oa_journal": 53.0,
                     "p_outputs_hybrid": 26.0,
                     "p_outputs_no_guarantees": 21.0,
-                    "identifiers": [],
+                    "identifiers": [
+                        {"type": "ISNI", "id": "0000 0004 0375 4078"},
+                        {"type": "OrgRef", "id": "370725"},
+                        {"type": "Wikidata", "id": "Q1145497"},
+                        {"type": "GRID", "id": "grid.1032.0"},
+                        {"type": "FundRef", "id": "501100001797"},
+                    ],
                 }
             ]
 
@@ -455,6 +474,9 @@ class TestOaWebRelease(TestCase):
                     "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
                     "subregion": "Australia and New Zealand",
                     "region": "Oceania",
+                    "identifiers": [{"id": "Q664", "type": "Wikidata"}],
+                    "max_year": 2021,
+                    "min_year": 2020,
                     "stats": {
                         "n_citations": 354,
                         "n_outputs": 200,
@@ -561,6 +583,15 @@ class TestOaWebRelease(TestCase):
                 "subregion": "Australia and New Zealand",
                 "region": "Oceania",
                 "institution_types": ["Education"],
+                "max_year": 2021,
+                "min_year": 2020,
+                "identifiers": [
+                    {"type": "ISNI", "id": "0000 0004 0375 4078"},
+                    {"type": "OrgRef", "id": "370725"},
+                    {"type": "Wikidata", "id": "Q1145497"},
+                    {"type": "GRID", "id": "grid.1032.0"},
+                    {"type": "FundRef", "id": "501100001797"},
+                ],
                 "stats": {
                     "n_citations": 354,
                     "n_outputs": 200,
@@ -879,6 +910,7 @@ def make_expected_build_files(base_path: str) -> List[str]:
     # Add base data files
     data_path = os.path.join(base_path, "data")
     file_names = [
+        "stats.json",
         "autocomplete.json",
         "autocomplete.parquet",
         "country.json",
