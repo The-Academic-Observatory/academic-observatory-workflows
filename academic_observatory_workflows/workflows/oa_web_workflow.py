@@ -39,9 +39,6 @@ from airflow.models.variable import Variable
 from airflow.operators.bash import BashOperator
 from airflow.secrets.environment_variables import EnvironmentVariablesBackend
 from airflow.sensors.external_task import ExternalTaskSensor
-from pyarrow import json as pa_json
-
-from academic_observatory_workflows.clearbit import clearbit_download_logo
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.airflow_utils import (
     get_airflow_connection_password,
@@ -56,6 +53,9 @@ from observatory.platform.utils.gc_utils import (
 from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
 from observatory.platform.workflows.workflow import Workflow
+from pyarrow import json as pa_json
+
+from academic_observatory_workflows.clearbit import clearbit_download_logo
 
 # The minimum number of outputs before including an entity in the analysis
 INCLUSION_THRESHOLD = 1000
@@ -430,6 +430,25 @@ def make_logo_url(*, category: str, entity_id: str, size: str, fmt: str) -> str:
     return f"/logos/{category}/{size}/{entity_id}.{fmt}"
 
 
+def calc_oa_stats(
+    n_outputs: int,
+    n_outputs_open: int,
+    n_outputs_publisher_open: int,
+    n_outputs_other_platform_open: int,
+    n_outputs_other_platform_open_only: int,
+):
+    # Closed
+    n_outputs_closed = n_outputs - n_outputs_open
+
+    # Both
+    n_outputs_both = n_outputs_other_platform_open - n_outputs_other_platform_open_only
+
+    # Publisher open only
+    n_outputs_publisher_open_only = n_outputs_publisher_open - n_outputs_both
+
+    return n_outputs_publisher_open_only, n_outputs_both, n_outputs_closed
+
+
 class OaWebRelease(SnapshotRelease):
     PERCENTAGE_FIELD_KEYS = [
         ("outputs_open", "n_outputs"),
@@ -507,16 +526,18 @@ class OaWebRelease(SnapshotRelease):
         both = []
         closed = []
         for i, row in df.iterrows():
-            # Closed
             n_outputs = row["n_outputs"]
             n_outputs_open = row["n_outputs_open"]
-            n_outputs_closed = n_outputs - n_outputs_open
-
-            # Both
-            n_outputs_both = row["n_outputs_other_platform_open"] - row["n_outputs_other_platform_open_only"]
-
-            # Publisher open only
-            n_outputs_publisher_open_only = row["n_outputs_publisher_open"] - n_outputs_both
+            n_outputs_publisher_open = row["n_outputs_publisher_open"]
+            n_outputs_other_platform_open = row["n_outputs_other_platform_open"]
+            n_outputs_other_platform_open_only = row["n_outputs_other_platform_open_only"]
+            n_outputs_publisher_open_only, n_outputs_both, n_outputs_closed = calc_oa_stats(
+                n_outputs,
+                n_outputs_open,
+                n_outputs_publisher_open,
+                n_outputs_other_platform_open,
+                n_outputs_other_platform_open_only,
+            )
 
             # Add to arrays
             publisher_open_only.append(n_outputs_publisher_open_only)
@@ -553,6 +574,9 @@ class OaWebRelease(SnapshotRelease):
             df["name"] = names
             df["alpha2"] = alpha2s
             df["wikipedia_url"] = wikipedia_urls
+
+            # Remove columns not used for countries
+            df.drop(columns=["url", "institution_types", "identifiers", "country"], inplace=True)
 
         return df
 
@@ -592,6 +616,9 @@ class OaWebRelease(SnapshotRelease):
 
         # Add category
         df_index_table["category"] = category
+
+        # Remove date and year
+        df_index_table.drop(columns=["date", "year"], inplace=True)
 
         return df_index_table
 
