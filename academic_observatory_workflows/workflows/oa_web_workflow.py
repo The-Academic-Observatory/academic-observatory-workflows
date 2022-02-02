@@ -256,6 +256,12 @@ class Identifier:
     id: str
     type: str
 
+    @staticmethod
+    def from_dict(dict_: Dict):
+        i = dict_["id"]
+        t = dict_["type"]
+        return Identifier(i, t)
+
     def to_dict(self) -> Dict:
         return {"id": self.id, "type": self.type}
 
@@ -304,9 +310,9 @@ class Entity:
     id: str
     name: str
     description: str = None  # todo
-    category: str = None  # todo
-    logo_s: str = None  # todo
-    logo_l: str = None  # todo
+    category: str = None
+    logo_s: str = None
+    logo_l: str = None
     url: str = None
     wikipedia_url: str = None
     country: Optional[str] = None
@@ -314,7 +320,7 @@ class Entity:
     region: str = None
     institution_types: Optional[str] = field(default_factory=lambda: [])
     stats: PublicationStats = None
-    identifiers: List[Identifier] = field(default_factory=lambda: [])  # todo
+    identifiers: List[Identifier] = field(default_factory=lambda: [])
     collaborators: List[Collaborator] = field(default_factory=lambda: [])  # todo
     subjects: List[Subject] = field(default_factory=lambda: [])  # todo
     other_platform_locations: List[str] = field(default_factory=lambda: [])  # todo
@@ -333,7 +339,8 @@ class Entity:
         country = dict_.get("country")
         subregion = dict_.get("subregion")
         region = dict_.get("region")
-        institution_types = dict_.get("institution_types")
+        institution_types = dict_.get("institution_types", [])
+        identifiers = [Identifier.from_dict(obj) for obj in dict_.get("identifiers", [])]
 
         return Entity(
             id,
@@ -348,6 +355,7 @@ class Entity:
             subregion=subregion,
             region=region,
             institution_types=institution_types,
+            identifiers=identifiers,
         )
 
     def to_dict(self) -> Dict:
@@ -550,7 +558,25 @@ class OaWebRelease(SnapshotRelease):
 
         # Clean RoR ids
         if category == "institution":
+            # Clean RoR ids
             df["id"] = df["id"].apply(lambda i: clean_ror_id(i))
+
+            # Parse identifiers
+            preferred_key = "preferred"
+            identifiers = []
+            for i, row in df.iterrows():
+                # Parse identifier for each entry
+                ent_ids = []
+                ids_dict = row["identifiers"]
+                for k, v in ids_dict.items():
+                    id_type = k
+                    if preferred_key in v:
+                        id_value = v[preferred_key]
+                    else:
+                        id_value = v["all"][0]
+                    ent_ids.append({"id": id_value, "type": id_type})
+                identifiers.append(ent_ids)
+            df["identifiers"] = identifiers
 
         # Add extra country info from country file
         if category == "country":
@@ -565,18 +591,25 @@ class OaWebRelease(SnapshotRelease):
             names = []
             alpha2s = []
             wikipedia_urls = []
+            identifiers = []
             for i, row in df.iterrows():
                 alpha3 = row["id"]
                 country = country_index[alpha3]
                 names.append(country["name"])
                 alpha2s.append(country["alpha2"])
                 wikipedia_urls.append(country["wikipedia_url"])
+
+                # Make Wikidata id
+                qid = country["qid"]
+                identifiers.append([{"id": qid, "type": "Wikidata"}])
+
             df["name"] = names
             df["alpha2"] = alpha2s
             df["wikipedia_url"] = wikipedia_urls
+            df["identifiers"] = identifiers
 
             # Remove columns not used for countries
-            df.drop(columns=["url", "institution_types", "identifiers", "country"], inplace=True, errors="ignore")
+            df.drop(columns=["url", "institution_types", "country"], inplace=True, errors="ignore")
 
         return df
 
