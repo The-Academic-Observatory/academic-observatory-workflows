@@ -86,7 +86,7 @@ SELECT
 FROM
   `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg 
   LEFT OUTER JOIN `{project_id}.{ror_dataset_id}.{ror_table_id}` as ror ON agg.id = ror.id
-WHERE agg.time_period >= 2000 AND agg.time_period <= EXTRACT(YEAR FROM CURRENT_DATE())
+WHERE agg.time_period >= 2000 AND agg.time_period <= (EXTRACT(YEAR FROM CURRENT_DATE()) - 1)
 ORDER BY year DESC, name ASC
 """
 
@@ -576,7 +576,7 @@ class OaWebRelease(SnapshotRelease):
             df["wikipedia_url"] = wikipedia_urls
 
             # Remove columns not used for countries
-            df.drop(columns=["url", "institution_types", "identifiers", "country"], inplace=True)
+            df.drop(columns=["url", "institution_types", "identifiers", "country"], inplace=True, errors="ignore")
 
         return df
 

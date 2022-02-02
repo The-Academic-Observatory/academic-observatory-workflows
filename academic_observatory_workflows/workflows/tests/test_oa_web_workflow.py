@@ -543,85 +543,111 @@ class TestOaWebRelease(TestCase):
             for a_entity, e_entity in zip(expected, entities):
                 self.assertDictEqual(a_entity, e_entity.to_dict())
 
-            # print("Checking country records:")
-            # actual = df_country_index.to_dict("records")
-            # self.assertEqual(len(expected), len(actual))
-            # for e, a in zip(expected, actual):
-            #     for k, v in e.items():
-            #         print(f"Key: {k}")
-            #         self.assertTrue(k in a)
-            #         actual_val = a[k]
-            #         print(f"  {v} -> {actual_val}")
-            #         self.assertEqual(v, actual_val)
+        # Institution
+        category = "institution"
+        df = pd.DataFrame(self.institutions)
+        df = self.release.preprocess_df(category, df)
+        df_index_table = self.release.make_index(category, df)
+        entities = self.release.make_entities(df_index_table, df)
 
-        # with CliRunner().isolated_filesystem() as t:
-        #     mock_var_get.return_value = t
-        #
-        #     df = pd.DataFrame(self.countries)
-        #     timeseries = self.release.make_timeseries(df)
-        #
-        #     expected = [
-        #         (
-        #             "AUS",
-        #             [
-        #                 {
-        #                     "year": 2020,
-        #                     "n_outputs": 3000,
-        #                     "n_outputs_oa": 2000,
-        #                     "p_outputs_oa": 67,
-        #                     "p_outputs_gold": 50.0,
-        #                     "p_outputs_hybrid": 7.0,
-        #                     "p_outputs_bronze": 2.0,
-        #                     "p_outputs_green": 7.0,
-        #                 },
-        #                 {
-        #                     "year": 2021,
-        #                     "n_outputs": 4000,
-        #                     "n_outputs_oa": 3000,
-        #                     "p_outputs_oa": 75,
-        #                     "p_outputs_gold": 50.0,
-        #                     "p_outputs_hybrid": 12.0,
-        #                     "p_outputs_bronze": 8.0,
-        #                     "p_outputs_green": 12.0,
-        #                 },
-        #             ],
-        #         ),
-        #         (
-        #             "NZL",
-        #             [
-        #                 {
-        #                     "year": 2020,
-        #                     "n_outputs": 1000,
-        #                     "n_outputs_oa": 500,
-        #                     "p_outputs_oa": 50.0,
-        #                     "p_outputs_gold": 30.0,
-        #                     "p_outputs_hybrid": 5.0,
-        #                     "p_outputs_bronze": 5.0,
-        #                     "p_outputs_green": 20.0,
-        #                 },
-        #                 {
-        #                     "year": 2021,
-        #                     "n_outputs": 2000,
-        #                     "n_outputs_oa": 1200,
-        #                     "p_outputs_oa": 60.0,
-        #                     "p_outputs_gold": 40.0,
-        #                     "p_outputs_hybrid": 10.0,
-        #                     "p_outputs_bronze": 2.0,
-        #                     "p_outputs_green": 12.0,
-        #                 },
-        #             ],
-        #         ),
-        #     ]
-        #     self.assertEqual(len(expected), len(timeseries))
-        #
-        #     for e, a in zip(expected, timeseries):
-        #         e_entity_id, e_ts = e
-        #         a_entity_id, a_ts_df = a
-        #         self.assertEqual(e_entity_id, a_entity_id)
-        #         a_ts = a_ts_df.to_dict("records")
-        #
-        #         self.assertEqual(len(e_ts), len(a_ts))
-        #         self.assertEqual(e_ts, a_ts)
+        expected = [
+            {
+                "id": "02n415q13",
+                "name": "Curtin University",
+                "country": "Australia",
+                "category": category,
+                "url": "https://curtin.edu.au/",
+                "wikipedia_url": "https://en.wikipedia.org/wiki/Curtin_University",
+                "subregion": "Australia and New Zealand",
+                "region": "Oceania",
+                "institution_types": ["Education"],
+                "stats": {
+                    "n_citations": 354,
+                    "n_outputs": 200,
+                    "n_outputs_open": 93,
+                    "n_outputs_publisher_open": 74,
+                    "n_outputs_publisher_open_only": 25,
+                    "n_outputs_both": 49,
+                    "n_outputs_other_platform_open": 68,
+                    "n_outputs_other_platform_open_only": 19,
+                    "n_outputs_closed": 107,
+                    "n_outputs_oa_journal": 39,
+                    "n_outputs_hybrid": 19,
+                    "n_outputs_no_guarantees": 16,
+                    "p_outputs_open": 46.5,
+                    "p_outputs_publisher_open": 37.0,
+                    "p_outputs_publisher_open_only": 13.0,
+                    "p_outputs_both": 25.0,
+                    "p_outputs_other_platform_open": 34.0,
+                    "p_outputs_other_platform_open_only": 9.0,
+                    "p_outputs_closed": 53.0,
+                    "p_outputs_oa_journal": 53.0,
+                    "p_outputs_hybrid": 26.0,
+                    "p_outputs_no_guarantees": 21.0,
+                },
+                "timeseries": [
+                    {
+                        "year": 2020,
+                        "date": "2020-12-31",
+                        "stats": {
+                            "n_citations": 121,
+                            "n_outputs": 100,
+                            "n_outputs_open": 48,
+                            "n_outputs_publisher_open": 37,
+                            "n_outputs_publisher_open_only": 11,
+                            "n_outputs_both": 26,
+                            "n_outputs_other_platform_open": 37,
+                            "n_outputs_other_platform_open_only": 11,
+                            "n_outputs_closed": 52,
+                            "n_outputs_oa_journal": 19,
+                            "n_outputs_hybrid": 10,
+                            "n_outputs_no_guarantees": 8,
+                            "p_outputs_open": 48.0,
+                            "p_outputs_publisher_open": 37.0,
+                            "p_outputs_publisher_open_only": 11.0,
+                            "p_outputs_both": 26.0,
+                            "p_outputs_other_platform_open": 37.0,
+                            "p_outputs_other_platform_open_only": 11.0,
+                            "p_outputs_closed": 52.0,
+                            "p_outputs_oa_journal": 51.0,
+                            "p_outputs_hybrid": 27.0,
+                            "p_outputs_no_guarantees": 22.0,
+                        },
+                    },
+                    {
+                        "year": 2021,
+                        "date": "2021-12-31",
+                        "stats": {
+                            "n_citations": 233,
+                            "n_outputs": 100,
+                            "n_outputs_open": 45,
+                            "n_outputs_publisher_open": 37,
+                            "n_outputs_publisher_open_only": 14,
+                            "n_outputs_both": 23,
+                            "n_outputs_other_platform_open": 31,
+                            "n_outputs_other_platform_open_only": 8,
+                            "n_outputs_closed": 55,
+                            "n_outputs_oa_journal": 20,
+                            "n_outputs_hybrid": 9,
+                            "n_outputs_no_guarantees": 8,
+                            "p_outputs_open": 45.0,
+                            "p_outputs_publisher_open": 37.0,
+                            "p_outputs_publisher_open_only": 14.0,
+                            "p_outputs_both": 23.0,
+                            "p_outputs_other_platform_open": 31.0,
+                            "p_outputs_other_platform_open_only": 8.0,
+                            "p_outputs_closed": 55.0,
+                            "p_outputs_oa_journal": 54.0,
+                            "p_outputs_hybrid": 24.0,
+                            "p_outputs_no_guarantees": 22.0,
+                        },
+                    },
+                ],
+            }
+        ]
+
+        for a_entity, e_entity in zip(expected, entities):
+            self.assertDictEqual(a_entity, e_entity.to_dict())
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
     def test_save_entities(self, mock_var_get):
