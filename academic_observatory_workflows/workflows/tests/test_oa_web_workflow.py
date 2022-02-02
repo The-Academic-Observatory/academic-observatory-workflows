@@ -19,6 +19,7 @@ import shutil
 from typing import List
 from unittest import TestCase
 from unittest.mock import patch
+
 import jsonlines
 import pandas as pd
 import pendulum
@@ -37,11 +38,103 @@ from observatory.platform.utils.test_utils import (
     make_dummy_dag,
 )
 
+import academic_observatory_workflows.workflows.oa_web_workflow
 from academic_observatory_workflows.config import test_fixtures_folder, schema_folder
-from academic_observatory_workflows.workflows.oa_web_workflow import OaWebRelease, OaWebWorkflow, clean_url
+from academic_observatory_workflows.workflows.oa_web_workflow import (
+    OaWebRelease,
+    OaWebWorkflow,
+    clean_url,
+    calc_oa_stats,
+    make_logo_url,
+    split_largest_remainder,
+    clean_ror_id,
+    val_empty,
+)
+
+academic_observatory_workflows.workflows.oa_web_workflow.INCLUSION_THRESHOLD = 0
+
+
+class TestFunctions(TestCase):
+    # def test_save_json(self):
+    #     self.fail()
+
+    def test_val_empty(self):
+        # Empty list
+        self.assertTrue(val_empty([]))
+
+        # Non empty list
+        self.assertFalse(val_empty([1, 2, 3]))
+
+        # None
+        self.assertTrue(val_empty(None))
+
+        # Empty string
+        self.assertTrue(val_empty(""))
+
+        # Non Empty string
+        self.assertFalse(val_empty("hello"))
+
+    def test_clean_ror_id(self):
+        actual = clean_ror_id("https://ror.org/02n415q13")
+        expected = "02n415q13"
+        self.assertEqual(actual, expected)
+
+    def test_split_largest_remainder(self):
+        # Check that if ratios do not sum to 1 an AssertionError is raised
+        with self.assertRaises(AssertionError):
+            sample_size = 100
+            ratios = [0.1, 0.2, 0.4, 100]
+            split_largest_remainder(sample_size, *ratios)
+
+        # Test that correct absolute values are returned
+        sample_size = 10
+        ratios = [0.11, 0.21, 0.68]
+        results = split_largest_remainder(sample_size, *ratios)
+        self.assertEqual((1, 2, 7), results)
+
+    def test_clean_url(self):
+        url = "https://www.auckland.ac.nz/en.html"
+        expected = "https://www.auckland.ac.nz/"
+        actual = clean_url(url)
+        self.assertEqual(expected, actual)
+
+    # def test_save_as_jsonl(self):
+    #     self.fail()
+    #
+    # def test_jsonl_to_pyarrow(self):
+    #     self.fail()
+
+    def test_make_logo_url(self):
+        expected = "/logos/country/s/1234.jpg"
+        actual = make_logo_url(category="country", entity_id="1234", size="s", fmt="jpg")
+        self.assertEqual(expected, actual)
+
+    def test_calc_oa_stats(self):
+        n_outputs = 100
+        n_outputs_open = 33
+        n_outputs_publisher_open = 24
+        n_outputs_other_platform_open = 22
+        n_outputs_other_platform_open_only = 9
+
+        n_outputs_publisher_open_only, n_outputs_both, n_outputs_closed = calc_oa_stats(
+            n_outputs,
+            n_outputs_open,
+            n_outputs_publisher_open,
+            n_outputs_other_platform_open,
+            n_outputs_other_platform_open_only,
+        )
+
+        self.assertEqual(11, n_outputs_publisher_open_only)
+        self.assertEqual(13, n_outputs_both)
+        self.assertEqual(67, n_outputs_closed)
+
+        total = n_outputs_publisher_open_only + n_outputs_both + n_outputs_other_platform_open_only + n_outputs_closed
+        self.assertEqual(100, total)
 
 
 class TestOaWebRelease(TestCase):
+    maxDiff = None
+
     def setUp(self) -> None:
         dt_fmt = "YYYY-MM-DD"
         self.release = OaWebRelease(dag_id="dag", project_id="project", release_date=pendulum.now())
@@ -52,20 +145,23 @@ class TestOaWebRelease(TestCase):
                 "year": 2020,
                 "date": pendulum.date(2020, 12, 31).format(dt_fmt),
                 "url": None,
-                "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
+                "wikipedia_url": None,
                 "country": None,
                 "subregion": "Australia and New Zealand",
                 "region": "Oceania",
                 "institution_types": None,
-                "n_outputs": 1000,
-                "n_outputs_open": 500,
-                "n_citations": 3000,
-                "n_outputs_publisher_open": 300,
-                "n_outputs_other_platform_open": 200,
-                "n_outputs_other_platform_open_only": 100,
-                "n_outputs_oa_journal": 200,
-                "n_outputs_hybrid": 50,
-                "n_outputs_no_guarantees": 50,
+                "n_citations": 121,
+                "n_outputs": 100,
+                "n_outputs_open": 48,
+                "n_outputs_publisher_open": 37,
+                # "n_outputs_publisher_open_only": 11,
+                # "n_outputs_both": 26,
+                "n_outputs_other_platform_open": 37,
+                "n_outputs_other_platform_open_only": 11,
+                # "n_outputs_closed": 52,
+                "n_outputs_oa_journal": 19,
+                "n_outputs_hybrid": 10,
+                "n_outputs_no_guarantees": 8,
                 "identifiers": [],
             },
             {
@@ -74,113 +170,28 @@ class TestOaWebRelease(TestCase):
                 "year": 2021,
                 "date": pendulum.date(2021, 12, 31).format(dt_fmt),
                 "url": None,
-                "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
+                "wikipedia_url": None,
                 "country": None,
                 "subregion": "Australia and New Zealand",
                 "region": "Oceania",
                 "institution_types": None,
-                "n_outputs": 2000,
-                "n_outputs_open": 1200,
-                "n_citations": 4000,
-                "n_outputs_publisher_open": 800,
-                "n_outputs_other_platform_open": 250,
-                "n_outputs_other_platform_open_only": 150,
-                "n_outputs_oa_journal": 350,
-                "n_outputs_hybrid": 200,
-                "n_outputs_no_guarantees": 250,
-                "identifiers": [],
-            },
-            {
-                "id": "AUS",
-                "name": "Australia",
-                "year": 2020,
-                "date": pendulum.date(2020, 12, 31).format(dt_fmt),
-                "url": None,
-                "wikipedia_url": "https://en.wikipedia.org/wiki/Australia",
-                "country": None,
-                "subregion": "Australia and New Zealand",
-                "region": "Oceania",
-                "institution_types": None,
-                "n_outputs": 3000,
-                "n_outputs_open": 2000,
-                "n_citations": 4000,
-                "n_outputs_publisher_open": 1500,
-                "n_outputs_other_platform_open": 200,
-                "n_outputs_other_platform_open_only": 100,
-                "n_outputs_oa_journal": 1250,
-                "n_outputs_hybrid": 200,
-                "n_outputs_no_guarantees": 50,
-                "identifiers": [],
-            },
-            {
-                "id": "AUS",
-                "name": "Australia",
-                "year": 2021,
-                "date": pendulum.date(2021, 12, 31).format(dt_fmt),
-                "url": None,
-                "wikipedia_url": "https://en.wikipedia.org/wiki/Australia",
-                "country": None,
-                "subregion": "Australia and New Zealand",
-                "region": "Oceania",
-                "institution_types": None,
-                "n_outputs": 4000,
-                "n_outputs_open": 3000,
-                "n_citations": 5000,
-                "n_outputs_publisher_open": 2000,
-                "n_outputs_other_platform_open": 500,
-                "n_outputs_other_platform_open_only": 400,
-                "n_outputs_oa_journal": 1200,
-                "n_outputs_hybrid": 500,
-                "n_outputs_no_guarantees": 300,
+                "n_citations": 233,
+                "n_outputs": 100,
+                "n_outputs_open": 45,
+                "n_outputs_publisher_open": 37,
+                # "n_outputs_publisher_open_only": 14,
+                # "n_outputs_both": 24, 23?
+                "n_outputs_other_platform_open": 31,
+                "n_outputs_other_platform_open_only": 8,
+                # "n_outputs_closed": 55,
+                "n_outputs_oa_journal": 20,
+                "n_outputs_hybrid": 9,
+                "n_outputs_no_guarantees": 8,
                 "identifiers": [],
             },
         ]
         self.institutions = [
             {
-                "id": "https://ror.org/03b94tp07",
-                "name": "The University of Auckland",
-                "year": 2020,
-                "date": pendulum.date(2020, 12, 31).format(dt_fmt),
-                "url": "https://www.auckland.ac.nz/",
-                "wikipedia_url": "https://en.wikipedia.org/wiki/University_of_Auckland",
-                "country": "New Zealand",
-                "subregion": "Australia and New Zealand",
-                "region": "Oceania",
-                "institution_types": ["Education"],
-                "n_outputs": 1000,
-                "n_outputs_open": 500,
-                "n_citations": 1000,
-                "n_outputs_publisher_open": 300,
-                "n_outputs_other_platform_open": 200,
-                "n_outputs_other_platform_open_only": 100,
-                "n_outputs_oa_journal": 200,
-                "n_outputs_hybrid": 50,
-                "n_outputs_no_guarantees": 50,
-                "identifiers": [],
-            },
-            {
-                "id": "https://ror.org/03b94tp07",
-                "name": "The University of Auckland",
-                "year": 2021,
-                "date": pendulum.date(2021, 12, 31).format(dt_fmt),
-                "url": "https://www.auckland.ac.nz/",
-                "wikipedia_url": "https://en.wikipedia.org/wiki/University_of_Auckland",
-                "country": "New Zealand",
-                "subregion": "Australia and New Zealand",
-                "region": "Oceania",
-                "institution_types": ["Education"],
-                "n_outputs": 2000,
-                "n_outputs_open": 1200,
-                "n_citations": 1500,
-                "n_outputs_publisher_open": 800,
-                "n_outputs_other_platform_open": 250,
-                "n_outputs_other_platform_open_only": 150,
-                "n_outputs_oa_journal": 550,
-                "n_outputs_hybrid": 200,
-                "n_outputs_no_guarantees": 50,
-                "identifiers": [],
-            },
-            {
                 "id": "https://ror.org/02n415q13",
                 "name": "Curtin University",
                 "year": 2020,
@@ -191,15 +202,18 @@ class TestOaWebRelease(TestCase):
                 "subregion": "Australia and New Zealand",
                 "region": "Oceania",
                 "institution_types": ["Education"],
-                "n_outputs": 3000,
-                "n_outputs_open": 2000,
-                "n_citations": 800,
-                "n_outputs_publisher_open": 1500,
-                "n_outputs_other_platform_open": 200,
-                "n_outputs_other_platform_open_only": 100,
-                "n_outputs_oa_journal": 1250,
-                "n_outputs_hybrid": 200,
-                "n_outputs_no_guarantees": 50,
+                "n_citations": 121,
+                "n_outputs": 100,
+                "n_outputs_open": 48,
+                "n_outputs_publisher_open": 37,
+                # "n_outputs_publisher_open_only": 11,
+                # "n_outputs_both": 26,
+                "n_outputs_other_platform_open": 37,
+                "n_outputs_other_platform_open_only": 11,
+                # "n_outputs_closed": 52,
+                "n_outputs_oa_journal": 19,
+                "n_outputs_hybrid": 10,
+                "n_outputs_no_guarantees": 8,
                 "identifiers": [],
             },
             {
@@ -213,32 +227,29 @@ class TestOaWebRelease(TestCase):
                 "subregion": "Australia and New Zealand",
                 "region": "Oceania",
                 "institution_types": ["Education"],
-                "n_outputs": 4000,
-                "n_outputs_open": 3000,
-                "n_citations": 1200,
-                "n_outputs_publisher_open": 2000,
-                "n_outputs_other_platform_open": 500,
-                "n_outputs_other_platform_open_only": 300,
-                "n_outputs_oa_journal": 1200,
-                "n_outputs_hybrid": 500,
-                "n_outputs_no_guarantees": 300,
+                "n_citations": 233,
+                "n_outputs": 100,
+                "n_outputs_open": 45,
+                "n_outputs_publisher_open": 37,
+                # "n_outputs_publisher_open_only": 14,
+                # "n_outputs_both": 24, 23?
+                "n_outputs_other_platform_open": 31,
+                "n_outputs_other_platform_open_only": 8,
+                # "n_outputs_closed": 55,
+                "n_outputs_oa_journal": 20,
+                "n_outputs_hybrid": 9,
+                "n_outputs_no_guarantees": 8,
                 "identifiers": [],
             },
         ]
         self.entities = [
-            ("country", self.countries, ["NZL", "AUS"]),
-            ("institution", self.institutions, ["https://ror.org/03b94tp07", "https://ror.org/02n415q13"]),
+            ("country", self.countries, ["NZL"]),
+            ("institution", self.institutions, ["02n415q13"]),
         ]
-
-    def test_clean_url(self):
-        url = "https://www.auckland.ac.nz/en.html"
-        expected = "https://www.auckland.ac.nz/"
-        actual = clean_url(url)
-        self.assertEqual(expected, actual)
 
     def save_mock_data(self, category, test_data):
         path = os.path.join(self.release.download_folder, f"{category}.jsonl")
-        with jsonlines.open(path, mode='w') as writer:
+        with jsonlines.open(path, mode="w") as writer:
             writer.write_all(test_data)
         df = pd.DataFrame(test_data)
         return df
@@ -260,10 +271,6 @@ class TestOaWebRelease(TestCase):
             actual_countries = actual_df.to_dict("records")
             self.assertEqual(expected_countries, actual_countries)
 
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_preprocess_df(self, mock_var_get):
-        pass
-
     def test_update_df_with_percentages(self):
         keys = [("hello", "n_outputs"), ("world", "n_outputs")]
         df = pd.DataFrame([{"n_hello": 20, "n_world": 50, "n_outputs": 100}])
@@ -279,103 +286,92 @@ class TestOaWebRelease(TestCase):
 
             # Country
             category = "country"
-            df = self.create_mock_csv(category, self.countries)
-            df_country_index = self.release.make_index(df, category)
+            df = pd.DataFrame(self.countries)
+            df = self.release.preprocess_df(category, df)
+            df_country_index = self.release.make_index(category, df)
             expected = [
                 {
-                    "id": "AUS",
-                    "name": "Australia",
-                    "rank": 1,
-                    "url": "https://en.wikipedia.org/wiki/Australia",
-                    "friendly_url": ".",
-                    "type": "",
+                    "alpha2": "NZ",
                     "category": "country",
-                    "n_outputs": 7000,
-                    "n_outputs_oa": 5000,
-                    "n_outputs_gold": 3500,
-                    "n_outputs_hybrid": 700,
-                    "n_outputs_bronze": 350,
-                    "n_outputs_green": 700,
-                    "p_outputs_oa": 71,
-                    "p_outputs_gold": 50,
-                    "p_outputs_hybrid": 10,
-                    "p_outputs_bronze": 5,
-                    "p_outputs_green": 10,
-                },
-                {
                     "id": "NZL",
                     "name": "New Zealand",
-                    "rank": 2,
-                    "url": "https://en.wikipedia.org/wiki/New%20Zealand",
-                    "friendly_url": ".",
-                    "type": "",
-                    "category": "country",
-                    "n_outputs": 3000,
-                    "n_outputs_oa": 1700,
-                    "n_outputs_gold": 1100,
-                    "n_outputs_hybrid": 250,
-                    "n_outputs_bronze": 100,
-                    "n_outputs_green": 450,
-                    "p_outputs_oa": 57,
-                    "p_outputs_gold": 37,
-                    "p_outputs_hybrid": 8,
-                    "p_outputs_bronze": 3,
-                    "p_outputs_green": 15,
-                },
+                    "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
+                    "subregion": "Australia and New Zealand",
+                    "region": "Oceania",
+                    "n_citations": 354,
+                    "n_outputs": 200,
+                    "n_outputs_open": 93,
+                    "n_outputs_publisher_open": 74,
+                    "n_outputs_publisher_open_only": 25,
+                    "n_outputs_both": 49,
+                    "n_outputs_other_platform_open": 68,
+                    "n_outputs_other_platform_open_only": 19,
+                    "n_outputs_closed": 107,
+                    "n_outputs_oa_journal": 39,
+                    "n_outputs_hybrid": 19,
+                    "n_outputs_no_guarantees": 16,
+                    "p_outputs_open": 46.5,
+                    "p_outputs_publisher_open": 37.0,
+                    "p_outputs_publisher_open_only": 13.0,
+                    "p_outputs_both": 25.0,
+                    "p_outputs_other_platform_open": 34.0,
+                    "p_outputs_other_platform_open_only": 9.0,
+                    "p_outputs_closed": 53.0,
+                    "p_outputs_oa_journal": 53.0,
+                    "p_outputs_hybrid": 26.0,
+                    "p_outputs_no_guarantees": 21.0,
+                }
             ]
+            print("Checking country records:")
             actual = df_country_index.to_dict("records")
-            self.assertEqual(len(expected), len(actual))
             for e, a in zip(expected, actual):
                 self.assertDictEqual(e, a)
 
             # Institution
             category = "institution"
-            df = self.create_mock_csv(category, self.institutions)
-            df_institution_index = self.release.make_index(df, category)
+            df = pd.DataFrame(self.institutions)
+            df = self.release.preprocess_df(category, df)
+            df_institution_index = self.release.make_index(category, df)
+
             expected = [
                 {
-                    "id": "grid.1032.0",
+                    "category": "institution",
+                    "id": "02n415q13",
                     "name": "Curtin University",
-                    "rank": 1,
                     "url": "https://curtin.edu.au/",
-                    "friendly_url": "curtin.edu.au",
-                    "type": "",
-                    "category": "institution",
-                    "n_outputs": 7000,
-                    "n_outputs_oa": 5000,
-                    "n_outputs_gold": 3500,
-                    "n_outputs_hybrid": 700,
-                    "n_outputs_bronze": 350,
-                    "n_outputs_green": 700,
-                    "p_outputs_oa": 71,
-                    "p_outputs_gold": 50,
-                    "p_outputs_hybrid": 10,
-                    "p_outputs_bronze": 5,
-                    "p_outputs_green": 10,
-                },
-                {
-                    "id": "grid.9654.e",
-                    "name": "The University of Auckland",
-                    "rank": 2,
-                    "url": "https://www.auckland.ac.nz/",
-                    "friendly_url": "auckland.ac.nz",
-                    "type": "",
-                    "category": "institution",
-                    "n_outputs": 3000,
-                    "n_outputs_oa": 1700,
-                    "n_outputs_gold": 1100,
-                    "n_outputs_hybrid": 250,
-                    "n_outputs_bronze": 100,
-                    "n_outputs_green": 450,
-                    "p_outputs_oa": 57,
-                    "p_outputs_gold": 37,
-                    "p_outputs_hybrid": 8,
-                    "p_outputs_bronze": 3,
-                    "p_outputs_green": 15,
-                },
+                    "wikipedia_url": "https://en.wikipedia.org/wiki/Curtin_University",
+                    "country": "Australia",
+                    "subregion": "Australia and New Zealand",
+                    "region": "Oceania",
+                    "institution_types": ["Education"],
+                    "n_citations": 354,
+                    "n_outputs": 200,
+                    "n_outputs_open": 93,
+                    "n_outputs_publisher_open": 74,
+                    "n_outputs_publisher_open_only": 25,
+                    "n_outputs_both": 49,
+                    "n_outputs_other_platform_open": 68,
+                    "n_outputs_other_platform_open_only": 19,
+                    "n_outputs_closed": 107,
+                    "n_outputs_oa_journal": 39,
+                    "n_outputs_hybrid": 19,
+                    "n_outputs_no_guarantees": 16,
+                    "p_outputs_open": 46.5,
+                    "p_outputs_publisher_open": 37.0,
+                    "p_outputs_publisher_open_only": 13.0,
+                    "p_outputs_both": 25.0,
+                    "p_outputs_other_platform_open": 34.0,
+                    "p_outputs_other_platform_open_only": 9.0,
+                    "p_outputs_closed": 53.0,
+                    "p_outputs_oa_journal": 53.0,
+                    "p_outputs_hybrid": 26.0,
+                    "p_outputs_no_guarantees": 21.0,
+                    "identifiers": [],
+                }
             ]
+
+            print("Checking institution records:")
             actual = df_institution_index.to_dict("records")
-            self.assertEqual(len(expected), len(actual))
             for e, a in zip(expected, actual):
                 self.assertDictEqual(e, a)
 
@@ -431,97 +427,201 @@ class TestOaWebRelease(TestCase):
 
             for category, data, entity_ids in self.entities:
                 df = pd.DataFrame(data)
-                country_index = self.release.make_index(df, category)
-                self.release.update_index_with_logos(country_index, category)
-                self.release.save_index(country_index, category)
+                df = self.release.preprocess_df(category, df)
+                country_index = self.release.make_index(category, df)
+                self.release.update_index_with_logos(category, country_index)
+                self.release.save_index(category, country_index)
 
-                path = os.path.join(self.release.build_path, "data", category, "summary.json")
+                path = os.path.join(self.release.build_path, "data", f"{category}.json")
                 self.assertTrue(os.path.isfile(path))
-
-    # @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    # def test_save_entity_details(self, mock_var_get):
-    #     with CliRunner().isolated_filesystem() as t:
-    #         mock_var_get.return_value = t
-    #
-    #         for category, data, entity_ids in self.entities:
-    #             df = pd.DataFrame(data)
-    #             country_index = self.release.make_index(df, category)
-    #             self.release.save_entity_details(country_index, category)
-    #
-    #             for entity_id in entity_ids:
-    #                 path = os.path.join(self.release.build_path, "data", category, f"{entity_id}_summary.json")
-    #                 self.assertTrue(os.path.isfile(path))
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
     def test_make_entities(self, mock_var_get):
         with CliRunner().isolated_filesystem() as t:
             mock_var_get.return_value = t
 
+            # Country
+            category = "country"
             df = pd.DataFrame(self.countries)
-            timeseries = self.release.make_timeseries(df)
+            df = self.release.preprocess_df(category, df)
+            df_index_table = self.release.make_index(category, df)
+            entities = self.release.make_entities(df_index_table, df)
 
             expected = [
-                (
-                    "AUS",
-                    [
+                {
+                    "id": "NZL",
+                    "name": "New Zealand",
+                    "category": category,
+                    "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
+                    "subregion": "Australia and New Zealand",
+                    "region": "Oceania",
+                    "stats": {
+                        "n_citations": 354,
+                        "n_outputs": 200,
+                        "n_outputs_open": 93,
+                        "n_outputs_publisher_open": 74,
+                        "n_outputs_publisher_open_only": 25,
+                        "n_outputs_both": 49,
+                        "n_outputs_other_platform_open": 68,
+                        "n_outputs_other_platform_open_only": 19,
+                        "n_outputs_closed": 107,
+                        "n_outputs_oa_journal": 39,
+                        "n_outputs_hybrid": 19,
+                        "n_outputs_no_guarantees": 16,
+                        "p_outputs_open": 46.5,
+                        "p_outputs_publisher_open": 37.0,
+                        "p_outputs_publisher_open_only": 13.0,
+                        "p_outputs_both": 25.0,
+                        "p_outputs_other_platform_open": 34.0,
+                        "p_outputs_other_platform_open_only": 9.0,
+                        "p_outputs_closed": 53.0,
+                        "p_outputs_oa_journal": 53.0,
+                        "p_outputs_hybrid": 26.0,
+                        "p_outputs_no_guarantees": 21.0,
+                    },
+                    "timeseries": [
                         {
                             "year": 2020,
-                            "n_outputs": 3000,
-                            "n_outputs_oa": 2000,
-                            "p_outputs_oa": 67,
-                            "p_outputs_gold": 50.0,
-                            "p_outputs_hybrid": 7.0,
-                            "p_outputs_bronze": 2.0,
-                            "p_outputs_green": 7.0,
+                            "date": "2020-12-31",
+                            "stats": {
+                                "n_citations": 121,
+                                "n_outputs": 100,
+                                "n_outputs_open": 48,
+                                "n_outputs_publisher_open": 37,
+                                "n_outputs_publisher_open_only": 11,
+                                "n_outputs_both": 26,
+                                "n_outputs_other_platform_open": 37,
+                                "n_outputs_other_platform_open_only": 11,
+                                "n_outputs_closed": 52,
+                                "n_outputs_oa_journal": 19,
+                                "n_outputs_hybrid": 10,
+                                "n_outputs_no_guarantees": 8,
+                                "p_outputs_open": 48.0,
+                                "p_outputs_publisher_open": 37.0,
+                                "p_outputs_publisher_open_only": 11.0,
+                                "p_outputs_both": 26.0,
+                                "p_outputs_other_platform_open": 37.0,
+                                "p_outputs_other_platform_open_only": 11.0,
+                                "p_outputs_closed": 52.0,
+                                "p_outputs_oa_journal": 51.0,
+                                "p_outputs_hybrid": 27.0,
+                                "p_outputs_no_guarantees": 22.0,
+                            },
                         },
                         {
                             "year": 2021,
-                            "n_outputs": 4000,
-                            "n_outputs_oa": 3000,
-                            "p_outputs_oa": 75,
-                            "p_outputs_gold": 50.0,
-                            "p_outputs_hybrid": 12.0,
-                            "p_outputs_bronze": 8.0,
-                            "p_outputs_green": 12.0,
+                            "date": "2021-12-31",
+                            "stats": {
+                                "n_citations": 233,
+                                "n_outputs": 100,
+                                "n_outputs_open": 45,
+                                "n_outputs_publisher_open": 37,
+                                "n_outputs_publisher_open_only": 14,
+                                "n_outputs_both": 23,
+                                "n_outputs_other_platform_open": 31,
+                                "n_outputs_other_platform_open_only": 8,
+                                "n_outputs_closed": 55,
+                                "n_outputs_oa_journal": 20,
+                                "n_outputs_hybrid": 9,
+                                "n_outputs_no_guarantees": 8,
+                                "p_outputs_open": 45.0,
+                                "p_outputs_publisher_open": 37.0,
+                                "p_outputs_publisher_open_only": 14.0,
+                                "p_outputs_both": 23.0,
+                                "p_outputs_other_platform_open": 31.0,
+                                "p_outputs_other_platform_open_only": 8.0,
+                                "p_outputs_closed": 55.0,
+                                "p_outputs_oa_journal": 54.0,
+                                "p_outputs_hybrid": 24.0,
+                                "p_outputs_no_guarantees": 22.0,
+                            },
                         },
                     ],
-                ),
-                (
-                    "NZL",
-                    [
-                        {
-                            "year": 2020,
-                            "n_outputs": 1000,
-                            "n_outputs_oa": 500,
-                            "p_outputs_oa": 50.0,
-                            "p_outputs_gold": 30.0,
-                            "p_outputs_hybrid": 5.0,
-                            "p_outputs_bronze": 5.0,
-                            "p_outputs_green": 20.0,
-                        },
-                        {
-                            "year": 2021,
-                            "n_outputs": 2000,
-                            "n_outputs_oa": 1200,
-                            "p_outputs_oa": 60.0,
-                            "p_outputs_gold": 40.0,
-                            "p_outputs_hybrid": 10.0,
-                            "p_outputs_bronze": 2.0,
-                            "p_outputs_green": 12.0,
-                        },
-                    ],
-                ),
+                }
             ]
-            self.assertEqual(len(expected), len(timeseries))
 
-            for e, a in zip(expected, timeseries):
-                e_entity_id, e_ts = e
-                a_entity_id, a_ts_df = a
-                self.assertEqual(e_entity_id, a_entity_id)
-                a_ts = a_ts_df.to_dict("records")
+            for a_entity, e_entity in zip(expected, entities):
+                self.assertDictEqual(a_entity, e_entity.to_dict())
 
-                self.assertEqual(len(e_ts), len(a_ts))
-                self.assertEqual(e_ts, a_ts)
+            # print("Checking country records:")
+            # actual = df_country_index.to_dict("records")
+            # self.assertEqual(len(expected), len(actual))
+            # for e, a in zip(expected, actual):
+            #     for k, v in e.items():
+            #         print(f"Key: {k}")
+            #         self.assertTrue(k in a)
+            #         actual_val = a[k]
+            #         print(f"  {v} -> {actual_val}")
+            #         self.assertEqual(v, actual_val)
+
+        # with CliRunner().isolated_filesystem() as t:
+        #     mock_var_get.return_value = t
+        #
+        #     df = pd.DataFrame(self.countries)
+        #     timeseries = self.release.make_timeseries(df)
+        #
+        #     expected = [
+        #         (
+        #             "AUS",
+        #             [
+        #                 {
+        #                     "year": 2020,
+        #                     "n_outputs": 3000,
+        #                     "n_outputs_oa": 2000,
+        #                     "p_outputs_oa": 67,
+        #                     "p_outputs_gold": 50.0,
+        #                     "p_outputs_hybrid": 7.0,
+        #                     "p_outputs_bronze": 2.0,
+        #                     "p_outputs_green": 7.0,
+        #                 },
+        #                 {
+        #                     "year": 2021,
+        #                     "n_outputs": 4000,
+        #                     "n_outputs_oa": 3000,
+        #                     "p_outputs_oa": 75,
+        #                     "p_outputs_gold": 50.0,
+        #                     "p_outputs_hybrid": 12.0,
+        #                     "p_outputs_bronze": 8.0,
+        #                     "p_outputs_green": 12.0,
+        #                 },
+        #             ],
+        #         ),
+        #         (
+        #             "NZL",
+        #             [
+        #                 {
+        #                     "year": 2020,
+        #                     "n_outputs": 1000,
+        #                     "n_outputs_oa": 500,
+        #                     "p_outputs_oa": 50.0,
+        #                     "p_outputs_gold": 30.0,
+        #                     "p_outputs_hybrid": 5.0,
+        #                     "p_outputs_bronze": 5.0,
+        #                     "p_outputs_green": 20.0,
+        #                 },
+        #                 {
+        #                     "year": 2021,
+        #                     "n_outputs": 2000,
+        #                     "n_outputs_oa": 1200,
+        #                     "p_outputs_oa": 60.0,
+        #                     "p_outputs_gold": 40.0,
+        #                     "p_outputs_hybrid": 10.0,
+        #                     "p_outputs_bronze": 2.0,
+        #                     "p_outputs_green": 12.0,
+        #                 },
+        #             ],
+        #         ),
+        #     ]
+        #     self.assertEqual(len(expected), len(timeseries))
+        #
+        #     for e, a in zip(expected, timeseries):
+        #         e_entity_id, e_ts = e
+        #         a_entity_id, a_ts_df = a
+        #         self.assertEqual(e_entity_id, a_entity_id)
+        #         a_ts = a_ts_df.to_dict("records")
+        #
+        #         self.assertEqual(len(e_ts), len(a_ts))
+        #         self.assertEqual(e_ts, a_ts)
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
     def test_save_entities(self, mock_var_get):
@@ -529,12 +629,19 @@ class TestOaWebRelease(TestCase):
             mock_var_get.return_value = t
 
             for category, data, entity_ids in self.entities:
+                # Read data
                 df = pd.DataFrame(data)
-                ts = self.release.make_timeseries(df)
-                self.release.save_timeseries(ts, category)
+                df = self.release.preprocess_df(category, df)
 
+                # Save entities
+                df_index_table = self.release.make_index(category, df)
+                entities = self.release.make_entities(df_index_table, df)
+                self.release.save_entities(category, entities)
+
+                # Check that entity json files are saved
                 for entity_id in entity_ids:
-                    path = os.path.join(self.release.build_path, "data", category, f"{entity_id}_ts.json")
+                    path = os.path.join(self.release.build_path, "data", category, f"{entity_id}.json")
+                    print(f"Assert exists: {path}")
                     self.assertTrue(os.path.isfile(path))
 
     def test_make_auto_complete(self):
