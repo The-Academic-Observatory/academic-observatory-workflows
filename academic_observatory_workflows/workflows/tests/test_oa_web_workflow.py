@@ -309,7 +309,11 @@ class TestOaWebRelease(TestCase):
                     "name": "New Zealand",
                     "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
                     "subregion": "Australia and New Zealand",
-                    "identifiers": [{"id": "Q664", "type": "Wikidata"}],
+                    "identifiers": [
+                        {"id": "Q664", "type": "Wikidata", "url": "https://www.wikidata.org/wiki/Q664"},
+                        {"id": "NZ", "type": "ISO alpha-2", "url": None},
+                        {"id": "NZL", "type": "ISO alpha-3", "url": None},
+                    ],
                     "region": "Oceania",
                     "n_citations": 354,
                     "n_outputs": 200,
@@ -380,11 +384,19 @@ class TestOaWebRelease(TestCase):
                     "p_outputs_hybrid": 26.0,
                     "p_outputs_no_guarantees": 21.0,
                     "identifiers": [
-                        {"type": "ISNI", "id": "0000 0004 0375 4078"},
-                        {"type": "OrgRef", "id": "370725"},
-                        {"type": "Wikidata", "id": "Q1145497"},
-                        {"type": "GRID", "id": "grid.1032.0"},
-                        {"type": "FundRef", "id": "501100001797"},
+                        {"type": "ROR", "id": "02n415q13", "url": "https://ror.org/02n415q13"},
+                        {
+                            "type": "ISNI",
+                            "id": "0000 0004 0375 4078",
+                            "url": "https://isni.org/isni/0000 0004 0375 4078",
+                        },
+                        {"type": "Wikidata", "id": "Q1145497", "url": "https://www.wikidata.org/wiki/Q1145497"},
+                        {"type": "GRID", "id": "grid.1032.0", "url": "https://grid.ac/institutes/grid.1032.0"},
+                        {
+                            "type": "FundRef",
+                            "id": "501100001797",
+                            "url": "https://api.crossref.org/funders/501100001797",
+                        },
                     ],
                 }
             ]
@@ -474,7 +486,11 @@ class TestOaWebRelease(TestCase):
                     "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
                     "subregion": "Australia and New Zealand",
                     "region": "Oceania",
-                    "identifiers": [{"id": "Q664", "type": "Wikidata"}],
+                    "identifiers": [
+                        {"id": "Q664", "type": "Wikidata", "url": "https://www.wikidata.org/wiki/Q664"},
+                        {"id": "NZ", "type": "ISO alpha-2", "url": None},
+                        {"id": "NZL", "type": "ISO alpha-3", "url": None},
+                    ],
                     "max_year": 2021,
                     "min_year": 2020,
                     "stats": {
@@ -586,11 +602,11 @@ class TestOaWebRelease(TestCase):
                 "max_year": 2021,
                 "min_year": 2020,
                 "identifiers": [
-                    {"type": "ISNI", "id": "0000 0004 0375 4078"},
-                    {"type": "OrgRef", "id": "370725"},
-                    {"type": "Wikidata", "id": "Q1145497"},
-                    {"type": "GRID", "id": "grid.1032.0"},
-                    {"type": "FundRef", "id": "501100001797"},
+                    {"type": "ROR", "id": "02n415q13", "url": "https://ror.org/02n415q13"},
+                    {"type": "ISNI", "id": "0000 0004 0375 4078", "url": "https://isni.org/isni/0000 0004 0375 4078"},
+                    {"type": "Wikidata", "id": "Q1145497", "url": "https://www.wikidata.org/wiki/Q1145497"},
+                    {"type": "GRID", "id": "grid.1032.0", "url": "https://grid.ac/institutes/grid.1032.0"},
+                    {"type": "FundRef", "id": "501100001797", "url": "https://api.crossref.org/funders/501100001797"},
                 ],
                 "stats": {
                     "n_citations": 354,

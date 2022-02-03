@@ -255,15 +255,17 @@ class Collaborator:
 class Identifier:
     id: str
     type: str
+    url: str
 
     @staticmethod
     def from_dict(dict_: Dict):
         i = dict_["id"]
         t = dict_["type"]
-        return Identifier(i, t)
+        u = dict_["url"]
+        return Identifier(i, t, u)
 
     def to_dict(self) -> Dict:
-        return {"id": self.id, "type": self.type}
+        return {"id": self.id, "type": self.type, "url": self.url}
 
 
 @dataclasses.dataclass
@@ -280,13 +282,13 @@ class Year:
 class Stats:
     min_year: int
     max_year: int
-    last_updated: pendulum.Date
+    last_updated: str
 
     def to_dict(self) -> Dict:
         return {
             "min_year": self.min_year,
             "max_year": self.max_year,
-            "last_updated": self.last_updated.strftime("%Y-%m-%d"),
+            "last_updated": self.last_updated,
         }
 
 
@@ -590,13 +592,32 @@ class OaWebRelease(SnapshotRelease):
                 # Parse identifier for each entry
                 ent_ids = []
                 ids_dict = row["identifiers"]
+
+                # Add ROR id
+                ror_id = row["id"]
+                ent_ids.append({"id": ror_id, "type": "ROR", "url": f"https://ror.org/{ror_id}"})
+
+                # Parse other ids
                 for k, v in ids_dict.items():
+                    url = None
                     id_type = k
-                    if preferred_key in v:
-                        id_value = v[preferred_key]
-                    else:
-                        id_value = v["all"][0]
-                    ent_ids.append({"id": id_value, "type": id_type})
+                    if id_type != "OrgRef":
+                        if preferred_key in v:
+                            id_value = v[preferred_key]
+                        else:
+                            id_value = v["all"][0]
+
+                        # Create URLs
+                        if id_type == "ISNI":
+                            url = f"https://isni.org/isni/{id_value}"
+                        elif id_type == "Wikidata":
+                            url = f"https://www.wikidata.org/wiki/{id_value}"
+                        elif id_type == "GRID":
+                            url = f"https://grid.ac/institutes/{id_value}"
+                        elif id_type == "FundRef":
+                            url = f"https://api.crossref.org/funders/{id_value}"
+
+                        ent_ids.append({"id": id_value, "type": id_type, "url": url})
                 identifiers.append(ent_ids)
             df["identifiers"] = identifiers
 
@@ -617,13 +638,20 @@ class OaWebRelease(SnapshotRelease):
             for i, row in df.iterrows():
                 alpha3 = row["id"]
                 country = country_index[alpha3]
+                alpha2 = country["alpha2"]
                 names.append(country["name"])
-                alpha2s.append(country["alpha2"])
+                alpha2s.append(alpha2)
                 wikipedia_urls.append(country["wikipedia_url"])
 
                 # Make Wikidata id
                 qid = country["qid"]
-                identifiers.append([{"id": qid, "type": "Wikidata"}])
+                identifiers.append(
+                    [
+                        {"id": qid, "type": "Wikidata", "url": f"https://www.wikidata.org/wiki/{qid}"},
+                        {"id": alpha2, "type": "ISO alpha-2", "url": None},
+                        {"id": alpha3, "type": "ISO alpha-3", "url": None},
+                    ]
+                )
 
             df["name"] = names
             df["alpha2"] = alpha2s
@@ -1168,7 +1196,7 @@ class OaWebWorkflow(Workflow):
         # Save stats as json
         min_year = 2000
         max_year = pendulum.now().year - 1
-        last_updated = pendulum.now()
+        last_updated = pendulum.now().format("Do MMMM YYYY")
         stats = Stats(min_year, max_year, last_updated)
         release.save_stats(stats)
 
