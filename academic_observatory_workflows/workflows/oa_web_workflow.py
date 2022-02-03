@@ -1194,6 +1194,6 @@ class OaWebWorkflow(Workflow):
         # Save stats as json
         min_year = 2000
         max_year = pendulum.now().year - 1
-        last_updated = pendulum.now().format("Do MMMM YYYY")
+        last_updated = pendulum.now().format("D MMMM YYYY")
         stats = Stats(min_year, max_year, last_updated)
         release.save_stats(stats)
