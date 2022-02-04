@@ -51,7 +51,6 @@ class OpenAlexRelease(StreamRelease):
         start_date: pendulum.DateTime,
         end_date: pendulum.DateTime,
         first_release: bool,
-        max_threads: int,
         max_processes: int,
     ):
         """Construct a OpenAlexRelease instance
@@ -60,13 +59,11 @@ class OpenAlexRelease(StreamRelease):
         :param start_date: the start_date of the release.
         :param end_date: the end_date of the release.
         :param first_release: whether this is the first release that is processed for this DAG
-        :param max_threads: Max threads used for parallel downloading
         :param max_processes: max processes for transforming files.
         """
         super().__init__(
             dag_id, start_date, end_date, first_release, download_files_regex=".*.gz", transform_files_regex=".*.gz"
         )
-        self.max_threads = max_threads
         self.max_processes = max_processes
 
     @property
@@ -93,7 +90,7 @@ class OpenAlexRelease(StreamRelease):
     # def transfer_manifest_blob_transform(self):
     #     return blob_name(self.transfer_manifest_path_transform)
 
-    def write_transfer_manifest(self) -> int:
+    def write_transfer_manifest(self):
         """
         :return: The number of updated entities.
         """
@@ -127,7 +124,8 @@ class OpenAlexRelease(StreamRelease):
                             f_download.write(object_name)
                         updated_entities_count += 1
 
-        return updated_entities_count
+        if updated_entities_count == 0:
+            raise AirflowSkipException("No updated entities to process")
 
     def transfer(self, max_retries):
         """Sync files from AWS bucket to Google Cloud bucket
@@ -173,8 +171,6 @@ class OpenAlexRelease(StreamRelease):
                 raise AirflowException(f"Google Storage Transfer unsuccessful, status: {success}")
 
         logging.info(f"Total number of objects transferred: {total_count}")
-        if total_count == 0:
-            raise AirflowSkipException("No objects to transfer")
 
     def download_transferred(self):
         """Download the updated entities from the Google Cloud download bucket to a local directory using gsutil.
@@ -234,7 +230,7 @@ class OpenAlexTelescope(StreamTelescope):
 
     DAG_ID = "openalex"
     AWS_BUCKET = "openalex"
-    AIRFLOW_CONN = "openalex"
+    AIRFLOW_CONN_AWS = "openalex"
 
     def __init__(
         self,
@@ -248,7 +244,6 @@ class OpenAlexTelescope(StreamTelescope):
         schema_folder: str = os.path.join(default_schema_folder(), "openalex"),
         airflow_vars: List = None,
         airflow_conns: List = None,
-        max_threads: int = min(32, os.cpu_count() + 4),
         max_processes: int = os.cpu_count(),
     ):
         """Construct an OpenAlexTelescope instance.
@@ -261,9 +256,7 @@ class OpenAlexTelescope(StreamTelescope):
         :param queue: the queue that the tasks should run on.
         :param merge_partition_field: the BigQuery field used to match partitions for a merge
         :param schema_folder: the SQL schema path.
-        # :param batch_load: whether all files in the transform folder are loaded into 1 table at once
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
-        :param max_threads: Max processes used for parallel downloading, default is based on 7 days x 3 url categories
         :param max_processes: max processes for transforming files.
         """
 
@@ -277,7 +270,7 @@ class OpenAlexTelescope(StreamTelescope):
             ]
         if airflow_conns is None:
             airflow_conns = [
-                self.AIRFLOW_CONN,
+                self.AIRFLOW_CONN_AWS,
             ]
         super().__init__(
             dag_id,
@@ -292,7 +285,6 @@ class OpenAlexTelescope(StreamTelescope):
             airflow_conns=airflow_conns,
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
         )
-        self.max_threads = max_threads
         self.max_processes = max_processes
 
         self.add_setup_task(self.check_dependencies)
@@ -331,10 +323,7 @@ class OpenAlexTelescope(StreamTelescope):
         """
 
         start_date, end_date, first_release = self.get_release_info(**kwargs)
-        start_date = pendulum.DateTime(2022, 2, 1, tzinfo=pytz.UTC)
-        release = OpenAlexRelease(
-            self.dag_id, start_date, end_date, first_release, self.max_threads, self.max_processes
-        )
+        release = OpenAlexRelease(self.dag_id, start_date, end_date, first_release, self.max_processes)
         return release
 
     def write_transfer_manifest(self, release: OpenAlexRelease, **kwargs):
@@ -374,7 +363,7 @@ def get_aws_conn_info() -> (str, str):
 
     :return: access key id and secret access key
     """
-    conn = BaseHook.get_connection(OpenAlexTelescope.AIRFLOW_CONN)
+    conn = BaseHook.get_connection(OpenAlexTelescope.AIRFLOW_CONN_AWS)
     access_key_id = conn.login
     secret_access_key = conn.password
 
