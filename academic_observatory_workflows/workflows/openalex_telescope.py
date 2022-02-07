@@ -298,6 +298,15 @@ class OpenAlexTelescope(StreamTelescope):
         self.add_task_chain([self.bq_delete_old, self.bq_append_new, self.cleanup], trigger_rule="none_failed")
 
     def get_bq_load_info(self, release: OpenAlexRelease) -> List[Tuple[str, str, str]]:
+        """Get a list of the transform blob, main table id and partition table id that are used to load data into
+        BigQuery.
+        This method overrides the parent class' method for this telescope, because there are transform files
+        inside the transform bucket that were transferred directly. Which means that they can't be found with
+        the 'release.transform_files' property.
+
+        :param release: The release object.
+        :return: List with tuples of transform_blob, main_table_id and partition_table_id
+        """
         base_transform_blob = os.path.join("telescopes", "openalex", release.release_id, "data")
         bq_load_info = []
         for entity in ["authors", "concepts", "institutions", "venues", "works"]:
