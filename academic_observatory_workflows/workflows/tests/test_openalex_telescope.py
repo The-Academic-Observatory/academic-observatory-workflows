@@ -156,9 +156,9 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             )
             env.add_connection(conn)
 
+            release = None  # prevent linting error when using release variable in second run
             for run in [self.first_run, self.second_run]:
                 with self.subTest(run=run):
-                    # entities = run["entities"]
                     with env.create_dag_run(dag, run["execution_date"]) as dag_run:
                         # Test that all dependencies are specified: no error should be thrown
                         env.run_task(telescope.check_dependencies.__name__)
