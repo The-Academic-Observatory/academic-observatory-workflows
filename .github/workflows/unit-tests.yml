@@ -34,8 +34,8 @@ jobs:
 
           cd ..
           git clone https://github.com/The-Academic-Observatory/observatory-platform.git
-          git checkout update_gcs_transfer
           cd observatory-platform
+          git checkout origin/update_gcs_transfer
           pip install -e observatory-api
           pip install -e observatory-platform
           cd ..
