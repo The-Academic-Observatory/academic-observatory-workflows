@@ -16,13 +16,17 @@
 
 import gzip
 import io
+import json
 import os
 from datetime import timedelta
-from unittest.mock import patch
+from subprocess import Popen
+from unittest.mock import Mock, call, patch
 
 import pendulum
+from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.models.connection import Connection
 from botocore.response import StreamingBody
+from click.testing import CliRunner
 from observatory.platform.utils.gc_utils import (
     upload_file_to_cloud_storage,
 )
@@ -34,7 +38,13 @@ from observatory.platform.utils.test_utils import (
 )
 
 from academic_observatory_workflows.config import test_fixtures_folder
-from academic_observatory_workflows.workflows.openalex_telescope import OpenAlexRelease, OpenAlexTelescope
+from academic_observatory_workflows.workflows.openalex_telescope import (
+    OpenAlexRelease,
+    OpenAlexTelescope,
+    run_subprocess_cmd,
+    transform_file,
+    transform_object,
+)
 
 
 class TestOpenAlexTelescope(ObservatoryTestCase):
@@ -324,3 +334,227 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         )
                         env.run_task(telescope.cleanup.__name__)
                         self.assert_cleanup(download_folder, extract_folder, transform_folder)
+
+    @patch("academic_observatory_workflows.workflows.openalex_telescope.boto3.client")
+    @patch("academic_observatory_workflows.workflows.openalex_telescope.Variable.get")
+    def test_write_transfer_manifest(self, mock_variable_get, mock_boto3):
+        """Test write_transfer_manifest method of the OpenAlex release.
+
+        :param mock_variable_get: Mock Airflow Variable get() method
+        :param mock_boto3: Mock the boto3 client
+        :return: None.
+        """
+        mock_variable_get.return_value = "data"
+        # Mock response of get_object on last_modified file, mocking lambda file
+        side_effect = []
+        for tests in range(2):
+            for entity in self.entities:
+                manifest_content = render_template(self.manifest_obj_path, entity=entity, date="2022-01-01").encode()
+                side_effect.append({"Body": StreamingBody(io.BytesIO(manifest_content), len(manifest_content))})
+        mock_boto3().get_object.side_effect = side_effect
+
+        with CliRunner().isolated_filesystem():
+            # Test with entries in manifest objects that are after start date
+            start_date = pendulum.DateTime(2022, 1, 1, tzinfo=pendulum.tz.UTC)
+            end_date = pendulum.DateTime(2022, 2, 1, tzinfo=pendulum.tz.UTC)
+            release = OpenAlexRelease("dag_id", start_date, end_date, False, 1)
+
+            release.write_transfer_manifest()
+            self.assert_file_integrity(
+                release.transfer_manifest_path_download, "42fb45119bd34709001fd6c90a6ef60e", "md5"
+            ),
+            self.assert_file_integrity(
+                release.transfer_manifest_path_transform, "fe8442cd31fec1c335379033afebc1ea", "md5"
+            )
+
+            # Test with entries in manifest objects that are before start date
+            start_date = pendulum.DateTime(2022, 3, 1, tzinfo=pendulum.tz.UTC)
+            end_date = pendulum.DateTime(2022, 4, 1, tzinfo=pendulum.tz.UTC)
+            release = OpenAlexRelease("dag_id", start_date, end_date, False, 1)
+
+            with self.assertRaises(AirflowSkipException):
+                release.write_transfer_manifest()
+
+    @patch("academic_observatory_workflows.workflows.openalex_telescope.aws_to_google_cloud_storage_transfer")
+    @patch("academic_observatory_workflows.workflows.openalex_telescope.get_aws_conn_info")
+    @patch("academic_observatory_workflows.workflows.openalex_telescope.Variable.get")
+    def test_transfer(self, mock_variable_get, mock_aws_info, mock_transfer):
+        """Test transfer method of the OpenAlex release.
+
+        :param mock_variable_get: Mock Airflow Variable get() method
+        :param mock_aws_info: Mock getting AWS info
+        :param mock_transfer: Mock the transfer function called inside release.transfer()
+        :return: None.
+        """
+        mock_variable_get.side_effect = lambda x: {
+            "download_bucket": "download-bucket",
+            "transform_bucket": "transform-bucket",
+            "project_id": "project_id",
+            "data_path": "data",
+        }[x]
+        mock_aws_info.return_value = "key_id", "secret_key"
+        mock_transfer.return_value = True, 3
+
+        with CliRunner().isolated_filesystem():
+            # Create release
+            start_date = pendulum.DateTime(2022, 1, 1)
+            end_date = pendulum.DateTime(2022, 2, 1)
+            release = OpenAlexRelease("dag_id", start_date, end_date, False, 1)
+
+            # Create transfer manifest files
+            with open(release.transfer_manifest_path_download, "w") as f:
+                f.write('"prefix1"\n"prefix2"\n')
+            with open(release.transfer_manifest_path_transform, "w") as f:
+                f.write("")
+
+            # Test succesful transfer with prefixes for download, no prefixes for transform
+            release.transfer(max_retries=1)
+            mock_transfer.assert_called_once_with(
+                "key_id",
+                "secret_key",
+                aws_bucket=OpenAlexTelescope.AWS_BUCKET,
+                include_prefixes=["prefix1", "prefix2"],
+                gc_project_id="project_id",
+                gc_bucket="download-bucket",
+                gc_bucket_path="telescopes/dag_id/2022_01_01-2022_02_01/",
+                description="Transfer OpenAlex data from Airflow telescope to download-bucket",
+            )
+            mock_transfer.reset_mock()
+
+            # Test failed transfer
+            mock_transfer.return_value = False, 4
+            with self.assertRaises(AirflowException):
+                release.transfer(1)
+
+    @patch("academic_observatory_workflows.workflows.openalex_telescope.wait_for_process")
+    @patch("academic_observatory_workflows.workflows.openalex_telescope.logging.info")
+    def test_run_subprocess_cmd(self, mock_logging, mock_wait_for_proc):
+        """Test the run_subprocess_cmd function.
+
+        :return: None.
+        """
+        # Mock logging
+        mock_wait_for_proc.return_value = ("out", "err")
+
+        # Set up parameters
+        args = ["run", "unittest"]
+        proc = Mock(spec=Popen)
+
+        # Test when return code is 0
+        proc.returncode = 0
+        run_subprocess_cmd(proc, args)
+        expected_logs = ["Executing bash command: run unittest", "out", "err", "Finished cmd successfully"]
+        self.assertListEqual([call(log) for log in expected_logs], mock_logging.call_args_list)
+
+        # Test when return code is 1
+        proc.returncode = 1
+        with self.assertRaises(AirflowException):
+            run_subprocess_cmd(proc, args)
+
+    @patch("academic_observatory_workflows.workflows.openalex_telescope.transform_object")
+    def test_transform_file(self, mock_transform_object):
+        """Test the transform_file function.
+
+        :return: None.
+        """
+        mock_transform_object.return_value = {}
+        with CliRunner().isolated_filesystem() as t:
+            transform_path = "transform/out.jsonl.gz"
+
+            # Create works entity file
+            works = {"works": "content"}
+            works_download_path = "works.jsonl.gz"
+            with gzip.open(works_download_path, "wt", encoding="ascii") as f_out:
+                json.dump(works, f_out)
+
+            # Create other entity file (concepts or institution)
+            concepts = {"concepts": "content"}
+            concepts_download_path = "concepts.jsonl.gz"
+            with gzip.open(concepts_download_path, "wt", encoding="ascii") as f_out:
+                json.dump(concepts, f_out)
+
+            # Test when dir of transform path does not exist yet, using 'works' entity'
+            self.assertFalse(os.path.isdir(os.path.dirname(transform_path)))
+
+            transform_file(works_download_path, transform_path)
+            mock_transform_object.assert_called_once_with(works, "abstract_inverted_index")
+            mock_transform_object.reset_mock()
+            os.remove(transform_path)
+
+            # Test when dir of transform path does exist, using 'works' entity
+            self.assertTrue(os.path.isdir(os.path.dirname(transform_path)))
+
+            transform_file(works_download_path, transform_path)
+            self.assert_file_integrity(transform_path, "682a6d42", "gzip_crc")
+            mock_transform_object.assert_called_once_with(works, "abstract_inverted_index")
+            mock_transform_object.reset_mock()
+            os.remove(transform_path)
+
+            # Test for "concepts" and "institution" entities
+            transform_file(concepts_download_path, transform_path)
+            self.assert_file_integrity(transform_path, "d8cafe16", "gzip_crc")
+            mock_transform_object.assert_called_once_with(concepts, "international")
+
+    def test_transform_object(self):
+        """Test the transform_object function.
+
+        :return: None.
+        """
+        # Test object with nested "international" fields
+        obj1 = {
+            "international": {
+                "display_name": {
+                    "af": "Dokumentbestuurstelsel",
+                    "fr": "type de logiciel",
+                    "ro": "colecție organizată a documentelor",
+                }
+            }
+        }
+        transform_object(obj1, "international")
+        self.assertDictEqual(
+            {
+                "international": {
+                    "display_name": {
+                        "keys": ["af", "fr", "ro"],
+                        "values": [
+                            "Dokumentbestuurstelsel",
+                            "type de logiciel",
+                            "colecție organizată " "a documentelor",
+                        ],
+                    }
+                }
+            },
+            obj1,
+        )
+
+        # Test object with nested "international" none
+        obj2 = {"international": {"display_name": None}}
+        transform_object(obj2, "international")
+        self.assertDictEqual({"international": {"display_name": None}}, obj2)
+
+        # Test object with nested "abstract_inverted_index" fields
+        obj3 = {
+            "abstract_inverted_index": {
+                "Malignant": [0],
+                "hyperthermia": [1],
+                "susceptibility": [2],
+                "(MHS)": [3],
+                "is": [4, 6],
+                "primarily": [5],
+            }
+        }
+        transform_object(obj3, "abstract_inverted_index")
+        self.assertDictEqual(
+            {
+                "abstract_inverted_index": {
+                    "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
+                    "values": ["0", "1", "2", "3", "4, 6", "5"],
+                }
+            },
+            obj3,
+        )
+
+        # Test object with nested "abstract_inverted_index" none
+        obj4 = {"abstract_inverted_index": None}
+        transform_object(obj4, "abstract_inverted_index")
+        self.assertDictEqual({"abstract_inverted_index": None}, obj4)

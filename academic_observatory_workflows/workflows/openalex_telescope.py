@@ -395,9 +395,6 @@ def run_subprocess_cmd(proc: Popen, args: list):
     if proc.returncode != 0:
         # Don't raise exception if the only error is because blobs could not be found in bucket
         err_lines = err.split("\n")
-        for line in err_lines[:]:
-            if not line or "CommandException: No URLs matched:" in line or "could not be transferred." in line:
-                err_lines.remove(line)
         if err_lines:
             raise AirflowException("bash command failed")
     logging.info("Finished cmd successfully")
@@ -405,11 +402,11 @@ def run_subprocess_cmd(proc: Popen, args: list):
 
 def transform_file(download_path: str, transform_path: str):
     """
+
     :param download_path: The path to the file with the OpenAlex entries.
     :param transform_path: The path where transformed data will be saved
     :return: None.
     """
-    print(f"start {transform_path}")
     if not os.path.isdir(os.path.dirname(transform_path)):
         os.makedirs(os.path.dirname(transform_path))
 
@@ -422,10 +419,15 @@ def transform_file(download_path: str, transform_path: str):
                 transform_object(obj, "international")
             json.dump(obj, f_out)
             f_out.write("\n")
-    print(f"finished {transform_path}")
 
 
 def transform_object(obj: dict, field: str):
+    """
+
+    :param obj:
+    :param field:
+    :return:
+    """
     if field == "international":
         for nested_field in obj[field].keys():
             if not isinstance(obj[field][nested_field], dict):
@@ -434,7 +436,7 @@ def transform_object(obj: dict, field: str):
             values = list(obj[field][nested_field].values())
 
             obj[field][nested_field] = {"keys": keys, "values": values}
-    else:
+    elif field == "abstract_inverted_index":
         if not isinstance(obj[field], dict):
             return
         keys = list(obj[field].keys())
