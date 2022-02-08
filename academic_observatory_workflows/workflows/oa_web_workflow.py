@@ -846,9 +846,7 @@ class OaWebRelease(SnapshotRelease):
                         url = clean_url(url)
                         if url:
                             futures.append(
-                                executor.submit(
-                                    get_institution_logo, ror_id, url, category, size, width, fmt, self.build_path
-                                )
+                                executor.submit(get_institution_logo, ror_id, url, size, width, fmt, self.build_path)
                             )
                     logo_paths = [f.result() for f in as_completed(futures)]
 
