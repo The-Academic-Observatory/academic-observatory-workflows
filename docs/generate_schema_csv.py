@@ -37,8 +37,8 @@ def flatten_schema(schema: List[dict], *, prefix: str = "") -> List[tuple]:
     for field in schema:
         # Get field info
         field_name = prefix + field["name"]
-        field_type = field.get("type")
-        field_mode = field.get("mode")
+        field_type = field.get("type", "STRING")
+        field_mode = field.get("mode", "NULLABLE")
         field_desc = field.get("description")
 
         # Add field info as tuple
