@@ -414,8 +414,9 @@ class TestOaWebRelease(TestCase):
             category = "country"
             df = pd.DataFrame(self.countries)
             df = self.release.preprocess_df(category, df)
-            self.release.update_index_with_logos(category, df)
-            for i, row in df.iterrows():
+            df_index_table = self.release.make_index(category, df)
+            self.release.update_index_with_logos(category, df_index_table)
+            for i, row in df_index_table.iterrows():
                 for size in sizes:
                     # Check that logo key created
                     key = f"logo_{size}"
@@ -431,9 +432,10 @@ class TestOaWebRelease(TestCase):
             category = "institution"
             df = pd.DataFrame(self.institutions)
             df = self.release.preprocess_df(category, df)
+            df_index_table = self.release.make_index(category, df)
             with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "test_make_logos.yaml")):
-                self.release.update_index_with_logos(category, df)
-                for i, row in df.iterrows():
+                self.release.update_index_with_logos(category, df_index_table)
+                for i, row in df_index_table.iterrows():
                     for size in sizes:
                         # Check that logo was added to dataframe
                         key = f"logo_{size}"
