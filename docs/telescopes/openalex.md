@@ -129,9 +129,10 @@ openalex: aws://<access_key_id>:<secret_access_key>@
 ```
 
 ## Latest schema
+### Author
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/{{ workflow_module }}_latest.csv
+   :file: ../schemas/openalex/Author_latest.csv
    :width: 100%
    :header-rows: 1
 ```
