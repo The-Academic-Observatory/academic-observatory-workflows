@@ -136,3 +136,35 @@ openalex: aws://<access_key_id>:<secret_access_key>@
    :width: 100%
    :header-rows: 1
 ```
+
+### Concept
+``` eval_rst
+.. csv-table::
+   :file: ../schemas/openalex/Concept_latest.csv
+   :width: 100%
+   :header-rows: 1
+```
+
+### Institution
+``` eval_rst
+.. csv-table::
+   :file: ../schemas/openalex/Institution_latest.csv
+   :width: 100%
+   :header-rows: 1
+```
+
+### Venue
+``` eval_rst
+.. csv-table::
+   :file: ../schemas/openalex/Venue_latest.csv
+   :width: 100%
+   :header-rows: 1
+```
+
+### Work
+``` eval_rst
+.. csv-table::
+   :file: ../schemas/openalex/Work_latest.csv
+   :width: 100%
+   :header-rows: 1
+```

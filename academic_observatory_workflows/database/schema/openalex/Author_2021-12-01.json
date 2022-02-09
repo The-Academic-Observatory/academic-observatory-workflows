@@ -136,7 +136,7 @@
     "name": "counts_by_year",
     "type": "RECORD",
     "mode": "REPEATED",
-    "description": " Author.works_count and Author.cited_by_count for each of the last ten years, binned by year. To put it another way: each year, you can see how many works this author published, and how many times they got cited. Any works or citations older than ten years old aren't included.",
+    "description": "Author.works_count and Author.cited_by_count for each of the last ten years, binned by year. To put it another way: each year, you can see how many works this author published, and how many times they got cited. Any works or citations older than ten years old aren't included.",
     "fields": [
       {
         "name": "year",
