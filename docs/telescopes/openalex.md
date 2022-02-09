@@ -26,6 +26,13 @@ This means that the files for these entities are directly transferred to the tra
 The other entities do require some transformation and those files are transferred to the download bucket.
 After transforming the data the resulting files are then uploaded to the transform bucket.
 
+The transformation that is required has to do with two fields that have nested fields with dynamic field names.
+These make it impossible to create a schema beforehand and upload the data straight into BigQuery. 
+The two mentioned fields are 'abstract_inverted_index' (present in Work entity only) and 'international' (present in 
+Concept and Institute entities).
+As a workaround, these fields are transformed into a RECORD of two arrays of the same length. 
+The first array contains all the original field names and the second array the corresponding values.
+
  ```eval_rst
 +------------------------------+-----------------------------------------+
 | Summary                      |                                         |
