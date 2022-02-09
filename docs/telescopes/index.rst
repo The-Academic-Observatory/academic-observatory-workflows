@@ -12,6 +12,7 @@ output data to other places. Workflows are built on top of Apache Airflow's DAGs
     geonames
     grid
     mag
+    openalex
     open_citations
     orcid
     ror
