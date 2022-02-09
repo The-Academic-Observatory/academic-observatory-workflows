@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Tuan Chien
+# Author: Tuan Chien, Aniek Roelofs
 
 
+import csv
 import json
 import os
 import re
@@ -23,39 +24,49 @@ from glob import glob
 from pathlib import Path
 from typing import List
 
-import pandas as pd
 
-
-def schema_to_csv(*, schema: List, output: List, prefix: str = ""):
+def flatten_schema(schema: List[dict], *, prefix: str = "") -> List[tuple]:
     """
-    Convert a schema file to a pandas dataframe, ready for csv export.
+    Flatten a schema with nested fields, each (nested) field will be a tuple with field information.
 
-    :param schema: Schema list.
-    :param output: Output list of rows.
-    :param prefix: Name prefixes for when there are nested records.
+    :param schema: List with fields, each field is a dictionary.
+    :param prefix: Field name prefix for a nested field.
+    :return The flattened schema.
     """
-
+    flat_schema = []
     for field in schema:
-        fname = field["name"] if "name" in field else None
-        ftype = field["type"] if "type" in field else None
-        fmode = field["mode"] if "mode" in field else None
-        fdesc = field["description"] if "description" in field else None
+        # Get field info
+        field_name = prefix + field["name"]
+        field_type = field.get("type")
+        field_mode = field.get("mode")
+        field_desc = field.get("description")
 
-        name = f"{prefix}{fname}"
-        row = {"name": name, "type": ftype, "mode": fmode, "description": fdesc}
-        output.append(row)
+        # Add field info as tuple
+        flat_schema.append((field_name, field_type, field_mode, field_desc))
 
-        if ftype == "RECORD":
-            ffield = field["fields"]
-            schema_to_csv(schema=ffield, output=output, prefix=f"{prefix}{fname}.")
+        if field_type == "RECORD":
+            # Get nested fields
+            fields = field["fields"]
+
+            # Store current prefix and update
+            prev_prefix = prefix
+            prefix = field_name + "."
+
+            # Flatten schema recursively
+            flat_schema += flatten_schema(schema=fields, prefix=prefix)
+
+            # Reset prefix
+            prefix = prev_prefix
+
+    return flat_schema
 
 
 def generate_csv(*, schema_dir):
     """Convert all observatory schema files in JSON format to CSV for inclusion in Sphinx.
+
     :param schema_dir: Path to schema directory.
     """
-
-    schema_files = glob(os.path.join(schema_dir, "*.json"))
+    schema_files = glob(os.path.join(schema_dir, "**", "*.json"), recursive=True)
     dst_dir = "schemas"
 
     if os.path.exists(dst_dir):
@@ -64,15 +75,21 @@ def generate_csv(*, schema_dir):
     Path(dst_dir).mkdir(exist_ok=True, parents=True)
 
     for schema_file in schema_files:
-        filename = os.path.basename(schema_file)
-        filename = filename[:-4] + "csv"  # Remove json and add csv suffix
-        with open(schema_file, "r") as f:
-            data = f.read()
-        schema = json.loads(data)
-        rows = list()
-        schema_to_csv(schema=schema, output=rows)
-        df = pd.DataFrame(rows)
-        df.to_csv(os.path.join(dst_dir, filename), index=False)
+        # Read schema file
+        with open(schema_file, "r") as f_in:
+            schema = json.load(f_in)
+
+        # Flatten
+        flat_schema = flatten_schema(schema=schema)
+
+        # Write flat schema file as csv
+        filename = os.path.relpath(schema_file, schema_dir)
+        out_path = os.path.join(dst_dir, filename.replace(".json", ".csv"))
+        Path(os.path.dirname(out_path)).mkdir(exist_ok=True, parents=True)
+        with open(out_path, "w") as f_out:
+            writer = csv.writer(f_out)
+            writer.writerow(["name", "type", "mode", "description"])
+            writer.writerows(flat_schema)
 
 
 def generate_latest_files():
@@ -84,7 +101,7 @@ def generate_latest_files():
     telescopes are ported to the new template framework anyway.
     """
 
-    table_files = glob("schemas/*.csv")
+    table_files = glob("schemas/**/*.csv", recursive=True)
     r = re.compile(r"\d{4}-\d{2}-\d{2}")
 
     # Build a database of schema files
@@ -102,14 +119,17 @@ def generate_latest_files():
         table_schemas[table].sort()
 
     # Copy the last schema in list since it's latest, to a table_latest.csv
-    for table in table_schemas:
-        dst_dir = "schemas"
+    for table, schema_paths in table_schemas.items():
+        src_path = schema_paths[-1]
+
+        dst_dir = os.path.dirname(src_path)
         dst_filename = f"{table}_latest.csv"
         dst_path = os.path.join(dst_dir, dst_filename)
-        src_file = table_schemas[table][-1]
-        shutil.copyfile(src_file, dst_path)
+
+        shutil.copyfile(src_path, dst_path)
 
 
 if __name__ == "__main__":
     generate_csv(schema_dir="../academic_observatory_workflows/database/schema")
     generate_latest_files()
+    print("stop")
