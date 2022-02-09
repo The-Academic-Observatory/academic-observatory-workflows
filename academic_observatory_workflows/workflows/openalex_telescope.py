@@ -28,7 +28,6 @@ from typing import List, Tuple
 import boto3
 import jsonlines
 import pendulum
-import pytz
 from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.hooks.base import BaseHook
 from airflow.models.variable import Variable
@@ -68,7 +67,7 @@ class OpenAlexRelease(StreamRelease):
 
     @property
     def transfer_manifest_path_download(self) -> str:
-        """Get the path to the file with ids of updated entities.
+        """Get the path to the file with ids of updated entities that are transferred to the download bucket.
 
         :return: the file path.
         """
@@ -76,7 +75,7 @@ class OpenAlexRelease(StreamRelease):
 
     @property
     def transfer_manifest_path_transform(self) -> str:
-        """Get the path to the file with ids of updated entities.
+        """Get the path to the file with ids of updated entities that are transferred to the transform bucket.
 
         :return: the file path.
         """
@@ -91,7 +90,10 @@ class OpenAlexRelease(StreamRelease):
     #     return blob_name(self.transfer_manifest_path_transform)
 
     def write_transfer_manifest(self):
-        """
+        """Write a transfer manifest file with filenames of files changed since the start date of this release.
+        The filename excludes the s3 bucket name (s3://openalex) and is between double quotes.
+        A separate manifest file is created for the download and transform bucket.
+
         :return: The number of updated entities.
         """
         logging.info(
@@ -117,7 +119,7 @@ class OpenAlexRelease(StreamRelease):
                     updated_date_str = entry["url"].split("updated_date=")[1].split("/")[0]
                     updated_date = pendulum.from_format(updated_date_str, "YYYY-MM-DD")
                     if updated_date >= self.start_date:
-                        object_name = '"' + entry["url"].split("s3://openalex/")[1] + '"\n'
+                        object_name = '"' + entry["url"].replace("s3://openalex/", "") + '"\n'
                         if entity in ["authors", "venues"]:
                             f_transform.write(object_name)
                         else:
@@ -128,7 +130,7 @@ class OpenAlexRelease(StreamRelease):
             raise AirflowSkipException("No updated entities to process")
 
     def transfer(self, max_retries):
-        """Sync files from AWS bucket to Google Cloud bucket
+        """Transfer files from AWS bucket to Google Cloud bucket
 
         :param max_retries: Number of max retries to try the transfer
         :return: None.
@@ -207,13 +209,13 @@ class OpenAlexRelease(StreamRelease):
         run_subprocess_cmd(proc, args)
 
     def transform(self):
-        """Transform all events.
+        """Transform all files for the Work, Concept and Institution entities.
+        Transforms one file per process.
 
         :return: None.
         """
         logging.info(f"Transforming files, no. workers: {self.max_processes}")
 
-        count = 0
         with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
             futures = []
             for file_path in self.download_files:
@@ -222,7 +224,6 @@ class OpenAlexRelease(StreamRelease):
                 futures.append(executor.submit(transform_file, file_path, transform_path))
             for future in as_completed(futures):
                 future.result()
-                count += 1
 
 
 class OpenAlexTelescope(StreamTelescope):
@@ -302,7 +303,7 @@ class OpenAlexTelescope(StreamTelescope):
         BigQuery.
         This method overrides the parent class' method for this telescope, because there are transform files
         inside the transform bucket that were transferred directly. Which means that they can't be found with
-        the 'release.transform_files' property.
+        the 'release.transform_files' property that is normally used.
 
         :param release: The release object.
         :return: List with tuples of transform_blob, main_table_id and partition_table_id
@@ -328,7 +329,7 @@ class OpenAlexTelescope(StreamTelescope):
         """Make a Release instance
 
         :param kwargs: The context passed from the PythonOperator.
-        :return: OpenAlexRelease
+        :return: an OpenAlexRelease
         """
 
         start_date, end_date, first_release = self.get_release_info(**kwargs)
@@ -336,6 +337,12 @@ class OpenAlexTelescope(StreamTelescope):
         return release
 
     def write_transfer_manifest(self, release: OpenAlexRelease, **kwargs):
+        """Task to write transfer manifest files used during transfer.
+
+        :param release: an OpenAlexRelease instance.
+        :param kwargs: The context passed from the PythonOperator.
+        :return: None.
+        """
         release.write_transfer_manifest()
 
     # TODO uncomment when transfer manifest works
@@ -346,21 +353,27 @@ class OpenAlexTelescope(StreamTelescope):
     #                                  release.transfer_manifest_path_transform)
 
     def transfer(self, release: OpenAlexRelease, **kwargs):
+        """Task to transfer the OpenAlex data
+
+        :param release: an OpenAlexRelease instance.
+        :param kwargs: The context passed from the PythonOperator.
+        :return: None.
+        """
         release.transfer(max_retries=self.max_retries)
 
     def download_transferred(self, release: OpenAlexRelease, **kwargs):
-        """Task to download the OpenAlexRelease release.
+        """Task to download the OpenAlexRelease data.
 
-        :param release: a OpenAlexRelease instance.
+        :param release: an OpenAlexRelease instance.
         :param kwargs: The context passed from the PythonOperator.
         :return: None.
         """
         release.download_transferred()
 
     def transform(self, release: OpenAlexRelease, **kwargs):
-        """Task to transform the OpenAlexRelease release.
+        """Task to transform the OpenAlexRelease data.
 
-        :param release: a OpenAlexRelease instance.
+        :param release: an OpenAlexRelease instance.
         :param kwargs: The context passed from the PythonOperator.
         :return: None.
         """
@@ -401,7 +414,10 @@ def run_subprocess_cmd(proc: Popen, args: list):
 
 
 def transform_file(download_path: str, transform_path: str):
-    """
+    """Transforms a single file.
+    Each entry/object in the gzip input file is transformed and the transformed object is immediately written out to
+    a gzip file.
+    For each entity only one field has to be transformed.
 
     :param download_path: The path to the file with the OpenAlex entries.
     :param transform_path: The path where transformed data will be saved
@@ -410,6 +426,7 @@ def transform_file(download_path: str, transform_path: str):
     if not os.path.isdir(os.path.dirname(transform_path)):
         os.makedirs(os.path.dirname(transform_path))
 
+    logging.info(f"Transforming {download_path}")
     with gzip.open(download_path, "rb") as f_in, gzip.open(transform_path, "wt", encoding="ascii") as f_out:
         reader = jsonlines.Reader(f_in)
         for obj in reader:
@@ -419,14 +436,17 @@ def transform_file(download_path: str, transform_path: str):
                 transform_object(obj, "international")
             json.dump(obj, f_out)
             f_out.write("\n")
+    logging.info(f"Finished transform, saved to {transform_path}")
 
 
 def transform_object(obj: dict, field: str):
-    """
+    """Transform an entry/object for one of the OpenAlex entities.
+    For the Work entity only the "abstract_inverted_index" field is transformed.
+    For the Concept and Institution entities only the "international" field is transformed.
 
-    :param obj:
-    :param field:
-    :return:
+    :param obj: Single object with entity information
+    :param field: The field of interested that is transformed.
+    :return: None.
     """
     if field == "international":
         for nested_field in obj[field].keys():
