@@ -118,6 +118,7 @@ class OpenCitationsTelescope(SnapshotTelescope):
             "csv_skip_leading_rows": 1,
             "csv_allow_quoted_newlines": True,
             "write_disposition": bigquery.WriteDisposition.WRITE_APPEND,
+            "ignore_unknown_values": True
         }
 
         if table_descriptions is None:

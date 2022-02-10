@@ -181,6 +181,7 @@ class CrossrefFundrefTelescope(SnapshotTelescope):
         schedule_interval: str = "@weekly",
         dataset_id: str = DATASET_ID,
         schema_folder: str = default_schema_folder(),
+        load_bigquery_table_kwargs: Dict = None,
         table_descriptions: Dict = None,
         catchup: bool = True,
         airflow_vars: List = None,
@@ -193,6 +194,7 @@ class CrossrefFundrefTelescope(SnapshotTelescope):
         :param schedule_interval: the schedule interval of the DAG.
         :param dataset_id: the BigQuery dataset id.
         :param schema_folder: the SQL schema path.
+        :param load_bigquery_table_kwargs: the customisation parameters for loading data into a BigQuery table.
         :param table_descriptions: a dictionary with table ids and corresponding table descriptions.
         :param catchup: whether to catchup the DAG or not.
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow.
@@ -211,12 +213,17 @@ class CrossrefFundrefTelescope(SnapshotTelescope):
                 AirflowVars.DOWNLOAD_BUCKET,
                 AirflowVars.TRANSFORM_BUCKET,
             ]
+
+        if load_bigquery_table_kwargs is None:
+            load_bigquery_table_kwargs = {"ignore_unknown_values": True}
+
         super().__init__(
             dag_id,
             start_date,
             schedule_interval,
             dataset_id,
             schema_folder,
+            load_bigquery_table_kwargs=load_bigquery_table_kwargs,
             table_descriptions=table_descriptions,
             catchup=catchup,
             airflow_vars=airflow_vars,

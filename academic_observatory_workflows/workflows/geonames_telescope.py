@@ -171,7 +171,11 @@ class GeonamesTelescope(SnapshotTelescope):
         """
 
         if load_bigquery_table_kwargs is None:
-            load_bigquery_table_kwargs = {"csv_field_delimiter": "\t", "csv_quote_character": ""}
+            load_bigquery_table_kwargs = {
+                "csv_field_delimiter": "\t",
+                "csv_quote_character": "",
+                "ignore_unknown_values": True,
+            }
 
         if table_descriptions is None:
             table_descriptions = {dag_id: "The GeoNames table."}
