@@ -15,7 +15,6 @@
 # Author: James Diprose
 
 import os
-import shutil
 from typing import List
 from unittest import TestCase
 from unittest.mock import patch
@@ -24,7 +23,6 @@ import jsonlines
 import pandas as pd
 import pendulum
 import vcr
-from airflow.models.connection import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
 
@@ -765,13 +763,6 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
         env = ObservatoryEnvironment(enable_api=False)
         with env.create():
-            env.add_connection(
-                Connection(
-                    conn_id=OaWebWorkflow.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN,
-                    uri="http://:password@",
-                )
-            )
-
             dag = OaWebWorkflow().make_dag()
             self.assert_dag_structure(
                 {
@@ -779,10 +770,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "check_dependencies": ["query"],
                     "query": ["download"],
                     "download": ["transform"],
-                    "transform": ["copy_static_assets"],
-                    "copy_static_assets": ["build_website"],
-                    "build_website": ["deploy_website"],
-                    "deploy_website": [],
+                    "transform": []
                 },
                 dag,
             )
@@ -795,13 +783,6 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
         env = ObservatoryEnvironment(project_id=self.project_id, data_location=self.data_location, enable_api=False)
         with env.create():
-            env.add_connection(
-                Connection(
-                    conn_id=OaWebWorkflow.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN,
-                    uri="http://:password@",
-                )
-            )
-
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "oa_web_workflow.py")
             self.assert_dag_load("oa_web_workflow", dag_file)
 
@@ -833,14 +814,6 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         env = ObservatoryEnvironment(project_id=self.project_id, data_location=self.data_location, enable_api=False)
         dataset_id = env.add_dataset("data")
         with env.create() as t:
-            # Add required environment variables and connections
-            env.add_connection(
-                Connection(
-                    conn_id=OaWebWorkflow.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN,
-                    uri="http://:password@",
-                )
-            )
-
             # Run fake DOI workflow
             dag = make_dummy_dag("doi", execution_date)
             with env.create_dag_run(dag, execution_date):
@@ -853,11 +826,6 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
             # Run workflow
             workflow = OaWebWorkflow(agg_dataset_id=dataset_id, ror_dataset_id=dataset_id)
-
-            # Copy test website
-            src_folder = test_fixtures_folder("oa_web_workflow", workflow.oa_website_name)
-            dst_folder = workflow.website_folder
-            shutil.copytree(src_folder, dst_folder)
 
             dag = workflow.make_dag()
             with env.create_dag_run(dag, execution_date):
@@ -895,25 +863,6 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 for file in expected_files:
                     print(f"\t{file}")
                     self.assertTrue(os.path.isfile(file))
-
-                # Copy static assets
-                ti = env.run_task(workflow.copy_static_assets.__name__)
-                self.assertEqual(State.SUCCESS, ti.state)
-                base_folder = os.path.join(t, "data", workflow.website_folder, "static", "build")
-                expected_files = make_expected_build_files(base_folder)
-                print("Checking expected static assets")
-                for file in expected_files:
-                    print(f"\t{file}")
-                    self.assertTrue(os.path.isfile(file))
-                self.assertFalse(os.path.isfile(os.path.join(base_folder, "static", "build", "old.txt")))
-
-                # Build website
-                ti = env.run_task(OaWebWorkflow.TASK_ID_BUILD_WEBSITE)
-                self.assertEqual(State.SUCCESS, ti.state)
-
-                # Deploy website
-                ti = env.run_task(OaWebWorkflow.TASK_ID_DEPLOY_WEBSITE)
-                self.assertEqual(State.SUCCESS, ti.state)
 
 
 def make_expected_build_files(base_path: str) -> List[str]:

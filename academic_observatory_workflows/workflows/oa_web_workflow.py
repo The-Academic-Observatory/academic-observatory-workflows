@@ -36,16 +36,11 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
-from airflow.operators.bash import BashOperator
-from airflow.secrets.environment_variables import EnvironmentVariablesBackend
 from airflow.sensors.external_task import ExternalTaskSensor
 from pyarrow import json as pa_json
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
 from observatory.platform.utils.airflow_utils import AirflowVars
-from observatory.platform.utils.airflow_utils import (
-    get_airflow_connection_password,
-)
 from observatory.platform.utils.config_utils import module_file_path
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import (
@@ -970,10 +965,52 @@ class OaWebRelease(SnapshotRelease):
 
 
 class OaWebWorkflow(Workflow):
-    TASK_ID_BUILD_WEBSITE = "build_website"
-    TASK_ID_DEPLOY_WEBSITE = "deploy_website"
-    AIRFLOW_CONN_CLOUDFLARE_API_TOKEN = "cloudflare_api_token"
-    DEPLOY_WEBSITE_PATH = "/home/airflow/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/airflow/.yarn/bin"
+    """ The OaWebWorkflow generates data files for the COKI Open Access Dashboard.
+
+    The figure below illustrates the generated data and notes about what each file is used for.
+    .
+    ├── data: data
+    │   ├── autocomplete.json: used for the website search functionality. Copied into public/data folder.
+    │   ├── autocomplete.parquet: used for filtering in Cloudflare Worker.
+    │   ├── country: individual entity statistics files for countries. Used to build each country page.
+    │   │   ├── ALB.json
+    │   │   ├── ARE.json
+    │   │   └── ARG.json
+    │   ├── country.json: used to create the country table. First 18 countries used to build first page of country table
+    │   │                 and then this file is included in the public folder and downloaded by the client to enable the
+    │   │                 other pages of the table to be displayed. Copied into public/data folder.
+    │   ├── country.jsonl: used to generate the parquet file.
+    │   ├── country.parquet: to be used along with apache-arrow to enable filtering from a Cloudflare Worker.
+    │   ├── institution: individual entity statistics files for institutions. Used to build each institution page.
+    │   │   ├── 05ykr0121.json
+    │   │   ├── 05ym42410.json
+    │   │   └── 05ynxx418.json
+    │   ├── institution.json: used to create the institution table. First 18 institutions used to build first page of institution table
+    │   │                     and then this file is included in the public folder and downloaded by the client to enable the
+    │   │                     other pages of the table to be displayed. Copied into public/data folder.
+    │   ├── institution.jsonl: used to generate the parquet file.
+    │   ├── institution.parquet: to be used along with apache-arrow to enable filtering from a Cloudflare Worker.
+    │   └── stats.json: global statistics, e.g. the minimum and maximum date for the dataset, when it was last updated etc.
+    └── logos: country and institution logos. Copied into public/logos folder.
+        ├── country
+        │   ├── l: large logos displayed on country pages.
+        │   │   ├── ALB.svg
+        │   │   ├── ARE.svg
+        │   │   └── ARG.svg
+        │   └── s: small logos displayed in country table.
+        │       ├── ALB.svg
+        │       ├── ARE.svg
+        │       └── ARG.svg
+        └── institution
+            ├── l: large logos displayed on institution pages.
+            │   ├── 05ykr0121.jpg
+            │   ├── 05ym42410.jpg
+            │   └── 05ynxx418.jpg
+            └── s: small logos displayed in institution table.
+                ├── 05ykr0121.jpg
+                ├── 05ym42410.jpg
+                └── 05ynxx418.jpg
+    """
 
     def __init__(
         self,
@@ -986,7 +1023,6 @@ class OaWebWorkflow(Workflow):
         table_ids: List[str] = None,
         airflow_vars: List[str] = None,
         airflow_conns: List[str] = None,
-        retries: int = 3,
         agg_dataset_id: str = "observatory",
         ror_dataset_id: str = "ror",
         oa_website_name: str = "open-access-web",
@@ -1010,9 +1046,6 @@ class OaWebWorkflow(Workflow):
                 AirflowVars.TRANSFORM_BUCKET,
             ]
 
-        if airflow_conns is None:
-            airflow_conns = [self.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN]
-
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
@@ -1035,41 +1068,6 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.query)
         self.add_task(self.download)
         self.add_task(self.transform)
-        # TODO: add in a task to clone a certain version of the website, when this is ready
-        self.add_task(self.copy_static_assets)
-        self.add_operator(
-            BashOperator(
-                task_id=self.TASK_ID_BUILD_WEBSITE,
-                params={"website_folder": self.website_folder},
-                bash_command="cd {{ params.website_folder }} && ./build.sh ",
-                retries=retries,
-            )
-        )
-        self.add_operator(
-            BashOperator(
-                task_id=self.TASK_ID_DEPLOY_WEBSITE,
-                params={"website_folder": self.website_folder},
-                env={
-                    "CF_API_TOKEN": get_airflow_connection_password(self.AIRFLOW_CONN_CLOUDFLARE_API_TOKEN),
-                    "PATH": self.DEPLOY_WEBSITE_PATH,
-                },
-                bash_command="cd {{ params.website_folder }} && ./deploy.sh ",
-                retries=retries,
-            )
-        )
-
-    @property
-    def website_folder(self) -> str:
-        """Get the path to the oa website folder.
-
-        :return: the path to the oa website folder.
-        """
-
-        # Try to get value from env variable first, saving costs from GC secret usage
-        data_path = EnvironmentVariablesBackend().get_variable(AirflowVars.DATA_PATH)
-        if data_path is None:
-            data_path = Variable.get(AirflowVars.DATA_PATH)
-        return os.path.join(data_path, self.oa_website_name)
 
     def make_release(self, **kwargs) -> OaWebRelease:
         """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is
@@ -1199,17 +1197,3 @@ class OaWebWorkflow(Workflow):
         last_updated = pendulum.now().format("Do MMMM YYYY")
         stats = Stats(min_year, max_year, last_updated)
         release.save_stats(stats)
-
-    def copy_static_assets(self, release: OaWebRelease, **kwargs):
-        """Remove previously generated static assets from website and copy newly generated assets.
-
-        :return: None.
-        """
-
-        # Remove existing build folder
-        website_build_folder = os.path.join(self.website_folder, "static", "build")
-        if os.path.exists(website_build_folder):
-            shutil.rmtree(website_build_folder, ignore_errors=True)
-
-        # Copy generated files to new build folder
-        shutil.copytree(release.build_path, website_build_folder)
