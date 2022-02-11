@@ -418,16 +418,14 @@ def get_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: str,
     :param width: the width of the image.
     :param fmt: the image format.
     :param build_path: the build path for files of this workflow
-    :return: The ROR id and relative (from build path) path to the logo
+    :return: The ROR id and relative path (from build path) to the logo
     """
     logo_path = f"/unknown.svg"
 
     file_path = os.path.join(build_path, "logos", "institution", size, f"{ror_id}.{fmt}")
     if not os.path.isfile(file_path):
-        logging.info(f"Downloading logo from {url} using Clearbit")
         clearbit_download_logo(company_url=url, file_path=file_path, size=width, fmt=fmt)
     if os.path.isfile(file_path):
-        logging.info(f"Downloaded logo from {url}")
         logo_path = make_logo_url(category="institution", entity_id=ror_id, size=size, fmt=fmt)
 
     return ror_id, logo_path
@@ -436,22 +434,21 @@ def get_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: str,
 def get_wiki_description(titles: dict) -> List[tuple]:
     """Get the wikipedia descriptions for the given titles.
 
-    :param titles: Dict with titles as keys and id's (from index table) as values
+    :param titles: Dict with titles as keys and id's (from index table, ror_id or alpha3 country code) as values
     :return: List with (id, wiki description) tuples
     """
     descriptions = []
     titles_arg = []
-    for title, ror_id in titles.items():
-        ror_id = titles[title]
+    for title, entity_id in titles.items():
+        entity_id = titles[title]
         # Set description to NA for empty title
         if title == "":
-            descriptions.append((ror_id, "NA"))
+            descriptions.append((entity_id, "NA"))
         elif title == urllib.parse.unquote(title):
             titles_arg.append(urllib.parse.quote(title))
         else:
             titles_arg.append(title)
 
-    # Add &explaintext=1 for plaintext instead of html
     response = requests.get(
         f"https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts"
         f"&titles={'%7C'.join(titles_arg)}&redirects=1&exintro=1&explaintext=1"
@@ -472,8 +469,8 @@ def get_wiki_description(titles: dict) -> List[tuple]:
         # Get page_title from redirect if it is present
         page_title = redirects.get(page_title, page_title)
 
-        # Match ror_id and page_title
-        ror_id = alpha_titles[re.sub("[^A-Za-z]+", "", page_title)]
+        # Match entity_id and page_title
+        entity_id = alpha_titles[re.sub("[^A-Za-z]+", "", page_title)]
 
         # Get description
         try:
@@ -481,7 +478,7 @@ def get_wiki_description(titles: dict) -> List[tuple]:
         except KeyError:
             description = "Page not Available"
 
-        descriptions.append((ror_id, description))
+        descriptions.append((entity_id, description))
     return descriptions
 
 
@@ -861,7 +858,7 @@ class OaWebRelease(SnapshotRelease):
                     lambda country_code: make_logo_url(category=category, entity_id=country_code, size=size, fmt="svg")
                 )
         elif category == "institution":
-            logging.info("Downloading logos")
+            logging.info("Downloading logos using Clearbit")
             fmt = "jpg"
             # Get the institution logo and the path to the logo image
             for size, width in zip(sizes, [32, 128]):
@@ -889,6 +886,7 @@ class OaWebRelease(SnapshotRelease):
         :param df_index_table: the index table Pandas dataframe.
         :return: None.
         """
+        # Filter to select rows where url is not empty
         wikipedia_url_filter = df_index_table["wikipedia_url"] != ""
 
         # The wikipedia 'title' is the last part of the wikipedia url, without segments specified with '#'
@@ -902,11 +900,11 @@ class OaWebRelease(SnapshotRelease):
                 df_index_table.loc[wikipedia_url_filter, "id"],
             )
         )
-        # Create list with dictionaries of max 50 ids + titles (this is wiki api max)
+        # Create list with dictionaries of max 20 ids + titles (this is wiki api max)
         titles_chunks = [dict(titles_all[i : i + 20]) for i in range(0, len(titles_all), 20)]
 
         logging.info(
-            f"Downloading wikipedia descriptions for all {len(titles_all)} entities in {len(titles_chunks)} " f"chunks."
+            f"Downloading wikipedia descriptions for all {len(titles_all)} entities in {len(titles_chunks)} chunks."
         )
         # Process each dictionary in separate thread to get wiki descriptions
         with ThreadPoolExecutor() as executor:
