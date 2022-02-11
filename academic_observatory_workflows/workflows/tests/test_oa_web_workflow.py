@@ -27,17 +27,10 @@ import pandas as pd
 import pendulum
 import vcr
 from airflow.exceptions import AirflowException
+from airflow.models.connection import Connection
+from airflow.models.variable import Variable
 from airflow.utils.state import State
 from click.testing import CliRunner
-from observatory.platform.utils.file_utils import load_jsonl
-from observatory.platform.utils.test_utils import (
-    ObservatoryEnvironment,
-    ObservatoryTestCase,
-    Table,
-    bq_load_tables,
-    make_dummy_dag,
-    module_file_path,
-)
 
 import academic_observatory_workflows.workflows.oa_web_workflow
 from academic_observatory_workflows.config import schema_folder, test_fixtures_folder
@@ -55,15 +48,22 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     shorten_text_full_sentences,
     split_largest_remainder,
     val_empty,
+    trigger_repository_dispatch,
+)
+from observatory.platform.utils.file_utils import load_jsonl
+from observatory.platform.utils.test_utils import (
+    ObservatoryEnvironment,
+    ObservatoryTestCase,
+    Table,
+    bq_load_tables,
+    make_dummy_dag,
+    module_file_path,
 )
 
 academic_observatory_workflows.workflows.oa_web_workflow.INCLUSION_THRESHOLD = 0
 
 
 class TestFunctions(TestCase):
-    # def test_save_json(self):
-    #     self.fail()
-
     def test_val_empty(self):
         # Empty list
         self.assertTrue(val_empty([]))
@@ -104,12 +104,6 @@ class TestFunctions(TestCase):
         actual = clean_url(url)
         self.assertEqual(expected, actual)
 
-    # def test_save_as_jsonl(self):
-    #     self.fail()
-    #
-    # def test_jsonl_to_pyarrow(self):
-    #     self.fail()
-
     def test_make_logo_url(self):
         expected = "/logos/country/s/1234.jpg"
         actual = make_logo_url(category="country", entity_id="1234", size="s", fmt="jpg")
@@ -136,6 +130,11 @@ class TestFunctions(TestCase):
 
         total = n_outputs_publisher_open_only + n_outputs_both + n_outputs_other_platform_open_only + n_outputs_closed
         self.assertEqual(100, total)
+
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.post")
+    def test_trigger_repository_dispatch(self, mock_requests_post):
+        trigger_repository_dispatch(token="my-token", event_type="my-event-type")
+        mock_requests_post.called_once()
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.make_logo_url")
     def test_get_institution_logo(self, mock_make_url):
@@ -269,7 +268,9 @@ class TestOaWebRelease(TestCase):
 
     def setUp(self) -> None:
         dt_fmt = "YYYY-MM-DD"
-        self.release = OaWebRelease(dag_id="dag", project_id="project", release_date=pendulum.now())
+        self.release = OaWebRelease(
+            dag_id="dag", project_id="project", release_date=pendulum.now(), data_bucket_name="data-bucket-name"
+        )
         self.countries = [
             {
                 "id": "NZL",
@@ -916,7 +917,9 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "check_dependencies": ["query"],
                     "query": ["download"],
                     "download": ["transform"],
-                    "transform": ["cleanup"],
+                    "transform": ["upload_dataset"],
+                    "upload_dataset": ["repository_dispatch"],
+                    "repository_dispatch": ["cleanup"],
                     "cleanup": [],
                 },
                 dag,
@@ -951,7 +954,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 tables=tables, bucket_name=bucket_name, release_date=release_date, data_location=self.data_location
             )
 
-    def test_telescope(self):
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.trigger_repository_dispatch")
+    def test_telescope(self, mock_trigger_repository_dispatch):
         """Test the telescope end to end.
 
         :return: None.
@@ -960,7 +964,16 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         execution_date = pendulum.datetime(2021, 11, 13)
         env = ObservatoryEnvironment(project_id=self.project_id, data_location=self.data_location, enable_api=False)
         dataset_id = env.add_dataset("data")
+        data_bucket = env.add_bucket()
+        github_token = "github-token"
+
         with env.create() as t:
+            # Add data bucket variable
+            env.add_variable(Variable(key=OaWebWorkflow.DATA_BUCKET, val=data_bucket))
+
+            # Add Github token connection
+            env.add_connection(Connection(conn_id=OaWebWorkflow.GITHUB_TOKEN_CONN, uri=f"http://:{github_token}@"))
+
             # Run fake DOI workflow
             dag = make_dummy_dag("doi", execution_date)
             with env.create_dag_run(dag, execution_date):
@@ -1003,13 +1016,32 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 ti = env.run_task(workflow.transform.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
                 base_folder = os.path.join(
-                    t, "data", "telescopes", "transform", "oa_web_workflow", "oa_web_workflow_2021_11_13", "build"
+                    t, "data", "telescopes", "transform", "oa_web_workflow", "oa_web_workflow_2021_11_13"
                 )
-                expected_files = make_expected_build_files(base_folder)
+                build_folder = os.path.join(base_folder, "build")
+                expected_files = make_expected_build_files(build_folder)
                 print("Checking expected transformed files")
                 for file in expected_files:
                     print(f"\t{file}")
                     self.assertTrue(os.path.isfile(file))
+
+                # Check that zip file exists
+                latest_file = os.path.join(base_folder, "latest.zip")
+                print(f"\t{latest_file}")
+                self.assertTrue(os.path.isfile(latest_file))
+
+                # Upload data to bucket
+                ti = env.run_task(workflow.upload_dataset.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                blob_name = f"{workflow.version}/latest.zip"
+                self.assert_blob_exists(data_bucket, blob_name)
+
+                # Trigger repository dispatch
+                ti = env.run_task(workflow.repository_dispatch.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/develop")
+                mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/staging")
+                mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/production")
 
                 # Test that all telescope data deleted
                 download_folder, extract_folder, transform_folder = (
