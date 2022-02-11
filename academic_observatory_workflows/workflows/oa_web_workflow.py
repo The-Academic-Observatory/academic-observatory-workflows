@@ -28,7 +28,7 @@ from dataclasses import field
 from operator import itemgetter
 from typing import Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
-
+import logging
 import google.cloud.bigquery as bigquery
 import jsonlines
 import pandas as pd
@@ -39,7 +39,7 @@ import requests
 from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
 from airflow.sensors.external_task import ExternalTaskSensor
-from observatory.platform.utils.airflow_utils import AirflowVars, get_airflow_connection_password
+from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.config_utils import module_file_path
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import (
@@ -51,8 +51,10 @@ from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
 from observatory.platform.workflows.workflow import Workflow
 from pyarrow import json as pa_json
+import re
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
+import urllib.parse
 
 # The minimum number of outputs before including an entity in the analysis
 INCLUSION_THRESHOLD = 1000
@@ -422,8 +424,10 @@ def get_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: str,
 
     file_path = os.path.join(build_path, "logos", "institution", size, f"{ror_id}.{fmt}")
     if not os.path.isfile(file_path):
+        logging.info(f"Downloading logo from {url} using Clearbit")
         clearbit_download_logo(company_url=url, file_path=file_path, size=width, fmt=fmt)
     if os.path.isfile(file_path):
+        logging.info(f"Downloaded logo from {url}")
         logo_path = make_logo_url(category="institution", entity_id=ror_id, size=size, fmt=fmt)
 
     return ror_id, logo_path
@@ -435,31 +439,49 @@ def get_wiki_description(titles: dict) -> List[tuple]:
     :param titles: Dict with titles as keys and id's (from index table) as values
     :return: List with (id, wiki description) tuples
     """
+    descriptions = []
+    titles_arg = []
+    for title, ror_id in titles.items():
+        ror_id = titles[title]
+        # Set description to NA for empty title
+        if title == "":
+            descriptions.append((ror_id, "NA"))
+        elif title == urllib.parse.unquote(title):
+            titles_arg.append(urllib.parse.quote(title))
+        else:
+            titles_arg.append(title)
+
     # Add &explaintext=1 for plaintext instead of html
     response = requests.get(
         f"https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts"
-        f"&titles={'%7C'.join(list(titles.keys()))}&redirects=1&exintro=1"
+        f"&titles={'%7C'.join(titles_arg)}&redirects=1&exintro=1&explaintext=1"
     )
     if response.status_code != 200:
         raise AirflowException()
     response_json = response.json()
+    pages = response_json["query"]["pages"]
 
-    # Create mapping between normalized title and original title
-    normalized = {}
-    for title in response_json["query"].get("normalized"):
-        normalized[title["to"]] = title["from"]
+    # Create mapping between redirected page title and original page title
+    redirects = {}
+    for title in response_json["query"].get("redirects", []):
+        redirects[title["to"]] = title["from"]
 
-    # Get description and link to the entity_id from the index table
-    descriptions = []
-    for page in response_json["query"]["pages"].values():
-        description = page["extract"]
-        title = page["title"]
-        # Link original title to description
+    alpha_titles = {re.sub("[^A-Za-z]+", "", urllib.parse.unquote(k)): v for k, v in titles.items()}
+    for page_id, page in pages.items():
+        page_title = page["title"]
+        # Get page_title from redirect if it is present
+        page_title = redirects.get(page_title, page_title)
+
+        # Match ror_id and page_title
+        ror_id = alpha_titles[re.sub("[^A-Za-z]+", "", page_title)]
+
+        # Get description
         try:
-            entity_id = titles[title]
+            description = page["extract"]
         except KeyError:
-            entity_id = titles[normalized[title]]
-        descriptions.append((entity_id, description))
+            description = "Page not Available"
+
+        descriptions.append((ror_id, description))
     return descriptions
 
 
@@ -820,6 +842,7 @@ class OaWebRelease(SnapshotRelease):
 
         # Make logos
         if category == "country":
+            logging.info("Copying local logos")
             with ThreadPoolExecutor() as executor:
                 futures = []
                 # Copy and rename logo images from using alpha2 to alpha3 country codes
@@ -830,6 +853,7 @@ class OaWebRelease(SnapshotRelease):
                         dst_path = os.path.join(base_path, f"{alpha3}.svg")
                         futures.append(executor.submit(shutil.copy, src_path, dst_path))
                 [f.result() for f in as_completed(futures)]
+            logging.info("Finished copying local logos")
 
             # Add logo urls to index
             for size in sizes:
@@ -837,6 +861,7 @@ class OaWebRelease(SnapshotRelease):
                     lambda country_code: make_logo_url(category=category, entity_id=country_code, size=size, fmt="svg")
                 )
         elif category == "institution":
+            logging.info("Downloading logos")
             fmt = "jpg"
             # Get the institution logo and the path to the logo image
             for size, width in zip(sizes, [32, 128]):
@@ -849,6 +874,7 @@ class OaWebRelease(SnapshotRelease):
                                 executor.submit(get_institution_logo, ror_id, url, size, width, fmt, self.build_path)
                             )
                     logo_paths = [f.result() for f in as_completed(futures)]
+                logging.info("Finished downloading logos")
 
                 # Sort table and results by id
                 df_index_table.sort_index(inplace=True)
@@ -863,11 +889,25 @@ class OaWebRelease(SnapshotRelease):
         :param df_index_table: the index table Pandas dataframe.
         :return: None.
         """
-        # Create list with dictionaries of max 50 ids + titles (this is wiki api max)
-        # The wikipedia 'title' is the last part of the wikipedia url
-        titles_all = list(zip(df_index_table["wikipedia_url"].str.split("/").str[-1], df_index_table["id"]))
-        titles_chunks = [dict(titles_all[i : i + 50]) for i in range(0, len(titles_all), 50)]
+        wikipedia_url_filter = df_index_table["wikipedia_url"] != ""
 
+        # The wikipedia 'title' is the last part of the wikipedia url, without segments specified with '#'
+        titles_all = list(
+            zip(
+                df_index_table.loc[wikipedia_url_filter, "wikipedia_url"]
+                .str.split("wikipedia.org/wiki/")
+                .str[-1]
+                .str.split("#")
+                .str[0],
+                df_index_table.loc[wikipedia_url_filter, "id"],
+            )
+        )
+        # Create list with dictionaries of max 50 ids + titles (this is wiki api max)
+        titles_chunks = [dict(titles_all[i : i + 20]) for i in range(0, len(titles_all), 20)]
+
+        logging.info(
+            f"Downloading wikipedia descriptions for all {len(titles_all)} entities in {len(titles_chunks)} " f"chunks."
+        )
         # Process each dictionary in separate thread to get wiki descriptions
         with ThreadPoolExecutor() as executor:
             futures = []
@@ -876,13 +916,15 @@ class OaWebRelease(SnapshotRelease):
             descriptions = []
             for f in as_completed(futures):
                 descriptions += f.result()
+        logging.info(f"Finished downloading wikipedia descriptions")
 
         # Sort table and results by id
         df_index_table.sort_index(inplace=True)
         descriptions_sorted = [tup[1] for tup in sorted(descriptions, key=lambda tup: tup[0])]
 
         # Add wiki descriptions to table
-        df_index_table["description"] = descriptions_sorted
+        df_index_table.loc[wikipedia_url_filter, "description"] = descriptions_sorted
+        df_index_table.loc[~wikipedia_url_filter, "description"] = ""
 
     def save_index(self, category: str, df_index_table: pd.DataFrame):
         """Save the index table.
@@ -1050,7 +1092,7 @@ class OaWebRelease(SnapshotRelease):
 
 
 class OaWebWorkflow(Workflow):
-    """ The OaWebWorkflow generates data files for the COKI Open Access Dashboard.
+    """The OaWebWorkflow generates data files for the COKI Open Access Dashboard.
 
     The figure below illustrates the generated data and notes about what each file is used for.
     .
@@ -1153,6 +1195,7 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.query)
         self.add_task(self.download)
         self.add_task(self.transform)
+        self.add_task(self.cleanup)
 
     def make_release(self, **kwargs) -> OaWebRelease:
         """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is
@@ -1184,8 +1227,18 @@ class OaWebWorkflow(Workflow):
         passed to this argument.
         :return: None.
         """
-
         results = []
+
+        # ROR release date
+        ror_table_id = "ror"
+        ror_release_date = select_table_shard_dates(
+            project_id=release.project_id,
+            dataset_id=release.ror_dataset_id,
+            table_id=ror_table_id,
+            end_date=release.release_date,
+        )[0]
+        ror_sharded_table_id = bigquery_sharded_table_id(ror_table_id, ror_release_date)
+
         for agg_table_id in self.table_ids:
             # Aggregate release dates
             agg_release_date = select_table_shard_dates(
@@ -1195,16 +1248,6 @@ class OaWebWorkflow(Workflow):
                 end_date=release.release_date,
             )[0]
             agg_sharded_table_id = bigquery_sharded_table_id(agg_table_id, agg_release_date)
-
-            # ROR release date
-            ror_table_id = "ror"
-            ror_release_date = select_table_shard_dates(
-                project_id=release.project_id,
-                dataset_id=release.ror_dataset_id,
-                table_id=ror_table_id,
-                end_date=release.release_date,
-            )[0]
-            ror_sharded_table_id = bigquery_sharded_table_id(ror_table_id, ror_release_date)
 
             # Fetch data
             destination_uri = f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{agg_table_id}.jsonl"
@@ -1234,7 +1277,6 @@ class OaWebWorkflow(Workflow):
         passed to this argument.
         :return: None.
         """
-
         prefix = f"{self.dag_id}/{release.release_id}"
         state = download_blobs_from_cloud_storage(
             bucket_name=release.download_bucket, prefix=prefix, destination_path=release.download_folder
@@ -1255,6 +1297,7 @@ class OaWebWorkflow(Workflow):
         # Make required folders
         auto_complete = []
         for category in self.table_ids:
+            logging.info(f"Transforming {category} entity")
             # Load data
             df = release.load_data(category)
 
@@ -1273,9 +1316,11 @@ class OaWebWorkflow(Workflow):
             # Save category data
             release.save_index(category, df_index_table)
             release.save_entities(category, entities)
+            logging.info(f"Saved transformed {category} entity")
 
         # Save auto complete data as json
         release.save_autocomplete(auto_complete)
+        logging.info(f"Saved autocomplete data")
 
         # Save stats as json
         min_year = 2000
@@ -1283,3 +1328,7 @@ class OaWebWorkflow(Workflow):
         last_updated = pendulum.now().format("D MMMM YYYY")
         stats = Stats(min_year, max_year, last_updated)
         release.save_stats(stats)
+        logging.info(f"Saved stats data")
+
+    def cleanup(self, release: OaWebRelease, **kwargs):
+        release.cleanup()
