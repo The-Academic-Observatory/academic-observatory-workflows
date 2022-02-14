@@ -413,6 +413,7 @@ class TestOrcidTelescope(ObservatoryTestCase):
     @patch("academic_observatory_workflows.workflows.orcid_telescope.get_aws_conn_info")
     @patch("academic_observatory_workflows.workflows.orcid_telescope.write_modified_record_blobs")
     @patch("academic_observatory_workflows.workflows.orcid_telescope.Variable.get")
+    @patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "credentials.json"}, clear=True)
     def test_download_transferred(self, mock_variable_get, mock_write_blobs, mock_aws_info, mock_subprocess):
         """Test the download_transferred method of the ORCID release.
 
@@ -438,10 +439,11 @@ class TestOrcidTelescope(ObservatoryTestCase):
                 "gcloud",
                 "auth",
                 "activate-service-account",
-                f'--key-file={os.environ["GOOGLE_APPLICATION_CREDENTIALS"]}',
+                f"--key-file=credentials.json",
             ],
             stdout=-1,
             stderr=-1,
+            env=dict({"GOOGLE_APPLICATION_CREDENTIALS": "credentials.json"}, CLOUDSDK_PYTHON="python3"),
         )
         mock_subprocess.assert_called_with(
             [
@@ -480,10 +482,11 @@ class TestOrcidTelescope(ObservatoryTestCase):
                     "gcloud",
                     "auth",
                     "activate-service-account",
-                    f'--key-file={os.environ["GOOGLE_APPLICATION_CREDENTIALS"]}',
+                    f"--key-file=credentials.json",
                 ],
                 stdout=-1,
                 stderr=-1,
+                env=dict({"GOOGLE_APPLICATION_CREDENTIALS": "credentials.json"}, CLOUDSDK_PYTHON="python3"),
             )
             mock_subprocess.assert_called_with(
                 [
