@@ -772,7 +772,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "check_dependencies": ["query"],
                     "query": ["download"],
                     "download": ["transform"],
-                    "transform": []
+                    "transform": ["cleanup"],
+                    "cleanup": [],
                 },
                 dag,
             )
