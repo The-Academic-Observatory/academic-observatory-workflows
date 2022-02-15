@@ -148,7 +148,10 @@ class OrcidRelease(StreamRelease):
             "activate-service-account",
             f"--key-file" f"={os.environ['GOOGLE_APPLICATION_CREDENTIALS']}",
         ]
-        proc: Popen = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Set env variable to fix gcloud error, see https://issuetracker.google.com/issues/217589135
+        proc: Popen = subprocess.Popen(
+            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=dict(os.environ, CLOUDSDK_PYTHON="python3")
+        )
         run_subprocess_cmd(proc, args)
 
         logging.info(f"Downloading transferred files from Google Cloud bucket: {gc_download_bucket}")
