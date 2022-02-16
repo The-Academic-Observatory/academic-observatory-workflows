@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: James Diprose
+# Author: James Diprose, Aniek Roelofs
 
 from __future__ import annotations
 
@@ -34,6 +34,7 @@ from urllib.parse import urlparse
 
 import google.cloud.bigquery as bigquery
 import jsonlines
+import nltk
 import pandas as pd
 import pendulum
 import pyarrow as pa
@@ -439,15 +440,10 @@ def get_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
     :param titles: Dict with titles as keys and id's (either ror_id or alpha3 country code) as values
     :return: List with tuples (id, wiki description)
     """
-    descriptions = []
     titles_arg = []
     for title, entity_id in titles.items():
-        entity_id = titles[title]
-        # Set description to NA for empty title
-        if title == "":
-            descriptions.append((entity_id, ""))
         # URL encode title if it is not encoded yet
-        elif title == urllib.parse.unquote(title):
+        if title == urllib.parse.unquote(title):
             titles_arg.append(urllib.parse.quote(title))
         # Append title directly if it is already encoded and not empty
         else:
@@ -471,6 +467,7 @@ def get_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
 
     # Create mapping between entity_id and decoded, alpha-only page title.
     alpha_titles = {re.sub("[^A-Za-z]+", "", urllib.parse.unquote(k)): v for k, v in titles.items()}
+    descriptions = []
     for page_id, page in pages.items():
         page_title = page["title"]
         # Get page_title from redirect if it is present
@@ -479,20 +476,43 @@ def get_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
         # Match entity_id and page_title
         entity_id = alpha_titles[re.sub("[^A-Za-z]+", "", page_title)]
 
-        # Get description and clean
+        # Get description and clean up
         description = page.get("extract", "")
         if description:
-            description = clean_wiki_description(description)
+            description = remove_text_between_brackets(description)
+            description = shorten_text_full_sentences(description)
 
         descriptions.append((entity_id, description))
     return descriptions
 
 
-def clean_wiki_description(description: str) -> str:
-    # Remove text within brackets
+def remove_text_between_brackets(text: str) -> str:
+    new_text = ""
+    nested = 0
+    for char in text:
+        if char == "(":
+            nested += 1
+            new_text = new_text.rstrip(" ")
+        elif (char == ")") and nested:
+            nested -= 1
+        elif nested == 0:
+            new_text += char
+    return new_text
 
-    # Shorten text
-    return description
+
+def shorten_text_full_sentences(text: str, *, char_limit: int = 500) -> str:
+    # Create list of sentences
+    sentences = nltk.tokenize.sent_tokenize(text)
+
+    # Add sentences until char limit is reached
+    short_text = ""
+    total_len = 0
+    for sentence in sentences:
+        total_len += len(sentence)
+        if total_len > char_limit:
+            return short_text
+        short_text += sentence + " "
+    return short_text
 
 
 def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, location: str = "us") -> bool:
@@ -875,23 +895,24 @@ class OaWebRelease(SnapshotRelease):
             fmt = "jpg"
             # Get the institution logo and the path to the logo image
             for size, width in zip(sizes, [32, 128]):
-                with ThreadPoolExecutor() as executor:
-                    futures = []
-                    for ror_id, url in zip(df_index_table["id"], df_index_table["url"]):
-                        url = clean_url(url)
-                        if url:
-                            futures.append(
-                                executor.submit(get_institution_logo, ror_id, url, size, width, fmt, self.build_path)
-                            )
-                    logo_paths = [f.result() for f in as_completed(futures)]
-                logging.info("Finished downloading logos")
-
-                # Sort table and results by id
-                df_index_table.sort_index(inplace=True)
-                logo_paths_sorted = [tup[1] for tup in sorted(logo_paths, key=lambda tup: tup[0])]
-
-                # Add logo paths to table
-                df_index_table[f"logo_{size}"] = logo_paths_sorted
+                # with ThreadPoolExecutor() as executor:
+                #     futures = []
+                #     for ror_id, url in zip(df_index_table["id"], df_index_table["url"]):
+                #         url = clean_url(url)
+                #         if url:
+                #             futures.append(
+                #                 executor.submit(get_institution_logo, ror_id, url, size, width, fmt, self.build_path)
+                #             )
+                #     logo_paths = [f.result() for f in as_completed(futures)]
+                # logging.info("Finished downloading logos")
+                #
+                # # Sort table and results by id
+                # df_index_table.sort_index(inplace=True)
+                # logo_paths_sorted = [tup[1] for tup in sorted(logo_paths, key=lambda tup: tup[0])]
+                #
+                # # Add logo paths to table
+                # df_index_table[f"logo_{size}"] = logo_paths_sorted
+                df_index_table[f"logo_{size}"] = "test"
 
     def update_index_with_wiki_descriptions(self, df_index_table: pd.DataFrame):
         """Get the wikipedia descriptions for each entity (institution or country) and add them to the index table.
@@ -922,6 +943,9 @@ class OaWebRelease(SnapshotRelease):
         logging.info(
             f"Downloading wikipedia descriptions for all {len(titles_all)} entities in {len(titles_chunks)} chunks."
         )
+        # Download 'punkt' resource, required when getting wiki descriptions
+        nltk.download("punkt")
+
         # Process each dictionary in separate thread to get wiki descriptions
         with ThreadPoolExecutor() as executor:
             futures = []
