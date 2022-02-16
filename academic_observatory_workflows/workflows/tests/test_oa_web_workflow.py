@@ -22,6 +22,7 @@ from unittest.mock import patch
 
 import httpretty
 import jsonlines
+import nltk
 import pandas as pd
 import pendulum
 import vcr
@@ -202,6 +203,9 @@ class TestFunctions(TestCase):
         }
 
         for entity in [country, institution]:
+            # Download required nltk resource
+            nltk.download("punkt")
+
             # Set up titles arg and expected descriptions
             with open(entity["descriptions_file_path"], "r") as f:
                 descriptions_info = json.load(f)

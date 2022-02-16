@@ -895,24 +895,23 @@ class OaWebRelease(SnapshotRelease):
             fmt = "jpg"
             # Get the institution logo and the path to the logo image
             for size, width in zip(sizes, [32, 128]):
-                # with ThreadPoolExecutor() as executor:
-                #     futures = []
-                #     for ror_id, url in zip(df_index_table["id"], df_index_table["url"]):
-                #         url = clean_url(url)
-                #         if url:
-                #             futures.append(
-                #                 executor.submit(get_institution_logo, ror_id, url, size, width, fmt, self.build_path)
-                #             )
-                #     logo_paths = [f.result() for f in as_completed(futures)]
-                # logging.info("Finished downloading logos")
-                #
-                # # Sort table and results by id
-                # df_index_table.sort_index(inplace=True)
-                # logo_paths_sorted = [tup[1] for tup in sorted(logo_paths, key=lambda tup: tup[0])]
-                #
-                # # Add logo paths to table
-                # df_index_table[f"logo_{size}"] = logo_paths_sorted
-                df_index_table[f"logo_{size}"] = "test"
+                with ThreadPoolExecutor() as executor:
+                    futures = []
+                    for ror_id, url in zip(df_index_table["id"], df_index_table["url"]):
+                        url = clean_url(url)
+                        if url:
+                            futures.append(
+                                executor.submit(get_institution_logo, ror_id, url, size, width, fmt, self.build_path)
+                            )
+                    logo_paths = [f.result() for f in as_completed(futures)]
+                logging.info("Finished downloading logos")
+
+                # Sort table and results by id
+                df_index_table.sort_index(inplace=True)
+                logo_paths_sorted = [tup[1] for tup in sorted(logo_paths, key=lambda tup: tup[0])]
+
+                # Add logo paths to table
+                df_index_table[f"logo_{size}"] = logo_paths_sorted
 
     def update_index_with_wiki_descriptions(self, df_index_table: pd.DataFrame):
         """Get the wikipedia descriptions for each entity (institution or country) and add them to the index table.
