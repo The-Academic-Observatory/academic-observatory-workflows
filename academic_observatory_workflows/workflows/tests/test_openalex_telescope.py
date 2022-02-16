@@ -166,174 +166,303 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             )
             env.add_connection(conn)
 
-            release = None  # prevent linting error when using release variable in second run
-            for run in [self.first_run, self.second_run]:
-                with self.subTest(run=run):
-                    with env.create_dag_run(dag, run["execution_date"]) as dag_run:
-                        # Test that all dependencies are specified: no error should be thrown
-                        env.run_task(telescope.check_dependencies.__name__)
-                        start_date, end_date, first_release = telescope.get_release_info(
-                            next_execution_date=pendulum.today("UTC"),
-                            dag=dag,
-                            dag_run=dag_run,
-                        )
-                        if run == self.first_run:
-                            self.assertEqual(dag.default_args["start_date"], start_date)
-                            self.assertEqual(pendulum.today("UTC") - timedelta(days=1), end_date)
-                            self.assertTrue(first_release)
-                        else:
-                            self.assertEqual(release.end_date + timedelta(days=1), start_date)
-                            self.assertEqual(pendulum.today("UTC") - timedelta(days=1), end_date)
-                            self.assertFalse(first_release)
+            run = self.first_run
+            with env.create_dag_run(dag, run["execution_date"]) as dag_run:
+                # Test that all dependencies are specified: no error should be thrown
+                env.run_task(telescope.check_dependencies.__name__)
+                start_date, end_date, first_release = telescope.get_release_info(
+                    next_execution_date=pendulum.today("UTC"),
+                    dag=dag,
+                    dag_run=dag_run,
+                )
+                self.assertEqual(dag.default_args["start_date"], start_date)
+                self.assertEqual(pendulum.today("UTC") - timedelta(days=1), end_date)
+                self.assertTrue(first_release)
 
-                        # Use release info for other tasks
-                        release = OpenAlexRelease(
-                            telescope.dag_id,
-                            start_date,
-                            end_date,
-                            first_release,
-                            max_processes=1,
-                        )
+                # Use release info for other tasks
+                release = OpenAlexRelease(
+                    telescope.dag_id,
+                    start_date,
+                    end_date,
+                    first_release,
+                    max_processes=1,
+                )
 
-                        # Mock response of get_object on last_modified file, mocking lambda file
-                        side_effect = []
-                        for entity in self.entities:
-                            manifest_content = render_template(
-                                self.manifest_obj_path, entity=entity, date=run["manifest_date"]
-                            ).encode()
-                            side_effect.append(
-                                {"Body": StreamingBody(io.BytesIO(manifest_content), len(manifest_content))}
-                            )
-                        mock_client().get_object.side_effect = side_effect
+                # Mock response of get_object on last_modified file, mocking lambda file
+                side_effect = []
+                for entity in self.entities:
+                    manifest_content = render_template(
+                        self.manifest_obj_path, entity=entity, date=run["manifest_date"]
+                    ).encode()
+                    side_effect.append({"Body": StreamingBody(io.BytesIO(manifest_content), len(manifest_content))})
+                mock_client().get_object.side_effect = side_effect
 
-                        # Test write transfer manifest task
-                        env.run_task(telescope.write_transfer_manifest.__name__)
-                        self.assert_file_integrity(
-                            release.transfer_manifest_path_download, run["manifest_download_hash"], "md5"
-                        )
-                        self.assert_file_integrity(
-                            release.transfer_manifest_path_transform, run["manifest_transform_hash"], "md5"
-                        )
+                # Test write transfer manifest task
+                env.run_task(telescope.write_transfer_manifest.__name__)
+                self.assert_file_integrity(
+                    release.transfer_manifest_path_download, run["manifest_download_hash"], "md5"
+                )
+                self.assert_file_integrity(
+                    release.transfer_manifest_path_transform, run["manifest_transform_hash"], "md5"
+                )
 
-                        # Test transfer task
-                        mock_transfer.reset_mock()
-                        mock_transfer.return_value = True, 2
-                        env.run_task(telescope.transfer.__name__)
-                        self.assertEqual(2, mock_transfer.call_count)
-                        try:
-                            self.assertTupleEqual(mock_transfer.call_args_list[0][0], (conn.login, conn.password))
-                            self.assertTupleEqual(mock_transfer.call_args_list[1][0], (conn.login, conn.password))
-                        except AssertionError:
-                            raise AssertionError("AWS key id and secret not passed correctly to transfer function")
-                        self.assertDictEqual(
-                            mock_transfer.call_args_list[0][1],
-                            {
-                                "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                                "include_prefixes": [
-                                    f"data/concepts/updated_date={run['manifest_date']}/0000_part_00.gz",
-                                    f"data/institutions/updated_date={run['manifest_date']}/0000_part_00.gz",
-                                    f"data/works/updated_date={run['manifest_date']}/0000_part_00.gz",
-                                ],
-                                "gc_project_id": self.project_id,
-                                "gc_bucket": release.download_bucket,
-                                "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/",
-                                "description": f"Transfer OpenAlex data from Airflow telescope to {release.download_bucket}",
-                            },
-                        )
-                        self.assertDictEqual(
-                            mock_transfer.call_args_list[1][1],
-                            {
-                                "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                                "include_prefixes": [
-                                    f"data/authors/updated_date={run['manifest_date']}/0000_part_00.gz",
-                                    f"data/venues/updated_date={run['manifest_date']}/0000_part_00.gz",
-                                ],
-                                "gc_project_id": self.project_id,
-                                "gc_bucket": release.transform_bucket,
-                                "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/",
-                                "description": f"Transfer OpenAlex data from Airflow telescope to {release.transform_bucket}",
-                            },
-                        )
+                # Test transfer task
+                mock_transfer.reset_mock()
+                mock_transfer.return_value = True, 2
+                env.run_task(telescope.transfer.__name__)
+                self.assertEqual(2, mock_transfer.call_count)
+                try:
+                    self.assertTupleEqual(mock_transfer.call_args_list[0][0], (conn.login, conn.password))
+                    self.assertTupleEqual(mock_transfer.call_args_list[1][0], (conn.login, conn.password))
+                except AssertionError:
+                    raise AssertionError("AWS key id and secret not passed correctly to transfer function")
+                self.assertDictEqual(
+                    mock_transfer.call_args_list[0][1],
+                    {
+                        "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
+                        "include_prefixes": [
+                            f"data/concepts/updated_date={run['manifest_date']}/0000_part_00.gz",
+                            f"data/institutions/updated_date={run['manifest_date']}/0000_part_00.gz",
+                            f"data/works/updated_date={run['manifest_date']}/0000_part_00.gz",
+                        ],
+                        "gc_project_id": self.project_id,
+                        "gc_bucket": release.download_bucket,
+                        "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/",
+                        "description": f"Transfer OpenAlex data from Airflow telescope to {release.download_bucket}",
+                    },
+                )
+                self.assertDictEqual(
+                    mock_transfer.call_args_list[1][1],
+                    {
+                        "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
+                        "include_prefixes": [
+                            f"data/authors/updated_date={run['manifest_date']}/0000_part_00.gz",
+                            f"data/venues/updated_date={run['manifest_date']}/0000_part_00.gz",
+                        ],
+                        "gc_project_id": self.project_id,
+                        "gc_bucket": release.transform_bucket,
+                        "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/",
+                        "description": f"Transfer OpenAlex data from Airflow telescope to {release.transform_bucket}",
+                    },
+                )
 
-                        # Upload files to bucket, to mock transfer
-                        for entity, info in self.entities.items():
-                            blob = f"telescopes/{release.dag_id}/{release.release_id}/data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
-                            gzip_path = f"{entity}.jsonl.gz"
-                            with open(info["download_path"], "rb") as f_in, gzip.open(gzip_path, "wb") as f_out:
-                                f_out.writelines(f_in)
+                # Upload files to bucket, to mock transfer
+                for entity, info in self.entities.items():
+                    blob = f"telescopes/{release.dag_id}/{release.release_id}/data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                    gzip_path = f"{entity}.jsonl.gz"
+                    with open(info["download_path"], "rb") as f_in, gzip.open(gzip_path, "wb") as f_out:
+                        f_out.writelines(f_in)
 
-                            upload_file_to_cloud_storage(getattr(release, info["bucket"]), blob, gzip_path)
+                    upload_file_to_cloud_storage(getattr(release, info["bucket"]), blob, gzip_path)
 
-                        # Test that file was downloaded
-                        env.run_task(telescope.download_transferred.__name__)
-                        self.assertEqual(3, len(release.download_files))
-                        for file in release.download_files:
-                            entity = file.split("/")[-3]
-                            self.assert_file_integrity(file, self.entities[entity]["download_hash"], "gzip_crc")
+                # Test that file was downloaded
+                env.run_task(telescope.download_transferred.__name__)
+                self.assertEqual(3, len(release.download_files))
+                for file in release.download_files:
+                    entity = file.split("/")[-3]
+                    self.assert_file_integrity(file, self.entities[entity]["download_hash"], "gzip_crc")
 
-                        # Test that files transformed
-                        env.run_task(telescope.transform.__name__)
-                        self.assertEqual(3, len(release.transform_files))
-                        # Sort lines so that gzip crc is always the same
-                        for file in release.transform_files:
-                            entity = file.split("/")[-3]
-                            with gzip.open(file, "rb") as f_in:
-                                lines = sorted(f_in.readlines())
-                            with gzip.open(file, "wb") as f_out:
-                                f_out.writelines(lines)
-                            self.assert_file_integrity(file, self.entities[entity]["transform_hash"], "gzip_crc")
+                # Test that files transformed
+                env.run_task(telescope.transform.__name__)
+                self.assertEqual(3, len(release.transform_files))
+                # Sort lines so that gzip crc is always the same
+                for file in release.transform_files:
+                    entity = file.split("/")[-3]
+                    with gzip.open(file, "rb") as f_in:
+                        lines = sorted(f_in.readlines())
+                    with gzip.open(file, "wb") as f_out:
+                        f_out.writelines(lines)
+                    self.assert_file_integrity(file, self.entities[entity]["transform_hash"], "gzip_crc")
 
-                        # Test that transformed files uploaded
-                        env.run_task(telescope.upload_transformed.__name__)
-                        for entity, info in self.entities.items():
-                            if entity in ["concepts", "institutions", "works"]:
-                                file = [file for file in release.transform_files if entity in file][0]
-                            else:
-                                file = f"{entity}.jsonl.gz"
-                            blob = f"telescopes/{release.dag_id}/{release.release_id}/data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
-                            self.assert_blob_integrity(env.transform_bucket, blob, file)
+                # Test that transformed files uploaded
+                env.run_task(telescope.upload_transformed.__name__)
+                for entity, info in self.entities.items():
+                    if entity in ["concepts", "institutions", "works"]:
+                        file = [file for file in release.transform_files if entity in file][0]
+                    else:
+                        file = f"{entity}.jsonl.gz"
+                    blob = f"telescopes/{release.dag_id}/{release.release_id}/data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                    self.assert_blob_integrity(env.transform_bucket, blob, file)
 
-                        # Get bq load info for BQ tasks
-                        bq_load_info = telescope.get_bq_load_info(release)
+                # Get bq load info for BQ tasks
+                bq_load_info = telescope.get_bq_load_info(release)
 
-                        ti = env.run_task(telescope.bq_load_partition.__name__)
-                        if run == self.first_run:
-                            # Test that load partition task is skipped for the first release
-                            self.assertEqual(ti.state, "skipped")
-                        else:
-                            # Test that partition is loaded
-                            for _, _, partition_table_id in bq_load_info:
-                                table_id = f"{self.project_id}.{telescope.dataset_id}.{partition_table_id}"
-                                expected_bytes = self.table_bytes[partition_table_id]
-                                self.assert_table_bytes(table_id, expected_bytes)
+                # Test that load partition task is skipped for the first release
+                ti = env.run_task(telescope.bq_load_partition.__name__)
+                self.assertEqual(ti.state, "skipped")
 
-                        with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
-                            ti = env.run_task(telescope.bq_delete_old.__name__)
-                        if run == self.first_run:
-                            # Test delete old task is skipped for the first release
-                            self.assertEqual(ti.state, "skipped")
-                        else:
-                            # Test that partition is deleted from main table
-                            for _, main_table_id, _ in bq_load_info:
-                                table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
-                                expected_bytes = 0
-                                self.assert_table_bytes(table_id, expected_bytes)
+                # Test delete old task is skipped for the first release
+                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                    ti = env.run_task(telescope.bq_delete_old.__name__)
+                self.assertEqual(ti.state, "skipped")
 
-                        # Test append new creates table
-                        env.run_task(telescope.bq_append_new.__name__)
-                        for _, main_table_id, _ in bq_load_info:
-                            table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
-                            expected_bytes = self.table_bytes[main_table_id]
-                            self.assert_table_bytes(table_id, expected_bytes)
+                # Test append new creates table
+                env.run_task(telescope.bq_append_new.__name__)
+                for _, main_table_id, _ in bq_load_info:
+                    table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
+                    expected_bytes = self.table_bytes[main_table_id]
+                    self.assert_table_bytes(table_id, expected_bytes)
 
-                        # Test that all telescope data deleted
-                        download_folder, extract_folder, transform_folder = (
-                            release.download_folder,
-                            release.extract_folder,
-                            release.transform_folder,
-                        )
-                        env.run_task(telescope.cleanup.__name__)
-                        self.assert_cleanup(download_folder, extract_folder, transform_folder)
+                # Test that all telescope data deleted
+                download_folder, extract_folder, transform_folder = (
+                    release.download_folder,
+                    release.extract_folder,
+                    release.transform_folder,
+                )
+                env.run_task(telescope.cleanup.__name__)
+                self.assert_cleanup(download_folder, extract_folder, transform_folder)
+
+            run = self.second_run
+            with env.create_dag_run(dag, run["execution_date"]) as dag_run:
+                # Test that all dependencies are specified: no error should be thrown
+                env.run_task(telescope.check_dependencies.__name__)
+                start_date, end_date, first_release = telescope.get_release_info(
+                    next_execution_date=pendulum.today("UTC"),
+                    dag=dag,
+                    dag_run=dag_run,
+                )
+                self.assertEqual(release.end_date + timedelta(days=1), start_date)
+                self.assertEqual(pendulum.today("UTC") - timedelta(days=1), end_date)
+                self.assertFalse(first_release)
+
+                # Use release info for other tasks
+                release = OpenAlexRelease(
+                    telescope.dag_id,
+                    start_date,
+                    end_date,
+                    first_release,
+                    max_processes=1,
+                )
+
+                # Mock response of get_object on last_modified file, mocking lambda file
+                side_effect = []
+                for entity in self.entities:
+                    manifest_content = render_template(
+                        self.manifest_obj_path, entity=entity, date=run["manifest_date"]
+                    ).encode()
+                    side_effect.append({"Body": StreamingBody(io.BytesIO(manifest_content), len(manifest_content))})
+                mock_client().get_object.side_effect = side_effect
+
+                # Test write transfer manifest task
+                env.run_task(telescope.write_transfer_manifest.__name__)
+                self.assert_file_integrity(
+                    release.transfer_manifest_path_download, run["manifest_download_hash"], "md5"
+                )
+                self.assert_file_integrity(
+                    release.transfer_manifest_path_transform, run["manifest_transform_hash"], "md5"
+                )
+
+                # Test transfer task
+                mock_transfer.reset_mock()
+                mock_transfer.return_value = True, 2
+                env.run_task(telescope.transfer.__name__)
+                self.assertEqual(2, mock_transfer.call_count)
+                try:
+                    self.assertTupleEqual(mock_transfer.call_args_list[0][0], (conn.login, conn.password))
+                    self.assertTupleEqual(mock_transfer.call_args_list[1][0], (conn.login, conn.password))
+                except AssertionError:
+                    raise AssertionError("AWS key id and secret not passed correctly to transfer function")
+                self.assertDictEqual(
+                    mock_transfer.call_args_list[0][1],
+                    {
+                        "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
+                        "include_prefixes": [
+                            f"data/concepts/updated_date={run['manifest_date']}/0000_part_00.gz",
+                            f"data/institutions/updated_date={run['manifest_date']}/0000_part_00.gz",
+                            f"data/works/updated_date={run['manifest_date']}/0000_part_00.gz",
+                        ],
+                        "gc_project_id": self.project_id,
+                        "gc_bucket": release.download_bucket,
+                        "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/",
+                        "description": f"Transfer OpenAlex data from Airflow telescope to {release.download_bucket}",
+                    },
+                )
+                self.assertDictEqual(
+                    mock_transfer.call_args_list[1][1],
+                    {
+                        "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
+                        "include_prefixes": [
+                            f"data/authors/updated_date={run['manifest_date']}/0000_part_00.gz",
+                            f"data/venues/updated_date={run['manifest_date']}/0000_part_00.gz",
+                        ],
+                        "gc_project_id": self.project_id,
+                        "gc_bucket": release.transform_bucket,
+                        "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/",
+                        "description": f"Transfer OpenAlex data from Airflow telescope to {release.transform_bucket}",
+                    },
+                )
+
+                # Upload files to bucket, to mock transfer
+                for entity, info in self.entities.items():
+                    blob = f"telescopes/{release.dag_id}/{release.release_id}/data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                    gzip_path = f"{entity}.jsonl.gz"
+                    with open(info["download_path"], "rb") as f_in, gzip.open(gzip_path, "wb") as f_out:
+                        f_out.writelines(f_in)
+
+                    upload_file_to_cloud_storage(getattr(release, info["bucket"]), blob, gzip_path)
+
+                # Test that file was downloaded
+                env.run_task(telescope.download_transferred.__name__)
+                self.assertEqual(3, len(release.download_files))
+                for file in release.download_files:
+                    entity = file.split("/")[-3]
+                    self.assert_file_integrity(file, self.entities[entity]["download_hash"], "gzip_crc")
+
+                # Test that files transformed
+                env.run_task(telescope.transform.__name__)
+                self.assertEqual(3, len(release.transform_files))
+                # Sort lines so that gzip crc is always the same
+                for file in release.transform_files:
+                    entity = file.split("/")[-3]
+                    with gzip.open(file, "rb") as f_in:
+                        lines = sorted(f_in.readlines())
+                    with gzip.open(file, "wb") as f_out:
+                        f_out.writelines(lines)
+                    self.assert_file_integrity(file, self.entities[entity]["transform_hash"], "gzip_crc")
+
+                # Test that transformed files uploaded
+                env.run_task(telescope.upload_transformed.__name__)
+                for entity, info in self.entities.items():
+                    if entity in ["concepts", "institutions", "works"]:
+                        file = [file for file in release.transform_files if entity in file][0]
+                    else:
+                        file = f"{entity}.jsonl.gz"
+                    blob = f"telescopes/{release.dag_id}/{release.release_id}/data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                    self.assert_blob_integrity(env.transform_bucket, blob, file)
+
+                # Get bq load info for BQ tasks
+                bq_load_info = telescope.get_bq_load_info(release)
+
+                # Test that partition is loaded
+                ti = env.run_task(telescope.bq_load_partition.__name__)
+                for _, _, partition_table_id in bq_load_info:
+                    table_id = f"{self.project_id}.{telescope.dataset_id}.{partition_table_id}"
+                    expected_bytes = self.table_bytes[partition_table_id]
+                    self.assert_table_bytes(table_id, expected_bytes)
+
+                # Test that partition is deleted from main table
+                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                    ti = env.run_task(telescope.bq_delete_old.__name__)
+                for _, main_table_id, _ in bq_load_info:
+                    table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
+                    expected_bytes = 0
+                    self.assert_table_bytes(table_id, expected_bytes)
+
+                # Test append new creates table
+                env.run_task(telescope.bq_append_new.__name__)
+                for _, main_table_id, _ in bq_load_info:
+                    table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
+                    expected_bytes = self.table_bytes[main_table_id]
+                    self.assert_table_bytes(table_id, expected_bytes)
+
+                # Test that all telescope data deleted
+                download_folder, extract_folder, transform_folder = (
+                    release.download_folder,
+                    release.extract_folder,
+                    release.transform_folder,
+                )
+                env.run_task(telescope.cleanup.__name__)
+                self.assert_cleanup(download_folder, extract_folder, transform_folder)
 
     @patch("academic_observatory_workflows.workflows.openalex_telescope.boto3.client")
     @patch("academic_observatory_workflows.workflows.openalex_telescope.Variable.get")
