@@ -19,16 +19,19 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import json
+import logging
 import math
 import os
 import os.path
+import re
 import shutil
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import field
 from operator import itemgetter
 from typing import Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
-import logging
+
 import google.cloud.bigquery as bigquery
 import jsonlines
 import pandas as pd
@@ -51,10 +54,8 @@ from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
 from observatory.platform.workflows.workflow import Workflow
 from pyarrow import json as pa_json
-import re
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
-import urllib.parse
 
 # The minimum number of outputs before including an entity in the analysis
 INCLUSION_THRESHOLD = 1000
@@ -324,7 +325,7 @@ def clean_ror_id(ror_id: str):
 class Entity:
     id: str
     name: str
-    description: str = None  # todo
+    description: Dict[str, str, str]
     category: str = None
     logo_s: str = None
     logo_l: str = None
@@ -347,12 +348,13 @@ class Entity:
     def from_dict(dict_: Dict) -> Entity:
         id = dict_.get("id")
         name = dict_.get("name")
-        description = dict_.get("description")
+        wikipedia_url = dict_.get("wikipedia_url")
+        description_text = dict_.get("description")
+        description = {"text": description_text, "license": OaWebWorkflow.WIKI_LICENSE, "url": wikipedia_url}
         category = dict_.get("category")
         logo_s = dict_.get("logo_s")
         logo_l = dict_.get("logo_l")
         url = dict_.get("url")
-        wikipedia_url = dict_.get("wikipedia_url")
         country = dict_.get("country")
         subregion = dict_.get("subregion")
         region = dict_.get("region")
@@ -431,11 +433,11 @@ def get_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: str,
     return ror_id, logo_path
 
 
-def get_wiki_description(titles: dict) -> List[tuple]:
+def get_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
     """Get the wikipedia descriptions for the given titles.
 
-    :param titles: Dict with titles as keys and id's (from index table, ror_id or alpha3 country code) as values
-    :return: List with (id, wiki description) tuples
+    :param titles: Dict with titles as keys and id's (either ror_id or alpha3 country code) as values
+    :return: List with tuples (id, wiki description)
     """
     descriptions = []
     titles_arg = []
@@ -443,18 +445,22 @@ def get_wiki_description(titles: dict) -> List[tuple]:
         entity_id = titles[title]
         # Set description to NA for empty title
         if title == "":
-            descriptions.append((entity_id, "NA"))
+            descriptions.append((entity_id, ""))
+        # URL encode title if it is not encoded yet
         elif title == urllib.parse.unquote(title):
             titles_arg.append(urllib.parse.quote(title))
+        # Append title directly if it is already encoded and not empty
         else:
             titles_arg.append(title)
 
-    response = requests.get(
-        f"https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts"
-        f"&titles={'%7C'.join(titles_arg)}&redirects=1&exintro=1&explaintext=1"
-    )
+    # Confirm that there is a max of 20 titles, the limit for the wikipedia API
+    assert len(titles_arg) <= 20
+
+    # Extract descriptions using the Wikipedia API
+    url = f"https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&titles={'%7C'.join(titles_arg)}&redirects=1&exintro=1&explaintext=1"
+    response = requests.get(url)
     if response.status_code != 200:
-        raise AirflowException()
+        raise AirflowException(f"Unsuccessful retrieving wikipedia extracts, url: {url}")
     response_json = response.json()
     pages = response_json["query"]["pages"]
 
@@ -463,6 +469,7 @@ def get_wiki_description(titles: dict) -> List[tuple]:
     for title in response_json["query"].get("redirects", []):
         redirects[title["to"]] = title["from"]
 
+    # Create mapping between entity_id and decoded, alpha-only page title.
     alpha_titles = {re.sub("[^A-Za-z]+", "", urllib.parse.unquote(k)): v for k, v in titles.items()}
     for page_id, page in pages.items():
         page_title = page["title"]
@@ -472,14 +479,20 @@ def get_wiki_description(titles: dict) -> List[tuple]:
         # Match entity_id and page_title
         entity_id = alpha_titles[re.sub("[^A-Za-z]+", "", page_title)]
 
-        # Get description
-        try:
-            description = page["extract"]
-        except KeyError:
-            description = "Page not Available"
+        # Get description and clean
+        description = page.get("extract", "")
+        if description:
+            description = clean_wiki_description(description)
 
         descriptions.append((entity_id, description))
     return descriptions
+
+
+def clean_wiki_description(description: str) -> str:
+    # Remove text within brackets
+
+    # Shorten text
+    return description
 
 
 def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, location: str = "us") -> bool:
@@ -901,7 +914,10 @@ class OaWebRelease(SnapshotRelease):
             )
         )
         # Create list with dictionaries of max 20 ids + titles (this is wiki api max)
-        titles_chunks = [dict(titles_all[i : i + 20]) for i in range(0, len(titles_all), 20)]
+        titles_chunks = [
+            dict(titles_all[i : i + OaWebWorkflow.WIKI_MAX_TITLES])
+            for i in range(0, len(titles_all), OaWebWorkflow.WIKI_MAX_TITLES)
+        ]
 
         logging.info(
             f"Downloading wikipedia descriptions for all {len(titles_all)} entities in {len(titles_chunks)} chunks."
@@ -910,7 +926,7 @@ class OaWebRelease(SnapshotRelease):
         with ThreadPoolExecutor() as executor:
             futures = []
             for titles in titles_chunks:
-                futures.append(executor.submit(get_wiki_description, titles))
+                futures.append(executor.submit(get_wiki_descriptions, titles))
             descriptions = []
             for f in as_completed(futures):
                 descriptions += f.result()
@@ -1137,6 +1153,12 @@ class OaWebWorkflow(Workflow):
                 └── 05ynxx418.jpg
     """
 
+    # Set the number of titles for which wiki descriptions are retrieved at once, the API can return max 20 extracts.
+    WIKI_MAX_TITLES = 20
+    WIKI_LICENSE = (
+        "https://en.wikipedia.org/wiki/Wikipedia:Text_of_Creative_Commons_Attribution-ShareAlike_3.0_Unported_License"
+    )
+
     def __init__(
         self,
         *,
@@ -1329,4 +1351,12 @@ class OaWebWorkflow(Workflow):
         logging.info(f"Saved stats data")
 
     def cleanup(self, release: OaWebRelease, **kwargs):
+        """Delete all files and folders associated with this release.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
         release.cleanup()
