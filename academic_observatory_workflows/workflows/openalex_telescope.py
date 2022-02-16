@@ -91,8 +91,10 @@ class OpenAlexRelease(StreamRelease):
 
     def write_transfer_manifest(self):
         """Write a transfer manifest file with filenames of files changed since the start date of this release.
-        The filename excludes the s3 bucket name (s3://openalex) and is between double quotes.
         A separate manifest file is created for the download and transform bucket.
+        Each filename excludes the s3 bucket name (s3://openalex) and is between double quotes, e.g.:
+        s3://openalex/data/works/updated_date=2021-12-17/0000_part_00.gz ->
+        "data/works/updated_date=2021-12-17/0000_part_00.gz"
 
         :return: The number of updated entities.
         """
@@ -148,7 +150,7 @@ class OpenAlexRelease(StreamRelease):
             prefixes = []
             with open(transfer["manifest"], "r") as f:
                 for line in f:
-                    prefixes.append(line[1:-2])
+                    prefixes.append(line.strip("\n").strip('"'))
 
             if not prefixes:
                 continue
@@ -176,8 +178,6 @@ class OpenAlexRelease(StreamRelease):
 
     def download_transferred(self):
         """Download the updated entities from the Google Cloud download bucket to a local directory using gsutil.
-        If the run processes the first release it will download all files. If it is a later release, it will check
-        the manifest file which tracks which entity files are modified. Only the modified files will be downloaded.
 
         :return: None.
         """
