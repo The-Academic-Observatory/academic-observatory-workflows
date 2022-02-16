@@ -14,9 +14,9 @@
 
 See https://docs.openalex.org/ for more information.
 
-This telescope transfers OpenAlex data from an AWS s3 bucket and loads it into multiple tables in BigQuery, with one 
+This telescope transfers OpenAlex data from an AWS S3 bucket and loads it into multiple tables in BigQuery, with one 
 table for each entity (Works, Authors, Venues, Institutions, Concepts).  
-The first run will process all the files that are available in the s3 bucket. 
+The first run will process all the files that are available in the S3 bucket. 
 A manifest file is used for later runs to keep track of which files have changed since the last run.
 Only the files that have changed will then be processed in this telescope.
 
@@ -30,6 +30,7 @@ The transformation that is required has to do with two fields that have nested f
 These make it impossible to create a schema beforehand and upload the data straight into BigQuery. 
 The two mentioned fields are 'abstract_inverted_index' (present in Work entity only) and 'international' (present in 
 Concept and Institute entities).
+
 As a workaround, these fields are transformed into a RECORD of two arrays of the same length. 
 The first array contains all the original field names and the second array the corresponding values.
 
