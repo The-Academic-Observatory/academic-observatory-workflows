@@ -1,0 +1,147 @@
+[
+  {
+    "name": "id",
+    "type": "STRING",
+    "description": "The OpenAlex ID for this venue."
+  },
+  {
+    "name": "issn_l",
+    "type": "STRING",
+    "description": "The ISSN-L identifying this venue. ISSN is a global and unique ID for serial publications. However, different media versions of a given publication (e.g., print and electronic) often have different ISSNs. This is why we can't have nice things. The ISSN-L or Linking ISSN solves the problem by designating a single canonical ISSN for all media versions of the title. It's usually the same as the print ISSN."
+  },
+  {
+    "name": "issn",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "The ISSNs used by this venue. Many publications have multiple ISSNs (see above), so ISSN-L should be used when possible."
+  },
+  {
+    "name": "display_name",
+    "type": "STRING",
+    "description": "The name of the venue."
+  },
+  {
+    "name": "publisher",
+    "type": "STRING",
+    "description": "The name of this venue's publisher. Publisher is a tricky category, as journals often change publishers, publishers merge, publishers have subsidiaries (\"imprints\"), and of course no one is consistent in their naming. In the future, we plan to roll out support for a more structured publisher field, but for now it's just a string."
+  },
+  {
+    "name": "works_count",
+    "type": "INTEGER",
+    "description": "The number of Works this this venue hosts."
+  },
+  {
+    "name": "cited_by_count",
+    "type": "INTEGER",
+    "description": "The total number of Works that cite a Work hosted in this venue."
+  },
+  {
+    "name": "is_oa",
+    "type": "BOOLEAN",
+    "description": "todo"
+  },
+  {
+    "name": "is_in_doaj",
+    "type": "BOOLEAN",
+    "description": "todo"
+  },
+  {
+    "name": "homepage_url",
+    "type": "STRING",
+    "description": "todo"
+  },
+  {
+    "name": "ids",
+    "type": "RECORD",
+    "description": "All the persistent identifiers (PIDs) that we know about for this venue, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible.",
+    "fields": [
+      {
+        "name": "openalex",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "issn_l",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "issn",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": ""
+      },
+      {
+        "name": "mag",
+        "type": "INTEGER",
+        "description": ""
+      }
+    ]
+  },
+  {
+    "name": "x_concepts",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "The \"x\" in x_concepts is because it's experimental and subject to removal with very little warning. We plan to replace it with a custom link to the Concepts API endpoint. The Concepts most frequently applied to works hosted by this venue. Each is represented as a dehydrated Concept object, with one additional attribute:",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "The OpenAlex ID for this concept."
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "description": "The Wikidata ID for this concept."
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "The English-language label of the concept."
+      },
+      {
+        "name": "level",
+        "type": "INTEGER",
+        "description": "The level in the concept tree where this concept lives."
+      },
+      {
+        "name": "score",
+        "type": "FLOAT",
+        "description": "The strength of association between this venue and the listed concept, from 0-100."
+      }
+    ]
+  },
+  {
+    "name": "counts_by_year",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "works_count and cited_by_count for each of the last ten years, binned by year. To put it another way: each year, you can see how many new works this venue started hosting, and how many times any work in this venue got cited.\nIf the venue was founded less than ten years ago, there will naturally be fewer than ten years in this list.",
+    "fields": [
+      {
+        "name": "year",
+        "type": "INTEGER",
+        "description": ""
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "description": "The number of Works this this venue hosts."
+      },
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "description": "The total number of Works that cite a Work hosted in this venue."
+      }
+    ]
+  },
+  {
+    "name": "works_api_url",
+    "type": "STRING",
+    "description": "A URL that will get you a list of all this venue's Works.\nWe express this as an API URL (instead of just listing the works themselves) because sometimes a venue's publication list is too long to reasonably fit into a single Venue object."
+  },
+  {
+    "name": "updated_date",
+    "type": "STRING",
+    "description": "The last time anything in this Venue object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  }
+]

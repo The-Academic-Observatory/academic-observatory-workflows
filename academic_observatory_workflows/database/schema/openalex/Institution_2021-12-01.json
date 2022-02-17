@@ -1,0 +1,292 @@
+[
+  {
+    "name": "id",
+    "type": "STRING",
+    "description": "The OpenAlex ID for this institution."
+  },
+  {
+    "name": "ror",
+    "type": "STRING",
+    "description": "The ROR ID for this institution. The ROR (Research Organization Registry) identifier is a globally unique ID for research organization. ROR is the successor to GRiD, which is no longer being updated."
+  },
+  {
+    "name": "display_name",
+    "type": "STRING",
+    "description": "The primary name of the institution."
+  },
+  {
+    "name": "country_code",
+    "type": "STRING",
+    "description": "The country where this institution is located, represented as an ISO two-letter country code."
+  },
+  {
+    "name": "type",
+    "type": "STRING",
+    "description": "The institution's primary type, using the ROR \"type\" controlled vocabulary. Possible values are: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, and Other."
+  },
+  {
+    "name": "homepage_url",
+    "type": "STRING",
+    "description": "The URL for institution's primary homepage"
+  },
+  {
+    "name": "image_url",
+    "type": "STRING",
+    "description": "URL where you can get an image representing this institution. Usually this is hosted on Wikipedia, and usually it's a seal or logo."
+  },
+  {
+    "name": "image_thumbnail_url",
+    "type": "STRING",
+    "description": "Same as image_url, but it's a smaller image."
+  },
+  {
+    "name": "display_name_acronyms",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "Acronyms or initialisms that people sometimes use instead of the full display_name."
+  },
+  {
+    "name": "display_name_alternatives",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "Other names people may use for this institution.  "
+  },
+  {
+    "name": "works_count",
+    "type": "INTEGER",
+    "description": "The number of Works created by authors affiliated with this institution. Or less formally: the number of works coming out of this institution."
+  },
+  {
+    "name": "cited_by_count",
+    "type": "INTEGER",
+    "description": "The total number Works that cite a work created by an author affiliated with this institution. Or less formally: the number of citations this institution has collected."
+  },
+  {
+    "name": "ids",
+    "type": "RECORD",
+    "description": "All the persistent identifiers (PIDs) that we know about for this institution, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible. They're all strings except for mag, which is a long integer.",
+    "fields": [
+      {
+        "name": "openalex",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "ror",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "grid",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "wikipedia",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "mag",
+        "type": "INTEGER",
+        "description": ""
+      }
+    ]
+  },
+  {
+    "name": "geo",
+    "type": "RECORD",
+    "description": "A bunch of stuff we know about the location of this institution:",
+    "fields": [
+      {
+        "name": "city",
+        "type": "STRING",
+        "description": "The city where this institution lives."
+      },
+      {
+        "name": "geonames_city_id",
+        "type": "STRING",
+        "description": "The city where this institution lives, as a GeoNames database ID."
+      },
+      {
+        "name": "region",
+        "type": "STRING",
+        "description": "The sub-national region (state, province) where this institution lives."
+      },
+      {
+        "name": "country_code",
+        "type": "STRING",
+        "description": "The country where this institution lives, represented as an ISO two-letter country code."
+      },
+      {
+        "name": "country",
+        "type": "STRING",
+        "description": "The country where this institution lives."
+      },
+      {
+        "name": "latitude",
+        "type": "FLOAT",
+        "description": "Does what it says."
+      },
+      {
+        "name": "longitude",
+        "type": "FLOAT",
+        "description": "Does what it says."
+      }
+    ]
+  },
+  {
+    "name": "international",
+    "type": "RECORD",
+    "description": "todo",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "RECORD",
+        "description": "",
+        "fields": [
+          {
+            "name": "keys",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "Custom field created by COKI. Originally each language was a key and the display name in that language the corresponding value."
+          },
+          {
+            "name": "values",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "Custom field created by COKI. Originally each language was a key and the display name in that language the corresponding value."
+          }
+        ]
+      },
+      {
+        "name": "description",
+        "type": "RECORD",
+        "description": "",
+        "fields": [
+          {
+            "name": "keys",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "Custom field created by COKI."
+          },
+          {
+            "name": "values",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "Custom field created by COKI."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "associated_institutions",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "The OpenAlex ID for this institution."
+      },
+      {
+        "name": "ror",
+        "type": "STRING",
+        "description": "The ROR ID for this institution. The ROR (Research Organization Registry) identifier is a globally unique ID for research organization. ROR is the successor to GRiD, which is no longer being updated."
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "The primary name of the institution."
+      },
+      {
+        "name": "country_code",
+        "type": "STRING",
+        "description": "The country where this institution is located, represented as an ISO two-letter country code."
+      },
+      {
+        "name": "type",
+        "type": "STRING",
+        "description": "The institution's primary type, using the ROR \"type\" controlled vocabulary. Possible values are: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, and Other."
+      },
+      {
+        "name": "relationship",
+        "type": "STRING",
+        "description": "The type of relationship between this institution and the listed institution. Possible values: parent, child, and related."
+      }
+    ]
+  },
+  {
+    "name": "counts_by_year",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "works_count and cited_by_count for each of the last ten years, binned by year. To put it another way: each year, you can see how many new works this venue started hosting, and how many times any work in this venue got cited.",
+    "fields": [
+      {
+        "name": "year",
+        "type": "INTEGER",
+        "description": ""
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "description": "The number of Works created by authors affiliated with this institution. Or less formally: the number of works coming out of this institution."
+      },
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "description": "The total number Works that cite a work created by an author affiliated with this institution. Or less formally: the number of citations this institution has collected."
+      }
+    ]
+  },
+  {
+    "name": "x_concepts",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "The \"x\" in x_concepts is because it's experimental and subject to removal with very little warning. We plan to replace it with a custom link to the Concepts API endpoint. The Concepts most frequently applied to works affiliated with this institution. Each is represented as a dehydrated Concept object, with one additional attribute",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "The OpenAlex ID for this concept."
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "description": "The Wikidata ID for this concept. "
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "The English-language label of the concept."
+      },
+      {
+        "name": "level",
+        "type": "INTEGER",
+        "description": "The level in the concept tree where this concept lives."
+      },
+      {
+        "name": "score",
+        "type": "FLOAT",
+        "description": "The strength of association between this institution and the listed concept, from 0-100."
+      }
+    ]
+  },
+  {
+    "name": "works_api_url",
+    "type": "STRING",
+    "description": " A URL that will get you a list of all the Works affiliated with this institution. We express this as an API URL (instead of just listing the Works themselves) because most institutions have way too many works to reasonably fit into a single return object."
+  },
+  {
+    "name": "updated_date",
+    "type": "STRING",
+    "description": "The last time anything in this Institution changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  }
+]

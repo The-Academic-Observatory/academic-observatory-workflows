@@ -1,0 +1,225 @@
+[
+  {
+    "name": "id",
+    "type": "STRING",
+    "description": "The OpenAlex ID for this concept."
+  },
+  {
+    "name": "wikidata",
+    "type": "STRING",
+    "description": "The Wikidata ID for this concept. "
+  },
+  {
+    "name": "display_name",
+    "type": "STRING",
+    "description": "The English-language label of the concept."
+  },
+  {
+    "name": "level",
+    "type": "INTEGER",
+    "description": "The level in the concept tree where this concept lives."
+  },
+  {
+    "name": "description",
+    "type": "STRING",
+    "description": "A brief description of this concept."
+  },
+  {
+    "name": "works_count",
+    "type": "INTEGER",
+    "description": "The number of works tagged with this concept."
+  },
+  {
+    "name": "cited_by_count",
+    "type": "INTEGER",
+    "description": "The number citations to works that have been tagged with this concept. Or less formally: the number of citations to this concept. For example, if there are just two works tagged with this concept and one of them has been cited 10 times, and the other has been cited 1 time, cited_by_count for this concept would be 11."
+  },
+  {
+    "name": "ids",
+    "type": "RECORD",
+    "description": "All the persistent identifiers (PIDs) that we know about for this venue, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible. umls_aui and umls_cui refer to the Unified Medical Language System Atom Unique Identifier and Concept Unique Identifier respectively. These are lists. The other IDs are all strings, except except for mag, which is a long integer.",
+    "fields": [
+      {
+        "name": "openalex",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "wikipedia",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "umls_aui",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": ""
+      },
+      {
+        "name": "umls_cui",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": ""
+      },
+      {
+        "name": "mag",
+        "type": "INTEGER",
+        "description": ""
+      }
+    ]
+  },
+  {
+    "name": "image_url",
+    "type": "STRING",
+    "description": "URL where you can get an image representing this concept, where available. Usually this is hosted on Wikipedia."
+  },
+  {
+    "name": "image_thumbnail_url",
+    "type": "STRING",
+    "description": "Same as image_url, but it's a smaller image."
+  },
+  {
+    "name": "international",
+    "type": "RECORD",
+    "description": "todo",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "RECORD",
+        "description": "",
+        "fields": [
+          {
+            "name": "keys",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "Custom field created by COKI. Originally each language was a key and the display name in that language the corresponding value."
+          },
+          {
+            "name": "values",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "Custom field created by COKI. Originally each language was a key and the display name in that language the corresponding value."
+          }
+        ]
+      },
+      {
+        "name": "description",
+        "type": "RECORD",
+        "description": "",
+        "fields": [
+          {
+            "name": "keys",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "Custom field created by COKI."
+          },
+          {
+            "name": "values",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "Custom field created by COKI."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ancestors",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "List of concepts that this concept descends from, as dehydrated Concept objects. See the concept tree section for more details on how the different layers of concepts work together.",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "The OpenAlex ID for this concept."
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "description": "The Wikidata ID for this concept. "
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "The English-language label of the concept."
+      },
+      {
+        "name": "level",
+        "type": "INTEGER",
+        "description": "The level in the concept tree where this concept lives."
+      }
+    ]
+  },
+  {
+    "name": "related_concepts",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "Concepts that are similar to this one. Each listed concept is a dehydrated Concept object, with one additional attribute",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "The OpenAlex ID for this concept."
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "description": "The Wikidata ID for this concept. "
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "The English-language label of the concept."
+      },
+      {
+        "name": "level",
+        "type": "INTEGER",
+        "description": "The level in the concept tree where this concept lives."
+      },
+      {
+        "name": "score",
+        "type": "FLOAT",
+        "description": "The strength of association between this concept and the listed concept, on a scale of 0-100."
+      }
+    ]
+  },
+  {
+    "name": "counts_by_year",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "The values of works_count and cited_by_count for each of the last ten years, binned by year. To put it another way: for every listed year, you can see how many new works were tagged with this concept, and how many times any work tagged with this concept got cited.",
+    "fields": [
+      {
+        "name": "year",
+        "type": "INTEGER",
+        "description": ""
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "description": "The number of works tagged with this concept."
+      },
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "description": "The number citations to works that have been tagged with this concept. Or less formally: the number of citations to this concept. For example, if there are just two works tagged with this concept and one of them has been cited 10 times, and the other has been cited 1 time, cited_by_count for this concept would be 11."
+      }
+    ]
+  },
+  {
+    "name": "works_api_url",
+    "type": "STRING",
+    "description": "An URL that will get you a list of all the works tagged with this concept. We express this as an API URL (instead of just listing the works themselves) because there might be millions of works tagged with this concept, and that's too many to fit here."
+  },
+  {
+    "name": "updated_date",
+    "type": "STRING",
+    "description": "The last time anything in this concept object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  }
+]

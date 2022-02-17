@@ -1,0 +1,443 @@
+[
+  {
+    "name": "id",
+    "type": "STRING",
+    "description": "The OpenAlex ID for this work."
+  },
+  {
+    "name": "doi",
+    "type": "STRING",
+    "description": "The DOI for the work. Occasionally, a work has more than one DOI--for example, there might be one DOI for a preprint version hosted on bioRxiv, and another DOI for the published version. However, this field always has just one DOI, the DOI for the published work. If you want DOIs for other versions, you can find them in the Work.alternate_host_venues list."
+  },
+  {
+    "name": "title",
+    "type": "STRING",
+    "description": "The title of this work."
+  },
+  {
+    "name": "display_name",
+    "type": "STRING",
+    "description": "Exactly the same as Work.title. It's useful for Works to include a display_name property, since all the other entities have one."
+  },
+  {
+    "name": "publication_year",
+    "type": "INTEGER",
+    "description": "The year this work was published."
+  },
+  {
+    "name": "publication_date",
+    "type": "STRING",
+    "description": "The day when this work was published, formatted as an ISO 8601 date.\nWhere different publication dates exist, we select the earliest available date of electronic publication. \nThis date applies to the version found at Work.url. The other versions, found in Work.alternate_host_venues, may have been published at different (earlier) dates."
+  },
+  {
+    "name": "ids",
+    "type": "RECORD",
+    "description": "All the persistent identifiers (PIDs) that we know about for this work, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible.",
+    "fields": [
+      {
+        "name": "openalex",
+        "type": "STRING",
+        "description": "The OpenAlex ID, which is also found at Work.id"
+      },
+      {
+        "name": "doi",
+        "type": "STRING",
+        "description": "The DOI. This is most likely, but not necessarily, a Crossref DOI"
+      },
+      {
+        "name": "mag",
+        "type": "INTEGER",
+        "description": "The Microsoft Academic Graph ID"
+      },
+      {
+        "name": "pmid",
+        "type": "STRING",
+        "description": "The Pubmed Identifier"
+      }
+    ]
+  },
+  {
+    "name": "host_venue",
+    "type": "RECORD",
+    "description": "A HostVenue object describing how and where this work is being hosted online.",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "The OpenAlex ID for this venue."
+      },
+      {
+        "name": "issn_l",
+        "type": "STRING",
+        "description": "The ISSN-L identifying this venue. ISSN is a global and unique ID for serial publications. However, different media versions of a given publication (e.g., print and electronic) often have different ISSNs. This is why we can't have nice things. The ISSN-L or Linking ISSN solves the problem by designating a single canonical ISSN for all media versions of the title. It's usually the same as the print ISSN."
+      },
+      {
+        "name": "issn",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "The ISSNs used by this venue. Many publications have multiple ISSNs (see above), so ISSN-L should be used when possible."
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "The name of the venue."
+      },
+      {
+        "name": "publisher",
+        "type": "STRING",
+        "description": "The name of this venue's publisher. Publisher is a tricky category, as journals often change publishers, publishers merge, publishers have subsidiaries (\"imprints\"), and of course no one is consistent in their naming. In the future, we plan to roll out support for a more structured publisher field, but for now it's just a string."
+      },
+      {
+        "name": "type",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "url",
+        "type": "STRING",
+        "description": "The URL where you can access this work."
+      },
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "description": "Set to true if the work hosted here can be read for free, without registration."
+      },
+      {
+        "name": "version",
+        "type": "STRING",
+        "description": "The version of the work, based on the DRIVER Guidelines versioning scheme. Possible values are: -publishedVersion: The document’s version of record. This is the most authoritative version. -acceptedVersion: The document after having completed peer review and being officially accepted for publication. It will lack publisher formatting, but the content should be interchangeable with the that of the publishedVersion. -submittedVersion: the document as submitted to the publisher by the authors, but before peer-review. Its content may differ significantly from that of the accepted article."
+      },
+      {
+        "name": "license",
+        "type": "STRING",
+        "description": "The license applied to this work at this host. Most toll-access works don't have an explicit license (they're under \"all rights reserved\" copyright), so this field generally has content only if is_oa is true."
+      }
+    ]
+  },
+  {
+    "name": "type",
+    "type": "STRING",
+    "description": "The type or genre of the work. This field uses Crossref's \"type\" controlled vocabulary; you can see all possible values via the Crossref api here: https://api.crossref.org/types. Where possible, we just pass along Crossref's type value for each work. When that's impossible (eg the work isn't in Crossref), we do our best to figure out the type ourselves. Unfortunately the accuracy of Crossref's data for this isn't great, and ours isn't much better. We're working to develop better type classification."
+  },
+  {
+    "name": "open_access",
+    "type": "RECORD",
+    "description": "Information about the access status of this work, as an OpenAccess object.",
+    "fields": [
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "description": "True if this work is Open Access (OA). There are many ways to define OA. OpenAlex uses a broad definition: having a URL where you can read the fulltext of this work without needing to pay money or log in. You can use the alternate_host_venues and oa_status fields to narrow your results further, accommodating any definition of OA you like."
+      },
+      {
+        "name": "oa_status",
+        "type": "STRING",
+        "description": "The Open Access (OA) status of this work. Possible values are: -gold: Published in an OA journal that is indexed by the DOAJ. -green: Toll-access on the publisher landing page, but there is a free copy in an OA repository. -hybrid: Free under an open license in a toll-access journal. -bronze: Free to read on the publisher landing page, but without any identifiable license. -closed: All other articles."
+      },
+      {
+        "name": "oa_url",
+        "type": "STRING",
+        "description": "The best Open Access (OA) URL for this work. Although there are many ways to define OA, in this context an OA URL is one where you can read the fulltext of this work without needing to pay money or log in. The \"best\" such URL is the one closest to the version of record. This URL might be a direct link to a PDF, or it might be to a landing page that links to the free PDF"
+      }
+    ]
+  },
+  {
+    "name": "authorships",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "List of Authorship objects, each representing an author and their institution.",
+    "fields": [
+      {
+        "name": "author_position",
+        "type": "STRING",
+        "description": "A summarized description of this author's position in the work's author list. Possible values are first, middle, and last. It's not strictly necessary, because author order is already implicitly recorded by the list order of Authorship objects; however it's useful in some contexts to have this as a categorical value."
+      },
+      {
+        "name": "author",
+        "type": "RECORD",
+        "description": "An author of this work, as a dehydrated Author object.",
+        "fields": [
+          {
+            "name": "id",
+            "type": "STRING",
+            "description": "The OpenAlex ID for this author."
+          },
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "description": "The name of the author as a single string."
+          },
+          {
+            "name": "orcid",
+            "type": "STRING",
+            "description": "The ORCID for this author. ORCID global and unique ID for authors."
+          }
+        ]
+      },
+      {
+        "name": "institutions",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "description": "The institutional affiliations this author claimed in the context of this work, as dehydrated Institution objects.",
+        "fields": [
+          {
+            "name": "id",
+            "type": "STRING",
+            "description": "The OpenAlex ID for this institution."
+          },
+          {
+            "name": "ror",
+            "type": "STRING",
+            "description": "The ROR ID for this institution. The ROR (Research Organization Registry) identifier is a globally unique ID for research organization. ROR is the successor to GRiD, which is no longer being updated."
+          },
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "description": "The primary name of the institution."
+          },
+          {
+            "name": "country_code",
+            "type": "STRING",
+            "description": "The country where this institution is located, represented as an ISO two-letter country code."
+          },
+          {
+            "name": "type",
+            "type": "STRING",
+            "description": "The institution's primary type, using the ROR \"type\" controlled vocabulary. Possible values are: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, and Other."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "cited_by_count",
+    "type": "INTEGER",
+    "description": "The number of citations to this work. These are the times that other works have cited this work: Other works ➞ This work."
+  },
+  {
+    "name": "biblio",
+    "type": "RECORD",
+    "description": "Old-timey bibliographic info for this work. This is mostly useful only in citation/reference contexts. These are all strings because sometimes you'll get fun values like \"Spring\" and \"Inside cover.\"",
+    "fields": [
+      {
+        "name": "volume",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "issue",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "first_page",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "last_page",
+        "type": "STRING",
+        "description": ""
+      }
+    ]
+  },
+  {
+    "name": "is_retracted",
+    "type": "BOOLEAN",
+    "description": "True if we know this work has been retracted. This field has high precision but low recall. In other words, if is_retracted is  true, the article is definitely retracted. But if is_retracted is False,  it still might be retracted, but we just don't know. This is because unfortunately, the open sources for retraction data aren't currently very comprehensive, and the more comprehensive ones aren't sufficiently open for us to use here."
+  },
+  {
+    "name": "is_paratext",
+    "type": "BOOLEAN",
+    "description": "True if we think this work is paratext. In our context, paratext is stuff that's in scholarly venue (like a journal) but is about the venue rather than a scholarly work properly speaking.  Some examples and nonexamples: -yep it's paratext: front cover, back cover, table of contents, editorial board listing, issue information,  masthead. -no,  not paratext: research paper, dataset, letters to the editor, figures. Turns out there is a lot of paratext in registries like Crossref. That's not a bad thing... but we've found that it's good to have a way to filter it out.\nWe determine is_paratext algorithmically using title heuristics. "
+  },
+  {
+    "name": "concepts",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "List of dehydrated Concept objects. \nEach Concept object in the list also has one additional property",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "The OpenAlex ID for this concept."
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "description": "The Wikidata ID for this concept. "
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "The English-language label of the concept."
+      },
+      {
+        "name": "level",
+        "type": "INTEGER",
+        "description": "The level in the concept tree where this concept lives."
+      },
+      {
+        "name": "score",
+        "type": "FLOAT",
+        "description": "The strength of the connection between the work and this concept (higher is stronger)."
+      }
+    ]
+  },
+  {
+    "name": "mesh",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "List of MeSH tag objects. Only works found in PubMed have MeSH tags; for all other works, this is an empty list.",
+    "fields": [
+      {
+        "name": "descriptor_ui",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "descriptor_name",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "qualifier_ui",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "qualifier_name",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "is_major_topic",
+        "type": "BOOLEAN",
+        "description": ""
+      }
+    ]
+  },
+  {
+    "name": "alternate_host_venues",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "List of HostVenue objects describing places this work lives. This work's primary hosting venue isn't in this list; it's at host_venue. Some venues in this list are missing the id field! This should be fixed by February 2022.",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "The OpenAlex ID for this venue."
+      },
+      {
+        "name": "issn_l",
+        "type": "STRING",
+        "description": "The ISSN-L identifying this venue. ISSN is a global and unique ID for serial publications. However, different media versions of a given publication (e.g., print and electronic) often have different ISSNs. This is why we can't have nice things. The ISSN-L or Linking ISSN solves the problem by designating a single canonical ISSN for all media versions of the title. It's usually the same as the print ISSN."
+      },
+      {
+        "name": "issn",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "The ISSNs used by this venue. Many publications have multiple ISSNs (see above), so ISSN-L should be used when possible."
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "The name of the venue."
+      },
+      {
+        "name": "publisher",
+        "type": "STRING",
+        "description": "The name of this venue's publisher. Publisher is a tricky category, as journals often change publishers, publishers merge, publishers have subsidiaries (\"imprints\"), and of course no one is consistent in their naming. In the future, we plan to roll out support for a more structured publisher field, but for now it's just a string."
+      },
+      {
+        "name": "type",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "url",
+        "type": "STRING",
+        "description": "The URL where you can access this work."
+      },
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "description": "Set to true if the work hosted here can be read for free, without registration."
+      },
+      {
+        "name": "version",
+        "type": "STRING",
+        "description": "The version of the work, based on the DRIVER Guidelines versioning scheme. Possible values are: -publishedVersion: The document’s version of record. This is the most authoritative version. -acceptedVersion: The document after having completed peer review and being officially accepted for publication. It will lack publisher formatting, but the content should be interchangeable with the that of the publishedVersion. -submittedVersion: the document as submitted to the publisher by the authors, but before peer-review. Its content may differ significantly from that of the accepted article."
+      },
+      {
+        "name": "license",
+        "type": "STRING",
+        "description": "The license applied to this work at this host. Most toll-access works don't have an explicit license (they're under \"all rights reserved\" copyright), so this field generally has content only if is_oa is true."
+      }
+    ]
+  },
+  {
+    "name": "referenced_works",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "OpenAlex IDs for works that this work cites. These are citations that go from this work out to another work: This work ➞ Other works."
+  },
+  {
+    "name": "abstract_inverted_index",
+    "type": "RECORD",
+    "description": "The abstract of the work, as an inverted index, which encodes information about the abstract's words and their positions within the text. Like Microsoft Academic Graph, OpenAlex doesn't include plaintext abstracts due to legal constraints.",
+    "fields": [
+      {
+        "name": "keys",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "Custom field created by COKI. Originally each word in the abstract was a key and the indices of where this word occurred inside the abstract the corresponding value."
+      },
+      {
+        "name": "values",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "Custom field created by COKI. Originally each word in the abstract was a key and the indices of where this word occurred inside the abstract the corresponding value."
+      }
+    ]
+  },
+  {
+    "name": "related_works",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "OpenAlex IDs for works related to this work. "
+  },
+  {
+    "name": "cited_by_api_url",
+    "type": "STRING",
+    "description": "todo"
+  },
+  {
+    "name": "counts_by_year",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "todo",
+    "fields": [
+      {
+        "name": "year",
+        "type": "INTEGER",
+        "description": ""
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "description": "todo"
+      },
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "description": "todo"
+      }
+    ]
+  },
+  {
+    "name": "updated_date",
+    "type": "STRING",
+    "description": "The last time anything in this Work object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  }
+]

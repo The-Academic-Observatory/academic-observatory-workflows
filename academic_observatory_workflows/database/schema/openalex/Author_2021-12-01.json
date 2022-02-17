@@ -1,0 +1,168 @@
+[
+  {
+    "name": "id",
+    "type": "STRING",
+    "description": "The OpenAlex ID for this author."
+  },
+  {
+    "name": "orcid",
+    "type": "STRING",
+    "description": "The ORCID for this author. ORCID global and unique ID for authors."
+  },
+  {
+    "name": "display_name",
+    "type": "STRING",
+    "description": "The name of the author as a single string."
+  },
+  {
+    "name": "display_name_alternatives",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "Other ways that we've found this author's name displayed."
+  },
+  {
+    "name": "works_count",
+    "type": "INTEGER",
+    "description": "The number of  Works this this author has created."
+  },
+  {
+    "name": "cited_by_count",
+    "type": "INTEGER",
+    "description": "The total number  Works that cite a work this author has created."
+  },
+  {
+    "name": "ids",
+    "type": "RECORD",
+    "description": "All the persistent identifiers (PIDs) that we know about for this author, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible. The openalex ID is the same one you'll find at Author.id. All the IDs are strings except for mag, which is an integer.",
+    "fields": [
+      {
+        "name": "openalex",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "orcid",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "scopus",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "twitter",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "wikipedia",
+        "type": "STRING",
+        "description": ""
+      },
+      {
+        "name": "mag",
+        "type": "INTEGER",
+        "description": ""
+      }
+    ]
+  },
+  {
+    "name": "last_known_institution",
+    "type": "RECORD",
+    "description": "This author's last known institutional affiliation. In this context \"last known\" means that we took all the Works where this author has an institutional affiliation, sorted them by publication date, and selected the most recent one. This is a dehydrated Institution object, and you can find more documentation on the Institution page.",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "The OpenAlex ID for this institution."
+      },
+      {
+        "name": "ror",
+        "type": "STRING",
+        "description": "The ROR ID for this institution. The ROR (Research Organization Registry) identifier is a globally unique ID for research organization. ROR is the successor to GRiD, which is no longer being updated."
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "The primary name of the institution."
+      },
+      {
+        "name": "country_code",
+        "type": "STRING",
+        "description": "The country where this institution is located, represented as an ISO two-letter country code."
+      },
+      {
+        "name": "type",
+        "type": "STRING",
+        "description": "The institution's primary type, using the ROR \"type\" controlled vocabulary. Possible values are: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, and Other."
+      }
+    ]
+  },
+  {
+    "name": "x_concepts",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "The \"x\" in x_concepts is because it's experimental and subject to removal with very little warning. We plan to replace it with a custom link to the Concepts API endpoint.",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "The OpenAlex ID for this concept."
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "description": "The Wikidata ID for this concept. "
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "The English-language label of the concept."
+      },
+      {
+        "name": "level",
+        "type": "INTEGER",
+        "description": "The level in the concept tree where this concept lives."
+      },
+      {
+        "name": "score",
+        "type": "FLOAT",
+        "description": "The strength of association between this author and the listed concept, from 0-100."
+      }
+    ]
+  },
+  {
+    "name": "counts_by_year",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "Author.works_count and Author.cited_by_count for each of the last ten years, binned by year. To put it another way: each year, you can see how many works this author published, and how many times they got cited. Any works or citations older than ten years old aren't included.",
+    "fields": [
+      {
+        "name": "year",
+        "type": "INTEGER",
+        "description": ""
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "description": "The number of  Works this this author has created."
+      },
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "description": "The total number  Works that cite a work this author has created."
+      }
+    ]
+  },
+  {
+    "name": "works_api_url",
+    "type": "STRING",
+    "description": " A URL that will get you a list of all this author's works. We express this as an API URL (instead of just listing the works themselves) because sometimes an author's publication list is too long to reasonably fit into a single author object."
+  },
+  {
+    "name": "updated_date",
+    "type": "STRING",
+    "description": "The last time anything in this author object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  }
+]
