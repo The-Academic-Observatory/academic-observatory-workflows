@@ -41,6 +41,7 @@ from observatory.platform.utils.test_utils import (
 import academic_observatory_workflows.workflows.oa_web_workflow
 from academic_observatory_workflows.config import schema_folder, test_fixtures_folder
 from academic_observatory_workflows.workflows.oa_web_workflow import (
+    Description,
     OaWebRelease,
     OaWebWorkflow,
     calc_oa_stats,
@@ -49,6 +50,8 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     get_institution_logo,
     get_wiki_descriptions,
     make_logo_url,
+    remove_text_between_brackets,
+    shorten_text_full_sentences,
     split_largest_remainder,
     val_empty,
 )
@@ -178,6 +181,28 @@ class TestFunctions(TestCase):
                 mock_clearbit_download.assert_not_called()
                 mock_make_url.assert_called_once_with(category="institution", entity_id=ror_id, size=size, fmt=fmt)
 
+    def test_remove_text_between_brackets(self):
+        text_input = (
+            "Sem Gordius (Nobis: Gestarum) at ea debile quantum si dis subordinatas Civiuni Magna. Ut "
+            "oratione ut est enim subsolanea—aut Quasi Nemine (Ac (Hac)-y-Enim) hac dis Facer Eventu (Se Necessaria)—mus quod 400 srripta firmare, annuebat p illum quas te 068,721 verbum displicere (803,200 ea in). Cum Memento si lorem 9,200 dispositae (7,200 ut) eget te Ridiculus magnae leo Arduas Nec sed 4,800 rationibus (900 ut) louor in vel integer te Nec Evidenter, Illa, eum Porro. Sem euismod'a crimen praevenire nec neque diabolum saepe, iniunctum vel Cadentes Modi, quo modo si intendis licuit sem vindices laesionem. Quo Quantum'v hitmari sint id Malrimonii, rem sit odio nascetur iste at Sociosqu."
+        )
+        text_output = remove_text_between_brackets(text_input)
+        text_expected = "Sem Gordius at ea debile quantum si dis subordinatas Civiuni Magna. Ut oratione ut est enim subsolanea—aut Quasi Nemine hac dis Facer Eventu—mus quod 400 srripta firmare, annuebat p illum quas te 068,721 verbum displicere. Cum Memento si lorem 9,200 dispositae eget te Ridiculus magnae leo Arduas Nec sed 4,800 rationibus louor in vel integer te Nec Evidenter, Illa, eum Porro. Sem euismod'a crimen praevenire nec neque diabolum saepe, iniunctum vel Cadentes Modi, quo modo si intendis licuit sem vindices laesionem. Quo Quantum'v hitmari sint id Malrimonii, rem sit odio nascetur iste at Sociosqu."
+        self.assertEqual(text_expected, text_output)
+
+    def test_shorten_text_full_sentences(self):
+        nltk.download("punkt")
+
+        text_input = "Sem Gordius at ea debile quantum si dis subordinatas Civiuni Magna. Ut oratione ut est enim subsolanea—aut Quasi Nemine hac dis Facer Eventu—mus quod 400 srripta firmare, annuebat p illum quas te 068,721 verbum displicere. Cum Memento si lorem 9,200 dispositae eget te Ridiculus magnae leo Arduas Nec sed 4,800 rationibus louor in vel integer te Nec Evidenter, Illa, eum Porro. Sem euismod'a crimen praevenire nec neque diabolum saepe, iniunctum vel Cadentes Modi, quo modo si intendis licuit sem vindices laesionem. Quo Quantum'v hitmari sint id Malrimonii, rem sit odio nascetur iste at Sociosqu."
+        text_output = shorten_text_full_sentences(text_input, char_limit=300)
+        text_expected = "Sem Gordius at ea debile quantum si dis subordinatas Civiuni Magna. Ut oratione ut est enim subsolanea—aut Quasi Nemine hac dis Facer Eventu—mus quod 400 srripta firmare, annuebat p illum quas te 068,721 verbum displicere."
+        self.assertEqual(text_expected, text_output)
+
+        text_input = 'Non Divini te Litigiorum sem Cruciatus Potentiores ut v equestrem mi dui Totius in Modeste futuri hic M.V. Centimanos mi Sensus. Sed Poenam Coepit Leo EA 009–08, Minimum 582, dantis dis leo consultationis si EROS: "Sem Subiungam, hominem est Nobili in Dignitatis non Habitasse Abdicatione, animi fortiaue nisi dui Necessitas privatis scientiam perditionis si vigilantia mus dignissim frefquentia veritatem eius secundam, caesarianis, promotionibus, rem laboriosam ulterioribus alliciebat discursus ex dui Imperiosus."'
+        text_output = shorten_text_full_sentences(text_input, char_limit=300)
+        text_expected = "Non Divini te Litigiorum sem Cruciatus Potentiores ut v equestrem mi dui Totius in Modeste futuri hic M.V. Centimanos mi Sensus."
+        self.assertEqual(text_expected, text_output)
+
     def test_get_wiki_description(self):
         country = {
             "uri": "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&"
@@ -216,8 +241,8 @@ class TestFunctions(TestCase):
                 titles[title] = id
                 descriptions.append((id, description))
 
-            # Set up mocked response
             with httpretty.enabled():
+                # Set up mocked response
                 with open(entity["response_file_path"], "rb") as f:
                     body = f.read()
                 httpretty.register_uri(httpretty.GET, entity["uri"], body=body)
@@ -584,7 +609,7 @@ class TestOaWebRelease(TestCase):
                     "name": "New Zealand",
                     "category": category,
                     "description": {
-                        "license": OaWebWorkflow.WIKI_LICENSE,
+                        "license": Description.license,
                         "text": None,
                         "url": "https://en.wikipedia.org/wiki/New_Zealand",
                     },
@@ -699,7 +724,7 @@ class TestOaWebRelease(TestCase):
                 "name": "Curtin University",
                 "country": "Australia",
                 "description": {
-                    "license": OaWebWorkflow.WIKI_LICENSE,
+                    "license": Description.license,
                     "text": None,
                     "url": "https://en.wikipedia.org/wiki/Curtin_University",
                 },

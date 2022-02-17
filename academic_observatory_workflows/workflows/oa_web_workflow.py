@@ -323,10 +323,29 @@ def clean_ror_id(ror_id: str):
 
 
 @dataclasses.dataclass
+class Description:
+    text: str
+    url: str
+    license: str = (
+        "https://en.wikipedia.org/wiki/Wikipedia:Text_of_Creative_Commons_Attribution-ShareAlike_3.0_Unported_License"
+    )
+
+    @staticmethod
+    def from_dict(dict_: Dict) -> Description:
+        text = dict_.get("description")
+        url = dict_.get("wikipedia_url")
+
+        return Description(text, url)
+
+    def to_dict(self) -> Dict:
+        return {"text": self.text, "license": self.license, "url": self.url}
+
+
+@dataclasses.dataclass
 class Entity:
     id: str
     name: str
-    description: Dict[str, str, str]
+    description: Description
     category: str = None
     logo_s: str = None
     logo_l: str = None
@@ -350,8 +369,7 @@ class Entity:
         id = dict_.get("id")
         name = dict_.get("name")
         wikipedia_url = dict_.get("wikipedia_url")
-        description_text = dict_.get("description")
-        description = {"text": description_text, "license": OaWebWorkflow.WIKI_LICENSE, "url": wikipedia_url}
+        description = Description.from_dict(dict_)
         category = dict_.get("category")
         logo_s = dict_.get("logo_s")
         logo_l = dict_.get("logo_l")
@@ -386,7 +404,7 @@ class Entity:
         dict_ = {
             "id": self.id,
             "name": self.name,
-            "description": self.description,
+            "description": self.description.to_dict(),
             "category": self.category,
             "logo_s": self.logo_s,
             "logo_l": self.logo_l,
@@ -478,6 +496,8 @@ def get_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
 
         # Get description and clean up
         description = page.get("extract", "")
+        if entity_id == "003eyb898":
+            print("stop")
         if description:
             description = remove_text_between_brackets(description)
             description = shorten_text_full_sentences(description)
@@ -487,32 +507,46 @@ def get_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
 
 
 def remove_text_between_brackets(text: str) -> str:
-    new_text = ""
+    """Remove any text between (nested) brackets.
+    If there is a space after the opening bracket, this is removed as well.
+    E.g. 'Like this (foo, (bar)) example' -> 'Like this example'
+
+    :param text: The text to modify
+    :return: The modified text
+    """
+    new_text = []
     nested = 0
     for char in text:
         if char == "(":
             nested += 1
-            new_text = new_text.rstrip(" ")
+            new_text = new_text[:-1] if new_text[-1] == " " else new_text
         elif (char == ")") and nested:
             nested -= 1
         elif nested == 0:
-            new_text += char
-    return new_text
+            new_text.append(char)
+    return "".join(new_text)
 
 
-def shorten_text_full_sentences(text: str, *, char_limit: int = 500) -> str:
+def shorten_text_full_sentences(text: str, *, char_limit: int = 300) -> str:
+    """Shorten a text to as many complete sentences as possible, while the total number of characters stays below
+    the char_limit.
+
+    :param text: A string with the complete text
+    :param char_limit: The max number of characters
+    :return: The shortened text.
+    """
     # Create list of sentences
     sentences = nltk.tokenize.sent_tokenize(text)
 
     # Add sentences until char limit is reached
-    short_text = ""
+    sentences_output = []
     total_len = 0
     for sentence in sentences:
         total_len += len(sentence)
         if total_len > char_limit:
-            return short_text
-        short_text += sentence + " "
-    return short_text
+            break
+        sentences_output.append(sentence)
+    return " ".join(sentences_output)
 
 
 def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, location: str = "us") -> bool:
@@ -942,7 +976,7 @@ class OaWebRelease(SnapshotRelease):
         logging.info(
             f"Downloading wikipedia descriptions for all {len(titles_all)} entities in {len(titles_chunks)} chunks."
         )
-        # Download 'punkt' resource, required when getting wiki descriptions
+        # Download 'punkt' resource, required when shortening wiki descriptions
         nltk.download("punkt")
 
         # Process each dictionary in separate thread to get wiki descriptions
@@ -1178,9 +1212,6 @@ class OaWebWorkflow(Workflow):
 
     # Set the number of titles for which wiki descriptions are retrieved at once, the API can return max 20 extracts.
     WIKI_MAX_TITLES = 20
-    WIKI_LICENSE = (
-        "https://en.wikipedia.org/wiki/Wikipedia:Text_of_Creative_Commons_Attribution-ShareAlike_3.0_Unported_License"
-    )
 
     def __init__(
         self,
