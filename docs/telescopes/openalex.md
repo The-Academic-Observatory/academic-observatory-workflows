@@ -12,7 +12,7 @@
 >
 > Together, these make a huge web (or more technically, heterogeneous directed graph) of hundreds of millions of entities and over a billion connections between them all.
 
-See https://docs.openalex.org/ for more information.
+See [https://docs.openalex.org/](https://docs.openalex.org/) for more information.
 
 This telescope transfers OpenAlex data from an AWS S3 bucket and loads it into multiple tables in BigQuery, with one 
 table for each entity (Works, Authors, Venues, Institutions, Concepts).  
