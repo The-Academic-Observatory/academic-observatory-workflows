@@ -26,6 +26,7 @@ import nltk
 import pandas as pd
 import pendulum
 import vcr
+from airflow.exceptions import AirflowException
 from airflow.utils.state import State
 from click.testing import CliRunner
 from observatory.platform.utils.file_utils import load_jsonl
@@ -242,7 +243,7 @@ class TestFunctions(TestCase):
                 descriptions.append((id, description))
 
             with httpretty.enabled():
-                # Set up mocked response
+                # Set up mocked successful response
                 with open(entity["response_file_path"], "rb") as f:
                     body = f.read()
                 httpretty.register_uri(httpretty.GET, entity["uri"], body=body)
@@ -253,6 +254,14 @@ class TestFunctions(TestCase):
             actual_descriptions.sort(key=lambda x: x[0])
             # TODO update the expected descriptions in fixture, based on the given char limit
             # self.assertListEqual(descriptions, actual_descriptions)
+
+            with httpretty.enabled():
+                # Set up mocked  failed response
+                httpretty.register_uri(httpretty.GET, entity["uri"], status=400)
+
+                with self.assertRaises(AirflowException):
+                    # Get wiki descriptions
+                    get_wiki_descriptions(titles)
 
 
 class TestOaWebRelease(TestCase):

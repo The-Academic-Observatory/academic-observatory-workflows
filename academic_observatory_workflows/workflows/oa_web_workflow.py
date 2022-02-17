@@ -496,8 +496,6 @@ def get_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
 
         # Get description and clean up
         description = page.get("extract", "")
-        if entity_id == "003eyb898":
-            print("stop")
         if description:
             description = remove_text_between_brackets(description)
             description = shorten_text_full_sentences(description)
