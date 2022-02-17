@@ -178,6 +178,9 @@ class OpenAlexRelease(StreamRelease):
 
     def download_transferred(self):
         """Download the updated entities from the Google Cloud download bucket to a local directory using gsutil.
+        Gsutil is used instead of the standard Google Cloud Python library, because this is faster at downloading files.
+        It supports multi-threading with the '-m' flag and can open multiple simultaneous connections to GCS.
+        In future the 'gcloud storage' command might be used instead which is even faster, but still in preview.
 
         :return: None.
         """
@@ -193,7 +196,7 @@ class OpenAlexRelease(StreamRelease):
 
         logging.info(f"Downloading transferred files from Google Cloud bucket: {self.download_bucket}")
         log_path = os.path.join(self.download_folder, "cp.log")
-        # Download all records from bucket
+        # Download all records from bucket using Gsutil
         args = [
             "gsutil",
             "-m",
