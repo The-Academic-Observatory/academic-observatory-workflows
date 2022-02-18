@@ -18,7 +18,7 @@
 WITH dois_temp_table as (
 SELECT
   *,
-  (SELECT ARRAY(SELECT DISTINCT grid FROM UNNEST( IF(mag.grids IS NOT NULL, mag.grids, [])) AS grid)) as mag_grids
+  (SELECT ARRAY(SELECT DISTINCT institution.ror FROM UNNEST(IF(openalex.authorships is not null, openalex.authorships, [])) AS authors, UNNEST(IF(authors.institutions is not null, authors.institutions, [])) as institution)) as openalex_rors
 FROM
   (SELECT
     {# This SQL block links unpaywall, mag, open citations and crossref events to the DOI and the metadata found in the crossref metadata dataset #}
@@ -38,7 +38,7 @@ FROM
   WHERE ARRAY_LENGTH(issued.date_parts) > 0)
 ),
 
-{# this query builds the .affiliation section of the final doi table. The primiary purpose of this is to allow the aggregrate_doi query #}
+{# this query builds the .affiliation section of the final doi table. The primary purpose of this is to allow the aggregrate_doi query #}
 affiliations_temp_table as (
 SELECT
   extras.doi as doi,
@@ -199,9 +199,9 @@ SELECT
     ) as ror_groups,
 
   {#
-   dois_temp_table is created as the first sub-query in this script. It contains the data from crossref, unpaywall, mag, open_citations and crossref events
-   This is then LEFT JOINed against the grid dataset to take the raw GRID IDs that come from the MAG dataset, with a more detailed view of that institution and its location. The county and region information comes from here
-   This Instituional information is JOINed against a COKI created dataset, groupings, which allows for arbitary grouping of institutions (or really GRIDs).
+   dois_temp_table is created as the first sub-query in this script. It contains the data from crossref, unpaywall, openalex, mag, open_citations and crossref events
+   This is then LEFT JOINed against the ROR dataset to take the raw ROR IDs that come from the OpenAlex dataset, with a more detailed view of that institution and its location. The county and region information comes from here
+   This Instituional information is JOINed against a COKI created dataset, groupings, which allows for arbitrary grouping of institutions (or really RORs).
 
    Lastly, Fundref and ORCID are also LEFT JOINed in order to drive the Funder and Author relationships
   #}
