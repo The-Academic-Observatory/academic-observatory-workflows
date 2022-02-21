@@ -953,13 +953,16 @@ class OaWebRelease(SnapshotRelease):
             for size, width in zip(sizes, [32, 128]):
                 with ThreadPoolExecutor() as executor:
                     futures = []
+                    logo_paths = []
                     for ror_id, url in zip(df_index_table["id"], df_index_table["url"]):
-                        url = clean_url(url)
                         if url:
+                            url = clean_url(url)
                             futures.append(
                                 executor.submit(get_institution_logo, ror_id, url, size, width, fmt, self.build_path)
                             )
-                    logo_paths = [f.result() for f in as_completed(futures)]
+                        else:
+                            logo_paths.append((ror_id, "/unknown.svg"))
+                    logo_paths += [f.result() for f in as_completed(futures)]
                 logging.info("Finished downloading logos")
 
                 # Sort table and results by id

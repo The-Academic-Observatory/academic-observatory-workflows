@@ -251,8 +251,7 @@ class TestFunctions(TestCase):
                 actual_descriptions = get_wiki_descriptions(titles)
 
             actual_descriptions.sort(key=lambda x: x[0])
-            # TODO update the expected descriptions in fixture, based on the given char limit
-            # self.assertListEqual(descriptions, actual_descriptions)
+            self.assertListEqual(descriptions, actual_descriptions)
 
             with httpretty.enabled():
                 # Set up mocked  failed response
@@ -377,6 +376,37 @@ class TestOaWebRelease(TestCase):
                 # "n_outputs_closed": 55,
                 "n_outputs_oa_journal": 20,
                 "n_outputs_hybrid": 9,
+                "n_outputs_no_guarantees": 8,
+                "identifiers": {
+                    "ISNI": {"all": ["0000 0004 0375 4078"]},
+                    "OrgRef": {"all": ["370725"]},
+                    "Wikidata": {"all": ["Q1145497"]},
+                    "GRID": {"preferred": "grid.1032.0"},
+                    "FundRef": {"all": ["501100001797"]},
+                },
+            },
+            {
+                "id": "https://ror.org/12345",
+                "name": "Foo University",
+                "year": 2020,
+                "date": pendulum.date(2020, 12, 31).format(dt_fmt),
+                "url": None,
+                "wikipedia_url": None,
+                "country": "Australia",
+                "subregion": "Australia and New Zealand",
+                "region": "Oceania",
+                "institution_types": ["Education"],
+                "n_citations": 121,
+                "n_outputs": 100,
+                "n_outputs_open": 48,
+                "n_outputs_publisher_open": 37,
+                # "n_outputs_publisher_open_only": 11,
+                # "n_outputs_both": 26,
+                "n_outputs_other_platform_open": 37,
+                "n_outputs_other_platform_open_only": 11,
+                # "n_outputs_closed": 52,
+                "n_outputs_oa_journal": 19,
+                "n_outputs_hybrid": 10,
                 "n_outputs_no_guarantees": 8,
                 "identifiers": {
                     "ISNI": {"all": ["0000 0004 0375 4078"]},
@@ -570,21 +600,24 @@ class TestOaWebRelease(TestCase):
             df_index_table = self.release.make_index(category, df)
             with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "test_make_logos.yaml")):
                 self.release.update_index_with_logos(category, df_index_table)
-                for i, row in df_index_table.iterrows():
-                    for size in sizes:
-                        # Check that logo was added to dataframe
-                        key = f"logo_{size}"
-                        self.assertTrue(key in row)
+                curtin_row = df_index_table.loc["02n415q13"]
+                foo_row = df_index_table.loc["12345"]
+                for size in sizes:
+                    # Check that logo was added to dataframe
+                    key = f"logo_{size}"
+                    self.assertTrue(key in curtin_row)
+                    self.assertTrue(key in foo_row)
 
-                        # Check that correct path created
-                        item_id = row["id"]
-                        expected_path = f"/logos/{category}/{size}/{item_id}.jpg"
-                        actual_path = row[key]
-                        self.assertEqual(expected_path, actual_path)
+                    # Check that correct path created
+                    item_id = curtin_row["id"]
+                    expected_curtin_path = f"/logos/{category}/{size}/{item_id}.jpg"
+                    expected_foo_path = f"/unknown.svg"
+                    self.assertEqual(expected_curtin_path, curtin_row[key])
+                    self.assertEqual(expected_foo_path, foo_row[key])
 
-                        # Check that downloaded logo exists
-                        full_path = os.path.join(self.release.build_path, expected_path[1:])
-                        self.assertTrue(os.path.isfile(full_path))
+                    # Check that downloaded logo exists
+                    full_path = os.path.join(self.release.build_path, expected_curtin_path[1:])
+                    self.assertTrue(os.path.isfile(full_path))
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
     def test_save_index(self, mock_var_get):
