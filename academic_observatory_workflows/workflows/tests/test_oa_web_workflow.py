@@ -12,41 +12,49 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: James Diprose
+# Author: James Diprose, Aniek Roelofs
 
+import json
 import os
 from typing import List
 from unittest import TestCase
 from unittest.mock import patch
 
+import httpretty
 import jsonlines
+import nltk
 import pandas as pd
 import pendulum
 import vcr
+from airflow.exceptions import AirflowException
 from airflow.utils.state import State
 from click.testing import CliRunner
-
-import academic_observatory_workflows.workflows.oa_web_workflow
-from academic_observatory_workflows.config import test_fixtures_folder, schema_folder
-from academic_observatory_workflows.workflows.oa_web_workflow import (
-    OaWebRelease,
-    OaWebWorkflow,
-    clean_url,
-    calc_oa_stats,
-    make_logo_url,
-    split_largest_remainder,
-    clean_ror_id,
-    val_empty,
-)
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
+    Table,
+    bq_load_tables,
+    make_dummy_dag,
     module_file_path,
 )
-from observatory.platform.utils.test_utils import Table, bq_load_tables
-from observatory.platform.utils.test_utils import (
-    make_dummy_dag,
+
+import academic_observatory_workflows.workflows.oa_web_workflow
+from academic_observatory_workflows.config import schema_folder, test_fixtures_folder
+from academic_observatory_workflows.workflows.oa_web_workflow import (
+    Description,
+    OaWebRelease,
+    OaWebWorkflow,
+    calc_oa_stats,
+    clean_ror_id,
+    clean_url,
+    get_institution_logo,
+    get_wiki_descriptions,
+    make_logo_url,
+    remove_text_between_brackets,
+    shorten_text_full_sentences,
+    split_largest_remainder,
+    val_empty,
 )
 
 academic_observatory_workflows.workflows.oa_web_workflow.INCLUSION_THRESHOLD = 0
@@ -128,6 +136,132 @@ class TestFunctions(TestCase):
 
         total = n_outputs_publisher_open_only + n_outputs_both + n_outputs_other_platform_open_only + n_outputs_closed
         self.assertEqual(100, total)
+
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.make_logo_url")
+    def test_get_institution_logo(self, mock_make_url):
+        mock_make_url.return_value = "logo_path"
+        mock_clearbit_ref = "academic_observatory_workflows.workflows.oa_web_workflow.clearbit_download_logo"
+
+        def download_logo(company_url, file_path, size, fmt):
+            if not os.path.isdir(os.path.dirname(file_path)):
+                os.makedirs(os.path.dirname(file_path))
+            with open(file_path, "w") as f:
+                f.write("foo")
+
+        ror_id, url, size, width, fmt, build_path = "ror_id", "url.com", "size", 10, "fmt", "build_path"
+        with CliRunner().isolated_filesystem():
+            # Test when logo file does not exist yet and logo download fails
+            with patch(mock_clearbit_ref) as mock_clearbit_download:
+                actual_ror_id, actual_logo_path = get_institution_logo(ror_id, url, size, width, fmt, build_path)
+                self.assertEqual(ror_id, actual_ror_id)
+                self.assertEqual("/unknown.svg", actual_logo_path)
+                mock_clearbit_download.assert_called_once_with(
+                    company_url=url, file_path="build_path/logos/institution/size/ror_id.fmt", size=width, fmt=fmt
+                )
+                mock_make_url.assert_not_called()
+
+            mock_make_url.reset_mock()
+
+            # Test when logo file does not exist yet and logo is downloaded successfully
+            with patch(mock_clearbit_ref, wraps=download_logo) as mock_clearbit_download:
+                actual_ror_id, actual_logo_path = get_institution_logo(ror_id, url, size, width, fmt, build_path)
+                self.assertEqual(ror_id, actual_ror_id)
+                self.assertEqual("logo_path", actual_logo_path)
+                mock_clearbit_download.assert_called_once_with(
+                    company_url=url, file_path="build_path/logos/institution/size/ror_id.fmt", size=width, fmt=fmt
+                )
+                mock_make_url.assert_called_once_with(category="institution", entity_id=ror_id, size=size, fmt=fmt)
+
+            mock_make_url.reset_mock()
+
+            # Test when logo file already exists
+            with patch(mock_clearbit_ref, wraps=download_logo) as mock_clearbit_download:
+                actual_ror_id, actual_logo_path = get_institution_logo(ror_id, url, size, width, fmt, build_path)
+                self.assertEqual(ror_id, actual_ror_id)
+                self.assertEqual("logo_path", actual_logo_path)
+                mock_clearbit_download.assert_not_called()
+                mock_make_url.assert_called_once_with(category="institution", entity_id=ror_id, size=size, fmt=fmt)
+
+    def test_remove_text_between_brackets(self):
+        text_input = (
+            "Sem Gordius (Nobis: Gestarum) at ea debile quantum si dis subordinatas Civiuni Magna. Ut "
+            "oratione ut est enim subsolanea—aut Quasi Nemine (Ac (Hac)-y-Enim) hac dis Facer Eventu (Se Necessaria)—mus quod 400 srripta firmare, annuebat p illum quas te 068,721 verbum displicere (803,200 ea in). Cum Memento si lorem 9,200 dispositae (7,200 ut) eget te Ridiculus magnae leo Arduas Nec sed 4,800 rationibus (900 ut) louor in vel integer te Nec Evidenter, Illa, eum Porro. Sem euismod'a crimen praevenire nec neque diabolum saepe, iniunctum vel Cadentes Modi, quo modo si intendis licuit sem vindices laesionem. Quo Quantum'v hitmari sint id Malrimonii, rem sit odio nascetur iste at Sociosqu."
+        )
+        text_output = remove_text_between_brackets(text_input)
+        text_expected = "Sem Gordius at ea debile quantum si dis subordinatas Civiuni Magna. Ut oratione ut est enim subsolanea—aut Quasi Nemine hac dis Facer Eventu—mus quod 400 srripta firmare, annuebat p illum quas te 068,721 verbum displicere. Cum Memento si lorem 9,200 dispositae eget te Ridiculus magnae leo Arduas Nec sed 4,800 rationibus louor in vel integer te Nec Evidenter, Illa, eum Porro. Sem euismod'a crimen praevenire nec neque diabolum saepe, iniunctum vel Cadentes Modi, quo modo si intendis licuit sem vindices laesionem. Quo Quantum'v hitmari sint id Malrimonii, rem sit odio nascetur iste at Sociosqu."
+        self.assertEqual(text_expected, text_output)
+
+    def test_shorten_text_full_sentences(self):
+        nltk.download("punkt")
+
+        text_input = "Sem Gordius at ea debile quantum si dis subordinatas Civiuni Magna. Ut oratione ut est enim subsolanea—aut Quasi Nemine hac dis Facer Eventu—mus quod 400 srripta firmare, annuebat p illum quas te 068,721 verbum displicere. Cum Memento si lorem 9,200 dispositae eget te Ridiculus magnae leo Arduas Nec sed 4,800 rationibus louor in vel integer te Nec Evidenter, Illa, eum Porro. Sem euismod'a crimen praevenire nec neque diabolum saepe, iniunctum vel Cadentes Modi, quo modo si intendis licuit sem vindices laesionem. Quo Quantum'v hitmari sint id Malrimonii, rem sit odio nascetur iste at Sociosqu."
+        text_output = shorten_text_full_sentences(text_input, char_limit=300)
+        text_expected = "Sem Gordius at ea debile quantum si dis subordinatas Civiuni Magna. Ut oratione ut est enim subsolanea—aut Quasi Nemine hac dis Facer Eventu—mus quod 400 srripta firmare, annuebat p illum quas te 068,721 verbum displicere."
+        self.assertEqual(text_expected, text_output)
+
+        text_input = 'Non Divini te Litigiorum sem Cruciatus Potentiores ut v equestrem mi dui Totius in Modeste futuri hic M.V. Centimanos mi Sensus. Sed Poenam Coepit Leo EA 009–08, Minimum 582, dantis dis leo consultationis si EROS: "Sem Subiungam, hominem est Nobili in Dignitatis non Habitasse Abdicatione, animi fortiaue nisi dui Necessitas privatis scientiam perditionis si vigilantia mus dignissim frefquentia veritatem eius secundam, caesarianis, promotionibus, rem laboriosam ulterioribus alliciebat discursus ex dui Imperiosus."'
+        text_output = shorten_text_full_sentences(text_input, char_limit=300)
+        text_expected = "Non Divini te Litigiorum sem Cruciatus Potentiores ut v equestrem mi dui Totius in Modeste futuri hic M.V. Centimanos mi Sensus."
+        self.assertEqual(text_expected, text_output)
+
+    def test_get_wiki_description(self):
+        country = {
+            "uri": "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&"
+            "titles=Panama%7CZambia%7CMalta%7CMali%7CAzerbaijan%7CSenegal%7CBotswana%7CEl_Salvador%7C"
+            "North_Macedonia%7CGuatemala%7CUzbekistan%7CMontenegro%7CSaint_Kitts_and_Nevis%7CBahrain%7C"
+            "Syria%7CYemen%7CMongolia%7CGrenada%7CAlbania%7CR%C3%A9union&redirects=1&exintro=1&explaintext=1",
+            "response_file_path": test_fixtures_folder("oa_web_workflow", "country_wiki_response.json"),
+            "descriptions_file_path": test_fixtures_folder("oa_web_workflow", "country_wiki_descriptions.json"),
+        }
+        institution = {
+            "uri": "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&"
+            "titles=Pontifical_Catholic_University_of_Peru%7CSt._John%27s_University_%28New_York_City%29%7C"
+            "St_George%27s_Hospital%7CCalifornia_Polytechnic_State_University%7CUniversity_of_Bath%7C"
+            "Indian_Institute_of_Technology_Gandhinagar%7CMichigan_Technological_University%7C"
+            "University_of_Guam%7CUniversity_of_Maragheh%7CUniversity_of_Detroit_Mercy%7C"
+            "Bath_Spa_University%7CCollege_of_Charleston%7CUniversidade_Federal_de_Goi%C3%A1s%7C"
+            "University_of_Almer%C3%ADa%7CNational_University_of_Computer_and_Emerging_Sciences%7C"
+            "Sefako_Makgatho_Health_Sciences_University%7CKuwait_Institute_for_Scientific_Research%7C"
+            "Chinese_Academy_of_Tropical_Agricultural_Sciences%7CUniversidade_Federal_do_Pampa%7C"
+            "Nationwide_Children%27s_Hospital&redirects=1&exintro=1&explaintext=1",
+            "response_file_path": test_fixtures_folder("oa_web_workflow", "institution_wiki_response.json"),
+            "descriptions_file_path": test_fixtures_folder("oa_web_workflow", "institution_wiki_descriptions.json"),
+        }
+
+        for entity in [country, institution]:
+            # Download required nltk resource
+            nltk.download("punkt")
+
+            # Set up titles arg and expected descriptions
+            with open(entity["descriptions_file_path"], "r") as f:
+                descriptions_info = json.load(f)
+            titles = {}
+            descriptions = []
+            for item in descriptions_info:
+                id, title, description = item
+                titles[title] = id
+                descriptions.append((id, description))
+
+            with httpretty.enabled():
+                # Set up mocked successful response
+                with open(entity["response_file_path"], "rb") as f:
+                    body = f.read()
+                httpretty.register_uri(httpretty.GET, entity["uri"], body=body)
+
+                # Get wiki descriptions
+                actual_descriptions = get_wiki_descriptions(titles)
+
+            actual_descriptions.sort(key=lambda x: x[0])
+            # TODO update the expected descriptions in fixture, based on the given char limit
+            # self.assertListEqual(descriptions, actual_descriptions)
+
+            with httpretty.enabled():
+                # Set up mocked  failed response
+                httpretty.register_uri(httpretty.GET, entity["uri"], status=400)
+
+                with self.assertRaises(AirflowException):
+                    # Get wiki descriptions
+                    get_wiki_descriptions(titles)
 
 
 class TestOaWebRelease(TestCase):
@@ -414,8 +548,9 @@ class TestOaWebRelease(TestCase):
             category = "country"
             df = pd.DataFrame(self.countries)
             df = self.release.preprocess_df(category, df)
-            self.release.update_index_with_logos(category, df)
-            for i, row in df.iterrows():
+            df_index_table = self.release.make_index(category, df)
+            self.release.update_index_with_logos(category, df_index_table)
+            for i, row in df_index_table.iterrows():
                 for size in sizes:
                     # Check that logo key created
                     key = f"logo_{size}"
@@ -431,9 +566,10 @@ class TestOaWebRelease(TestCase):
             category = "institution"
             df = pd.DataFrame(self.institutions)
             df = self.release.preprocess_df(category, df)
+            df_index_table = self.release.make_index(category, df)
             with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "test_make_logos.yaml")):
-                self.release.update_index_with_logos(category, df)
-                for i, row in df.iterrows():
+                self.release.update_index_with_logos(category, df_index_table)
+                for i, row in df_index_table.iterrows():
                     for size in sizes:
                         # Check that logo was added to dataframe
                         key = f"logo_{size}"
@@ -481,6 +617,11 @@ class TestOaWebRelease(TestCase):
                     "id": "NZL",
                     "name": "New Zealand",
                     "category": category,
+                    "description": {
+                        "license": Description.license,
+                        "text": None,
+                        "url": "https://en.wikipedia.org/wiki/New_Zealand",
+                    },
                     "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
                     "subregion": "Australia and New Zealand",
                     "region": "Oceania",
@@ -591,6 +732,11 @@ class TestOaWebRelease(TestCase):
                 "id": "02n415q13",
                 "name": "Curtin University",
                 "country": "Australia",
+                "description": {
+                    "license": Description.license,
+                    "text": None,
+                    "url": "https://en.wikipedia.org/wiki/Curtin_University",
+                },
                 "category": category,
                 "url": "https://curtin.edu.au/",
                 "wikipedia_url": "https://en.wikipedia.org/wiki/Curtin_University",
@@ -770,7 +916,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "check_dependencies": ["query"],
                     "query": ["download"],
                     "download": ["transform"],
-                    "transform": []
+                    "transform": ["cleanup"],
+                    "cleanup": [],
                 },
                 dag,
             )
@@ -863,6 +1010,15 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 for file in expected_files:
                     print(f"\t{file}")
                     self.assertTrue(os.path.isfile(file))
+
+                # Test that all telescope data deleted
+                download_folder, extract_folder, transform_folder = (
+                    os.path.join(t, "data", "telescopes", "download", "oa_web_workflow", "oa_web_workflow_2021_11_13"),
+                    os.path.join(t, "data", "telescopes", "extract", "oa_web_workflow", "oa_web_workflow_2021_11_13"),
+                    os.path.join(t, "data", "telescopes", "transform", "oa_web_workflow", "oa_web_workflow_2021_11_13"),
+                )
+                env.run_task(workflow.cleanup.__name__)
+                self.assert_cleanup(download_folder, extract_folder, transform_folder)
 
 
 def make_expected_build_files(base_path: str) -> List[str]:

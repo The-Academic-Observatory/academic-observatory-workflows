@@ -12,45 +12,51 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: James Diprose
+# Author: James Diprose, Aniek Roelofs
 
 from __future__ import annotations
 
 import dataclasses
 import datetime
 import json
+import logging
 import math
 import os
 import os.path
+import re
 import shutil
+import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import field
 from operator import itemgetter
-from typing import Optional, List, Dict, Union, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 import google.cloud.bigquery as bigquery
 import jsonlines
+import nltk
 import pandas as pd
 import pendulum
 import pyarrow as pa
 import pyarrow.parquet as pq
+import requests
 from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
 from airflow.sensors.external_task import ExternalTaskSensor
-from pyarrow import json as pa_json
-
-from academic_observatory_workflows.clearbit import clearbit_download_logo
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.config_utils import module_file_path
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import (
-    select_table_shard_dates,
     bigquery_sharded_table_id,
     download_blobs_from_cloud_storage,
+    select_table_shard_dates,
 )
 from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
 from observatory.platform.workflows.workflow import Workflow
+from pyarrow import json as pa_json
+
+from academic_observatory_workflows.clearbit import clearbit_download_logo
 
 # The minimum number of outputs before including an entity in the analysis
 INCLUSION_THRESHOLD = 1000
@@ -317,10 +323,29 @@ def clean_ror_id(ror_id: str):
 
 
 @dataclasses.dataclass
+class Description:
+    text: str
+    url: str
+    license: str = (
+        "https://en.wikipedia.org/wiki/Wikipedia:Text_of_Creative_Commons_Attribution-ShareAlike_3.0_Unported_License"
+    )
+
+    @staticmethod
+    def from_dict(dict_: Dict) -> Description:
+        text = dict_.get("description")
+        url = dict_.get("wikipedia_url")
+
+        return Description(text, url)
+
+    def to_dict(self) -> Dict:
+        return {"text": self.text, "license": self.license, "url": self.url}
+
+
+@dataclasses.dataclass
 class Entity:
     id: str
     name: str
-    description: str = None  # todo
+    description: Description
     category: str = None
     logo_s: str = None
     logo_l: str = None
@@ -343,12 +368,12 @@ class Entity:
     def from_dict(dict_: Dict) -> Entity:
         id = dict_.get("id")
         name = dict_.get("name")
-        description = dict_.get("description")
+        wikipedia_url = dict_.get("wikipedia_url")
+        description = Description.from_dict(dict_)
         category = dict_.get("category")
         logo_s = dict_.get("logo_s")
         logo_l = dict_.get("logo_l")
         url = dict_.get("url")
-        wikipedia_url = dict_.get("wikipedia_url")
         country = dict_.get("country")
         subregion = dict_.get("subregion")
         region = dict_.get("region")
@@ -379,7 +404,7 @@ class Entity:
         dict_ = {
             "id": self.id,
             "name": self.name,
-            "description": self.description,
+            "description": self.description.to_dict(),
             "category": self.category,
             "logo_s": self.logo_s,
             "logo_l": self.logo_l,
@@ -401,6 +426,125 @@ class Entity:
         # Filter out key val pairs with empty lists and values
         dict_ = {k: v for k, v in dict_.items() if not val_empty(v)}
         return dict_
+
+
+def get_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: str, build_path) -> Tuple[str, str]:
+    """Get the path to the logo for an institution.
+    If the logo does not exist in the build path yet, download from the Clearbit Logo API tool.
+    If the logo does not exist and failed to download, the path will default to "/unknown.svg".
+
+    :param ror_id: the institution's ROR id
+    :param url: the URL of the company domain + suffix e.g. spotify.com
+    :param size: the image size of the small logo for tables etc.
+    :param width: the width of the image.
+    :param fmt: the image format.
+    :param build_path: the build path for files of this workflow
+    :return: The ROR id and relative path (from build path) to the logo
+    """
+    logo_path = f"/unknown.svg"
+
+    file_path = os.path.join(build_path, "logos", "institution", size, f"{ror_id}.{fmt}")
+    if not os.path.isfile(file_path):
+        clearbit_download_logo(company_url=url, file_path=file_path, size=width, fmt=fmt)
+    if os.path.isfile(file_path):
+        logo_path = make_logo_url(category="institution", entity_id=ror_id, size=size, fmt=fmt)
+
+    return ror_id, logo_path
+
+
+def get_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
+    """Get the wikipedia descriptions for the given titles.
+
+    :param titles: Dict with titles as keys and id's (either ror_id or alpha3 country code) as values
+    :return: List with tuples (id, wiki description)
+    """
+    titles_arg = []
+    for title, entity_id in titles.items():
+        # URL encode title if it is not encoded yet
+        if title == urllib.parse.unquote(title):
+            titles_arg.append(urllib.parse.quote(title))
+        # Append title directly if it is already encoded and not empty
+        else:
+            titles_arg.append(title)
+
+    # Confirm that there is a max of 20 titles, the limit for the wikipedia API
+    assert len(titles_arg) <= 20
+
+    # Extract descriptions using the Wikipedia API
+    url = f"https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&titles={'%7C'.join(titles_arg)}&redirects=1&exintro=1&explaintext=1"
+    response = requests.get(url)
+    if response.status_code != 200:
+        raise AirflowException(f"Unsuccessful retrieving wikipedia extracts, url: {url}")
+    response_json = response.json()
+    pages = response_json["query"]["pages"]
+
+    # Create mapping between redirected page title and original page title
+    redirects = {}
+    for title in response_json["query"].get("redirects", []):
+        redirects[title["to"]] = title["from"]
+
+    # Create mapping between entity_id and decoded, alpha-only page title.
+    alpha_titles = {re.sub("[^A-Za-z]+", "", urllib.parse.unquote(k)): v for k, v in titles.items()}
+    descriptions = []
+    for page_id, page in pages.items():
+        page_title = page["title"]
+        # Get page_title from redirect if it is present
+        page_title = redirects.get(page_title, page_title)
+
+        # Match entity_id and page_title
+        entity_id = alpha_titles[re.sub("[^A-Za-z]+", "", page_title)]
+
+        # Get description and clean up
+        description = page.get("extract", "")
+        if description:
+            description = remove_text_between_brackets(description)
+            description = shorten_text_full_sentences(description)
+
+        descriptions.append((entity_id, description))
+    return descriptions
+
+
+def remove_text_between_brackets(text: str) -> str:
+    """Remove any text between (nested) brackets.
+    If there is a space after the opening bracket, this is removed as well.
+    E.g. 'Like this (foo, (bar)) example' -> 'Like this example'
+
+    :param text: The text to modify
+    :return: The modified text
+    """
+    new_text = []
+    nested = 0
+    for char in text:
+        if char == "(":
+            nested += 1
+            new_text = new_text[:-1] if new_text[-1] == " " else new_text
+        elif (char == ")") and nested:
+            nested -= 1
+        elif nested == 0:
+            new_text.append(char)
+    return "".join(new_text)
+
+
+def shorten_text_full_sentences(text: str, *, char_limit: int = 300) -> str:
+    """Shorten a text to as many complete sentences as possible, while the total number of characters stays below
+    the char_limit.
+
+    :param text: A string with the complete text
+    :param char_limit: The max number of characters
+    :return: The shortened text.
+    """
+    # Create list of sentences
+    sentences = nltk.tokenize.sent_tokenize(text)
+
+    # Add sentences until char limit is reached
+    sentences_output = []
+    total_len = 0
+    for sentence in sentences:
+        total_len += len(sentence)
+        if total_len > char_limit:
+            break
+        sentences_output.append(sentence)
+    return " ".join(sentences_output)
 
 
 def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, location: str = "us") -> bool:
@@ -746,13 +890,10 @@ class OaWebRelease(SnapshotRelease):
                     df.loc[i, key] = value
 
     def update_index_with_logos(self, category: str, df_index_table: pd.DataFrame):
-        """Update the index with logos, downloading logos if the don't exist.
+        """Update the index with logos, downloading logos if they don't exist.
 
         :param category: the category, i.e. country or institution.
         :param df_index_table: the index table Pandas dataframe.
-        :param size: the image size of the small logo for tables etc.
-        :param fmt: the image format.
-        :param size_lg: the image size of the large logo for details pages.
         :return: None.
         """
 
@@ -763,15 +904,18 @@ class OaWebRelease(SnapshotRelease):
 
         # Make logos
         if category == "country":
-            # Copy and rename logo images from using alpha2 to alpha3 country codes
-            for size in sizes:
-                base_path = os.path.join(self.build_path, "logos", category, size)
-                for i, row in df_index_table.iterrows():
-                    alpha3 = row["id"]
-                    alpha2 = row["alpha2"]
-                    src_path = os.path.join(self.data_path, "flags", size, f"{alpha2}.svg")
-                    dst_path = os.path.join(base_path, f"{alpha3}.svg")
-                    shutil.copy(src_path, dst_path)
+            logging.info("Copying local logos")
+            with ThreadPoolExecutor() as executor:
+                futures = []
+                # Copy and rename logo images from using alpha2 to alpha3 country codes
+                for size in sizes:
+                    base_path = os.path.join(self.build_path, "logos", category, size)
+                    for alpha3, alpha2 in zip(df_index_table["id"], df_index_table["alpha2"]):
+                        src_path = os.path.join(self.data_path, "flags", size, f"{alpha2}.svg")
+                        dst_path = os.path.join(base_path, f"{alpha3}.svg")
+                        futures.append(executor.submit(shutil.copy, src_path, dst_path))
+                [f.result() for f in as_completed(futures)]
+            logging.info("Finished copying local logos")
 
             # Add logo urls to index
             for size in sizes:
@@ -779,25 +923,77 @@ class OaWebRelease(SnapshotRelease):
                     lambda country_code: make_logo_url(category=category, entity_id=country_code, size=size, fmt="svg")
                 )
         elif category == "institution":
+            logging.info("Downloading logos using Clearbit")
             fmt = "jpg"
-            logo_path_unknown = f"/unknown.svg"
+            # Get the institution logo and the path to the logo image
             for size, width in zip(sizes, [32, 128]):
-                base_path = os.path.join(self.build_path, "logos", category, size)
-                logos = []
-                for i, row in df_index_table.iterrows():
-                    ror_id = row["id"]
-                    url = clean_url(row["url"])
-                    logo_path = logo_path_unknown
-                    if not pd.isnull(url):
-                        file_path = os.path.join(base_path, f"{ror_id}.{fmt}")
-                        if not os.path.isfile(file_path):
-                            clearbit_download_logo(company_url=url, file_path=file_path, size=width, fmt=fmt)
+                with ThreadPoolExecutor() as executor:
+                    futures = []
+                    for ror_id, url in zip(df_index_table["id"], df_index_table["url"]):
+                        url = clean_url(url)
+                        if url:
+                            futures.append(
+                                executor.submit(get_institution_logo, ror_id, url, size, width, fmt, self.build_path)
+                            )
+                    logo_paths = [f.result() for f in as_completed(futures)]
+                logging.info("Finished downloading logos")
 
-                        if os.path.isfile(file_path):
-                            logo_path = make_logo_url(category=category, entity_id=ror_id, size=size, fmt=fmt)
+                # Sort table and results by id
+                df_index_table.sort_index(inplace=True)
+                logo_paths_sorted = [tup[1] for tup in sorted(logo_paths, key=lambda tup: tup[0])]
 
-                    logos.append(logo_path)
-                df_index_table[f"logo_{size}"] = logos
+                # Add logo paths to table
+                df_index_table[f"logo_{size}"] = logo_paths_sorted
+
+    def update_index_with_wiki_descriptions(self, df_index_table: pd.DataFrame):
+        """Get the wikipedia descriptions for each entity (institution or country) and add them to the index table.
+
+        :param df_index_table: the index table Pandas dataframe.
+        :return: None.
+        """
+        # Filter to select rows where url is not empty
+        wikipedia_url_filter = df_index_table["wikipedia_url"] != ""
+
+        # The wikipedia 'title' is the last part of the wikipedia url, without segments specified with '#'
+        titles_all = list(
+            zip(
+                df_index_table.loc[wikipedia_url_filter, "wikipedia_url"]
+                .str.split("wikipedia.org/wiki/")
+                .str[-1]
+                .str.split("#")
+                .str[0],
+                df_index_table.loc[wikipedia_url_filter, "id"],
+            )
+        )
+        # Create list with dictionaries of max 20 ids + titles (this is wiki api max)
+        titles_chunks = [
+            dict(titles_all[i : i + OaWebWorkflow.WIKI_MAX_TITLES])
+            for i in range(0, len(titles_all), OaWebWorkflow.WIKI_MAX_TITLES)
+        ]
+
+        logging.info(
+            f"Downloading wikipedia descriptions for all {len(titles_all)} entities in {len(titles_chunks)} chunks."
+        )
+        # Download 'punkt' resource, required when shortening wiki descriptions
+        nltk.download("punkt")
+
+        # Process each dictionary in separate thread to get wiki descriptions
+        with ThreadPoolExecutor() as executor:
+            futures = []
+            for titles in titles_chunks:
+                futures.append(executor.submit(get_wiki_descriptions, titles))
+            descriptions = []
+            for f in as_completed(futures):
+                descriptions += f.result()
+        logging.info(f"Finished downloading wikipedia descriptions")
+
+        # Sort table and results by id
+        df_index_table.sort_index(inplace=True)
+        descriptions_sorted = [tup[1] for tup in sorted(descriptions, key=lambda tup: tup[0])]
+
+        # Add wiki descriptions to table
+        df_index_table.loc[wikipedia_url_filter, "description"] = descriptions_sorted
+        df_index_table.loc[~wikipedia_url_filter, "description"] = ""
 
     def save_index(self, category: str, df_index_table: pd.DataFrame):
         """Save the index table.
@@ -965,7 +1161,7 @@ class OaWebRelease(SnapshotRelease):
 
 
 class OaWebWorkflow(Workflow):
-    """ The OaWebWorkflow generates data files for the COKI Open Access Dashboard.
+    """The OaWebWorkflow generates data files for the COKI Open Access Dashboard.
 
     The figure below illustrates the generated data and notes about what each file is used for.
     .
@@ -1011,6 +1207,9 @@ class OaWebWorkflow(Workflow):
                 ├── 05ym42410.jpg
                 └── 05ynxx418.jpg
     """
+
+    # Set the number of titles for which wiki descriptions are retrieved at once, the API can return max 20 extracts.
+    WIKI_MAX_TITLES = 20
 
     def __init__(
         self,
@@ -1068,6 +1267,7 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.query)
         self.add_task(self.download)
         self.add_task(self.transform)
+        self.add_task(self.cleanup)
 
     def make_release(self, **kwargs) -> OaWebRelease:
         """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is
@@ -1099,8 +1299,18 @@ class OaWebWorkflow(Workflow):
         passed to this argument.
         :return: None.
         """
-
         results = []
+
+        # ROR release date
+        ror_table_id = "ror"
+        ror_release_date = select_table_shard_dates(
+            project_id=release.project_id,
+            dataset_id=release.ror_dataset_id,
+            table_id=ror_table_id,
+            end_date=release.release_date,
+        )[0]
+        ror_sharded_table_id = bigquery_sharded_table_id(ror_table_id, ror_release_date)
+
         for agg_table_id in self.table_ids:
             # Aggregate release dates
             agg_release_date = select_table_shard_dates(
@@ -1110,16 +1320,6 @@ class OaWebWorkflow(Workflow):
                 end_date=release.release_date,
             )[0]
             agg_sharded_table_id = bigquery_sharded_table_id(agg_table_id, agg_release_date)
-
-            # ROR release date
-            ror_table_id = "ror"
-            ror_release_date = select_table_shard_dates(
-                project_id=release.project_id,
-                dataset_id=release.ror_dataset_id,
-                table_id=ror_table_id,
-                end_date=release.release_date,
-            )[0]
-            ror_sharded_table_id = bigquery_sharded_table_id(ror_table_id, ror_release_date)
 
             # Fetch data
             destination_uri = f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{agg_table_id}.jsonl"
@@ -1149,7 +1349,6 @@ class OaWebWorkflow(Workflow):
         passed to this argument.
         :return: None.
         """
-
         prefix = f"{self.dag_id}/{release.release_id}"
         state = download_blobs_from_cloud_storage(
             bucket_name=release.download_bucket, prefix=prefix, destination_path=release.download_folder
@@ -1170,6 +1369,7 @@ class OaWebWorkflow(Workflow):
         # Make required folders
         auto_complete = []
         for category in self.table_ids:
+            logging.info(f"Transforming {category} entity")
             # Load data
             df = release.load_data(category)
 
@@ -1179,6 +1379,7 @@ class OaWebWorkflow(Workflow):
             # Make index table
             df_index_table = release.make_index(category, df)
             release.update_index_with_logos(category, df_index_table)
+            release.update_index_with_wiki_descriptions(df_index_table)
             entities = release.make_entities(df_index_table, df)
 
             # Make autocomplete data for this category
@@ -1187,13 +1388,27 @@ class OaWebWorkflow(Workflow):
             # Save category data
             release.save_index(category, df_index_table)
             release.save_entities(category, entities)
+            logging.info(f"Saved transformed {category} entity")
 
         # Save auto complete data as json
         release.save_autocomplete(auto_complete)
+        logging.info(f"Saved autocomplete data")
 
         # Save stats as json
         min_year = 2000
         max_year = pendulum.now().year - 1
-        last_updated = pendulum.now().format("Do MMMM YYYY")
+        last_updated = pendulum.now().format("D MMMM YYYY")
         stats = Stats(min_year, max_year, last_updated)
         release.save_stats(stats)
+        logging.info(f"Saved stats data")
+
+    def cleanup(self, release: OaWebRelease, **kwargs):
+        """Delete all files and folders associated with this release.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+        release.cleanup()
