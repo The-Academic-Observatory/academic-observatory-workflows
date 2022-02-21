@@ -43,20 +43,21 @@ import requests
 from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
 from airflow.sensors.external_task import ExternalTaskSensor
-from observatory.platform.utils.airflow_utils import AirflowVars
+from pyarrow import json as pa_json
+
+from academic_observatory_workflows.clearbit import clearbit_download_logo
+from observatory.platform.utils.airflow_utils import AirflowVars, get_airflow_connection_password
 from observatory.platform.utils.config_utils import module_file_path
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import (
     bigquery_sharded_table_id,
     download_blobs_from_cloud_storage,
     select_table_shard_dates,
+    upload_file_to_cloud_storage,
 )
 from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
 from observatory.platform.workflows.workflow import Workflow
-from pyarrow import json as pa_json
-
-from academic_observatory_workflows.clearbit import clearbit_download_logo
 
 # The minimum number of outputs before including an entity in the analysis
 INCLUSION_THRESHOLD = 1000
@@ -339,6 +340,27 @@ class Description:
 
     def to_dict(self) -> Dict:
         return {"text": self.text, "license": self.license, "url": self.url}
+
+
+def trigger_repository_dispatch(*, token: str, event_type: str):
+    """Trigger a Github repository dispatch event.
+
+    :param event_type: the event type
+    :param token: the Github token.
+    :return: the response.
+    """
+
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "Authorization": f"token {token}",
+    }
+    data = {"event_type": event_type}
+
+    return requests.post(
+        "https://api.github.com/repos/The-Academic-Observatory/coki-oa-web/dispatches",
+        headers=headers,
+        data=json.dumps(data),
+    )
 
 
 @dataclasses.dataclass
@@ -640,6 +662,7 @@ class OaWebRelease(SnapshotRelease):
         dag_id: str,
         project_id: str,
         release_date: pendulum.DateTime,
+        data_bucket_name: str,
         change_chart_years: int = 10,
         agg_dataset_id: str = "observatory",
         ror_dataset_id: str = "ror",
@@ -656,6 +679,7 @@ class OaWebRelease(SnapshotRelease):
 
         super().__init__(dag_id=dag_id, release_date=release_date)
         self.project_id = project_id
+        self.data_bucket_name = data_bucket_name
         self.change_chart_years = change_chart_years
         self.agg_dataset_id = agg_dataset_id
         self.ror_dataset_id = ror_dataset_id
@@ -1161,6 +1185,9 @@ class OaWebRelease(SnapshotRelease):
 
 
 class OaWebWorkflow(Workflow):
+    DATA_BUCKET = "oa_web_data_bucket"
+    GITHUB_TOKEN_CONN = "oa_web_github_token"
+
     """The OaWebWorkflow generates data files for the COKI Open Access Dashboard.
 
     The figure below illustrates the generated data and notes about what each file is used for.
@@ -1224,7 +1251,7 @@ class OaWebWorkflow(Workflow):
         airflow_conns: List[str] = None,
         agg_dataset_id: str = "observatory",
         ror_dataset_id: str = "ror",
-        oa_website_name: str = "open-access-web",
+        version: str = "v1",
     ):
         """Create the OaWebWorkflow.
 
@@ -1233,6 +1260,9 @@ class OaWebWorkflow(Workflow):
         :param schedule_interval: the schedule interval.
         :param catchup: whether to catchup or not.
         :param table_ids: the table ids.
+        :param version: the dataset version published by this workflow. The Github Action pulls from a specific dataset
+        version: https://github.com/The-Academic-Observatory/coki-oa-web/blob/develop/.github/workflows/build-on-data-update.yml#L68-L74.
+        This is so that when breaking changes are made to the schema, the web application won't break.
         :param airflow_vars: required Airflow Variables.
         """
 
@@ -1243,7 +1273,11 @@ class OaWebWorkflow(Workflow):
                 AirflowVars.DATA_LOCATION,
                 AirflowVars.DOWNLOAD_BUCKET,
                 AirflowVars.TRANSFORM_BUCKET,
+                self.DATA_BUCKET,
             ]
+
+        if airflow_conns is None:
+            airflow_conns = [self.GITHUB_TOKEN_CONN]
 
         super().__init__(
             dag_id=dag_id,
@@ -1256,7 +1290,7 @@ class OaWebWorkflow(Workflow):
         self.agg_dataset_id = agg_dataset_id
         self.ror_dataset_id = ror_dataset_id
         self.table_ids = table_ids
-        self.oa_website_name = oa_website_name
+        self.version = version
         if table_ids is None:
             self.table_ids = ["country", "institution"]
 
@@ -1267,6 +1301,8 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.query)
         self.add_task(self.download)
         self.add_task(self.transform)
+        self.add_task(self.upload_dataset)
+        self.add_task(self.repository_dispatch)
         self.add_task(self.cleanup)
 
     def make_release(self, **kwargs) -> OaWebRelease:
@@ -1281,10 +1317,12 @@ class OaWebWorkflow(Workflow):
 
         project_id = Variable.get(AirflowVars.PROJECT_ID)
         release_date = make_release_date(**kwargs)
+        data_bucket_name = Variable.get(self.DATA_BUCKET)
 
         return OaWebRelease(
             dag_id=self.dag_id,
             project_id=project_id,
+            data_bucket_name=data_bucket_name,
             release_date=release_date,
             ror_dataset_id=self.ror_dataset_id,
             agg_dataset_id=self.agg_dataset_id,
@@ -1349,6 +1387,7 @@ class OaWebWorkflow(Workflow):
         passed to this argument.
         :return: None.
         """
+
         prefix = f"{self.dag_id}/{release.release_id}"
         state = download_blobs_from_cloud_storage(
             bucket_name=release.download_bucket, prefix=prefix, destination_path=release.download_folder
@@ -1401,6 +1440,45 @@ class OaWebWorkflow(Workflow):
         stats = Stats(min_year, max_year, last_updated)
         release.save_stats(stats)
         logging.info(f"Saved stats data")
+
+        # Zip data
+        dst = os.path.join(release.transform_folder, "latest")
+        shutil.copytree(release.build_path, dst)
+        base_name = os.path.join(release.transform_folder, "latest")
+        shutil.make_archive(base_name, "zip", dst)
+
+    def upload_dataset(self, release: OaWebRelease, **kwargs):
+        """Publish the dataset produced by this workflow.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+
+        # upload_file_to_cloud_storage should always rewrite a new version of latest.zip if it exists
+        # object versioning on the bucket will keep the previous versions
+        blob_name = f"{self.version}/latest.zip"
+        file_path = os.path.join(release.transform_folder, "latest.zip")
+        upload_file_to_cloud_storage(
+            bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path, check_blob_hash=False
+        )
+
+    def repository_dispatch(self, release: OaWebRelease, **kwargs):
+        """Trigger a Github repository_dispatch to trigger new website builds.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+
+        token = get_airflow_connection_password(self.GITHUB_TOKEN_CONN)
+        event_types = ["data-update/develop", "data-update/staging", "data-update/production"]
+        for event_type in event_types:
+            trigger_repository_dispatch(token=token, event_type=event_type)
 
     def cleanup(self, release: OaWebRelease, **kwargs):
         """Delete all files and folders associated with this release.
