@@ -32,17 +32,13 @@ from typing import Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 import google.cloud.bigquery as bigquery
-import jsonlines
 import nltk
 import pandas as pd
 import pendulum
-import pyarrow as pa
-import pyarrow.parquet as pq
 import requests
 from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
 from airflow.sensors.external_task import ExternalTaskSensor
-from pyarrow import json as pa_json
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
 from observatory.platform.utils.airflow_utils import AirflowVars, get_airflow_connection_password
@@ -60,6 +56,7 @@ from observatory.platform.workflows.workflow import Workflow
 
 # The minimum number of outputs before including an entity in the analysis
 INCLUSION_THRESHOLD = 1000
+MIN_YEAR = 2000
 
 # The query that pulls data to be included in the dashboards
 QUERY = """
@@ -89,7 +86,7 @@ FROM
   `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg 
   LEFT OUTER JOIN `{project_id}.{ror_dataset_id}.{ror_table_id}` as ror ON agg.id = ror.id
   LEFT OUTER JOIN `{project_id}.{settings_dataset_id}.{country_table_id}` as country ON agg.id = country.alpha3
-WHERE agg.time_period >= 2000 AND agg.time_period <= (EXTRACT(YEAR FROM CURRENT_DATE()) - 1)
+WHERE agg.time_period >= {min_year} AND agg.time_period <= (EXTRACT(YEAR FROM CURRENT_DATE()) - 1)
 ORDER BY year DESC, name ASC
 """
 
@@ -615,17 +612,6 @@ def clean_url(url: str) -> str:
     return f"{p.scheme}://{p.netloc}/"
 
 
-def save_as_jsonl(output_path: str, iterable: List[Dict]):
-    with open(output_path, "w") as f:
-        with jsonlines.Writer(f) as writer:
-            writer.write_all(iterable)
-
-
-def jsonl_to_pyarrow(jsonl_path: str, output_path: str):
-    table = pa_json.read_json(jsonl_path)
-    pq.write_table(table, output_path)
-
-
 def make_logo_url(*, category: str, entity_id: str, size: str, fmt: str) -> str:
     return f"/logos/{category}/{size}/{entity_id}.{fmt}"
 
@@ -1039,14 +1025,6 @@ class OaWebRelease(SnapshotRelease):
         json_path = os.path.join(base_path, f"{category}.json")
         save_json(json_path, entities)
 
-        # Save JSONL
-        jsonl_path = os.path.join(base_path, f"{category}.jsonl")
-        save_as_jsonl(jsonl_path, entities)
-
-        # Save as PyArrow
-        pyarrow_path = os.path.join(base_path, f"{category}.parquet")
-        jsonl_to_pyarrow(jsonl_path, pyarrow_path)
-
     def make_entities(self, df_index_table: pd.DataFrame, df: pd.DataFrame) -> List[Entity]:
         """Make entities.
 
@@ -1142,10 +1120,101 @@ class OaWebRelease(SnapshotRelease):
         records = df_ac.to_dict("records")
         save_json(output_path, records)
 
-        # Save as PyArrow
-        table = pa.Table.from_pandas(df_ac)
-        pyarrow_path = os.path.join(base_path, f"autocomplete.parquet")
-        pq.write_table(table, pyarrow_path)
+    def make_search_index(self, df_index_table: pd.DataFrame, category: str) -> List[List]:
+        """A lightweight index for search and filtering via the Cloudflare Worker.
+
+        # Schema:
+        # entity_id
+        # name
+        # logo
+        # category
+        # country: null for country
+        # subregion
+        # region
+        # institution_types: null for country
+        # n_outputs
+        # n_outputs_open
+        # p_outputs_open
+        # p_outputs_publisher_open_only
+        # p_outputs_both
+        # p_outputs_other_platform_open_only
+        # p_outputs_closed
+
+        :param df_index_table: index table Pandas dataframe.
+        :param category: the category, i.e. country or institution.
+        :return: search index records.
+        """
+
+        records = []
+        for i, row in df_index_table.iterrows():
+            entity_id = row["id"]
+            name = row["name"]
+            logo_s = row["logo_s"]
+            country = row.get("country")
+            subregion = row["subregion"]
+            region = row["region"]
+            institution_types = row.get("institution_types")
+            n_outputs = row["n_outputs"]
+            n_outputs_open = row["n_outputs_open"]
+            p_outputs_open = row["p_outputs_open"]
+            p_outputs_publisher_open_only = row["p_outputs_publisher_open_only"]
+            p_outputs_both = row["p_outputs_both"]
+            p_outputs_other_platform_open_only = row["p_outputs_other_platform_open_only"]
+            p_outputs_closed = row["p_outputs_closed"]
+
+            records.append(
+                {
+                    "id": entity_id,
+                    "name": name,
+                    "logo_s": logo_s,
+                    "category": category,
+                    "country": country,
+                    "subregion": subregion,
+                    "region": region,
+                    "institution_types": institution_types,
+                    "stats": {
+                        "n_outputs": n_outputs,
+                        "n_outputs_open": n_outputs_open,
+                        "p_outputs_open": p_outputs_open,
+                        "p_outputs_publisher_open_only": p_outputs_publisher_open_only,
+                        "p_outputs_both": p_outputs_both,
+                        "p_outputs_other_platform_open_only": p_outputs_other_platform_open_only,
+                        "p_outputs_closed": p_outputs_closed
+                    }
+                }
+                # [
+                #     entity_id,
+                #     name,
+                #     logo,
+                #     category,
+                #     country,
+                #     subregion,
+                #     region,
+                #     institution_types,
+                #     n_outputs,
+                #     n_outputs_open,
+                #     p_outputs_open,
+                #     p_outputs_publisher_open_only,
+                #     p_outputs_both,
+                #     p_outputs_other_platform_open_only,
+                #     p_outputs_closed,
+                # ]
+            )
+        return records
+
+    def save_search_index(self, search_index: List[List]):
+        """Save the autocomplete data.
+
+        :param auto_complete: the autocomplete list.
+        :return: None.
+        """
+
+        base_path = os.path.join(self.build_path, "data")
+        os.makedirs(base_path, exist_ok=True)
+
+        # Save as JSON
+        output_path = os.path.join(base_path, "index.json")
+        save_json(output_path, search_index)
 
     def save_stats(self, stats: Stats):
         """Save overall stats.
@@ -1172,7 +1241,6 @@ class OaWebWorkflow(Workflow):
     .
     ├── data: data
     │   ├── autocomplete.json: used for the website search functionality. Copied into public/data folder.
-    │   ├── autocomplete.parquet: used for filtering in Cloudflare Worker.
     │   ├── country: individual entity statistics files for countries. Used to build each country page.
     │   │   ├── ALB.json
     │   │   ├── ARE.json
@@ -1180,8 +1248,6 @@ class OaWebWorkflow(Workflow):
     │   ├── country.json: used to create the country table. First 18 countries used to build first page of country table
     │   │                 and then this file is included in the public folder and downloaded by the client to enable the
     │   │                 other pages of the table to be displayed. Copied into public/data folder.
-    │   ├── country.jsonl: used to generate the parquet file.
-    │   ├── country.parquet: to be used along with apache-arrow to enable filtering from a Cloudflare Worker.
     │   ├── institution: individual entity statistics files for institutions. Used to build each institution page.
     │   │   ├── 05ykr0121.json
     │   │   ├── 05ym42410.json
@@ -1189,8 +1255,6 @@ class OaWebWorkflow(Workflow):
     │   ├── institution.json: used to create the institution table. First 18 institutions used to build first page of institution table
     │   │                     and then this file is included in the public folder and downloaded by the client to enable the
     │   │                     other pages of the table to be displayed. Copied into public/data folder.
-    │   ├── institution.jsonl: used to generate the parquet file.
-    │   ├── institution.parquet: to be used along with apache-arrow to enable filtering from a Cloudflare Worker.
     │   └── stats.json: global statistics, e.g. the minimum and maximum date for the dataset, when it was last updated etc.
     └── logos: country and institution logos. Copied into public/logos folder.
         ├── country
@@ -1343,6 +1407,7 @@ class OaWebWorkflow(Workflow):
             destination_uri = f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{agg_table_id}.jsonl"
             success = bq_query_to_gcs(
                 query=QUERY.format(
+                    min_year=MIN_YEAR,
                     project_id=release.project_id,
                     agg_dataset_id=release.agg_dataset_id,
                     agg_table_id=agg_sharded_table_id,
@@ -1389,6 +1454,7 @@ class OaWebWorkflow(Workflow):
 
         # Make required folders
         auto_complete = []
+        search_index = []
         for category in self.table_ids:
             logging.info(f"Transforming {category} entity")
             # Load data
@@ -1406,6 +1472,9 @@ class OaWebWorkflow(Workflow):
             # Make autocomplete data for this category
             auto_complete += release.make_auto_complete(df_index_table, category)
 
+            # Make search index data for this category
+            search_index += release.make_search_index(df_index_table, category)
+
             # Save category data
             release.save_index(category, df_index_table)
             release.save_entities(category, entities)
@@ -1415,11 +1484,13 @@ class OaWebWorkflow(Workflow):
         release.save_autocomplete(auto_complete)
         logging.info(f"Saved autocomplete data")
 
+        # Save search index data as json
+        release.save_search_index(search_index)
+
         # Save stats as json
-        min_year = 2000
         max_year = pendulum.now().year - 1
         last_updated = pendulum.now().format("D MMMM YYYY")
-        stats = Stats(min_year, max_year, last_updated)
+        stats = Stats(MIN_YEAR, max_year, last_updated)
         release.save_stats(stats)
         logging.info(f"Saved stats data")
 
