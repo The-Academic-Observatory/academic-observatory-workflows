@@ -563,7 +563,7 @@ def shorten_text_full_sentences(text: str, *, char_limit: int = 300) -> str:
     total_len = 0
     for sentence in sentences:
         total_len += len(sentence)
-        if total_len > char_limit:
+        if (total_len > char_limit) and sentences_output:
             break
         sentences_output.append(sentence)
     return " ".join(sentences_output)
@@ -951,26 +951,27 @@ class OaWebRelease(SnapshotRelease):
             fmt = "jpg"
             # Get the institution logo and the path to the logo image
             for size, width in zip(sizes, [32, 128]):
-                with ThreadPoolExecutor() as executor:
-                    futures = []
-                    logo_paths = []
-                    for ror_id, url in zip(df_index_table["id"], df_index_table["url"]):
-                        if url:
-                            url = clean_url(url)
-                            futures.append(
-                                executor.submit(get_institution_logo, ror_id, url, size, width, fmt, self.build_path)
-                            )
-                        else:
-                            logo_paths.append((ror_id, "/unknown.svg"))
-                    logo_paths += [f.result() for f in as_completed(futures)]
-                logging.info("Finished downloading logos")
-
-                # Sort table and results by id
-                df_index_table.sort_index(inplace=True)
-                logo_paths_sorted = [tup[1] for tup in sorted(logo_paths, key=lambda tup: tup[0])]
-
-                # Add logo paths to table
-                df_index_table[f"logo_{size}"] = logo_paths_sorted
+                # with ThreadPoolExecutor() as executor:
+                #     futures = []
+                #     logo_paths = []
+                #     for ror_id, url in zip(df_index_table["id"], df_index_table["url"]):
+                #         if url:
+                #             url = clean_url(url)
+                #             futures.append(
+                #                 executor.submit(get_institution_logo, ror_id, url, size, width, fmt, self.build_path)
+                #             )
+                #         else:
+                #             logo_paths.append((ror_id, "/unknown.svg"))
+                #     logo_paths += [f.result() for f in as_completed(futures)]
+                # logging.info("Finished downloading logos")
+                #
+                # # Sort table and results by id
+                # df_index_table.sort_index(inplace=True)
+                # logo_paths_sorted = [tup[1] for tup in sorted(logo_paths, key=lambda tup: tup[0])]
+                #
+                # # Add logo paths to table
+                # df_index_table[f"logo_{size}"] = logo_paths_sorted
+                df_index_table[f"logo_{size}"] = "/unknown.svg"
 
     def update_index_with_wiki_descriptions(self, df_index_table: pd.DataFrame):
         """Get the wikipedia descriptions for each entity (institution or country) and add them to the index table.
