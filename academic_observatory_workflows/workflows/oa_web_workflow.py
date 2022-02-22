@@ -550,6 +550,7 @@ def remove_text_between_brackets(text: str) -> str:
 def shorten_text_full_sentences(text: str, *, char_limit: int = 300) -> str:
     """Shorten a text to as many complete sentences as possible, while the total number of characters stays below
     the char_limit.
+    Always return at least one sentence, even if this exceeds the char_limit.
 
     :param text: A string with the complete text
     :param char_limit: The max number of characters
