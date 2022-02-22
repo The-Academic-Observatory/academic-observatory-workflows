@@ -105,8 +105,8 @@ class OpenAlexRelease(StreamRelease):
         logging.info(
             f"Writing info on updated entities from 'author' and 'venue' to" f" {self.transfer_manifest_path_transform}"
         )
-
-        s3client = boto3.client("s3")
+        aws_access_key_id, aws_secret_access_key = get_aws_conn_info()
+        s3client = boto3.client("s3", aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
 
         updated_entities_count = 0
         with open(self.transfer_manifest_path_download, "w") as f_download, open(
@@ -191,7 +191,9 @@ class OpenAlexRelease(StreamRelease):
             "activate-service-account",
             f"--key-file" f"={os.environ['GOOGLE_APPLICATION_CREDENTIALS']}",
         ]
-        proc: Popen = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc: Popen = subprocess.Popen(
+            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=dict(os.environ, CLOUDSDK_PYTHON="python3")
+        )
         run_subprocess_cmd(proc, args)
 
         logging.info(f"Downloading transferred files from Google Cloud bucket: {self.download_bucket}")
