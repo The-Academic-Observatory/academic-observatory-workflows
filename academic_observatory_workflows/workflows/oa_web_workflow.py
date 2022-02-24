@@ -1036,6 +1036,7 @@ class OaWebRelease(SnapshotRelease):
         os.makedirs(base_path, exist_ok=True)
         df_index_table = df_index_table.drop(
             [
+                "description",
                 "year",
                 "date",
                 "institution_types",
