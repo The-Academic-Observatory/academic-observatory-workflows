@@ -465,8 +465,9 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
 
     @patch("academic_observatory_workflows.workflows.openalex_telescope.boto3.client")
+    @patch("academic_observatory_workflows.workflows.openalex_telescope.get_aws_conn_info")
     @patch("academic_observatory_workflows.workflows.openalex_telescope.Variable.get")
-    def test_write_transfer_manifest(self, mock_variable_get, mock_boto3):
+    def test_write_transfer_manifest(self, mock_variable_get, mock_aws_info, mock_boto3):
         """Test write_transfer_manifest method of the OpenAlex release.
 
         :param mock_variable_get: Mock Airflow Variable get() method
@@ -474,6 +475,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         :return: None.
         """
         mock_variable_get.return_value = "data"
+        mock_aws_info.return_value = "key_id", "secret_key"
         # Mock response of get_object on last_modified file, mocking lambda file
         side_effect = []
         for tests in range(2):
