@@ -550,6 +550,7 @@ def remove_text_between_brackets(text: str) -> str:
 def shorten_text_full_sentences(text: str, *, char_limit: int = 300) -> str:
     """Shorten a text to as many complete sentences as possible, while the total number of characters stays below
     the char_limit.
+    Always return at least one sentence, even if this exceeds the char_limit.
 
     :param text: A string with the complete text
     :param char_limit: The max number of characters
@@ -563,7 +564,7 @@ def shorten_text_full_sentences(text: str, *, char_limit: int = 300) -> str:
     total_len = 0
     for sentence in sentences:
         total_len += len(sentence)
-        if total_len > char_limit:
+        if (total_len > char_limit) and sentences_output:
             break
         sentences_output.append(sentence)
     return " ".join(sentences_output)
@@ -953,13 +954,16 @@ class OaWebRelease(SnapshotRelease):
             for size, width in zip(sizes, [32, 128]):
                 with ThreadPoolExecutor() as executor:
                     futures = []
+                    logo_paths = []
                     for ror_id, url in zip(df_index_table["id"], df_index_table["url"]):
-                        url = clean_url(url)
                         if url:
+                            url = clean_url(url)
                             futures.append(
                                 executor.submit(get_institution_logo, ror_id, url, size, width, fmt, self.build_path)
                             )
-                    logo_paths = [f.result() for f in as_completed(futures)]
+                        else:
+                            logo_paths.append((ror_id, "/unknown.svg"))
+                    logo_paths += [f.result() for f in as_completed(futures)]
                 logging.info("Finished downloading logos")
 
                 # Sort table and results by id
@@ -1032,6 +1036,7 @@ class OaWebRelease(SnapshotRelease):
         os.makedirs(base_path, exist_ok=True)
         df_index_table = df_index_table.drop(
             [
+                "description",
                 "year",
                 "date",
                 "institution_types",
