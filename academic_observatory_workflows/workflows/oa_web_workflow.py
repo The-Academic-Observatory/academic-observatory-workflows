@@ -500,21 +500,26 @@ def get_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
     response_json = response.json()
     pages = response_json["query"]["pages"]
 
-    # Create mapping between redirected page title and original page title
+    # Create mapping between redirected/normalized page title and original page title
     redirects = {}
     for title in response_json["query"].get("redirects", []):
         redirects[title["to"]] = title["from"]
+    normalized = {}
+    for title in response_json["query"].get("normalized", []):
+        normalized[title["to"]] = title["from"]
 
-    # Create mapping between entity_id and decoded, alpha-only page title.
-    alpha_titles = {re.sub("[^A-Za-z]+", "", urllib.parse.unquote(k)): v for k, v in titles.items()}
+    # Create mapping between entity_id and decoded page title.
+    decoded_titles = {urllib.parse.unquote(k): v for k, v in titles.items()}
     descriptions = []
     for page_id, page in pages.items():
         page_title = page["title"]
-        # Get page_title from redirect if it is present
-        page_title = redirects.get(page_title, page_title)
 
-        # Match entity_id and page_title
-        entity_id = alpha_titles[re.sub("[^A-Za-z]+", "", page_title)]
+        # Get page_title from redirected/normalized if it is present
+        page_title = redirects.get(page_title, page_title)
+        page_title = normalized.get(page_title, page_title)
+
+        # Link original title to description
+        entity_id = decoded_titles[urllib.parse.unquote(page_title)]
 
         # Get description and clean up
         description = page.get("extract", "")
