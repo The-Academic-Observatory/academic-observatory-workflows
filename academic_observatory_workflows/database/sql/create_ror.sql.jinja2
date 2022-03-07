@@ -18,4 +18,4 @@ SELECT
   rors.*,
   STRUCT(regions) as iso3166
 FROM `{{ project_id }}.{{ ror.dataset_id }}.ror{{ ror.release_date.strftime('%Y%m%d') }}` as rors
-LEFT JOIN `{{ project_id }}.{{ iso.dataset_id }}.iso3166_countries_and_regions` as regions ON (rors.country.country_code = regions.alpha2)
+LEFT JOIN `{{ project_id }}.{{ settings.dataset_id }}.countries_and_regions` as regions ON (rors.country.country_code = regions.alpha2)
