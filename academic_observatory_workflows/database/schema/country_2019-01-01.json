@@ -1,8 +1,14 @@
 [
   {
-    "description": "The country's name.",
+    "description": "The country's ISO 3166 name.",
     "mode": "NULLABLE",
-    "name": "name",
+    "name": "iso_name",
+    "type": "STRING"
+  },
+  {
+    "description": "The country's name as displayed on it's Wikipedia page.",
+    "mode": "NULLABLE",
+    "name": "wikipedia_name",
     "type": "STRING"
   },
   {

@@ -133,11 +133,11 @@ SELECT
         institution.id as identifier,
         institution.types as types,
         institution.name as name,
-        institution.iso3166.regions.name as country,
-        institution.iso3166.regions.alpha3 as country_code,
-        institution.iso3166.regions.alpha2 as country_code_2,
-        institution.iso3166.regions.region as region,
-        institution.iso3166.regions.subregion as subregion,
+        institution.country.wikipedia_name as country,
+        institution.country.alpha3 as country_code,
+        institution.country.alpha2 as country_code_2,
+        institution.country.region as region,
+        institution.country.subregion as subregion,
         CONCAT(CAST(institution.addresses[SAFE_OFFSET(0)].lat as STRING), ", ", CAST(institution.addresses[SAFE_OFFSET(0)].lng as STRING)) as coordinates,
         CAST([] AS ARRAY<STRING>) as members
       )
@@ -146,14 +146,14 @@ SELECT
     {# Chooses the values that are passed along in the country affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates #}
     ARRAY_AGG(
       STRUCT(
-        institution.iso3166.regions.alpha3 as identifier,
+        institution.country.alpha3 as identifier,
         institution.types as types,
-        institution.iso3166.regions.name as name,
-        institution.iso3166.regions.name as country,
-        institution.iso3166.regions.alpha3 as country_code,
-        institution.iso3166.regions.alpha2 as country_code_2,
-        institution.iso3166.regions.region as region,
-        institution.iso3166.regions.subregion as subregion,
+        institution.country.wikipedia_name as name,
+        institution.country.wikipedia_name as country,
+        institution.country.alpha3 as country_code,
+        institution.country.alpha2 as country_code_2,
+        institution.country.region as region,
+        institution.country.subregion as subregion,
         NULL as coordinates,
         institution.id as member_identifier
       )
@@ -162,32 +162,32 @@ SELECT
     {# Chooses the values that are passed along in the subregional affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates #}
     ARRAY_AGG(
       STRUCT(
-        institution.iso3166.regions.subregion as identifier,
+        institution.country.subregion as identifier,
         NULL as types,
-        institution.iso3166.regions.subregion as name,
+        institution.country.subregion as name,
         NULL as country,
         NULL as country_code,
         NULL as country_code_2,
-        institution.iso3166.regions.region as region,
+        institution.country.region as region,
         NULL as subregion,
         NULL as coordinates,
-        institution.iso3166.regions.alpha3 as member_identifier
+        institution.country.alpha3 as member_identifier
       )
     ) as subregions,
 
     {# Chooses the values that are passed along in the regional affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates #}
     ARRAY_AGG(
       STRUCT(
-        institution.iso3166.regions.region as identifier,
+        institution.country.region as identifier,
         NULL as types,
-        institution.iso3166.regions.region as name,
+        institution.country.region as name,
         NULL as country,
         NULL as country_code,
         NULL as country_code_2,
-        institution.iso3166.regions.region as region,
+        institution.country.region as region,
         NULL as subregion,
         NULL as coordinates,
-        institution.iso3166.regions.subregion as member_identifier
+        institution.country.subregion as member_identifier
       )
     ) as regions,
     

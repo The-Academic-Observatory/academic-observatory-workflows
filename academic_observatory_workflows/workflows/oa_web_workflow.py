@@ -69,8 +69,8 @@ SELECT
   agg.time_period as year,
   DATE(agg.time_period, 12, 31) as date,
   (SELECT * from ror.links LIMIT 1) AS url,
-  COALESCE(ror.wikipedia_url, countries_and_regions.wikipedia_url) as wikipedia_url,
-  countries_and_regions.alpha2 as alpha2,
+  COALESCE(ror.wikipedia_url, country.wikipedia_url) as wikipedia_url,
+  country.alpha2 as alpha2,
   agg.country as country,
   agg.subregion as subregion,
   agg.region as region,
@@ -88,7 +88,7 @@ SELECT
 FROM
   `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg 
   LEFT OUTER JOIN `{project_id}.{ror_dataset_id}.{ror_table_id}` as ror ON agg.id = ror.id
-  LEFT OUTER JOIN `{project_id}.{settings_dataset_id}.{countries_and_regions_table_id}` as countries_and_regions ON agg.id = countries_and_regions.alpha3
+  LEFT OUTER JOIN `{project_id}.{settings_dataset_id}.{countries_table_id}` as country ON agg.id = countries.alpha3
 WHERE agg.time_period >= 2000 AND agg.time_period <= (EXTRACT(YEAR FROM CURRENT_DATE()) - 1)
 ORDER BY year DESC, name ASC
 """
@@ -1349,7 +1349,7 @@ class OaWebWorkflow(Workflow):
                     ror_dataset_id=release.ror_dataset_id,
                     ror_table_id=ror_sharded_table_id,
                     settings_dataset_id=self.settings_dataset_id,
-                    countries_and_regions_table_id="countries_and_regions",
+                    countries_table_id="countries",
                 ),
                 project_id=release.project_id,
                 destination_uri=destination_uri,

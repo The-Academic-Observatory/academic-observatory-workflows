@@ -964,11 +964,13 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "oa_web_workflow.py")
             self.assert_dag_load("oa_web_workflow", dag_file)
 
-    def setup_tables(self, dataset_id_all: str, bucket_name: str, release_date: pendulum.DateTime):
+    def setup_tables(
+        self, dataset_id_all: str, dataset_id_settings: str, bucket_name: str, release_date: pendulum.DateTime
+    ):
         ror = load_jsonl(test_fixtures_folder("doi", "ror.jsonl"))
         country = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "country.jsonl"))
         institution = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "institution.jsonl"))
-        countries_and_regions = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "countries_and_regions.jsonl"))
+        settings_country = load_jsonl(test_fixtures_folder("doi", "country.jsonl"))
 
         analysis_schema_path = schema_folder()
         oa_web_schema_path = test_fixtures_folder(self.oa_web_fixtures, "schema")
@@ -978,11 +980,11 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 Table("country", True, dataset_id_all, country, "country", oa_web_schema_path),
                 Table("institution", True, dataset_id_all, institution, "institution", oa_web_schema_path),
                 Table(
-                    "countries_and_regions",
+                    "country",
                     False,
-                    dataset_id_all,
-                    countries_and_regions,
-                    "countries_and_regions",
+                    dataset_id_settings,
+                    settings_country,
+                    "country",
                     analysis_schema_path,
                 ),
             ]
@@ -1001,6 +1003,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         execution_date = pendulum.datetime(2021, 11, 13)
         env = ObservatoryEnvironment(project_id=self.project_id, data_location=self.data_location, enable_api=False)
         dataset_id = env.add_dataset("data")
+        dataset_id_settings = env.add_dataset("settings")
         data_bucket = env.add_bucket()
         github_token = "github-token"
 
@@ -1019,11 +1022,16 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 self.assertEqual(State.SUCCESS, ti.state)
 
             # Upload fake data to BigQuery
-            self.setup_tables(dataset_id_all=dataset_id, bucket_name=env.download_bucket, release_date=execution_date)
+            self.setup_tables(
+                dataset_id_all=dataset_id,
+                dataset_id_settings=dataset_id_settings,
+                bucket_name=env.download_bucket,
+                release_date=execution_date,
+            )
 
             # Run workflow
             workflow = OaWebWorkflow(
-                agg_dataset_id=dataset_id, ror_dataset_id=dataset_id, settings_dataset_id=dataset_id
+                agg_dataset_id=dataset_id, ror_dataset_id=dataset_id, settings_dataset_id=dataset_id_settings
             )
 
             dag = workflow.make_dag()
