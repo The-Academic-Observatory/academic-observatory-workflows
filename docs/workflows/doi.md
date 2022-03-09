@@ -28,7 +28,7 @@ PIDs in this case refer to persistent identifiers. Commonly used identifier sche
 +-------------------+-----------------------------------------------------+------------+
 | Unpaywall         | `our_research.unpaywall`                            | DOI        |
 +-------------------+-----------------------------------------------------+------------+
-| Country & Region  | `settings.countries_and_regions`                    | Country    |
+| Country & Region  | `settings.country`                                  | Country    |
 | Names & Codes     |                                                     |            |
 +-------------------+-----------------------------------------------------+------------+
 ```

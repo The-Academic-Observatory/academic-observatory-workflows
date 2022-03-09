@@ -6,7 +6,7 @@ Wikipedia URL.
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/country.csv
+   :file: ../schemas/country_latest.csv
    :width: 100%
    :header-rows: 1
 ```
