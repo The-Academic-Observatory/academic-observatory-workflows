@@ -88,7 +88,7 @@ SELECT
 FROM
   `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg 
   LEFT OUTER JOIN `{project_id}.{ror_dataset_id}.{ror_table_id}` as ror ON agg.id = ror.id
-  LEFT OUTER JOIN `{project_id}.{settings_dataset_id}.{countries_table_id}` as country ON agg.id = countries.alpha3
+  LEFT OUTER JOIN `{project_id}.{settings_dataset_id}.{country_table_id}` as country ON agg.id = country.alpha3
 WHERE agg.time_period >= 2000 AND agg.time_period <= (EXTRACT(YEAR FROM CURRENT_DATE()) - 1)
 ORDER BY year DESC, name ASC
 """
@@ -1349,7 +1349,7 @@ class OaWebWorkflow(Workflow):
                     ror_dataset_id=release.ror_dataset_id,
                     ror_table_id=ror_sharded_table_id,
                     settings_dataset_id=self.settings_dataset_id,
-                    countries_table_id="countries",
+                    country_table_id="country",
                 ),
                 project_id=release.project_id,
                 destination_uri=destination_uri,
