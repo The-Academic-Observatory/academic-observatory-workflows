@@ -454,7 +454,7 @@ def transform_object(obj: dict, field: str):
     :return: None.
     """
     if field == "international":
-        for nested_field in obj[field].keys():
+        for nested_field in obj.get(field, {}).keys():
             if not isinstance(obj[field][nested_field], dict):
                 continue
             keys = list(obj[field][nested_field].keys())
@@ -462,7 +462,7 @@ def transform_object(obj: dict, field: str):
 
             obj[field][nested_field] = {"keys": keys, "values": values}
     elif field == "abstract_inverted_index":
-        if not isinstance(obj[field], dict):
+        if not isinstance(obj.get(field), dict):
             return
         keys = list(obj[field].keys())
         values = [str(value)[1:-1] for value in obj[field].values()]
