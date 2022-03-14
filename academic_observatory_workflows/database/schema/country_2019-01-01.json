@@ -24,13 +24,13 @@
     "type": "STRING"
   },
   {
-    "description": "The country's region name.",
+    "description": "The country's United Nations Statistics Division M49 region name.",
     "mode": "NULLABLE",
     "name": "region",
     "type": "STRING"
   },
   {
-    "description": "The country's subregion name.",
+    "description": "The country's United Nations Statistics Division M49 subregion name.",
     "mode": "NULLABLE",
     "name": "subregion",
     "type": "STRING"
