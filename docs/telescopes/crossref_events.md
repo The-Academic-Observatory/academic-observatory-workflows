@@ -28,9 +28,9 @@ The corresponding table created in BigQuery are `crossref.crossref_events` and `
 +------------------------------+---------+
 | Summary                      |         |
 +==============================+=========+
-| Average runtime              | ? min   |
+| Average runtime              | 2 hours |
 +------------------------------+---------+
-| Average download size        | ? MB    |
+| Average download size        | 10 GB   |
 +------------------------------+---------+
 | Harvest Type                 | API     |
 +------------------------------+---------+

@@ -17,9 +17,9 @@ The corresponding table created in BigQuery is `crossref.crossref_metadataYYYYMM
 +------------------------------+---------+
 | Summary                      |         |
 +==============================+=========+
-| Average runtime              | ? min   |
+| Average runtime              | 12 hours|
 +------------------------------+---------+
-| Average download size        | ? MB    |
+| Average download size        | 150 GB  |
 +------------------------------+---------+
 | Harvest Type                 | API     |
 +------------------------------+---------+
