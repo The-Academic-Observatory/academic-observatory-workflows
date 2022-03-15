@@ -22,6 +22,8 @@ from typing import Dict, List
 from unittest.mock import patch
 
 import pendulum
+from airflow.exceptions import AirflowException
+
 from academic_observatory_workflows.model import (
     Institution,
     bq_load_observatory_dataset,
@@ -35,7 +37,6 @@ from academic_observatory_workflows.workflows.doi_workflow import (
     make_dataset_transforms,
     make_elastic_tables,
 )
-from airflow.exceptions import AirflowException
 from observatory.platform.utils.airflow_utils import set_task_state
 from observatory.platform.utils.gc_utils import run_bigquery_query
 from observatory.platform.utils.test_utils import (
@@ -222,7 +223,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
             dataset_id_crossref_metadata=fake_dataset_id,
             dataset_id_crossref_fundref=fake_dataset_id,
             dataset_id_ror=fake_dataset_id,
-            dataset_id_iso=fake_dataset_id,
             dataset_id_mag=fake_dataset_id,
             dataset_id_orcid=fake_dataset_id,
             dataset_id_open_citations=fake_dataset_id,

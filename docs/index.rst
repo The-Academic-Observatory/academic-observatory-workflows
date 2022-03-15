@@ -26,6 +26,14 @@ Analytic workflows process the data ingested by telescope workflows and are also
 
     workflows/index
 
+Other Tables
+===================
+Other tables used by the Academic Observatory:
+
+.. toctree::
+    :maxdepth: 2
+
+    tables/index
 
 License & Contributing Guidelines
 =================================

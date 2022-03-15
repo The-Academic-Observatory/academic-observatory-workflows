@@ -23,7 +23,6 @@ import logging
 import math
 import os
 import os.path
-import re
 import shutil
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -70,7 +69,8 @@ SELECT
   agg.time_period as year,
   DATE(agg.time_period, 12, 31) as date,
   (SELECT * from ror.links LIMIT 1) AS url,
-  ror.wikipedia_url as wikipedia_url,
+  COALESCE(ror.wikipedia_url, country.wikipedia_url) as wikipedia_url,
+  country.alpha2 as alpha2,
   agg.country as country,
   agg.subregion as subregion,
   agg.region as region,
@@ -88,6 +88,7 @@ SELECT
 FROM
   `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg 
   LEFT OUTER JOIN `{project_id}.{ror_dataset_id}.{ror_table_id}` as ror ON agg.id = ror.id
+  LEFT OUTER JOIN `{project_id}.{settings_dataset_id}.{country_table_id}` as country ON agg.id = country.alpha3
 WHERE agg.time_period >= 2000 AND agg.time_period <= (EXTRACT(YEAR FROM CURRENT_DATE()) - 1)
 ORDER BY year DESC, name ASC
 """
@@ -751,6 +752,9 @@ class OaWebRelease(SnapshotRelease):
 
         # Clean RoR ids
         if category == "institution":
+            # Remove columns not used for institutions
+            df.drop(columns=["alpha2"], inplace=True, errors="ignore")
+
             # Clean RoR ids
             df["id"] = df["id"].apply(lambda i: clean_ror_id(i))
 
@@ -790,45 +794,9 @@ class OaWebRelease(SnapshotRelease):
                 identifiers.append(ent_ids)
             df["identifiers"] = identifiers
 
-        # Add extra country info from country file
         if category == "country":
-            country_index = {}
-            file_path = os.path.join(self.data_path, "country.json")
-            with open(file_path, mode="r") as f:
-                data = json.load(f)
-                for row in data:
-                    alpha3 = row["alpha3"]
-                    country_index[alpha3] = row
-
-            names = []
-            alpha2s = []
-            wikipedia_urls = []
-            identifiers = []
-            for i, row in df.iterrows():
-                alpha3 = row["id"]
-                country = country_index[alpha3]
-                alpha2 = country["alpha2"]
-                names.append(country["name"])
-                alpha2s.append(alpha2)
-                wikipedia_urls.append(country["wikipedia_url"])
-
-                # Make Wikidata id
-                qid = country["qid"]
-                identifiers.append(
-                    [
-                        {"id": qid, "type": "Wikidata", "url": f"https://www.wikidata.org/wiki/{qid}"},
-                        {"id": alpha2, "type": "ISO alpha-2", "url": None},
-                        {"id": alpha3, "type": "ISO alpha-3", "url": None},
-                    ]
-                )
-
-            df["name"] = names
-            df["alpha2"] = alpha2s
-            df["wikipedia_url"] = wikipedia_urls
-            df["identifiers"] = identifiers
-
             # Remove columns not used for countries
-            df.drop(columns=["url", "institution_types", "country"], inplace=True, errors="ignore")
+            df.drop(columns=["url", "institution_types", "country", "identifiers"], inplace=True, errors="ignore")
 
         return df
 
@@ -1261,6 +1229,7 @@ class OaWebWorkflow(Workflow):
         airflow_conns: List[str] = None,
         agg_dataset_id: str = "observatory",
         ror_dataset_id: str = "ror",
+        settings_dataset_id: str = "settings",
         version: str = "v1",
     ):
         """Create the OaWebWorkflow.
@@ -1299,6 +1268,7 @@ class OaWebWorkflow(Workflow):
         )
         self.agg_dataset_id = agg_dataset_id
         self.ror_dataset_id = ror_dataset_id
+        self.settings_dataset_id = settings_dataset_id
         self.table_ids = table_ids
         self.version = version
         if table_ids is None:
@@ -1378,6 +1348,8 @@ class OaWebWorkflow(Workflow):
                     agg_table_id=agg_sharded_table_id,
                     ror_dataset_id=release.ror_dataset_id,
                     ror_table_id=ror_sharded_table_id,
+                    settings_dataset_id=self.settings_dataset_id,
+                    country_table_id="country",
                 ),
                 project_id=release.project_id,
                 destination_uri=destination_uri,

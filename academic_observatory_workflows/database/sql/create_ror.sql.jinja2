@@ -15,7 +15,7 @@
 # Author: Richard Hosking, James Diprose #}
 
 SELECT 
-  rors.*,
-  STRUCT(regions) as iso3166
+  rors.* EXCEPT (country),
+  country
 FROM `{{ project_id }}.{{ ror.dataset_id }}.ror{{ ror.release_date.strftime('%Y%m%d') }}` as rors
-LEFT JOIN `{{ project_id }}.{{ iso.dataset_id }}.iso3166_countries_and_regions` as regions ON (rors.country.country_code = regions.alpha2)
+LEFT JOIN `{{ project_id }}.{{ settings.dataset_id }}.country` as country ON (rors.country.country_code = country.alpha2)

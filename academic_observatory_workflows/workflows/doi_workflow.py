@@ -83,7 +83,6 @@ def make_dataset_transforms(
     dataset_id_crossref_metadata: str = "crossref",
     dataset_id_crossref_fundref: str = "crossref",
     dataset_id_ror: str = "ror",
-    dataset_id_iso: str = "iso",
     dataset_id_mag: str = "mag",
     dataset_id_orcid: str = "orcid",
     dataset_id_open_citations: str = "open_citations",
@@ -112,7 +111,6 @@ def make_dataset_transforms(
             Transform(
                 inputs={
                     "ror": Table(dataset_id_ror, "ror", sharded=True),
-                    "iso": Table(dataset_id_iso),
                     "settings": Table(dataset_id_settings),
                 },
                 output_table=Table(dataset_id_observatory_intermediate, "ror"),

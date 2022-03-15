@@ -28,7 +28,8 @@ PIDs in this case refer to persistent identifiers. Commonly used identifier sche
 +-------------------+-----------------------------------------------------+------------+
 | Unpaywall         | `our_research.unpaywall`                            | DOI        |
 +-------------------+-----------------------------------------------------+------------+
-| iso3166           | `ios.iso3166_countries_and_regions`                 | Country    |
+| Country & Region  | `settings.country`                                  | Country    |
+| Names & Codes     |                                                     |            |
 +-------------------+-----------------------------------------------------+------------+
 ```
 

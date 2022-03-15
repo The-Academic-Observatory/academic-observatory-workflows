@@ -1,0 +1,50 @@
+[
+  {
+    "description": "The country's ISO 3166 name.",
+    "mode": "NULLABLE",
+    "name": "iso_name",
+    "type": "STRING"
+  },
+  {
+    "description": "The country's name as displayed on it's Wikipedia page.",
+    "mode": "NULLABLE",
+    "name": "wikipedia_name",
+    "type": "STRING"
+  },
+  {
+    "description": "The country's ISO 3166 two letter alpha2 code.",
+    "mode": "NULLABLE",
+    "name": "alpha2",
+    "type": "STRING"
+  },
+  {
+    "description": "The country's ISO 3166 three letter alpha3 code.",
+    "mode": "NULLABLE",
+    "name": "alpha3",
+    "type": "STRING"
+  },
+  {
+    "description": "The country's United Nations Statistics Division M49 region name.",
+    "mode": "NULLABLE",
+    "name": "region",
+    "type": "STRING"
+  },
+  {
+    "description": "The country's United Nations Statistics Division M49 subregion name.",
+    "mode": "NULLABLE",
+    "name": "subregion",
+    "type": "STRING"
+  },
+  {
+    "description": "The country's Wikidata QID.",
+    "mode": "NULLABLE",
+    "name": "qid",
+    "type": "STRING"
+  },
+  {
+    "description": "The country's Wikipedia URL.",
+    "mode": "NULLABLE",
+    "name": "wikipedia_url",
+    "type": "STRING"
+  }
+]

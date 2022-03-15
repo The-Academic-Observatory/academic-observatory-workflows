@@ -910,7 +910,7 @@ def bq_load_observatory_dataset(
     # Load fake ROR and settings datasets
     test_doi_path = test_fixtures_folder("doi")
     ror = load_jsonl(os.path.join(test_doi_path, "ror.jsonl"))
-    iso3166_countries_and_regions = load_jsonl(os.path.join(test_doi_path, "iso3166_countries_and_regions.jsonl"))
+    country = load_jsonl(os.path.join(test_doi_path, "country.jsonl"))
     groupings = load_jsonl(os.path.join(test_doi_path, "groupings.jsonl"))
     mag_affiliation_override = load_jsonl(os.path.join(test_doi_path, "mag_affiliation_override.jsonl"))
 
@@ -945,11 +945,11 @@ def bq_load_observatory_dataset(
             Table("unpaywall", False, dataset_id_all, unpaywall, "unpaywall", analysis_schema_path),
             Table("ror", True, dataset_id_all, ror, "ror", analysis_schema_path),
             Table(
-                "iso3166_countries_and_regions",
+                "country",
                 False,
-                dataset_id_all,
-                iso3166_countries_and_regions,
-                "iso3166_countries_and_regions",
+                dataset_id_settings,
+                country,
+                "country",
                 analysis_schema_path,
             ),
             Table("groupings", False, dataset_id_settings, groupings, "groupings", analysis_schema_path),
