@@ -41,6 +41,7 @@ from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
 from airflow.sensors.external_task import ExternalTaskSensor
 from deprecated import deprecated
+from jinja2 import Template
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
 from observatory.platform.utils.airflow_utils import AirflowVars, get_airflow_connection_password
@@ -90,6 +91,22 @@ FROM
   LEFT OUTER JOIN `{project_id}.{settings_dataset_id}.{country_table_id}` as country ON agg.id = country.alpha3
 WHERE agg.time_period >= {start_year} AND agg.time_period <= (EXTRACT(YEAR FROM CURRENT_DATE()) - 1)
 ORDER BY year DESC, name ASC
+"""
+
+README = """# COKI Open Access Dataset
+The COKI Open Access Dataset measures open access performance for {{ n_countries }} countries and {{ n_institutions }} institutions
+and is available in JSON Lines format. The data is visualised at the COKI Open Access Dashboard: https://open.coki.ac/.
+
+## Licence
+[COKI Open Access Dataset](https://open.coki.ac/data/) © {{ year }} by [Curtin University](https://www.curtin.edu.au/)
+is licenced under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+
+## Attributions
+This work contains information from:
+* [Microsoft Academic Graph](https://www.microsoft.com/en-us/research/project/microsoft-academic-graph/) which is made available under the [ODC Attribution License](https://opendatacommons.org/licenses/by/1-0/)
+* [Crossref Metadata](https://www.crossref.org/documentation/metadata-plus/) via the Metadata Plus program. Bibliographic metadata is made available without copyright restriction and Crossref generated data with a CC0 licence. See [metadata licence information](https://www.crossref.org/documentation/retrieve-metadata/rest-api/rest-api-metadata-license-information/) for more details.
+* [Unpaywall](https://unpaywall.org/products/data-feed) which is made available under a CC0 licence.
+* [Research Organization Registry](https://ror.org/) which is made available under a CC0 licence.
 """
 
 
@@ -1193,6 +1210,15 @@ class OaWebRelease(SnapshotRelease):
         file_path = os.path.join(base_path, "institution.jsonl")
         save_as_jsonl(file_path, institution)
 
+        # Save README
+        file_path = os.path.join(base_path, "README.md")
+        template = Template(README, keep_trailing_newline=True)
+        rendered = template.render(
+            year=pendulum.now().year, n_countries=len(countries), n_institutions=len(institutions)
+        )
+        with open(file_path, mode="w") as f:
+            f.write(rendered)
+
         # Zip
         shutil.make_archive(base_path, "zip", base_path)
 
@@ -1220,6 +1246,7 @@ class OaWebWorkflow(Workflow):
     The figure below illustrates the generated data and notes about what each file is used for.
     .
     ├── data: data
+    │   ├── index.json: used by the Cloudflare Worker search and filtering API.
     │   ├── autocomplete.json: used for the website search functionality. Copied into public/data folder.
     │   ├── country: individual entity statistics files for countries. Used to build each country page.
     │   │   ├── ALB.json
