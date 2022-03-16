@@ -284,12 +284,16 @@ class Stats:
     start_year: int
     end_year: int
     last_updated: str
+    n_countries: int
+    n_institutions: int
 
     def to_dict(self) -> Dict:
         return {
             "start_year": self.start_year,
             "end_year": self.end_year,
             "last_updated": self.last_updated,
+            "n_countries": self.n_countries,
+            "n_institutions": self.n_institutions,
         }
 
 
@@ -1510,7 +1514,9 @@ class OaWebWorkflow(Workflow):
         # Save stats as json
         end_year = pendulum.now().year - 1
         last_updated = pendulum.now().format("D MMMM YYYY")
-        stats = Stats(START_YEAR, end_year, last_updated)
+        n_countries = len(countries)
+        n_institutions = len(institutions)
+        stats = Stats(START_YEAR, end_year, last_updated, n_countries, n_institutions)
         release.save_stats(stats)
         logging.info(f"Saved stats data")
 
