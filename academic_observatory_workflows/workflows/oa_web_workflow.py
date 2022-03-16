@@ -625,6 +625,19 @@ def clean_url(url: str) -> str:
     return f"{p.scheme}://{p.netloc}/"
 
 
+def save_as_jsonl(output_path: str, iterable: List[Dict]):
+    """Save a list of dicts to JSON Lines format.
+
+    :param output_path: the file path.
+    :param iterable: the objects to save.
+    :return: None.
+    """
+
+    with open(output_path, "w") as f:
+        with jsonlines.Writer(f) as writer:
+            writer.write_all(iterable)
+
+
 def make_logo_url(*, category: str, entity_id: str, size: str, fmt: str) -> str:
     """Make a logo url.
 
@@ -666,19 +679,6 @@ def calc_oa_stats(
     n_outputs_publisher_open_only = n_outputs_publisher_open - n_outputs_both
 
     return n_outputs_publisher_open_only, n_outputs_both, n_outputs_closed
-
-
-def save_as_jsonl(output_path: str, iterable: List[Dict]):
-    """Save a list of dicts to JSON Lines format.
-
-    :param output_path: the file path.
-    :param iterable: the objects to save.
-    :return: None.
-    """
-
-    with open(output_path, "w") as f:
-        with jsonlines.Writer(f) as writer:
-            writer.write_all(iterable)
 
 
 class OaWebRelease(SnapshotRelease):
