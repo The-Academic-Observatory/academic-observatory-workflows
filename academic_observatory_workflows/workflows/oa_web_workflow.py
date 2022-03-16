@@ -305,6 +305,13 @@ def save_json(path: str, data: Union[Dict, List]):
         json.dump(data, f, separators=(",", ":"))
 
 
+def val_empty(val):
+    if isinstance(val, list):
+        return len(val) == 0
+    else:
+        return val is None or val == ""
+
+
 def clean_ror_id(ror_id: str):
     """Remove the https://ror.org/ prefix from a ROR id.
 
@@ -371,13 +378,6 @@ def select_subset(original: Dict, include_keys: Dict):
                 output[k] = original[k]
 
     return output
-
-
-def val_empty(val):
-    if isinstance(val, list):
-        return len(val) == 0
-    else:
-        return val is None or val == ""
 
 
 @dataclasses.dataclass
