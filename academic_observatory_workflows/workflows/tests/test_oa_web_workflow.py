@@ -47,8 +47,8 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     remove_text_between_brackets,
     shorten_text_full_sentences,
     split_largest_remainder,
-    val_empty,
     trigger_repository_dispatch,
+    val_empty,
 )
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.test_utils import (
@@ -264,9 +264,10 @@ class TestFunctions(TestCase):
 
 class TestOaWebRelease(TestCase):
     maxDiff = None
+    dt_fmt = "YYYY-MM-DD"
 
     def setUp(self) -> None:
-        dt_fmt = "YYYY-MM-DD"
+
         self.release = OaWebRelease(
             dag_id="dag", project_id="project", release_date=pendulum.now(), data_bucket_name="data-bucket-name"
         )
@@ -276,7 +277,7 @@ class TestOaWebRelease(TestCase):
                 "id": "NZL",
                 "name": "New Zealand",
                 "year": 2020,
-                "date": pendulum.date(2020, 12, 31).format(dt_fmt),
+                "date": pendulum.date(2020, 12, 31).format(self.dt_fmt),
                 "url": None,
                 "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
                 "country": None,
@@ -302,7 +303,7 @@ class TestOaWebRelease(TestCase):
                 "id": "NZL",
                 "name": "New Zealand",
                 "year": 2021,
-                "date": pendulum.date(2021, 12, 31).format(dt_fmt),
+                "date": pendulum.date(2021, 12, 31).format(self.dt_fmt),
                 "url": None,
                 "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
                 "country": None,
@@ -330,7 +331,7 @@ class TestOaWebRelease(TestCase):
                 "id": "https://ror.org/02n415q13",
                 "name": "Curtin University",
                 "year": 2020,
-                "date": pendulum.date(2020, 12, 31).format(dt_fmt),
+                "date": pendulum.date(2020, 12, 31).format(self.dt_fmt),
                 "url": "https://curtin.edu.au/",
                 "wikipedia_url": "https://en.wikipedia.org/wiki/Curtin_University",
                 "country": "Australia",
@@ -362,7 +363,7 @@ class TestOaWebRelease(TestCase):
                 "id": "https://ror.org/02n415q13",
                 "name": "Curtin University",
                 "year": 2021,
-                "date": pendulum.date(2021, 12, 31).format(dt_fmt),
+                "date": pendulum.date(2021, 12, 31).format(self.dt_fmt),
                 "url": "https://curtin.edu.au/",
                 "wikipedia_url": "https://en.wikipedia.org/wiki/Curtin_University",
                 "country": "Australia",
@@ -380,38 +381,6 @@ class TestOaWebRelease(TestCase):
                 # "n_outputs_closed": 55,
                 "n_outputs_oa_journal": 20,
                 "n_outputs_hybrid": 9,
-                "n_outputs_no_guarantees": 8,
-                "identifiers": {
-                    "ISNI": {"all": ["0000 0004 0375 4078"]},
-                    "OrgRef": {"all": ["370725"]},
-                    "Wikidata": {"all": ["Q1145497"]},
-                    "GRID": {"preferred": "grid.1032.0"},
-                    "FundRef": {"all": ["501100001797"]},
-                },
-            },
-            {
-                "alpha2": None,
-                "id": "https://ror.org/12345",
-                "name": "Foo University",
-                "year": 2020,
-                "date": pendulum.date(2020, 12, 31).format(dt_fmt),
-                "url": None,
-                "wikipedia_url": None,
-                "country": "Australia",
-                "subregion": "Australia and New Zealand",
-                "region": "Oceania",
-                "institution_types": ["Education"],
-                "n_citations": 121,
-                "n_outputs": 100,
-                "n_outputs_open": 48,
-                "n_outputs_publisher_open": 37,
-                # "n_outputs_publisher_open_only": 11,
-                # "n_outputs_both": 26,
-                "n_outputs_other_platform_open": 37,
-                "n_outputs_other_platform_open_only": 11,
-                # "n_outputs_closed": 52,
-                "n_outputs_oa_journal": 19,
-                "n_outputs_hybrid": 10,
                 "n_outputs_no_guarantees": 8,
                 "identifiers": {
                     "ISNI": {"all": ["0000 0004 0375 4078"]},
@@ -595,7 +564,41 @@ class TestOaWebRelease(TestCase):
 
             # Institution table
             category = "institution"
-            df = pd.DataFrame(self.institutions)
+            institutions = self.institutions + [
+                {
+                    "alpha2": None,
+                    "id": "https://ror.org/12345",
+                    "name": "Foo University",
+                    "year": 2020,
+                    "date": pendulum.date(2020, 12, 31).format(self.dt_fmt),
+                    "url": None,
+                    "wikipedia_url": None,
+                    "country": "Australia",
+                    "subregion": "Australia and New Zealand",
+                    "region": "Oceania",
+                    "institution_types": ["Education"],
+                    "n_citations": 121,
+                    "n_outputs": 100,
+                    "n_outputs_open": 48,
+                    "n_outputs_publisher_open": 37,
+                    # "n_outputs_publisher_open_only": 11,
+                    # "n_outputs_both": 26,
+                    "n_outputs_other_platform_open": 37,
+                    "n_outputs_other_platform_open_only": 11,
+                    # "n_outputs_closed": 52,
+                    "n_outputs_oa_journal": 19,
+                    "n_outputs_hybrid": 10,
+                    "n_outputs_no_guarantees": 8,
+                    "identifiers": {
+                        "ISNI": {"all": ["0000 0004 0375 4078"]},
+                        "OrgRef": {"all": ["370725"]},
+                        "Wikidata": {"all": ["Q1145497"]},
+                        "GRID": {"preferred": "grid.1032.0"},
+                        "FundRef": {"all": ["501100001797"]},
+                    },
+                },
+            ]
+            df = pd.DataFrame(institutions)
             df = self.release.preprocess_df(category, df)
             df_index_table = self.release.make_index(category, df)
             with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "test_make_logos.yaml")):
@@ -627,11 +630,13 @@ class TestOaWebRelease(TestCase):
             for category, data, entity_ids in self.entities:
                 df = pd.DataFrame(data)
                 df = self.release.preprocess_df(category, df)
-                country_index = self.release.make_index(category, df)
-                self.release.update_index_with_logos(category, country_index)
-                self.release.save_index(category, country_index)
+                df_index_table = self.release.make_index(category, df)
+                self.release.update_index_with_logos(category, df_index_table)
+                entities = self.release.make_entities(df_index_table, df)
+                file_name = f"{category}.json"
+                self.release.save_index(entities, file_name)
 
-                path = os.path.join(self.release.build_path, "data", f"{category}.json")
+                path = os.path.join(self.release.build_path, "data", file_name)
                 self.assertTrue(os.path.isfile(path))
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
@@ -659,8 +664,8 @@ class TestOaWebRelease(TestCase):
                     "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
                     "subregion": "Australia and New Zealand",
                     "region": "Oceania",
-                    "max_year": 2021,
-                    "min_year": 2020,
+                    "end_year": 2021,
+                    "start_year": 2020,
                     "stats": {
                         "n_citations": 354,
                         "n_outputs": 200,
@@ -685,7 +690,7 @@ class TestOaWebRelease(TestCase):
                         "p_outputs_hybrid": 26.0,
                         "p_outputs_no_guarantees": 21.0,
                     },
-                    "timeseries": [
+                    "years": [
                         {
                             "year": 2020,
                             "date": "2020-12-31",
@@ -746,8 +751,9 @@ class TestOaWebRelease(TestCase):
                 }
             ]
 
-            for a_entity, e_entity in zip(expected, entities):
-                self.assertDictEqual(a_entity, e_entity.to_dict())
+            for e_dict, a_entity in zip(expected, entities):
+                a_dict = a_entity.to_dict()
+                self.assertDictEqual(e_dict, a_dict)
 
         # Institution
         category = "institution"
@@ -772,8 +778,8 @@ class TestOaWebRelease(TestCase):
                 "subregion": "Australia and New Zealand",
                 "region": "Oceania",
                 "institution_types": ["Education"],
-                "max_year": 2021,
-                "min_year": 2020,
+                "end_year": 2021,
+                "start_year": 2020,
                 "identifiers": [
                     {"type": "ROR", "id": "02n415q13", "url": "https://ror.org/02n415q13"},
                     {"type": "ISNI", "id": "0000 0004 0375 4078", "url": "https://isni.org/isni/0000 0004 0375 4078"},
@@ -805,7 +811,7 @@ class TestOaWebRelease(TestCase):
                     "p_outputs_hybrid": 26.0,
                     "p_outputs_no_guarantees": 21.0,
                 },
-                "timeseries": [
+                "years": [
                     {
                         "year": 2020,
                         "date": "2020-12-31",
@@ -866,8 +872,9 @@ class TestOaWebRelease(TestCase):
             }
         ]
 
-        for a_entity, e_entity in zip(expected, entities):
-            self.assertDictEqual(a_entity, e_entity.to_dict())
+        for e_dict, a_entity in zip(expected, entities):
+            a_dict = a_entity.to_dict()
+            self.assertDictEqual(e_dict, a_dict)
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
     def test_save_entities(self, mock_var_get):
@@ -1072,10 +1079,12 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     print(f"\t{file}")
                     self.assertTrue(os.path.isfile(file))
 
-                # Check that zip file exists
-                latest_file = os.path.join(base_folder, "latest.zip")
-                print(f"\t{latest_file}")
-                self.assertTrue(os.path.isfile(latest_file))
+                # Check that full dataset zip file exists
+                archives = ["latest.zip", "coki-oa-dataset.zip"]
+                for file_name in archives:
+                    latest_file = os.path.join(base_folder, file_name)
+                    print(f"\t{latest_file}")
+                    self.assertTrue(os.path.isfile(latest_file))
 
                 # Upload data to bucket
                 ti = env.run_task(workflow.upload_dataset.__name__)
@@ -1109,15 +1118,7 @@ def make_expected_build_files(base_path: str) -> List[str]:
 
     # Add base data files
     data_path = os.path.join(base_path, "data")
-    file_names = [
-        "stats.json",
-        "autocomplete.json",
-        "autocomplete.parquet",
-        "country.json",
-        "country.parquet",
-        "institution.json",
-        "institution.parquet",
-    ]
+    file_names = ["stats.json", "autocomplete.json", "country.json", "institution.json", "index.json"]
     for file_name in file_names:
         expected.append(os.path.join(data_path, file_name))
 
