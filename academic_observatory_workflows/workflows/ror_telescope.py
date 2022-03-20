@@ -50,7 +50,7 @@ class RorRelease(SnapshotRelease):
         """
 
         download_files_regex = f"{dag_id}.zip"
-        extract_files_regex = r"^\d{4}-\d{2}-\d{2}-ror-data.json$"
+        extract_files_regex = r"^(v\d+.\d+-)?\d{4}-\d{2}-\d{2}-ror-data.json$"
         transform_files_regex = f"{dag_id}.jsonl.gz"
 
         super().__init__(dag_id, release_date, download_files_regex, extract_files_regex, transform_files_regex)
