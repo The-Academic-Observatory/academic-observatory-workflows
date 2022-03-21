@@ -21,8 +21,8 @@ The figure below illustrates the generated data and notes about what each file i
 ```
     .
     ├── data: data
+    │   ├── index.json: used by the Cloudflare Worker search and filtering API.
     │   ├── autocomplete.json: used for the website search functionality. Copied into public/data folder.
-    │   ├── autocomplete.parquet: used for filtering in Cloudflare Worker.
     │   ├── country: individual entity statistics files for countries. Used to build each country page.
     │   │   ├── ALB.json
     │   │   ├── ARE.json
@@ -30,8 +30,6 @@ The figure below illustrates the generated data and notes about what each file i
     │   ├── country.json: used to create the country table. First 18 countries used to build first page of country table
     │   │                 and then this file is included in the public folder and downloaded by the client to enable the
     │   │                 other pages of the table to be displayed. Copied into public/data folder.
-    │   ├── country.jsonl: used to generate the parquet file.
-    │   ├── country.parquet: to be used along with apache-arrow to enable filtering from a Cloudflare Worker.
     │   ├── institution: individual entity statistics files for institutions. Used to build each institution page.
     │   │   ├── 05ykr0121.json
     │   │   ├── 05ym42410.json
@@ -39,8 +37,6 @@ The figure below illustrates the generated data and notes about what each file i
     │   ├── institution.json: used to create the institution table. First 18 institutions used to build first page of institution table
     │   │                     and then this file is included in the public folder and downloaded by the client to enable the
     │   │                     other pages of the table to be displayed. Copied into public/data folder.
-    │   ├── institution.jsonl: used to generate the parquet file.
-    │   ├── institution.parquet: to be used along with apache-arrow to enable filtering from a Cloudflare Worker.
     │   └── stats.json: global statistics, e.g. the minimum and maximum date for the dataset, when it was last updated etc.
     └── logos: country and institution logos. Copied into public/logos folder.
         ├── country

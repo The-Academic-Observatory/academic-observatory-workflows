@@ -36,13 +36,12 @@ import jsonlines
 import nltk
 import pandas as pd
 import pendulum
-import pyarrow as pa
-import pyarrow.parquet as pq
 import requests
 from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
 from airflow.sensors.external_task import ExternalTaskSensor
-from pyarrow import json as pa_json
+from deprecated import deprecated
+from jinja2 import Template
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
 from observatory.platform.utils.airflow_utils import AirflowVars, get_airflow_connection_password
@@ -60,6 +59,7 @@ from observatory.platform.workflows.workflow import Workflow
 
 # The minimum number of outputs before including an entity in the analysis
 INCLUSION_THRESHOLD = 1000
+START_YEAR = 2000
 
 # The query that pulls data to be included in the dashboards
 QUERY = """
@@ -89,8 +89,24 @@ FROM
   `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg 
   LEFT OUTER JOIN `{project_id}.{ror_dataset_id}.{ror_table_id}` as ror ON agg.id = ror.id
   LEFT OUTER JOIN `{project_id}.{settings_dataset_id}.{country_table_id}` as country ON agg.id = country.alpha3
-WHERE agg.time_period >= 2000 AND agg.time_period <= (EXTRACT(YEAR FROM CURRENT_DATE()) - 1)
+WHERE agg.time_period >= {start_year} AND agg.time_period <= (EXTRACT(YEAR FROM CURRENT_DATE()) - 1)
 ORDER BY year DESC, name ASC
+"""
+
+README = """# COKI Open Access Dataset
+The COKI Open Access Dataset measures open access performance for {{ n_countries }} countries and {{ n_institutions }} institutions
+and is available in JSON Lines format. The data is visualised at the COKI Open Access Dashboard: https://open.coki.ac/.
+
+## Licence
+[COKI Open Access Dataset](https://open.coki.ac/data/) © {{ year }} by [Curtin University](https://www.curtin.edu.au/)
+is licenced under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+
+## Attributions
+This work contains information from:
+* [Microsoft Academic Graph](https://www.microsoft.com/en-us/research/project/microsoft-academic-graph/) which is made available under the [ODC Attribution License](https://opendatacommons.org/licenses/by/1-0/).
+* [Crossref Metadata](https://www.crossref.org/documentation/metadata-plus/) via the Metadata Plus program. Bibliographic metadata is made available without copyright restriction and Crossref generated data with a [CC0 licence](https://creativecommons.org/share-your-work/public-domain/cc0/). See [metadata licence information](https://www.crossref.org/documentation/retrieve-metadata/rest-api/rest-api-metadata-license-information/) for more details.
+* [Unpaywall Data Feed](https://unpaywall.org/products/data-feed).
+* [Research Organization Registry](https://ror.org/) which is made available under a [CC0 licence](https://creativecommons.org/share-your-work/public-domain/cc0/).
 """
 
 
@@ -237,24 +253,6 @@ def split_largest_remainder(sample_size: int, *ratios) -> Tuple:
 
 
 @dataclasses.dataclass
-class Subject:
-    name: str
-    n_outputs: float
-
-    def to_dict(self) -> Dict:
-        return {"name": self.name, "n_outputs": self.n_outputs}
-
-
-@dataclasses.dataclass
-class Collaborator:
-    name: str
-    n_outputs: float
-
-    def to_dict(self) -> Dict:
-        return {"name": self.name, "n_outputs": self.n_outputs}
-
-
-@dataclasses.dataclass
 class Identifier:
     id: str
     type: str
@@ -283,15 +281,19 @@ class Year:
 
 @dataclasses.dataclass
 class Stats:
-    min_year: int
-    max_year: int
+    start_year: int
+    end_year: int
     last_updated: str
+    n_countries: int
+    n_institutions: int
 
     def to_dict(self) -> Dict:
         return {
-            "min_year": self.min_year,
-            "max_year": self.max_year,
+            "start_year": self.start_year,
+            "end_year": self.end_year,
             "last_updated": self.last_updated,
+            "n_countries": self.n_countries,
+            "n_institutions": self.n_institutions,
         }
 
 
@@ -364,6 +366,24 @@ def trigger_repository_dispatch(*, token: str, event_type: str):
     )
 
 
+def select_subset(original: Dict, include_keys: Dict):
+    """Select a subset of a dictionary.
+
+    :param original: the original dictionary.
+    :param include_keys: the keys to include.
+    :return:
+    """
+    output = {}
+    for k, v in include_keys.items():
+        if k in original:
+            if isinstance(v, dict):
+                output[k] = select_subset(original[k], v)
+            else:
+                output[k] = original[k]
+
+    return output
+
+
 @dataclasses.dataclass
 class Entity:
     id: str
@@ -377,15 +397,12 @@ class Entity:
     country: Optional[str] = None
     subregion: str = None
     region: str = None
-    min_year: int = None
-    max_year: int = None
+    start_year: int = None
+    end_year: int = None
     institution_types: Optional[str] = field(default_factory=lambda: [])
     stats: PublicationStats = None
     identifiers: List[Identifier] = field(default_factory=lambda: [])
-    collaborators: List[Collaborator] = field(default_factory=lambda: [])  # todo
-    subjects: List[Subject] = field(default_factory=lambda: [])  # todo
-    other_platform_locations: List[str] = field(default_factory=lambda: [])  # todo
-    timeseries: List[Year] = field(default_factory=lambda: [])
+    years: List[Year] = field(default_factory=lambda: [])
 
     @staticmethod
     def from_dict(dict_: Dict) -> Entity:
@@ -400,8 +417,8 @@ class Entity:
         country = dict_.get("country")
         subregion = dict_.get("subregion")
         region = dict_.get("region")
-        min_year = dict_.get("min_year")
-        max_year = dict_.get("max_year")
+        start_year = dict_.get("start_year")
+        end_year = dict_.get("end_year")
         institution_types = dict_.get("institution_types", [])
         identifiers = [Identifier.from_dict(obj) for obj in dict_.get("identifiers", [])]
 
@@ -417,8 +434,8 @@ class Entity:
             country=country,
             subregion=subregion,
             region=region,
-            min_year=min_year,
-            max_year=max_year,
+            start_year=start_year,
+            end_year=end_year,
             institution_types=institution_types,
             identifiers=identifiers,
         )
@@ -437,14 +454,11 @@ class Entity:
             "subregion": self.subregion,
             "country": self.country,
             "institution_types": self.institution_types,
-            "min_year": self.min_year,
-            "max_year": self.max_year,
+            "start_year": self.start_year,
+            "end_year": self.end_year,
             "stats": self.stats.to_dict(),
             "identifiers": [obj.to_dict() for obj in self.identifiers],
-            "collaborators": [obj.to_dict() for obj in self.collaborators],
-            "subjects": [obj.to_dict() for obj in self.subjects],
-            "other_platform_locations": self.other_platform_locations,
-            "timeseries": [obj.to_dict() for obj in self.timeseries],
+            "years": [obj.to_dict() for obj in self.years],
         }
         # Filter out key val pairs with empty lists and values
         dict_ = {k: v for k, v in dict_.items() if not val_empty(v)}
@@ -616,17 +630,28 @@ def clean_url(url: str) -> str:
 
 
 def save_as_jsonl(output_path: str, iterable: List[Dict]):
+    """Save a list of dicts to JSON Lines format.
+
+    :param output_path: the file path.
+    :param iterable: the objects to save.
+    :return: None.
+    """
+
     with open(output_path, "w") as f:
         with jsonlines.Writer(f) as writer:
             writer.write_all(iterable)
 
 
-def jsonl_to_pyarrow(jsonl_path: str, output_path: str):
-    table = pa_json.read_json(jsonl_path)
-    pq.write_table(table, output_path)
-
-
 def make_logo_url(*, category: str, entity_id: str, size: str, fmt: str) -> str:
+    """Make a logo url.
+
+    :param category: the entity category: country or institution.
+    :param entity_id: the entity id.
+    :param size: the size of the logo: s or l.
+    :param fmt: the format of the logo.
+    :return: the logo url.
+    """
+
     return f"/logos/{category}/{size}/{entity_id}.{fmt}"
 
 
@@ -637,6 +662,17 @@ def calc_oa_stats(
     n_outputs_other_platform_open: int,
     n_outputs_other_platform_open_only: int,
 ):
+    """Calculate additional open access statistics: n_outputs_publisher_open_only, n_outputs_both, n_outputs_closed.
+
+    :param n_outputs: the number of outputs.
+    :param n_outputs_open: the number of open outputs.
+    :param n_outputs_publisher_open: the number of publisher open outputs.
+    :param n_outputs_other_platform_open: the number of other platform open outputs.
+    :param n_outputs_other_platform_open_only:
+    :return: the number of publisher open only outputs, the number of both publisher open and other open outputs and the
+    number of closed outputs.
+    """
+
     # Closed
     n_outputs_closed = n_outputs - n_outputs_open
 
@@ -996,56 +1032,41 @@ class OaWebRelease(SnapshotRelease):
         df_index_table.loc[wikipedia_url_filter, "description"] = descriptions_sorted
         df_index_table.loc[~wikipedia_url_filter, "description"] = ""
 
-    def save_index(self, category: str, df_index_table: pd.DataFrame):
-        """Save the index table.
+    def save_index(self, entities: List[Entity], file_name: str):
+        """Save an index file.
 
-        :param category: the category, i.e. country or institution.
-        :param df_index_table: the index table Pandas Dataframe.
+        :param entities: a list of entities.
+        :param file_name: the file name to save.
         :return: None.
         """
 
-        # Save subset
-        base_path = os.path.join(self.build_path, "data")
-        os.makedirs(base_path, exist_ok=True)
-        df_index_table = df_index_table.drop(
-            [
-                "description",
-                "year",
-                "date",
-                "institution_types",
-                "identifiers",
-                "collaborators",
-                "subjects",
-                "other_platform_locations",
-                "timeseries",
-            ],
-            axis=1,
-            errors="ignore",
-        )
-
-        # Make entities
-        records = df_index_table.to_dict("records")
-        entities = []
-        for record in records:
-            entity = Entity.from_dict(record)
-            entity.stats = PublicationStats.from_dict(record)
-            entities.append(entity)
-
-        # Sort by Open %
-        entities = sorted(entities, key=lambda e: e.stats.p_outputs_open, reverse=True)
-        entities = [e.to_dict() for e in entities]
+        # Convert entities to dictionaries and select a subset of fields
+        subset = {
+            "id": None,
+            "name": None,
+            "logo_s": None,
+            "category": None,
+            "country": None,
+            "subregion": None,
+            "region": None,
+            "institution_types": None,
+            "stats": {
+                "n_outputs": None,
+                "n_outputs_open": None,
+                "p_outputs_open": None,
+                "p_outputs_publisher_open_only": None,
+                "p_outputs_both": None,
+                "p_outputs_other_platform_open_only": None,
+                "p_outputs_closed": None,
+            },
+        }
+        data = [select_subset(entity.to_dict(), subset) for entity in entities]
 
         # Save as JSON
-        json_path = os.path.join(base_path, f"{category}.json")
-        save_json(json_path, entities)
-
-        # Save JSONL
-        jsonl_path = os.path.join(base_path, f"{category}.jsonl")
-        save_as_jsonl(jsonl_path, entities)
-
-        # Save as PyArrow
-        pyarrow_path = os.path.join(base_path, f"{category}.parquet")
-        jsonl_to_pyarrow(jsonl_path, pyarrow_path)
+        base_path = os.path.join(self.build_path, "data")
+        os.makedirs(base_path, exist_ok=True)
+        output_path = os.path.join(base_path, file_name)
+        save_json(output_path, data)
 
     def make_entities(self, df_index_table: pd.DataFrame, df: pd.DataFrame) -> List[Entity]:
         """Make entities.
@@ -1085,13 +1106,16 @@ class OaWebRelease(SnapshotRelease):
                     date = row.get(key_date)
                     stats = PublicationStats.from_dict(row)
                     years.append(Year(year=year, date=date, stats=stats))
-                entity.timeseries = years
+                entity.years = years
 
                 # Set min and max years for data
-                entity.min_year = years[0].year
-                entity.max_year = years[-1].year
+                entity.start_year = years[0].year
+                entity.end_year = years[-1].year
 
                 entities.append(entity)
+
+        # Ensure that entities are sorted based on p_outputs_open
+        entities = sorted(entities, key=lambda e: e.stats.p_outputs_open, reverse=True)
 
         return entities
 
@@ -1110,6 +1134,7 @@ class OaWebRelease(SnapshotRelease):
             entity_dict = entity.to_dict()
             save_json(output_path, entity_dict)
 
+    @deprecated(reason="Will be replaced by save_search_index")
     def make_auto_complete(self, df_index_table: pd.DataFrame, category: str) -> List[Dict]:
         """Build the autocomplete data.
 
@@ -1126,6 +1151,7 @@ class OaWebRelease(SnapshotRelease):
             records.append({"id": id, "name": name, "category": category, "logo_s": logo})
         return records
 
+    @deprecated(reason="Will be replaced by save_search_index")
     def save_autocomplete(self, auto_complete: List[Dict]):
         """Save the autocomplete data.
 
@@ -1142,10 +1168,63 @@ class OaWebRelease(SnapshotRelease):
         records = df_ac.to_dict("records")
         save_json(output_path, records)
 
-        # Save as PyArrow
-        table = pa.Table.from_pandas(df_ac)
-        pyarrow_path = os.path.join(base_path, f"autocomplete.parquet")
-        pq.write_table(table, pyarrow_path)
+    def save_coki_oa_dataset(self, countries: List[Entity], institutions: List[Entity]):
+        """Save the COKI Open Access Dataset to a zip file.
+
+        :param countries: the country entities.
+        :param institutions: the institution entities.
+        :return: None.
+        """
+
+        # Country table
+        subset = {
+            "id": None,
+            "name": None,
+            "subregion": None,
+            "region": None,
+            "start_year": None,
+            "end_year": None,
+            "stats": None,
+            "years": None,
+        }
+        country = [select_subset(entity.to_dict(), subset) for entity in countries]
+
+        # Institutions table
+        subset = {
+            "id": None,
+            "name": None,
+            "country": None,
+            "subregion": None,
+            "region": None,
+            "institution_types": None,
+            "start_year": None,
+            "end_year": None,
+            "stats": None,
+            "years": None,
+        }
+        institution = [select_subset(entity.to_dict(), subset) for entity in institutions]
+
+        # Save to JSON Lines
+        base_path = os.path.join(self.transform_folder, "coki-oa-dataset")
+        os.makedirs(base_path, exist_ok=True)
+
+        file_path = os.path.join(base_path, "country.jsonl")
+        save_as_jsonl(file_path, country)
+
+        file_path = os.path.join(base_path, "institution.jsonl")
+        save_as_jsonl(file_path, institution)
+
+        # Save README
+        file_path = os.path.join(base_path, "README.md")
+        template = Template(README, keep_trailing_newline=True)
+        rendered = template.render(
+            year=pendulum.now().year, n_countries=len(countries), n_institutions=len(institutions)
+        )
+        with open(file_path, mode="w") as f:
+            f.write(rendered)
+
+        # Zip
+        shutil.make_archive(base_path, "zip", base_path)
 
     def save_stats(self, stats: Stats):
         """Save overall stats.
@@ -1171,8 +1250,8 @@ class OaWebWorkflow(Workflow):
     The figure below illustrates the generated data and notes about what each file is used for.
     .
     ├── data: data
+    │   ├── index.json: used by the Cloudflare Worker search and filtering API.
     │   ├── autocomplete.json: used for the website search functionality. Copied into public/data folder.
-    │   ├── autocomplete.parquet: used for filtering in Cloudflare Worker.
     │   ├── country: individual entity statistics files for countries. Used to build each country page.
     │   │   ├── ALB.json
     │   │   ├── ARE.json
@@ -1180,8 +1259,6 @@ class OaWebWorkflow(Workflow):
     │   ├── country.json: used to create the country table. First 18 countries used to build first page of country table
     │   │                 and then this file is included in the public folder and downloaded by the client to enable the
     │   │                 other pages of the table to be displayed. Copied into public/data folder.
-    │   ├── country.jsonl: used to generate the parquet file.
-    │   ├── country.parquet: to be used along with apache-arrow to enable filtering from a Cloudflare Worker.
     │   ├── institution: individual entity statistics files for institutions. Used to build each institution page.
     │   │   ├── 05ykr0121.json
     │   │   ├── 05ym42410.json
@@ -1189,8 +1266,6 @@ class OaWebWorkflow(Workflow):
     │   ├── institution.json: used to create the institution table. First 18 institutions used to build first page of institution table
     │   │                     and then this file is included in the public folder and downloaded by the client to enable the
     │   │                     other pages of the table to be displayed. Copied into public/data folder.
-    │   ├── institution.jsonl: used to generate the parquet file.
-    │   ├── institution.parquet: to be used along with apache-arrow to enable filtering from a Cloudflare Worker.
     │   └── stats.json: global statistics, e.g. the minimum and maximum date for the dataset, when it was last updated etc.
     └── logos: country and institution logos. Copied into public/logos folder.
         ├── country
@@ -1230,7 +1305,7 @@ class OaWebWorkflow(Workflow):
         agg_dataset_id: str = "observatory",
         ror_dataset_id: str = "ror",
         settings_dataset_id: str = "settings",
-        version: str = "v1",
+        version: str = "v2",
     ):
         """Create the OaWebWorkflow.
 
@@ -1343,6 +1418,7 @@ class OaWebWorkflow(Workflow):
             destination_uri = f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{agg_table_id}.jsonl"
             success = bq_query_to_gcs(
                 query=QUERY.format(
+                    start_year=START_YEAR,
                     project_id=release.project_id,
                     agg_dataset_id=release.agg_dataset_id,
                     agg_table_id=agg_sharded_table_id,
@@ -1389,6 +1465,9 @@ class OaWebWorkflow(Workflow):
 
         # Make required folders
         auto_complete = []
+        all_entities = []
+        countries = []
+        institutions = []
         for category in self.table_ids:
             logging.info(f"Transforming {category} entity")
             # Load data
@@ -1406,28 +1485,45 @@ class OaWebWorkflow(Workflow):
             # Make autocomplete data for this category
             auto_complete += release.make_auto_complete(df_index_table, category)
 
+            # Make search index data for this category
+            all_entities += entities
+
             # Save category data
-            release.save_index(category, df_index_table)
+            release.save_index(entities, f"{category}.json")
             release.save_entities(category, entities)
             logging.info(f"Saved transformed {category} entity")
+
+            # Assign country or institution variables
+            if category == "country":
+                countries = entities
+            elif category == "institution":
+                institutions = entities
+            else:
+                raise AirflowException(f"Category type unknown: {category}")
 
         # Save auto complete data as json
         release.save_autocomplete(auto_complete)
         logging.info(f"Saved autocomplete data")
 
+        # Save all entities as json
+        release.save_index(all_entities, "index.json")
+
+        # Save COKI Open Access Dataset
+        release.save_coki_oa_dataset(countries, institutions)
+
         # Save stats as json
-        min_year = 2000
-        max_year = pendulum.now().year - 1
+        end_year = pendulum.now().year - 1
         last_updated = pendulum.now().format("D MMMM YYYY")
-        stats = Stats(min_year, max_year, last_updated)
+        n_countries = len(countries)
+        n_institutions = len(institutions)
+        stats = Stats(START_YEAR, end_year, last_updated, n_countries, n_institutions)
         release.save_stats(stats)
         logging.info(f"Saved stats data")
 
         # Zip data
         dst = os.path.join(release.transform_folder, "latest")
         shutil.copytree(release.build_path, dst)
-        base_name = os.path.join(release.transform_folder, "latest")
-        shutil.make_archive(base_name, "zip", dst)
+        shutil.make_archive(dst, "zip", dst)
 
     def upload_dataset(self, release: OaWebRelease, **kwargs):
         """Publish the dataset produced by this workflow.
