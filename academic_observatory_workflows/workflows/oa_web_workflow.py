@@ -105,7 +105,7 @@ is licenced under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 This work contains information from:
 * [Microsoft Academic Graph](https://www.microsoft.com/en-us/research/project/microsoft-academic-graph/) which is made available under the [ODC Attribution License](https://opendatacommons.org/licenses/by/1-0/).
 * [Crossref Metadata](https://www.crossref.org/documentation/metadata-plus/) via the Metadata Plus program. Bibliographic metadata is made available without copyright restriction and Crossref generated data with a [CC0 licence](https://creativecommons.org/share-your-work/public-domain/cc0/). See [metadata licence information](https://www.crossref.org/documentation/retrieve-metadata/rest-api/rest-api-metadata-license-information/) for more details.
-* [Unpaywall](https://unpaywall.org/products/data-feed) which is made available under a [CC0 licence](https://creativecommons.org/share-your-work/public-domain/cc0/).
+* [Unpaywall Data Feed](https://unpaywall.org/products/data-feed).
 * [Research Organization Registry](https://ror.org/) which is made available under a [CC0 licence](https://creativecommons.org/share-your-work/public-domain/cc0/).
 """
 
