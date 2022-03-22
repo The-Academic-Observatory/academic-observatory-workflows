@@ -14,15 +14,15 @@
 
 # Author: Tuan Chien
 
+import logging
 import os
 from datetime import datetime, timedelta
 from typing import Generator, List, Optional, Tuple, Union
-
+from airflow.models.taskinstance import TaskInstance
+import requests
 import pendulum
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
-from academic_observatory_workflows.workflows.unpaywall_snapshot_telescope import (
-    UnpaywallSnapshotRelease,
-)
+from academic_observatory_workflows.workflows.unpaywall_snapshot_telescope import UnpaywallSnapshotRelease
 from airflow.exceptions import AirflowException
 from airflow.models.dagrun import DagRun
 from croniter import croniter
@@ -36,11 +36,17 @@ from observatory.platform.utils.http_download import download_file
 from observatory.platform.utils.url_utils import (
     get_http_response_json,
     get_observatory_http_header,
+    get_filename_from_http_header,
 )
-from observatory.platform.utils.workflow_utils import is_first_dag_run
 from observatory.platform.workflows.stream_telescope import (
     StreamRelease,
     StreamTelescope,
+)
+from observatory.platform.utils.release_utils import (
+    get_dataset_releases,
+    is_first_release,
+    get_datasets,
+    get_latest_dataset_release,
 )
 
 
@@ -60,6 +66,7 @@ class UnpaywallRelease(StreamRelease):
         start_date: pendulum.DateTime,
         end_date: pendulum.DateTime,
         first_release: bool,
+        workflow_id: int,
     ):
         """Construct an UnpaywallRelease instance
 
@@ -67,6 +74,7 @@ class UnpaywallRelease(StreamRelease):
         :param start_date: the start_date of the release.
         :param end_date: the end_date of the release.
         :param first_release: whether this is the first release that is processed for this DAG
+        :param workflow_id: api workflow id
         """
 
         super().__init__(
@@ -76,25 +84,38 @@ class UnpaywallRelease(StreamRelease):
             first_release,
         )
 
+        self.workflow_id = workflow_id
         self.http_header = get_observatory_http_header(package_name="academic_observatory_workflows")
 
-    @property
-    def api_key(self) -> str:
+    @staticmethod
+    def api_key() -> str:
         """The API key for accessing Unpaywall."""
 
         return get_airflow_connection_password(UnpaywallRelease.AIRFLOW_CONNECTION)
 
-    @property
-    def snapshot_url(self) -> str:
+    @staticmethod
+    def snapshot_url() -> str:
         """Snapshot URL"""
 
-        return f"{UnpaywallRelease.SNAPSHOT_URL}?api_key={self.api_key}"
+        return f"{UnpaywallRelease.SNAPSHOT_URL}?api_key={UnpaywallRelease.api_key()}"
 
-    @property
-    def data_feed_url(self) -> str:
+    @staticmethod
+    def data_feed_url() -> str:
         """Data Feed URL"""
 
-        return f"{UnpaywallRelease.CHANGEFILES_URL}?interval=day&api_key={self.api_key}"
+        return f"{UnpaywallRelease.CHANGEFILES_URL}?interval=day&api_key={UnpaywallRelease.api_key()}"
+
+    @staticmethod
+    def is_second_run(workflow_id: int) -> bool:
+        """Check if this is the second data ingestion run.
+
+        :param workflow_id: API workflow id.
+        :return: Whether this is the second run.
+        """
+
+        datasets = get_datasets(telescope_id=workflow_id)
+        releases = get_dataset_releases(dataset_id=datasets[0].id)
+        return len(releases) == 1
 
     def download(self):
         """Download the release."""
@@ -104,50 +125,56 @@ class UnpaywallRelease(StreamRelease):
             self._download_data_feed()
 
     def _download_snapshot(self):
-        """Download the most recent Unpaywall snapshot on or before the start date."""
+        """Download the most recent Unpaywall snapshot."""
 
-        download_file(url=self.snapshot_url, headers=self.http_header, prefix_dir=self.download_folder)
-
-        download_date = UnpaywallSnapshotRelease.parse_release_date(self.download_files[0]).date()
-        start_date = self.start_date.date()
-
-        if start_date != download_date:
-            raise AirflowException(
-                f"The telescope start date {start_date} and the downloaded snapshot date {download_date} do not match.  Please set the telescope's start date to {download_date}."
-            )
+        download_file(url=UnpaywallRelease.snapshot_url(), headers=self.http_header, prefix_dir=self.download_folder)
 
     @staticmethod
-    def get_diff_release(*, feed_url: str, start_date: pendulum.DateTime) -> Tuple[Optional[str], Optional[str]]:
-        """Get the differential release url and filename.
+    def get_unpaywall_daily_feeds():
+        url = UnpaywallRelease.data_feed_url()
+        release_info = get_http_response_json(url)
 
-        :param feed_url: The URL to query for releases.
-        :param start_date: Earliest date to consider.
-        :return: (None,None) if nothing found, otherwise (url, filename).
+        feeds = []
+        for release in release_info["list"]:
+            release_date = UnpaywallSnapshotRelease.parse_release_date(release["filename"])
+            feeds.append({"release_date": release_date, "url": release["url"], "filename": release["filename"]})
+
+        return feeds
+
+    @staticmethod
+    def get_diff_releases(*, end_date: pendulum.DateTime, workflow_id: int) -> List[dict]:
+        """Get a list of differential releases available between the last release and a target end date.
+
+        :param end_date: Latest date to consider (inclusive).
+        :return: List of releases available.
         """
 
-        release_info = get_http_response_json(feed_url)
-        for release in release_info["list"]:
-            # Have been advised by Unpaywall to parse timestamp from filename instead of relying on the json fields.
-            release_date = UnpaywallSnapshotRelease.parse_release_date(release["filename"]).date()
+        dataset = get_datasets(telescope_id=workflow_id)[0]
+        api_releases = get_dataset_releases(dataset_id=dataset.id)
+        latest_release = get_latest_dataset_release(api_releases)
 
-            # Apply diffs from 2 days ago.  This is so we start applying diffs 1 day before the snapshot date to
-            # guarantee no gaps with the snapshot.
-            target_date = (start_date - pendulum.Duration(days=2)).date()
+        # Need to get snapshot_date-1, snapshot_date, ..., end_date worth of updates.
+        if UnpaywallRelease.is_second_run(workflow_id):
+            target_start_date = pendulum.instance(latest_release.start_date).subtract(days=1).start_of("day")
+        # Day after recorded end date
+        else:
+            target_start_date = latest_release.end_date.add(seconds=1)
 
-            if release_date == target_date:
-                return release["url"], release["filename"]
+        feeds = UnpaywallRelease.get_unpaywall_daily_feeds()
+        filtered_releases = list(
+            filter(lambda x: x["release_date"] >= target_start_date and x["release_date"] <= end_date, feeds)
+        )
 
-        return (None, None)
+        return filtered_releases
 
     def _download_data_feed(self):
         """Download data feed update (diff) that can be applied to the base snapshot.  Can only handle a single download."""
 
-        url, filename = self.get_diff_release(
-            feed_url=self.data_feed_url,
-            start_date=self.start_date,
-        )
-        filename = os.path.join(self.download_folder, filename)
-        download_file(url=url, filename=filename, headers=self.http_header)
+        feeds = UnpaywallRelease.get_diff_releases(end_date=self.end_date, workflow_id=self.workflow_id)
+        for feed in feeds:
+            url = feed["url"]
+            filename = os.path.join(self.download_folder, feed["filename"])
+            download_file(url=url, filename=filename, headers=self.http_header)
 
     def extract(self):
         """Unzip the downloaded files."""
@@ -180,7 +207,8 @@ class UnpaywallTelescope(StreamTelescope):
         merge_partition_field: str = "doi",
         schema_folder: str = default_schema_folder(),
         airflow_vars: List = None,
-        catchup=True,
+        org_name: str = "Curtin University",
+        workflow_id: int = None,
     ):
         """Unpaywall Data Feed telescope.
 
@@ -192,10 +220,9 @@ class UnpaywallTelescope(StreamTelescope):
         :param merge_partition_field: the BigQuery field used to match partitions for a merge
         :param schema_folder: the SQL schema path.
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
-        :param catchup: Whether to perform catchup on old releases.
+        :param org_name: Organisation name in the API associated with this Telescope instance.
+        :param workflow_id: API workflow id.
         """
-
-        self._validate_schedule_interval(start_date=start_date, schedule_interval=schedule_interval)
 
         if airflow_vars is None:
             airflow_vars = [
@@ -215,10 +242,10 @@ class UnpaywallTelescope(StreamTelescope):
             schema_folder,
             dataset_description=dataset_description,
             batch_load=True,
-            catchup=catchup,
             airflow_vars=airflow_vars,
             airflow_conns=[UnpaywallTelescope.AIRFLOW_CONNECTION],
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
+            workflow_id=workflow_id,
         )
 
         self.add_setup_task(self.check_dependencies)
@@ -230,96 +257,83 @@ class UnpaywallTelescope(StreamTelescope):
         self.add_task(self.transform)
         self.add_task(self.upload_transformed)
         self.add_task(self.bq_load_partition)
-
-        self.add_task_chain([self.bq_delete_old, self.bq_append_new, self.cleanup], trigger_rule="none_failed")
+        self.add_task(self.bq_delete_old)
+        self.add_task(self.bq_append_new)
+        self.add_task(self.cleanup)
+        self.add_task(self.add_new_dataset_releases)
 
     @staticmethod
-    def _schedule_days_apart(
-        *, start_date: pendulum.DateTime, schedule_interval: Union[str, timedelta, relativedelta]
-    ) -> Generator:
-        """Calculate the scheduled days apart.
+    def _get_snapshot_date() -> pendulum.DateTime:
+        """Get the Unpaywall snapshot release date from download file.
 
-        :param start_date: DAG start date.
-        :param schedule_interval: DAG schedule interval.
-        :return: A generator that gives back the days apart for each execution.
+        :return: Snapshot file date.
         """
 
-        if isinstance(schedule_interval, (timedelta, relativedelta)):
-            while True:
-                yield schedule_interval.days
-
-        a = start_date
-        it = croniter(schedule_interval, start_date)
-
-        while True:
-            b = it.next(datetime)
-            diff = (b - a).days
-            a = b
-            yield diff
-
-    def _validate_schedule_interval(self, *, start_date: pendulum.DateTime, schedule_interval: str):
-        """Check that the schedule interval gives us 1 or 7 day differences.
-        Throws exception on failure.
-
-        :param start_date: DAG start date.
-        :param schedule_interval: DAG schedule interval.
-        """
-
-        days_apart = UnpaywallTelescope._schedule_days_apart(start_date=start_date, schedule_interval=schedule_interval)
-
-        diffs = [next(days_apart) for i in range(2)]
-        if diffs[0] != diffs[1] or diffs[0] != 1:
-            raise AirflowException(f"Schedule interval must trigger executions 1 days apart.")
+        filename = get_filename_from_http_header(UnpaywallRelease.snapshot_url())
+        dt = UnpaywallSnapshotRelease.parse_release_date(filename)
+        return dt
 
     def check_releases(self, **kwargs) -> bool:
         """Check to see if diff releases are available. If not, and it's not the first release, then skip doing work.
-        Snapshot releases are checked on first release at download stage.
+        Snapshot releases are checked on first release at download stage. Publish any available releases as an XCOM
+        to avoid re-querying Unpaywall servers.
 
         :param kwargs: The context passed from the PythonOperator.
         :return: True to continue, False to skip.
         """
 
-        start_date, first_release = self._get_release_info(**kwargs)
+        # Calculate start/end dates
+        if is_first_release(self.workflow_id):
+            start_date = UnpaywallTelescope._get_snapshot_date().isoformat()
+            end_date = start_date
+        else:
+            dataset = get_datasets(telescope_id=self.workflow_id)[0]
+            api_releases = get_dataset_releases(dataset_id=dataset.id)
+            latest_release = get_latest_dataset_release(api_releases)
+            start_date = latest_release.start_date.isoformat()
+            end_date = pendulum.instance(kwargs["data_interval_end"]).start_of("day")
+            releases = UnpaywallRelease.get_diff_releases(end_date=end_date, workflow_id=self.workflow_id)
 
-        # No checks on first release
-        if first_release:
-            return True
+            if len(releases) == 0:
+                return False
 
-        # Check for diffs
-        api_key = get_airflow_connection_password(UnpaywallRelease.AIRFLOW_CONNECTION)
-        url = f"{UnpaywallRelease.CHANGEFILES_URL}?interval=day&api_key={api_key}"
-        _, filename = UnpaywallRelease.get_diff_release(feed_url=url, start_date=start_date)
+            # Not enough data for second run. Need snapshot date-1, snapshot date, snapshot date + 1 (days)
+            if UnpaywallRelease.is_second_run(self.workflow_id) and len(releases) < 3:
+                return False
 
-        # No release within our target date.
-        if filename is None:
-            return False
+            # Use most recent daily-feed date as end date
+            releases.sort(key=lambda a: a["release_date"])
+            end_date = releases[-1]["release_date"].isoformat()
 
-        # Release found
+        # Publish start/end dates
+        ti: TaskInstance = kwargs["ti"]
+        ti.xcom_push(UnpaywallTelescope.RELEASE_INFO, (start_date, end_date), kwargs["execution_date"])
+
+        # Return status
         return True
 
     def make_release(self, **kwargs) -> UnpaywallRelease:
-        """Make a Release instance
+        """Make a Release instance. Gets the list of releases available from the release check (setup task).
 
         :param kwargs: The context passed from the PythonOperator.
         :return: UnpaywallRelease
         """
 
-        start_date, first_release = self._get_release_info(**kwargs)
+        ti: TaskInstance = kwargs["ti"]
+        start_date_str, end_date_str = ti.xcom_pull(
+            key=UnpaywallTelescope.RELEASE_INFO, task_ids=self.check_releases.__name__, include_prior_dates=False
+        )
+
+        start_date = pendulum.parse(start_date_str)
+        end_date = pendulum.parse(end_date_str)
+        first_release = start_date == end_date
+
         release = UnpaywallRelease(
             dag_id=self.dag_id,
             start_date=start_date,
-            end_date=start_date,
+            end_date=end_date,
             first_release=first_release,
+            workflow_id=self.workflow_id,
         )
+
         return release
-
-    def _get_release_info(self, **kwargs) -> Tuple[pendulum.DateTime, bool]:
-        """Get the start, end dates, and whether this is a first release.
-
-        :param kwargs: The context passed from the PythonOperator.
-        :return start date, whether first release.
-        """
-        dag_run: DagRun = kwargs["dag_run"]
-        first_release = is_first_dag_run(dag_run)
-        start_date = pendulum.instance(kwargs["execution_date"])
-        return start_date, first_release
