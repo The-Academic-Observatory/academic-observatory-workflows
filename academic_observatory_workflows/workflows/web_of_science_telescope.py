@@ -872,6 +872,7 @@ class WebOfScienceTelescope(SnapshotTelescope):
     TABLE_DESCRIPTION = (
         "The Web of Science citation database: https://clarivate.com/webofsciencegroup/solutions/web-of-science"
     )
+    SCHEMA_VERSION_ALT = "http://scientific.thomsonreuters.com/schema/wok5.4/public/FullRecord"
 
     def __init__(
         self,
@@ -880,12 +881,14 @@ class WebOfScienceTelescope(SnapshotTelescope):
         airflow_conns: List[AirflowConns],
         airflow_vars: List[AirflowVars],
         institution_ids: List[str],
+        workflow_id: int = None,
         earliest_date: pendulum.DateTime = pendulum.datetime(1800, 1, 1),
         start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
         schedule_interval: str = "@monthly",
         dataset_id: str = "clarivate",
         schema_folder: str = default_schema_folder(),
         catchup: bool = False,
+        org_name: str = "Curtin University",
     ):
         """Web of Science telescope.
 
@@ -897,14 +900,13 @@ class WebOfScienceTelescope(SnapshotTelescope):
         :param airflow_vars: list of airflow variable keys to check the existence of
         :param airflow_conns: list of airflow connection ids to check the existence of
         :param institution_ids: list of institution IDs to use for the WoS search query.
+        :param workflow_id: API workflow id.
         :param earliest_date: earliest date to query for results.
         :param catchup: whether to use catchup on missed runs.
+        :param org_name: Organisation name in the API associated with this Telescope instance.
         """
 
-        load_bigquery_table_kwargs = {
-            "write_disposition": WriteDisposition.WRITE_APPEND,
-            "ignore_unknown_values": True
-        }
+        load_bigquery_table_kwargs = {"write_disposition": WriteDisposition.WRITE_APPEND, "ignore_unknown_values": True}
 
         super().__init__(
             dag_id,
@@ -917,6 +919,7 @@ class WebOfScienceTelescope(SnapshotTelescope):
             airflow_vars=airflow_vars,
             airflow_conns=airflow_conns,
             load_bigquery_table_kwargs=load_bigquery_table_kwargs,
+            workflow_id=workflow_id,
         )
 
         if len(airflow_conns) == 0:
@@ -935,6 +938,7 @@ class WebOfScienceTelescope(SnapshotTelescope):
         self.add_task(self.upload_transformed)
         self.add_task(self.bq_load)
         self.add_task(self.cleanup)
+        self.add_task(self.add_new_dataset_releases)
 
     def make_release(self, **kwargs) -> List[WebOfScienceRelease]:
         """Make a list of WebOfScienceRelease instances.

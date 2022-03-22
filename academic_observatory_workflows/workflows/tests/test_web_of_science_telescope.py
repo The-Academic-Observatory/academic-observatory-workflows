@@ -52,6 +52,9 @@ from observatory.platform.utils.workflow_utils import (
     blob_name,
     make_dag_id,
 )
+from observatory.api.client import ApiClient, Configuration
+from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
+from observatory.platform.utils.release_utils import get_dataset_releases
 
 
 class TestWosUtility(unittest.TestCase):
@@ -791,6 +794,11 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
         self.conn_id = "web_of_science_curtin_university"
         self.earliest_date = pendulum.datetime(2021, 1, 1).isoformat()
 
+        # API environment
+        configuration = Configuration(host=f"http://{self.host}:{self.api_port}")
+        api_client = ApiClient(configuration)
+        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
+
     def setup_api(self, env, extra=None):
         dt = pendulum.now("UTC")
 
@@ -826,6 +834,32 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
         env.api_session.add(telescope)
         env.api_session.commit()
 
+        env.api_session.add(
+            orm.TableType(
+                type_id="partitioned",
+                name="partitioned bq table",
+                modified=dt,
+                created=dt,
+            )
+        )
+        env.api_session.commit()
+
+        env.api_session.add(
+            orm.DatasetType(
+                type_id="dataset_type_id",
+                name="ds type",
+                extra={},
+                table_type={"id": 1},
+                modified=dt,
+                created=dt,
+            )
+        )
+        env.api_session.commit()
+
+        dataset = orm.Dataset(name="Web of Science Dataset", address="project.dataset.table", service="bigquery", connection=telescope, dataset_type={"id": 1}, created=dt, modified=dt)
+        env.api_session.add(dataset)
+        env.api_session.commit()
+
     def setup_connections(self, env):
         # Add Observatory API connection
         conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.api_port}")
@@ -859,6 +893,7 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
             airflow_vars=airflow_vars,
             institution_ids=institution_ids,
             earliest_date=earliest_date,
+            workflow_id=1,
         )
 
         return telescope
@@ -869,6 +904,7 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
             WebOfScienceTelescope,
             dag_id="dag",
             dataset_id="dataset",
+            workflow_id=1,
             airflow_conns=[],
             airflow_vars=[],
             institution_ids=[],
@@ -882,47 +918,59 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
             airflow_conns=["conn"],
             airflow_vars=[],
             institution_ids=[],
+            workflow_id=1,
         )
 
-    def test_dag_structure(self):
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_dag_structure(self, m_makeapi):
         """Test that the Crossref Events DAG has the correct structure."""
 
-        telescope = WebOfScienceTelescope(
-            dag_id="web_of_science", airflow_conns=["conn"], airflow_vars=[], institution_ids=["123"]
-        )
-        dag = telescope.make_dag()
-        self.assert_dag_structure(
-            {
-                "check_dependencies": ["download"],
-                "download": ["upload_downloaded"],
-                "upload_downloaded": ["transform"],
-                "transform": ["upload_transformed"],
-                "upload_transformed": ["bq_load"],
-                "bq_load": ["cleanup"],
-                "cleanup": [],
-            },
-            dag,
-        )
+        m_makeapi.return_value = self.api
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
 
-    def test_dag_load(self):
+        with env.create():
+            self.setup_connections(env)
+            self.setup_api(env)
+            telescope = WebOfScienceTelescope(
+                dag_id="web_of_science", airflow_conns=["conn"], airflow_vars=[], institution_ids=["123"], workflow_id=1,
+            )
+            dag = telescope.make_dag()
+            self.assert_dag_structure(
+                {
+                    "check_dependencies": ["download"],
+                    "download": ["upload_downloaded"],
+                    "upload_downloaded": ["transform"],
+                    "transform": ["upload_transformed"],
+                    "upload_transformed": ["bq_load"],
+                    "bq_load": ["cleanup"],
+                    "cleanup": ["add_new_dataset_releases"],
+                    "add_new_dataset_releases": [],
+                },
+                dag,
+            )
+
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_dag_load(self, m_makeapi):
         """Test that the DAG can be loaded from a DAG bag."""
 
+        m_makeapi.return_value = self.api
         dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "web_of_science_telescope.py")
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
 
         with env.create():
             self.setup_connections(env)
             self.setup_api(env)
-
             dag_file = os.path.join(
                 module_file_path("academic_observatory_workflows.dags"), "web_of_science_telescope.py"
             )
             dag_id = make_dag_id(WebOfScienceTelescope.DAG_ID, self.org_name)
             self.assert_dag_load(dag_id, dag_file)
 
-    def test_dag_load_missing_params(self):
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_dag_load_missing_params(self, m_makeapi):
         """Make sure an exception is thrown if essential parameters are missing."""
 
+        m_makeapi.return_value = self.api
         dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "web_of_science_telescope.py")
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
         with env.create():
@@ -935,7 +983,9 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
             dag_id = make_dag_id(WebOfScienceTelescope.DAG_ID, self.org_name)
             self.assertRaises(AssertionError, self.assert_dag_load, dag_id, dag_file)
 
-    def test_telescope_bad_schema(self):
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_telescope_bad_schema(self, m_makeapi):
+        m_makeapi.return_value = self.api
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
         bad_api_response = MockApiResponse("api_response_diff_schema.xml")
 
@@ -985,7 +1035,12 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
                 # transform
                 self.assertRaises(AirflowException, env.run_task, telescope.transform.__name__)
 
-    def test_telescope(self):
+    @patch("academic_observatory_workflows.workflows.web_of_science_telescope.pendulum.now")
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_telescope(self, m_makeapi, m_pendnow):
+        m_makeapi.return_value = self.api
+        m_pendnow.return_value = pendulum.datetime(2021, 2, 1)
+
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
         api_response = MockApiResponse("api_response.xml")
 
@@ -993,7 +1048,6 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
             self.setup_connections(env)
             self.setup_api(env)
             dataset_id = env.add_dataset()
-
             execution_date = pendulum.datetime(2021, 1, 1)
             telescope = self.get_telescope(dataset_id)
             dag = telescope.make_dag()
@@ -1075,3 +1129,13 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
                 env.run_task(telescope.cleanup.__name__)
                 self.assertEqual(ti.state, State.SUCCESS)
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
+
+                # add_dataset_release_task
+                dataset_releases = get_dataset_releases(dataset_id=1)
+                self.assertEqual(len(dataset_releases), 0)
+                ti = env.run_task("add_new_dataset_releases")
+                self.assertEqual(ti.state, State.SUCCESS)
+                dataset_releases = get_dataset_releases(dataset_id=1)
+                self.assertEqual(len(dataset_releases), 1)
+                self.assertEqual(pendulum.instance(dataset_releases[0].start_date), release.release_date)
+                self.assertEqual(pendulum.instance(dataset_releases[0].end_date), release.release_date)

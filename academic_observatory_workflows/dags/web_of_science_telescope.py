@@ -53,6 +53,7 @@ for telescope in telescopes:
         airflow_vars=airflow_vars,
         institution_ids=institution_ids,
         earliest_date=earliest_date,
+        workflow_id=telescope.id,
     )
 
     globals()[telescope.dag_id] = telescope.make_dag()
