@@ -172,6 +172,7 @@ class ScopusRelease(SnapshotRelease):
 class ScopusTelescope(SnapshotTelescope):
     DAG_ID = "scopus"
     TABLE_DESCRIPTION = "The Scopus citation database: https://www.scopus.com"
+    SCHEMA_VERSION_ALT = "http://www.elsevier.com/xml/ani/ani515.xsd"
 
     def __init__(
         self,
@@ -186,6 +187,8 @@ class ScopusTelescope(SnapshotTelescope):
         schedule_interval: str = "@monthly",
         dataset_id: str = "elsevier",
         schema_folder: str = default_schema_folder(),
+        org_name: str = "Curtin University",
+        workflow_id: int = None,
     ):
         """Scopus telescope.
         :param dag_id: the id of the DAG.
@@ -198,12 +201,11 @@ class ScopusTelescope(SnapshotTelescope):
         :param institution_ids: list of institution IDs to use for the WoS search query.
         :param view: The view type.  Standard or complete. See https://dev.elsevier.com/sc_search_views.html
         :param earliest_date: earliest date to query for results.
+        :param org_name: Organisation name in the API associated with this Telescope instance.
+        :param workflow_id: api workflow id.
         """
 
-        load_bigquery_table_kwargs = {
-            "write_disposition": WriteDisposition.WRITE_APPEND,
-            "ignore_unknown_values": True
-        }
+        load_bigquery_table_kwargs = {"write_disposition": WriteDisposition.WRITE_APPEND, "ignore_unknown_values": True}
 
         super().__init__(
             dag_id,
@@ -215,6 +217,7 @@ class ScopusTelescope(SnapshotTelescope):
             table_descriptions={dag_id: ScopusTelescope.TABLE_DESCRIPTION},
             airflow_vars=airflow_vars,
             airflow_conns=airflow_conns,
+            workflow_id=workflow_id,
             load_bigquery_table_kwargs=load_bigquery_table_kwargs,
         )
 
@@ -235,6 +238,7 @@ class ScopusTelescope(SnapshotTelescope):
         self.add_task(self.upload_transformed)
         self.add_task(self.bq_load)
         self.add_task(self.cleanup)
+        self.add_task(self.add_new_dataset_releases)
 
     @property
     def api_keys(self) -> List[str]:
@@ -291,6 +295,7 @@ class ScopusTelescope(SnapshotTelescope):
                 table_description=table_description,
                 **self.load_bigquery_table_kwargs,
             )
+
 
 class ScopusClientThrottleLimits:
     """API throttling constants for ScopusClient."""

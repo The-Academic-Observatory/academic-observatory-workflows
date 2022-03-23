@@ -26,19 +26,20 @@ from observatory.platform.utils.workflow_utils import make_dag_id
 api = make_observatory_api()
 telescope_type = api.get_telescope_type(type_id=ScopusTelescope.DAG_ID)
 telescopes = api.get_telescopes(telescope_type_id=telescope_type.id, limit=1000)
+dataset_type = api.get_dataset_type(type_id="scopus")
 
 # Create workflows for each organisation
 for telescope in telescopes:
     dag_id = make_dag_id(ScopusTelescope.DAG_ID, telescope.organisation.name)
-    airflow_conns = telescope.extra.get("airflow_connections")
-    institution_ids = telescope.extra.get("institution_ids")
-    view = telescope.extra.get("view")
+    airflow_conns = dataset_type.extra.get("airflow_connections")
+    institution_ids = dataset_type.extra.get("institution_ids")
+    view = dataset_type.extra.get("view")
 
     if airflow_conns is None or institution_ids is None or view is None:
         raise Exception(f"airflow_conns: {airflow_conns} or institution_ids: {institution_ids} or view: {view} is None")
 
     # earliest_date is parsed into a datetime.date object by the Python API client
-    earliest_date_str = telescope.extra.get("earliest_date")
+    earliest_date_str = dataset_type.extra.get("earliest_date")
     earliest_date = pendulum.parse(earliest_date_str)
 
     airflow_vars = [
@@ -53,6 +54,7 @@ for telescope in telescopes:
         institution_ids=institution_ids,
         earliest_date=earliest_date,
         view=view,
+        workflow_id=telescope.id,
     )
 
     globals()[telescope.dag_id] = telescope.make_dag()
