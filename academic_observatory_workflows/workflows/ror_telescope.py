@@ -139,6 +139,7 @@ class RorTelescope(SnapshotTelescope):
         dataset_description: str = "",
         catchup: bool = True,
         airflow_vars: List = None,
+        workflow_id: int = None,
     ):
         """Construct a RorTelescope instance.
 
@@ -152,6 +153,7 @@ class RorTelescope(SnapshotTelescope):
         :param dataset_description: description for the BigQuery dataset.
         :param catchup: whether to catchup the DAG or not.
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
+        :param workflow_id: api workflow id.
         """
 
         if airflow_vars is None:
@@ -177,6 +179,7 @@ class RorTelescope(SnapshotTelescope):
             dataset_description=dataset_description,
             catchup=catchup,
             airflow_vars=airflow_vars,
+            workflow_id=workflow_id,
         )
 
         self.add_setup_task_chain([self.check_dependencies, self.list_releases])
@@ -189,6 +192,7 @@ class RorTelescope(SnapshotTelescope):
                 self.upload_transformed,
                 self.bq_load,
                 self.cleanup,
+                self.add_new_dataset_releases,
             ]
         )
 
