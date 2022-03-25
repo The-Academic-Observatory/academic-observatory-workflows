@@ -98,6 +98,7 @@ class OpenCitationsTelescope(SnapshotTelescope):
         table_descriptions: Dict = None,
         catchup: bool = False,
         airflow_vars: List = None,
+        workflow_id: int = None,
     ):
         """
         :param dag_id: the id of the DAG.
@@ -110,6 +111,7 @@ class OpenCitationsTelescope(SnapshotTelescope):
         :param table_descriptions: a dictionary with table ids and corresponding table descriptions.
         :param catchup:  whether to catchup the DAG or not.
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow.
+        :param workflow_id: api workflow id.
         """
 
         load_bigquery_table_kwargs = {
@@ -118,7 +120,7 @@ class OpenCitationsTelescope(SnapshotTelescope):
             "csv_skip_leading_rows": 1,
             "csv_allow_quoted_newlines": True,
             "write_disposition": bigquery.WriteDisposition.WRITE_APPEND,
-            "ignore_unknown_values": True
+            "ignore_unknown_values": True,
         }
 
         if table_descriptions is None:
@@ -146,6 +148,7 @@ class OpenCitationsTelescope(SnapshotTelescope):
             table_descriptions=table_descriptions,
             catchup=catchup,
             airflow_vars=airflow_vars,
+            workflow_id=workflow_id,
         )
 
         self.add_setup_task(self.check_dependencies)
@@ -156,6 +159,7 @@ class OpenCitationsTelescope(SnapshotTelescope):
         self.add_task(self.upload_transformed)
         self.add_task(self.bq_load)
         self.add_task(self.cleanup)
+        self.add_task(self.add_new_dataset_releases)
 
     def _list_releases(
         self,

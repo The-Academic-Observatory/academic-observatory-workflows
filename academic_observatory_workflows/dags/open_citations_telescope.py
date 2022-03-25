@@ -26,6 +26,11 @@ Saved to the BigQuery table: <project_id>.open_citations.open_citationsYYYYMMDD
 from academic_observatory_workflows.workflows.open_citations_telescope import (
     OpenCitationsTelescope,
 )
+from observatory.platform.utils.api import make_observatory_api
 
-telescope = OpenCitationsTelescope()
+
+api = make_observatory_api()
+telescope_type = api.get_telescope_type(type_id=OpenCitationsTelescope.DAG_ID)
+telescopes = api.get_telescopes(telescope_type_id=telescope_type.id, limit=1000)
+telescope = OpenCitationsTelescope(workflow_id=telescopes[0].id)
 globals()[telescope.dag_id] = telescope.make_dag()
