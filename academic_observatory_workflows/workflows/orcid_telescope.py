@@ -259,6 +259,7 @@ class OrcidTelescope(StreamTelescope):
         airflow_vars: List = None,
         airflow_conns: List = None,
         max_processes: int = min(32, os.cpu_count() + 4),
+        workflow_id: int = None,
     ):
         """Construct an OrcidTelescope instance.
 
@@ -275,6 +276,7 @@ class OrcidTelescope(StreamTelescope):
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
         :param airflow_conns: list of airflow connection keys, for each connection it is checked if it exists in airflow
         :param max_processes: Max processes used for parallel transforming.
+        :param workflow_id: api workflow id.
         """
         if table_descriptions is None:
             table_descriptions = {
@@ -307,6 +309,7 @@ class OrcidTelescope(StreamTelescope):
             airflow_vars=airflow_vars,
             airflow_conns=airflow_conns,
             batch_load=batch_load,
+            workflow_id=workflow_id,
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
         )
         self.max_processes = max_processes
@@ -315,7 +318,7 @@ class OrcidTelescope(StreamTelescope):
         self.add_task_chain(
             [self.transfer, self.download_transferred, self.transform, self.upload_transformed, self.bq_load_partition]
         )
-        self.add_task_chain([self.bq_delete_old, self.bq_append_new, self.cleanup], trigger_rule="none_failed")
+        self.add_task_chain([self.bq_delete_old, self.bq_append_new, self.cleanup, self.add_new_dataset_releases])
 
     def make_release(self, **kwargs) -> OrcidRelease:
         """Make a release instance. The release is passed as an argument to the function (TelescopeFunction) that is
