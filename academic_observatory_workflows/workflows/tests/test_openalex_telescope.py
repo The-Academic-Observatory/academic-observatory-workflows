@@ -18,6 +18,7 @@ import gzip
 import io
 import json
 import os
+import datetime
 from datetime import timedelta
 from subprocess import Popen
 from unittest.mock import Mock, call, patch
@@ -45,6 +46,21 @@ from academic_observatory_workflows.workflows.openalex_telescope import (
     transform_file,
     transform_object,
 )
+from observatory.platform.utils.workflow_utils import blob_name
+from observatory.api.testing import ObservatoryApiEnvironment
+from observatory.api.client import ApiClient, Configuration
+from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
+from observatory.api.client.model.organisation import Organisation
+from observatory.api.client.model.telescope import Telescope
+from observatory.api.client.model.telescope_type import TelescopeType
+from observatory.api.client.model.dataset import Dataset
+from observatory.api.client.model.dataset_release import DatasetRelease
+from observatory.api.client.model.dataset_type import DatasetType
+from observatory.api.client.model.table_type import TableType
+from observatory.platform.utils.release_utils import get_dataset_releases
+from observatory.platform.utils.airflow_utils import AirflowConns
+from airflow.models import Connection
+from airflow.utils.state import State
 
 
 class TestOpenAlexTelescope(ObservatoryTestCase):
@@ -113,6 +129,66 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             "manifest_transform_hash": "50e2eff06007a32c4394df8df7f5e907",
         }
 
+        # API environment
+        self.host = "localhost"
+        self.port = 5001
+        configuration = Configuration(host=f"http://{self.host}:{self.port}")
+        api_client = ApiClient(configuration)
+        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
+        self.env = ObservatoryApiEnvironment(host=self.host, port=self.port)
+        self.org_name = "Curtin University"
+
+    def setup_api(self):
+        dt = pendulum.now("UTC")
+
+        name = "OpenAlex Telescope"
+        telescope_type = TelescopeType(name=name, type_id=OpenAlexTelescope.DAG_ID)
+        self.api.put_telescope_type(telescope_type)
+
+        organisation = Organisation(
+            name="Curtin University",
+            gcp_project_id="project",
+            gcp_download_bucket="download_bucket",
+            gcp_transform_bucket="transform_bucket",
+        )
+        self.api.put_organisation(organisation)
+
+        telescope = Telescope(
+            name=name,
+            telescope_type=TelescopeType(id=1),
+            organisation=Organisation(id=1),
+            extra={},
+        )
+        self.api.put_telescope(telescope)
+
+        table_type = TableType(
+            type_id="partitioned",
+            name="partitioned bq table",
+        )
+        self.api.put_table_type(table_type)
+
+        dataset_type = DatasetType(
+            type_id="openalex",
+            name="ds type",
+            extra={},
+            table_type=TableType(id=1),
+        )
+        self.api.put_dataset_type(dataset_type)
+
+        dataset = Dataset(
+            name="OpenAlex Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            connection=Telescope(id=1),
+            dataset_type=DatasetType(id=1),
+        )
+        self.api.put_dataset(dataset)
+
+    def setup_connections(self, env):
+        # Add Observatory API connection
+        conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.port}")
+        env.add_connection(conn)
+
     def test_dag_structure(self):
         """Test that the OpenAlex DAG has the correct structure.
         :return: None
@@ -130,36 +206,49 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 "bq_load_partition": ["bq_delete_old"],
                 "bq_delete_old": ["bq_append_new"],
                 "bq_append_new": ["cleanup"],
-                "cleanup": [],
+                "cleanup": ["add_new_dataset_releases"],
+                "add_new_dataset_releases": [],
             },
             dag,
         )
 
-    def test_dag_load(self):
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_dag_load(self, m_makeapi):
         """Test that the OpenAlex DAG can be loaded from a DAG bag.
         :return: None
         """
 
-        with ObservatoryEnvironment().create():
+        m_makeapi.return_value = self.api
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
+
+        with env.create():
+            self.setup_connections(env)
+            self.setup_api()
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "openalex_telescope.py")
             self.assert_dag_load("openalex", dag_file)
 
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
     @patch("academic_observatory_workflows.workflows.openalex_telescope.aws_to_google_cloud_storage_transfer")
     @patch("academic_observatory_workflows.workflows.openalex_telescope.boto3.client")
-    def test_telescope(self, mock_client, mock_transfer):
+    def test_telescope(self, mock_client, mock_transfer, m_makeapi):
         """Test the OpenAlex telescope end to end.
         :return: None.
         """
+
+        m_makeapi.return_value = self.api
+
         # Setup Observatory environment
-        env = ObservatoryEnvironment(self.project_id, self.data_location)
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
         dataset_id = env.add_dataset()
 
         # Setup Telescope
-        telescope = OpenAlexTelescope(dataset_id=dataset_id)
+        telescope = OpenAlexTelescope(dataset_id=dataset_id, workflow_id=1)
         dag = telescope.make_dag()
 
         # Create the Observatory environment and run tests
         with env.create():
+            self.setup_api()
+
             # Add connection
             conn = Connection(
                 conn_id=OpenAlexTelescope.AIRFLOW_CONN_AWS, uri="aws://UWLA41aAhdja:AJLD91saAJSKAL0AjAhkaka@"
@@ -171,12 +260,11 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 # Test that all dependencies are specified: no error should be thrown
                 env.run_task(telescope.check_dependencies.__name__)
                 start_date, end_date, first_release = telescope.get_release_info(
-                    next_execution_date=pendulum.today("UTC"),
                     dag=dag,
-                    dag_run=dag_run,
+                    data_interval_end=datetime.datetime(2021, 12, 26),
                 )
                 self.assertEqual(dag.default_args["start_date"], start_date)
-                self.assertEqual(pendulum.today("UTC") - timedelta(days=1), end_date)
+                self.assertEqual(pendulum.datetime(2021, 12, 26), end_date)
                 self.assertTrue(first_release)
 
                 # Use release info for other tasks
@@ -199,6 +287,8 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
                 # Test write transfer manifest task
                 env.run_task(telescope.write_transfer_manifest.__name__)
+                print(release.transfer_manifest_path_download)
+                print(run["manifest_download_hash"])
                 self.assert_file_integrity(
                     release.transfer_manifest_path_download, run["manifest_download_hash"], "md5"
                 )
@@ -289,12 +379,12 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
                 # Test that load partition task is skipped for the first release
                 ti = env.run_task(telescope.bq_load_partition.__name__)
-                self.assertEqual(ti.state, "skipped")
+                self.assertEqual(ti.state, State.SUCCESS)
 
                 # Test delete old task is skipped for the first release
                 with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
                     ti = env.run_task(telescope.bq_delete_old.__name__)
-                self.assertEqual(ti.state, "skipped")
+                self.assertEqual(ti.state, State.SUCCESS)
 
                 # Test append new creates table
                 env.run_task(telescope.bq_append_new.__name__)
@@ -312,17 +402,24 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 env.run_task(telescope.cleanup.__name__)
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
 
+                # add_dataset_release_task
+                dataset_releases = get_dataset_releases(dataset_id=1)
+                self.assertEqual(len(dataset_releases), 0)
+                ti = env.run_task("add_new_dataset_releases")
+                self.assertEqual(ti.state, State.SUCCESS)
+                dataset_releases = get_dataset_releases(dataset_id=1)
+                self.assertEqual(len(dataset_releases), 1)
+
             run = self.second_run
             with env.create_dag_run(dag, run["execution_date"]) as dag_run:
                 # Test that all dependencies are specified: no error should be thrown
                 env.run_task(telescope.check_dependencies.__name__)
                 start_date, end_date, first_release = telescope.get_release_info(
-                    next_execution_date=pendulum.today("UTC"),
                     dag=dag,
-                    dag_run=dag_run,
+                    data_interval_end=datetime.datetime(2022, 1, 30),
                 )
-                self.assertEqual(release.end_date + timedelta(days=1), start_date)
-                self.assertEqual(pendulum.today("UTC") - timedelta(days=1), end_date)
+                self.assertEqual(release.end_date, start_date)
+                self.assertEqual(pendulum.datetime(2022, 1, 30), end_date)
                 self.assertFalse(first_release)
 
                 # Use release info for other tasks
@@ -463,6 +560,14 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 )
                 env.run_task(telescope.cleanup.__name__)
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
+
+                # add_dataset_release_task
+                dataset_releases = get_dataset_releases(dataset_id=1)
+                self.assertEqual(len(dataset_releases), 1)
+                ti = env.run_task("add_new_dataset_releases")
+                self.assertEqual(ti.state, State.SUCCESS)
+                dataset_releases = get_dataset_releases(dataset_id=1)
+                self.assertEqual(len(dataset_releases), 2)
 
     @patch("academic_observatory_workflows.workflows.openalex_telescope.boto3.client")
     @patch("academic_observatory_workflows.workflows.openalex_telescope.get_aws_conn_info")

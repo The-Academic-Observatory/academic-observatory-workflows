@@ -253,6 +253,7 @@ class OpenAlexTelescope(StreamTelescope):
         airflow_vars: List = None,
         airflow_conns: List = None,
         max_processes: int = os.cpu_count(),
+        workflow_id: int = None,
     ):
         """Construct an OpenAlexTelescope instance.
 
@@ -266,6 +267,7 @@ class OpenAlexTelescope(StreamTelescope):
         :param schema_folder: the SQL schema path.
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
         :param max_processes: max processes for transforming files.
+        :param workflow_id: api workflow id.
         """
 
         if airflow_vars is None:
@@ -291,6 +293,7 @@ class OpenAlexTelescope(StreamTelescope):
             queue=queue,
             airflow_vars=airflow_vars,
             airflow_conns=airflow_conns,
+            workflow_id=workflow_id,
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
         )
         self.max_processes = max_processes
@@ -303,7 +306,7 @@ class OpenAlexTelescope(StreamTelescope):
         self.add_task(self.transform)
         self.add_task(self.upload_transformed)
         self.add_task(self.bq_load_partition)
-        self.add_task_chain([self.bq_delete_old, self.bq_append_new, self.cleanup], trigger_rule="none_failed")
+        self.add_task_chain([self.bq_delete_old, self.bq_append_new, self.cleanup, self.add_new_dataset_releases])
 
     def get_bq_load_info(self, release: OpenAlexRelease) -> List[Tuple[str, str, str]]:
         """Get a list of the transform blob, main table id and partition table id that are used to load data into
