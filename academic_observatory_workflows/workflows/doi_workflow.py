@@ -354,6 +354,8 @@ class DoiWorkflow(Workflow):
         Aggregation("subregion", "subregions", relate_to_funders=True, relate_to_publishers=True),
     ]
 
+    DAG_ID = "doi"
+
     def __init__(
         self,
         *,
@@ -362,11 +364,12 @@ class DoiWorkflow(Workflow):
         observatory_dataset_id: str = FINAL_DATASET_ID,
         elastic_dataset_id: str = ELASTIC_DATASET_ID,
         transforms: Tuple = None,
-        dag_id: Optional[str] = "doi",
+        dag_id: Optional[str] = DAG_ID,
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 8, 30),
         schedule_interval: Optional[str] = "@weekly",
         catchup: Optional[bool] = False,
         airflow_vars: List = None,
+        workflow_id: int = None,
     ):
         """Create the DoiWorkflow.
         :param intermediate_dataset_id: the BigQuery intermediate dataset id.
@@ -378,6 +381,7 @@ class DoiWorkflow(Workflow):
         :param schedule_interval: the schedule interval.
         :param catchup: whether to catchup.
         :param airflow_vars: the required Airflow Variables.
+        :param workflow_id: api workflow id.
         """
 
         if airflow_vars is None:
@@ -396,6 +400,7 @@ class DoiWorkflow(Workflow):
             schedule_interval=schedule_interval,
             catchup=catchup,
             airflow_vars=airflow_vars,
+            workflow_id=workflow_id,
         )
 
         self.intermediate_dataset_id = intermediate_dataset_id
@@ -471,6 +476,8 @@ class DoiWorkflow(Workflow):
                 self.add_task(
                     self.export_for_elastic, op_kwargs={"aggregation": agg, "task_id": task_id}, task_id=task_id
                 )
+
+        self.add_task(self.add_new_dataset_releases)
 
     def make_release(self, **kwargs) -> ObservatoryRelease:
         """Make a release instance. The release is passed as an argument to the function (TelescopeFunction) that is
