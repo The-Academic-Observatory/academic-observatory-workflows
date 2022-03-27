@@ -18,6 +18,11 @@
 # https://airflow.apache.org/docs/stable/faq.html
 
 from academic_observatory_workflows.workflows.grid_telescope import GridTelescope
+from observatory.platform.utils.api import make_observatory_api
 
-telescope = GridTelescope()
+
+api = make_observatory_api()
+telescope_type = api.get_telescope_type(type_id=GridTelescope.DAG_ID)
+telescopes = api.get_telescopes(telescope_type_id=telescope_type.id, limit=1000)
+telescope = GridTelescope(workflow_id=telescopes[0].id)
 globals()[telescope.dag_id] = telescope.make_dag()
