@@ -18,6 +18,11 @@
 # https://airflow.apache.org/docs/stable/faq.html
 
 from academic_observatory_workflows.workflows.geonames_telescope import GeonamesTelescope
+from observatory.platform.utils.api import make_observatory_api
 
-telescope = GeonamesTelescope()
+
+api = make_observatory_api()
+telescope_type = api.get_telescope_type(type_id=GeonamesTelescope.DAG_ID)
+telescopes = api.get_telescopes(telescope_type_id=telescope_type.id, limit=1000)
+telescope = GeonamesTelescope(workflow_id=telescopes[0].id)
 globals()[telescope.dag_id] = telescope.make_dag()
