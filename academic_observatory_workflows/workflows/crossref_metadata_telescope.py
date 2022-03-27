@@ -187,6 +187,7 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         airflow_conns: List = None,
         max_active_runs: int = 1,
         max_processes: int = os.cpu_count(),
+        workflow_id: int = None,
     ):
         """The Crossref Metadata telescope
 
@@ -203,6 +204,7 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         :param airflow_conns: list of airflow connection keys, for each connection it is checked if it exists in airflow
         :param max_active_runs: the maximum number of DAG runs that can be run at once.
         :param max_processes: the number of processes used with ProcessPoolExecutor to transform files in parallel.
+        :param workflow_id: api workflow id.
         """
 
         if table_descriptions is None:
@@ -235,6 +237,7 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
             airflow_vars=airflow_vars,
             airflow_conns=airflow_conns,
             max_active_runs=max_active_runs,
+            workflow_id=workflow_id,
         )
         self.max_processes = max_processes
 
@@ -247,6 +250,7 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         self.add_task(self.upload_transformed)
         self.add_task(self.bq_load)
         self.add_task(self.cleanup)
+        self.add_task(self.add_new_dataset_releases)
 
     def make_release(self, **kwargs) -> List[CrossrefMetadataRelease]:
         """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is
