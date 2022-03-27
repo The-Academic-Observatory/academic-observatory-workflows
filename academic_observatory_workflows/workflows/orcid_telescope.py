@@ -501,7 +501,7 @@ def write_modified_record_blobs(
                     last_modified_date = pendulum.parse(elements[3])
 
                     # skip records that are too new, not included in this release
-                    if last_modified_date > end_date:
+                    if last_modified_date >= end_date:
                         continue
                     # use records between start date and end date
                     elif last_modified_date >= start_date:
