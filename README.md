@@ -9,6 +9,7 @@ data about academic institutions.
 ![Python package](https://github.com/The-Academic-Observatory/academic-observatory-workflows/workflows/Unit%20Tests/badge.svg)
 [![Documentation Status](https://readthedocs.org/projects/academic-observatory-workflows/badge/?version=latest)](https://academic-observatory-workflows.readthedocs.io/en/latest/?badge=latest)
 [![codecov](https://codecov.io/gh/The-Academic-Observatory/academic-observatory-workflows/branch/develop/graph/badge.svg?token=V4WUZG74ZQ)](https://codecov.io/gh/The-Academic-Observatory/academic-observatory-workflows)
+[![DOI](https://zenodo.org/badge/401298815.svg)](https://zenodo.org/badge/latestdoi/401298815)
 
 ## Telescope Workflows
 A telescope a type of workflow used to ingest data from different data sources, and to run workflows that process and
