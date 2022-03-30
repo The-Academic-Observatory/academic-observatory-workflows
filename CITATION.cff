@@ -1,6 +1,6 @@
 cff-version:	1.2.0
 message:	"If you use this software, please cite it as below."
-title:	"Academic Observatory Workflows"
+title:	"The Academic Observatory - Academic Observatory Workflows"
 url:	"https://github.com/The-Academic-Observatory/academic-observatory-workflows"
 doi:	10.5281/zenodo.6366694
 license:	Apache-2.0 License
