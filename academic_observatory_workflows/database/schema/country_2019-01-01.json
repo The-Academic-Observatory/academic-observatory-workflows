@@ -12,6 +12,12 @@
     "type": "STRING"
   },
   {
+    "description": "The country's name from Google Analytics.",
+    "mode": "NULLABLE",
+    "name": "google_analytics_name",
+    "type": "STRING"
+  },
+  {
     "description": "The country's ISO 3166 two letter alpha2 code.",
     "mode": "NULLABLE",
     "name": "alpha2",
