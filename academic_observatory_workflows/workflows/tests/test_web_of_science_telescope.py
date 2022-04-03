@@ -817,9 +817,9 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
             name=self.org_name,
             created=dt,
             modified=dt,
-            gcp_project_id=self.project_id,
-            gcp_download_bucket=env.download_bucket,
-            gcp_transform_bucket=env.transform_bucket,
+            project_id=self.project_id,
+            download_bucket=env.download_bucket,
+            transform_bucket=env.transform_bucket,
         )
 
         env.api_session.add(organisation)

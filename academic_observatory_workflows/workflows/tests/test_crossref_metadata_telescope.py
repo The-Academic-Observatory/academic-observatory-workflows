@@ -108,9 +108,9 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
 
         organisation = Organisation(
             name="Curtin University",
-            gcp_project_id="project",
-            gcp_download_bucket="download_bucket",
-            gcp_transform_bucket="transform_bucket",
+            project_id="project",
+            download_bucket="download_bucket",
+            transform_bucket="transform_bucket",
         )
         self.api.put_organisation(organisation)
 

@@ -67,9 +67,9 @@ class TestDoiWorkflow(ObservatoryTestCase):
     def __init__(self, *args, **kwargs):
         super(TestDoiWorkflow, self).__init__(*args, **kwargs)
         # GCP settings
-        self.gcp_project_id: str = os.getenv("TEST_GCP_PROJECT_ID")
-        self.gcp_bucket_name: str = os.getenv("TEST_GCP_BUCKET_NAME")
-        self.gcp_data_location: str = os.getenv("TEST_GCP_DATA_LOCATION")
+        self.project_id: str = os.getenv("TEST_GCP_PROJECT_ID")
+        self.bucket_name: str = os.getenv("TEST_GCP_BUCKET_NAME")
+        self.data_location: str = os.getenv("TEST_GCP_DATA_LOCATION")
 
         # Institutions
         inst_curtin = Institution(
@@ -131,9 +131,9 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
         organisation = Organisation(
             name="Curtin University",
-            gcp_project_id="project",
-            gcp_download_bucket="download_bucket",
-            gcp_transform_bucket="transform_bucket",
+            project_id="project",
+            download_bucket="download_bucket",
+            transform_bucket="transform_bucket",
         )
         self.api.put_organisation(organisation)
 
@@ -273,7 +273,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
         """
 
         env = ObservatoryEnvironment(
-            self.gcp_project_id, self.gcp_data_location, api_host=self.host, api_port=self.port
+            self.project_id, self.data_location, api_host=self.host, api_port=self.port
         )
         with env.create():
             self.setup_connections(env)
@@ -289,7 +289,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
         # Create datasets
         env = ObservatoryEnvironment(
-            project_id=self.gcp_project_id, data_location=self.gcp_data_location, api_host=self.host, api_port=self.port
+            project_id=self.project_id, data_location=self.data_location, api_host=self.host, api_port=self.port
         )
         fake_dataset_id = env.add_dataset(prefix="fake")
         intermediate_dataset_id = env.add_dataset(prefix="intermediate")
@@ -378,8 +378,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     fake_dataset_id,
                     settings_dataset_id,
                     release_date,
-                    self.gcp_data_location,
-                    project_id=self.gcp_project_id,
+                    self.data_location,
+                    project_id=self.project_id,
                 )
 
                 # Test that source dataset transformations run
@@ -393,7 +393,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 self.assertEqual(expected_state, ti.state)
 
                 # DOI assert table exists
-                expected_table_id = f"{self.gcp_project_id}.{observatory_dataset_id}.doi{release_suffix}"
+                expected_table_id = f"{self.project_id}.{observatory_dataset_id}.doi{release_suffix}"
                 expected_rows = len(observatory_dataset.papers)
                 self.assert_table_integrity(expected_table_id, expected_rows=expected_rows)
 
@@ -406,7 +406,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 # Test create book
                 ti = env.run_task("create_book")
                 self.assertEqual(expected_state, ti.state)
-                expected_table_id = f"{self.gcp_project_id}.{observatory_dataset_id}.book{release_suffix}"
+                expected_table_id = f"{self.project_id}.{observatory_dataset_id}.book{release_suffix}"
                 expected_rows = 0
                 self.assert_table_integrity(expected_table_id, expected_rows)
 
@@ -417,7 +417,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     self.assertEqual(expected_state, ti.state)
 
                     # Aggregation assert table exists
-                    expected_table_id = f"{self.gcp_project_id}.{observatory_dataset_id}.{agg.table_id}{release_suffix}"
+                    expected_table_id = f"{self.project_id}.{observatory_dataset_id}.{agg.table_id}{release_suffix}"
                     self.assert_table_integrity(expected_table_id)
 
                 # Assert country aggregation output
@@ -434,13 +434,13 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 self.assertEqual(expected_state, ti.state)
                 table_ids = [agg.table_id for agg in DoiWorkflow.AGGREGATIONS] + ["doi"]
                 for table_id in table_ids:
-                    self.assert_table_integrity(f"{self.gcp_project_id}.{dashboards_dataset_id}.{table_id}")
+                    self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{table_id}")
 
                 # Test create dashboard views
                 ti = env.run_task("create_dashboard_views")
                 self.assertEqual(expected_state, ti.state)
                 for table_id in ["country", "funder", "group", "institution", "publisher", "subregion"]:
-                    self.assert_table_integrity(f"{self.gcp_project_id}.{dashboards_dataset_id}.{table_id}_comparison")
+                    self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{table_id}_comparison")
 
                 # Test create exported tables for Elasticsearch
                 for agg in DoiWorkflow.AGGREGATIONS:
@@ -464,7 +464,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                         aggregate = table["aggregate"]
                         facet = table["facet"]
                         expected_table_id = (
-                            f"{self.gcp_project_id}.{elastic_dataset_id}.ao_{aggregate}_{facet}{release_suffix}"
+                            f"{self.project_id}.{elastic_dataset_id}.ao_{aggregate}_{facet}{release_suffix}"
                         )
                         self.assert_table_integrity(expected_table_id)
 
@@ -488,7 +488,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
         return [
             dict(row)
             for row in run_bigquery_query(
-                f"SELECT * from {self.gcp_project_id}.{observatory_dataset_id}.{table_id} ORDER BY {order_by_field} ASC;"
+                f"SELECT * from {self.project_id}.{observatory_dataset_id}.{table_id} ORDER BY {order_by_field} ASC;"
             )
         ]
 
