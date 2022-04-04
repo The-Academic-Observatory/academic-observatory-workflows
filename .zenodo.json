@@ -1,4 +1,20 @@
 {
+  "title": "Academic Observatory Workflows",
+  "description": "<p>Academic Observatory Workflows provides Apache Airflow workflows for fetching, processing and analysing data about academic institutions.&nbsp;The workflows include: Crossref Events, Crossref Fundref, Crossref Metadata, Geonames, GRID, Microsoft Academic Graph, Open Citations, ORCID, Scopus, Unpaywall and Web of Science.</p>\n\n<p><strong>Contributors</strong><br>\nConceptualization: Richard Hosking, James P. Diprose, Aniek Roelofs, Lucy Montgomery, and Cameron Neylon.&nbsp;<br>\nData curation: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, and Cameron Neylon.&nbsp;<br>\nFormal analysis: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, Bianca Kramer, and Cameron Neylon.&nbsp;<br>\nFunding acquisition: Lucy Montgomery and Cameron Neylon.<br>\nInvestigation: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, and Rebecca N. Handcock.<br>\nMethodology: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, and Rebecca N. Handcock.&nbsp;<br>\nProject administration: Richard Hosking, Kathryn Napier, Lucy Montgomery, and Cameron Neylon.&nbsp;<br>\nResources: Richard Hosking, James P. Diprose, and Aniek Roelofs.&nbsp;<br>\nSoftware: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, and Cameron Neylon.&nbsp;<br>\nSupervision: Richard Hosking, James P. Diprose, Kathryn Napier, and Cameron Neylon.<br>\nValidation: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, Bianca Kramer, and Cameron Neylon.&nbsp;<br>\nVisualization: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, and Cameron Neylon.<br>\nWriting - original draft: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, and Cameron Neylon.<br>\nWriting - review &amp; editing: Richard Hosking, Aniek Roelofs, Bianca Kramer, and Cameron Neylon.</p>",
+  "notes": "The Curtin Open Knowledge Initiative (COKI) is a strategic initiative of the Research Office at Curtin, the Faculty of Humanities, School of Media, Creative Arts and Social Inquiry and the Curtin Institute for Computation, with additional support from the Andrew W. Mellon Foundation and the Arcadia Fund, a charitable fund of Lisbet Rausing and Peter Baldwin.",
+  "communities": [
+    {
+      "identifier": "coki"
+    }
+  ],
+  "keywords": [
+    "science",
+    "workflow",
+    "data",
+    "apache airflow",
+    "academic",
+    "higher-education"
+  ],
   "license": {
     "id": "Apache-2.0"
   },
