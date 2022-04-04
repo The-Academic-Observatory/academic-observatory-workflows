@@ -1,0 +1,68 @@
+{
+  "title": "Academic Observatory Workflows",
+  "description": "<p>Academic Observatory Workflows provides Apache Airflow workflows for fetching, processing and analysing data about academic institutions.&nbsp;The workflows include: Crossref Events, Crossref Fundref, Crossref Metadata, Geonames, GRID, Microsoft Academic Graph, Open Citations, ORCID, Scopus, Unpaywall and Web of Science.</p>\n\n<p><strong>Contributors</strong><br>\nConceptualization: Richard Hosking, James P. Diprose, Aniek Roelofs, Lucy Montgomery, and Cameron Neylon.&nbsp;<br>\nData curation: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, and Cameron Neylon.&nbsp;<br>\nFormal analysis: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, Bianca Kramer, and Cameron Neylon.&nbsp;<br>\nFunding acquisition: Lucy Montgomery and Cameron Neylon.<br>\nInvestigation: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, and Rebecca N. Handcock.<br>\nMethodology: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, and Rebecca N. Handcock.&nbsp;<br>\nProject administration: Richard Hosking, Kathryn Napier, Lucy Montgomery, and Cameron Neylon.&nbsp;<br>\nResources: Richard Hosking, James P. Diprose, and Aniek Roelofs.&nbsp;<br>\nSoftware: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, and Cameron Neylon.&nbsp;<br>\nSupervision: Richard Hosking, James P. Diprose, Kathryn Napier, and Cameron Neylon.<br>\nValidation: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, Bianca Kramer, and Cameron Neylon.&nbsp;<br>\nVisualization: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, and Cameron Neylon.<br>\nWriting - original draft: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, and Cameron Neylon.<br>\nWriting - review &amp; editing: Richard Hosking, Aniek Roelofs, Bianca Kramer, and Cameron Neylon.</p>",
+  "notes": "The Curtin Open Knowledge Initiative (COKI) is a strategic initiative of the Research Office at Curtin, the Faculty of Humanities, School of Media, Creative Arts and Social Inquiry and the Curtin Institute for Computation, with additional support from the Andrew W. Mellon Foundation and the Arcadia Fund, a charitable fund of Lisbet Rausing and Peter Baldwin.",
+  "communities": [
+    {
+      "identifier": "coki"
+    }
+  ],
+  "keywords": [
+    "science",
+    "workflow",
+    "data",
+    "apache airflow",
+    "academic",
+    "higher-education"
+  ],
+  "license": {
+    "id": "Apache-2.0"
+  },
+  "creators": [
+    {
+      "orcid": "0000-0001-8288-5241",
+      "affiliation": "Centre for Culture and Technology, Curtin University",
+      "name": "Richard Hosking"
+    },
+    {
+      "orcid": "0000-0002-5094-3571",
+      "affiliation": "Centre for Culture and Technology, Curtin University",
+      "name": "James P. Diprose"
+    },
+    {
+      "orcid": "0000-0003-0485-3388",
+      "affiliation": "Curtin Institute for Computation, Curtin University",
+      "name": "Aniek Roelofs"
+    },
+    {
+      "orcid": "0000-0002-6237-7423",
+      "affiliation": "Centre for Culture and Technology, Curtin University",
+      "name": "Tuan-Yow Chien"
+    },
+    {
+      "orcid": "0000-0001-5903-6620",
+      "affiliation": "Curtin Institute for Computation, Curtin University",
+      "name": "Rebecca N. Handcock"
+    },
+    {
+      "orcid": "0000-0002-5965-6560",
+      "affiliation": "Utrecht University",
+      "name": "Bianca Kramer"
+    },
+    {
+      "orcid": "0000-0003-1202-7238",
+      "affiliation": "Curtin Institute for Computation, Curtin University",
+      "name": "Kathryn Napier"
+    },
+    {
+      "orcid": "0000-0001-6551-8140",
+      "affiliation": "Centre for Culture and Technology, Curtin University",
+      "name": "Lucy Montgomery"
+    },
+    {
+      "orcid": "0000-0002-0068-716X",
+      "affiliation": "Centre for Culture and Technology, Curtin University",
+      "name": "Cameron Neylon"
+    }
+  ]
+}
