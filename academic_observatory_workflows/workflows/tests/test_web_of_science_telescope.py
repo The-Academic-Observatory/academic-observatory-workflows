@@ -810,8 +810,8 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
             }
 
         name = "Web of Science Telescope"
-        telescope_type = orm.TelescopeType(name=name, type_id=WebOfScienceTelescope.DAG_ID, created=dt, modified=dt)
-        env.api_session.add(telescope_type)
+        workflow_type = orm.WorkflowType(name=name, type_id=WebOfScienceTelescope.DAG_ID, created=dt, modified=dt)
+        env.api_session.add(workflow_type)
 
         organisation = orm.Organisation(
             name=self.org_name,
@@ -825,7 +825,7 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
         env.api_session.add(organisation)
         telescope = orm.Telescope(
             name=name,
-            telescope_type=telescope_type,
+            workflow_type=workflow_type,
             organisation=organisation,
             modified=dt,
             created=dt,
@@ -871,8 +871,8 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
 
     def get_telescope(self, dataset_id):
         api = make_observatory_api()
-        telescope_type = api.get_telescope_type(type_id=WebOfScienceTelescope.DAG_ID)
-        telescopes = api.get_telescopes(telescope_type_id=telescope_type.id, limit=1000)
+        workflow_type = api.get_workflow_type(type_id=WebOfScienceTelescope.DAG_ID)
+        telescopes = api.get_telescopes(workflow_type_id=workflow_type.id, limit=1000)
         self.assertEqual(len(telescopes), 1)
 
         dag_id = make_dag_id(WebOfScienceTelescope.DAG_ID, telescopes[0].organisation.name)

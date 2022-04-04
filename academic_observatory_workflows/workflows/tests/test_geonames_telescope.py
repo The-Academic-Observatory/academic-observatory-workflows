@@ -46,7 +46,7 @@ from observatory.api.client import ApiClient, Configuration
 from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
 from observatory.api.client.model.organisation import Organisation
 from observatory.api.client.model.telescope import Telescope
-from observatory.api.client.model.telescope_type import TelescopeType
+from observatory.api.client.model.workflow_type import WorkflowType
 from observatory.api.client.model.dataset import Dataset
 from observatory.api.client.model.dataset_release import DatasetRelease
 from observatory.api.client.model.dataset_type import DatasetType
@@ -92,8 +92,8 @@ class TestGeonamesTelescope(ObservatoryTestCase):
         dt = pendulum.now("UTC")
 
         name = "Geonames Telescope"
-        telescope_type = TelescopeType(name=name, type_id=GeonamesTelescope.DAG_ID)
-        self.api.put_telescope_type(telescope_type)
+        workflow_type = WorkflowType(name=name, type_id=GeonamesTelescope.DAG_ID)
+        self.api.put_workflow_type(workflow_type)
 
         organisation = Organisation(
             name="Curtin University",
@@ -105,7 +105,7 @@ class TestGeonamesTelescope(ObservatoryTestCase):
 
         telescope = Telescope(
             name=name,
-            telescope_type=TelescopeType(id=1),
+            workflow_type=WorkflowType(id=1),
             organisation=Organisation(id=1),
             extra={},
         )

@@ -26,8 +26,8 @@ from observatory.platform.utils.api import make_observatory_api
 
 
 api = make_observatory_api()
-telescope_type = api.get_telescope_type(type_id=UnpaywallTelescope.DAG_ID)
-telescopes = api.get_telescopes(telescope_type_id=telescope_type.id, limit=1000)
+workflow_type = api.get_workflow_type(type_id=UnpaywallTelescope.DAG_ID)
+telescopes = api.get_telescopes(workflow_type_id=workflow_type.id, limit=1000)
 
 # Better to throw error here. If setting up for multi instance, then need to standardise dag_id etc.
 telescope = telescopes[0]

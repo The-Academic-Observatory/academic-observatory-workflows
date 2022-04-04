@@ -22,7 +22,7 @@ from observatory.platform.utils.api import make_observatory_api
 
 
 api = make_observatory_api()
-telescope_type = api.get_telescope_type(type_id=OpenAlexTelescope.DAG_ID)
-telescopes = api.get_telescopes(telescope_type_id=telescope_type.id, limit=1000)
+workflow_type = api.get_workflow_type(type_id=OpenAlexTelescope.DAG_ID)
+telescopes = api.get_telescopes(workflow_type_id=workflow_type.id, limit=1000)
 telescope = OpenAlexTelescope(workflow_id=telescopes[0].id)
 globals()[telescope.dag_id] = telescope.make_dag()
