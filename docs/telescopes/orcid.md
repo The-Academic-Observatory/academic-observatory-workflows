@@ -7,29 +7,29 @@ This telescope syncs records from the ORCID AWS bucket and stores the up-to-date
 The corresponding tables created in BigQuery are `orcid.orcid` and `orcid.orcid_partitions`.
 
 ```eval_rst
-+------------------------------+---------+
-| Summary                      |         |
-+==============================+=========+
-| Average runtime              | ? min   |
-+------------------------------+---------+
-| Average download size        |  ? MB   |
-+------------------------------+---------+
-| Harvest Type                 |  API    |
-+------------------------------+---------+
-| Harvest Frequency            | Monthly |
-+------------------------------+---------+
-| Runs on remote worker        | True    |
-+------------------------------+---------+
-| Catchup missed runs          | False   |
-+------------------------------+---------+
-| Table Write Disposition      | Append  |
-+------------------------------+---------+
-| Update Frequency             | Daily   |
-+------------------------------+---------+
-| Credentials Required         | Yes     |
-+------------------------------+---------+
-| Uses Telescope Template      | Stream  |
-+------------------------------+---------+
++------------------------------+--------------+
+| Summary                      |              |
++==============================+==============+
+| Average runtime              | 15 hours     |
++------------------------------+--------------+
+| Average download size        | 70 GB        |
++------------------------------+--------------+
+| Harvest Type                 | AWS transfer |
++------------------------------+--------------+
+| Harvest Frequency            | Weekly       |
++------------------------------+--------------+
+| Runs on remote worker        | True         |
++------------------------------+--------------+
+| Catchup missed runs          | False        |
++------------------------------+--------------+
+| Table Write Disposition      | Append       |
++------------------------------+--------------+
+| Update Frequency             | Daily        |
++------------------------------+--------------+
+| Credentials Required         | Yes          |
++------------------------------+--------------+
+| Uses Telescope Template      | Stream       |
++------------------------------+--------------+
 ```
 
 ## Using the transfer service
