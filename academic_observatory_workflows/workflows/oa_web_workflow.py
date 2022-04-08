@@ -84,7 +84,11 @@ SELECT
   agg.access_types.gold_doaj.total_outputs AS n_outputs_oa_journal,
   agg.access_types.hybrid.total_outputs AS n_outputs_hybrid,
   agg.access_types.bronze.total_outputs AS n_outputs_no_guarantees,
-  ror.external_ids AS identifiers
+  ror.external_ids AS identifiers,
+  CASE
+    WHEN agg.id = country.alpha3 THEN (SELECT ARRAY_AGG(x IGNORE NULLS) FROM UNNEST([country.alpha2, country.alpha3, agg.subregion, agg.region]) as x)
+    ELSE (SELECT ARRAY_AGG(x IGNORE NULLS) FROM UNNEST(array_concat(ror.acronyms, [agg.country, agg.subregion, agg.region])) as x)
+    END AS keywords,
 FROM
   `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg 
   LEFT OUTER JOIN `{project_id}.{ror_dataset_id}.{ror_table_id}` as ror ON agg.id = ror.id
