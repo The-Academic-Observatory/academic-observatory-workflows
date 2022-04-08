@@ -459,6 +459,7 @@ class TestOrcidTelescope(ObservatoryTestCase):
             ],
             stdout=-1,
             stderr=-1,
+            env=dict({"GOOGLE_APPLICATION_CREDENTIALS": "credentials.json"}, CLOUDSDK_PYTHON="python3"),
         )
 
         # Test download in case of second release, using modified records file
@@ -502,6 +503,7 @@ class TestOrcidTelescope(ObservatoryTestCase):
                 stdin=ANY,
                 stdout=-1,
                 stderr=-1,
+                env=dict({"GOOGLE_APPLICATION_CREDENTIALS": "credentials.json"}, CLOUDSDK_PYTHON="python3"),
             )
             self.assertEqual(self.release.modified_records_path, mock_subprocess.call_args[1]["stdin"].name)
 

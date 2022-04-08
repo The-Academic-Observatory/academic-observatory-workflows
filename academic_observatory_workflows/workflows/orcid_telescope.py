@@ -169,7 +169,9 @@ class OrcidRelease(StreamRelease):
                 f"gs://{gc_download_bucket}",
                 self.download_folder,
             ]
-            proc: Popen = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            proc: Popen = subprocess.Popen(
+                args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=dict(os.environ, CLOUDSDK_PYTHON="python3")
+            )
         else:
             # Download only modified records from bucket
             write_modified_record_blobs(
@@ -182,7 +184,11 @@ class OrcidRelease(StreamRelease):
             )
             args = ["gsutil", "-m", "-q", "cp", "-L", log_path, "-I", self.download_folder]
             proc: Popen = subprocess.Popen(
-                args, stdin=open(self.modified_records_path), stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                args,
+                stdin=open(self.modified_records_path),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=dict(os.environ, CLOUDSDK_PYTHON="python3"),
             )
         run_subprocess_cmd(proc, args)
 
