@@ -42,7 +42,6 @@ from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
 from observatory.platform.utils.api import make_observatory_api
 from observatory.platform.utils.gc_utils import run_bigquery_query
 from observatory.platform.utils.test_utils import (
-    HttpServer,
     ObservatoryEnvironment,
     ObservatoryTestCase,
     module_file_path,
@@ -823,7 +822,7 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
         )
 
         env.api_session.add(organisation)
-        telescope = orm.Telescope(
+        telescope = orm.Workflow(
             name=name,
             workflow_type=workflow_type,
             organisation=organisation,
@@ -856,7 +855,15 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
         )
         env.api_session.commit()
 
-        dataset = orm.Dataset(name="Web of Science Dataset", address="project.dataset.table", service="bigquery", connection=telescope, dataset_type={"id": 1}, created=dt, modified=dt)
+        dataset = orm.Dataset(
+            name="Web of Science Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            connection=telescope,
+            dataset_type={"id": 1},
+            created=dt,
+            modified=dt,
+        )
         env.api_session.add(dataset)
         env.api_session.commit()
 
@@ -872,7 +879,7 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
     def get_telescope(self, dataset_id):
         api = make_observatory_api()
         workflow_type = api.get_workflow_type(type_id=WebOfScienceTelescope.DAG_ID)
-        telescopes = api.get_telescopes(workflow_type_id=workflow_type.id, limit=1000)
+        telescopes = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
         self.assertEqual(len(telescopes), 1)
 
         dag_id = make_dag_id(WebOfScienceTelescope.DAG_ID, telescopes[0].organisation.name)
@@ -932,7 +939,11 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
             self.setup_connections(env)
             self.setup_api(env)
             telescope = WebOfScienceTelescope(
-                dag_id="web_of_science", airflow_conns=["conn"], airflow_vars=[], institution_ids=["123"], workflow_id=1,
+                dag_id="web_of_science",
+                airflow_conns=["conn"],
+                airflow_vars=[],
+                institution_ids=["123"],
+                workflow_id=1,
             )
             dag = telescope.make_dag()
             self.assert_dag_structure(

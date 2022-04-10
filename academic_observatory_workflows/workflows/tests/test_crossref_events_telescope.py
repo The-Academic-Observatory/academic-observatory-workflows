@@ -41,7 +41,7 @@ from observatory.api.testing import ObservatoryApiEnvironment
 from observatory.api.client import ApiClient, Configuration
 from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
 from observatory.api.client.model.organisation import Organisation
-from observatory.api.client.model.telescope import Telescope
+from observatory.api.client.model.workflow import Workflow
 from observatory.api.client.model.workflow_type import WorkflowType
 from observatory.api.client.model.dataset import Dataset
 from observatory.api.client.model.dataset_release import DatasetRelease
@@ -108,13 +108,13 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
         )
         self.api.put_organisation(organisation)
 
-        telescope = Telescope(
+        telescope = Workflow(
             name=name,
             workflow_type=WorkflowType(id=1),
             organisation=Organisation(id=1),
             extra={},
         )
-        self.api.put_telescope(telescope)
+        self.api.put_workflow(telescope)
 
         table_type = TableType(
             type_id="partitioned",
@@ -134,7 +134,7 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
             name="Crossref Events Dataset",
             address="project.dataset.table",
             service="bigquery",
-            connection=Telescope(id=1),
+            connection=Workflow(id=1),
             dataset_type=DatasetType(id=1),
         )
         self.api.put_dataset(dataset)

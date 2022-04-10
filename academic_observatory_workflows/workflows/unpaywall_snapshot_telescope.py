@@ -47,7 +47,10 @@ class UnpaywallSnapshotRelease(SnapshotRelease):
     AIRFLOW_CONNECTION = "unpaywall_snapshot"
 
     def __init__(
-        self, dag_id: str, release_date: pendulum.DateTime, file_name: str = None,
+        self,
+        dag_id: str,
+        release_date: pendulum.DateTime,
+        file_name: str = None,
     ):
         """Construct an UnpaywallSnapshotRelease instance.
 
@@ -57,7 +60,8 @@ class UnpaywallSnapshotRelease(SnapshotRelease):
         """
 
         super().__init__(
-            dag_id=dag_id, release_date=release_date,
+            dag_id=dag_id,
+            release_date=release_date,
         )
 
         self.file_name = file_name
@@ -205,7 +209,6 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
         self.add_task(self.bq_load)
         self.add_task(self.cleanup)
         self.add_task(self.add_new_dataset_releases)
-        
 
     @staticmethod
     def list_releases(start_date: pendulum.DateTime, end_date: pendulum.DateTime) -> List[Dict]:
@@ -260,7 +263,7 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
         releases_list = UnpaywallSnapshotTelescope.list_releases(execution_date, next_execution_date)
         logging.info(f"Releases between {execution_date} and {next_execution_date}:\n{releases_list}\n")
 
-        dataset = get_datasets(telescope_id=self.workflow_id)[0]
+        dataset = get_datasets(workflow_id=self.workflow_id)[0]
         releases = [pendulum.parse(release["date"]) for release in releases_list]
         new_dates = get_new_release_dates(dataset_id=dataset.id, releases=releases)
         new_releases = list(filter(lambda release: release["date"] in new_dates, releases_list))

@@ -113,7 +113,7 @@ class UnpaywallRelease(StreamRelease):
         :return: Whether this is the second run.
         """
 
-        datasets = get_datasets(telescope_id=workflow_id)
+        datasets = get_datasets(workflow_id=workflow_id)
         releases = get_dataset_releases(dataset_id=datasets[0].id)
         return len(releases) == 1
 
@@ -149,7 +149,7 @@ class UnpaywallRelease(StreamRelease):
         :return: List of releases available.
         """
 
-        dataset = get_datasets(telescope_id=workflow_id)[0]
+        dataset = get_datasets(workflow_id=workflow_id)[0]
         api_releases = get_dataset_releases(dataset_id=dataset.id)
         latest_release = get_latest_dataset_release(api_releases)
 
@@ -287,7 +287,7 @@ class UnpaywallTelescope(StreamTelescope):
             start_date = UnpaywallTelescope._get_snapshot_date().isoformat()
             end_date = start_date
         else:
-            dataset = get_datasets(telescope_id=self.workflow_id)[0]
+            dataset = get_datasets(workflow_id=self.workflow_id)[0]
             api_releases = get_dataset_releases(dataset_id=dataset.id)
             latest_release = get_latest_dataset_release(api_releases)
             start_date = latest_release.start_date.isoformat()

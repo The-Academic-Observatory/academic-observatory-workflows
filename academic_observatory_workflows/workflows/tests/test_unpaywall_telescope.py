@@ -18,7 +18,6 @@ from gc import freeze
 import os
 import shutil
 import unittest
-from datetime import timedelta
 from unittest.mock import patch
 
 import pendulum
@@ -27,7 +26,6 @@ from academic_observatory_workflows.workflows.unpaywall_telescope import (
     UnpaywallRelease,
     UnpaywallTelescope,
 )
-from airflow.exceptions import AirflowException
 from airflow.models.connection import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
@@ -46,7 +44,7 @@ from observatory.api.testing import ObservatoryApiEnvironment
 from observatory.api.client import ApiClient, Configuration
 from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
 from observatory.api.client.model.organisation import Organisation
-from observatory.api.client.model.telescope import Telescope
+from observatory.api.client.model.workflow import Workflow
 from observatory.api.client.model.workflow_type import WorkflowType
 from observatory.api.client.model.dataset import Dataset
 from observatory.api.client.model.dataset_release import DatasetRelease
@@ -88,29 +86,35 @@ class TestUnpaywallRelease(unittest.TestCase):
         )
         self.api.put_organisation(organisation)
 
-        telescope = Telescope(
+        telescope = Workflow(
             name=name,
             workflow_type=WorkflowType(id=1),
             organisation=Organisation(id=1),
             extra={},
         )
-        self.api.put_telescope(telescope)
+        self.api.put_workflow(telescope)
 
         table_type = TableType(
-                type_id="partitioned",
-                name="partitioned bq table",
+            type_id="partitioned",
+            name="partitioned bq table",
         )
         self.api.put_table_type(table_type)
 
         dataset_type = DatasetType(
-                type_id="dataset_type_id",
-                name="ds type",
-                extra={},
-                table_type=TableType(id=1),
+            type_id="dataset_type_id",
+            name="ds type",
+            extra={},
+            table_type=TableType(id=1),
         )
         self.api.put_dataset_type(dataset_type)
 
-        dataset = Dataset(name="Unpaywall Dataset", address="project.dataset.table", service="bigquery", connection=Telescope(id=1), dataset_type=DatasetType(id=1))
+        dataset = Dataset(
+            name="Unpaywall Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            connection=Workflow(id=1),
+            dataset_type=DatasetType(id=1),
+        )
         self.api.put_dataset(dataset)
 
     @patch("academic_observatory_workflows.workflows.unpaywall_telescope.get_airflow_connection_password")
@@ -232,7 +236,7 @@ class TestUnpaywallRelease(unittest.TestCase):
                 dataset=Dataset(id=1),
                 start_date=pendulum.datetime(2021, 1, 18),
                 end_date=pendulum.datetime(2021, 1, 19),
-            )
+            ),
         ]
         end_date = pendulum.datetime(2021, 1, 21)
         result = UnpaywallRelease.get_diff_releases(end_date=end_date, workflow_id=1)
@@ -339,25 +343,31 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
         result = self.api.put_workflow_type(tele_type)
         self.assertIsInstance(result, WorkflowType)
 
-        telescope = Telescope(organisation=Organisation(id=1), workflow_type=WorkflowType(id=1))
-        result = self.api.put_telescope(telescope)
-        self.assertIsInstance(result, Telescope)
+        telescope = Workflow(organisation=Organisation(id=1), workflow_type=WorkflowType(id=1))
+        result = self.api.put_workflow(telescope)
+        self.assertIsInstance(result, Workflow)
 
         table_type = TableType(
-                type_id="partitioned",
-                name="partitioned bq table",
+            type_id="partitioned",
+            name="partitioned bq table",
         )
         self.api.put_table_type(table_type)
 
         dataset_type = DatasetType(
-                type_id="dataset_type_id",
-                name="ds type",
-                extra={},
-                table_type=TableType(id=1),
+            type_id="dataset_type_id",
+            name="ds type",
+            extra={},
+            table_type=TableType(id=1),
         )
         self.api.put_dataset_type(dataset_type)
 
-        dataset = Dataset(name="Unpaywall Dataset",address="project.dataset.table", service="bigquery",  connection=Telescope(id=1), dataset_type=DatasetType(id=1))
+        dataset = Dataset(
+            name="Unpaywall Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            connection=Workflow(id=1),
+            dataset_type=DatasetType(id=1),
+        )
         result = self.api.put_dataset(dataset)
         self.assertIsInstance(result, Dataset)
 
@@ -412,9 +422,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
         with env.create():
             self.setup_connections(env)
             self.setup_api()
-            dag_file = os.path.join(
-                module_file_path("academic_observatory_workflows.dags"), "unpaywall_telescope.py"
-            )
+            dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "unpaywall_telescope.py")
             self.assert_dag_load("unpaywall", dag_file)
 
     def setup_observatory_environment(self):
@@ -698,7 +706,9 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                             self.assertEqual(ti.state, State.SUCCESS)
 
                             # Check releases
-                            with patch("academic_observatory_workflows.workflows.unpaywall_telescope.UnpaywallRelease.get_diff_releases") as m_diff_releases:
+                            with patch(
+                                "academic_observatory_workflows.workflows.unpaywall_telescope.UnpaywallRelease.get_diff_releases"
+                            ) as m_diff_releases:
                                 m_diff_releases.return_value = []
                                 ti = env.run_task(telescope.check_releases.__name__)
                                 self.assertEqual(ti.state, State.SUCCESS)
@@ -709,5 +719,3 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
 
                         # Clean up template
                         self.remove_changefiles()
-
-                    

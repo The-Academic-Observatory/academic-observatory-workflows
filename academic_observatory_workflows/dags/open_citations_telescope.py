@@ -31,6 +31,6 @@ from observatory.platform.utils.api import make_observatory_api
 
 api = make_observatory_api()
 workflow_type = api.get_workflow_type(type_id=OpenCitationsTelescope.DAG_ID)
-telescopes = api.get_telescopes(workflow_type_id=workflow_type.id, limit=1000)
-telescope = OpenCitationsTelescope(workflow_id=telescopes[0].id)
-globals()[telescope.dag_id] = telescope.make_dag()
+workflows = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
+workflow = OpenCitationsTelescope(workflow_id=workflows[0].id)
+globals()[workflow.dag_id] = workflow.make_dag()

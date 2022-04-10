@@ -25,12 +25,12 @@ from observatory.platform.utils.workflow_utils import make_dag_id
 
 api = make_observatory_api()
 workflow_type = api.get_workflow_type(type_id=ScopusTelescope.DAG_ID)
-telescopes = api.get_telescopes(workflow_type_id=workflow_type.id, limit=1000)
+workflows = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
 dataset_type = api.get_dataset_type(type_id="scopus")
 
 # Create workflows for each organisation
-for telescope in telescopes:
-    dag_id = make_dag_id(ScopusTelescope.DAG_ID, telescope.organisation.name)
+for workflow in workflows:
+    dag_id = make_dag_id(ScopusTelescope.DAG_ID, workflow.organisation.name)
     airflow_conns = dataset_type.extra.get("airflow_connections")
     institution_ids = dataset_type.extra.get("institution_ids")
     view = dataset_type.extra.get("view")
@@ -47,14 +47,14 @@ for telescope in telescopes:
         AirflowVars.DATA_LOCATION,
     ]
 
-    telescope = ScopusTelescope(
+    workflow = ScopusTelescope(
         dag_id=dag_id,
         airflow_conns=airflow_conns,
         airflow_vars=airflow_vars,
         institution_ids=institution_ids,
         earliest_date=earliest_date,
         view=view,
-        workflow_id=telescope.id,
+        workflow_id=workflow.id,
     )
 
-    globals()[telescope.dag_id] = telescope.make_dag()
+    globals()[workflow.dag_id] = workflow.make_dag()

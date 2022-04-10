@@ -43,7 +43,7 @@ from observatory.api.testing import ObservatoryApiEnvironment
 from observatory.api.client import ApiClient, Configuration
 from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
 from observatory.api.client.model.organisation import Organisation
-from observatory.api.client.model.telescope import Telescope
+from observatory.api.client.model.workflow import Workflow
 from observatory.api.client.model.workflow_type import WorkflowType
 from observatory.api.client.model.dataset import Dataset
 from observatory.api.client.model.dataset_release import DatasetRelease
@@ -52,7 +52,6 @@ from observatory.api.client.model.table_type import TableType
 from observatory.platform.utils.release_utils import get_dataset_releases
 from observatory.platform.utils.airflow_utils import AirflowConns
 from airflow.models import Connection
-
 
 
 class TestUnpaywallSnapshotRelease(ObservatoryTestCase):
@@ -233,29 +232,35 @@ class TestUnpaywallSnapshotTelescope(ObservatoryTestCase):
         )
         self.api.put_organisation(organisation)
 
-        telescope = Telescope(
+        telescope = Workflow(
             name=name,
             workflow_type=WorkflowType(id=1),
             organisation=Organisation(id=1),
             extra={},
         )
-        self.api.put_telescope(telescope)
+        self.api.put_workflow(telescope)
 
         table_type = TableType(
-                type_id="partitioned",
-                name="partitioned bq table",
+            type_id="partitioned",
+            name="partitioned bq table",
         )
         self.api.put_table_type(table_type)
 
         dataset_type = DatasetType(
-                type_id="dataset_type_id",
-                name="ds type",
-                extra={},
-                table_type=TableType(id=1),
+            type_id="dataset_type_id",
+            name="ds type",
+            extra={},
+            table_type=TableType(id=1),
         )
         self.api.put_dataset_type(dataset_type)
 
-        dataset = Dataset(name="Unpaywall Snapshot Dataset", address="project.dataset.table", service="bigquery", connection=Telescope(id=1), dataset_type=DatasetType(id=1))
+        dataset = Dataset(
+            name="Unpaywall Snapshot Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            connection=Workflow(id=1),
+            dataset_type=DatasetType(id=1),
+        )
         self.api.put_dataset(dataset)
 
     def setup_connections(self, env):
