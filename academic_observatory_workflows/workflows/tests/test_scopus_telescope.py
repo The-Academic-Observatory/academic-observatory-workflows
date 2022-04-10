@@ -715,7 +715,7 @@ class TestScopusTelescope(ObservatoryTestCase):
     def get_telescope(self, dataset_id):
         api = make_observatory_api()
         workflow_type = api.get_workflow_type(type_id=ScopusTelescope.DAG_ID)
-        telescopes = api.get_telescopes(workflow_type_id=workflow_type.id, limit=1000)
+        telescopes = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
         self.assertEqual(len(telescopes), 1)
         dataset_type = api.get_dataset_type(type_id="scopus")
 
