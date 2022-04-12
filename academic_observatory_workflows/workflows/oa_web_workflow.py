@@ -523,6 +523,11 @@ def get_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
     for title in response_json["query"].get("normalized", []):
         normalized[title["to"]] = title["from"]
 
+    # Resolve redirects referring to each other to 1 redirect
+    for key, value in redirects.copy().items():
+        if value in redirects:
+            redirects[key] = redirects.pop(value)
+
     # Create mapping between entity_id and decoded page title.
     decoded_titles = {urllib.parse.unquote(k): v for k, v in titles.items()}
     descriptions = []
@@ -559,7 +564,7 @@ def remove_text_between_brackets(text: str) -> str:
     for char in text:
         if char == "(":
             nested += 1
-            new_text = new_text[:-1] if new_text[-1] == " " else new_text
+            new_text = new_text[:-1] if new_text and new_text[-1] == " " else new_text
         elif (char == ")") and nested:
             nested -= 1
         elif nested == 0:
