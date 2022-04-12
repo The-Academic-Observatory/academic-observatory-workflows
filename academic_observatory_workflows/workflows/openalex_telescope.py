@@ -436,7 +436,7 @@ def transform_file(download_path: str, transform_path: str):
     logging.info(f"Transforming {download_path}")
     with gzip.open(download_path, "rb") as f_in, gzip.open(transform_path, "wt", encoding="ascii") as f_out:
         reader = jsonlines.Reader(f_in)
-        for obj in reader:
+        for obj in reader.iter(skip_empty=True):
             if "works" in download_path:
                 transform_object(obj, "abstract_inverted_index")
             else:
