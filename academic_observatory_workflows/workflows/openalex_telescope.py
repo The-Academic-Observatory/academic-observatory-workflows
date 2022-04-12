@@ -210,7 +210,9 @@ class OpenAlexRelease(StreamRelease):
             f"gs://{self.download_bucket}/telescopes/{self.dag_id}/{self.release_id}/*",
             self.download_folder,
         ]
-        proc: Popen = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc: Popen = subprocess.Popen(
+            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=dict(os.environ, CLOUDSDK_PYTHON="python3")
+        )
         run_subprocess_cmd(proc, args)
 
     def transform(self):
