@@ -569,7 +569,7 @@ def remove_text_between_brackets(text: str) -> str:
             nested -= 1
         elif nested == 0:
             new_text.append(char)
-    return "".join(new_text)
+    return "".join(new_text).strip()
 
 
 def shorten_text_full_sentences(text: str, *, char_limit: int = 300) -> str:
