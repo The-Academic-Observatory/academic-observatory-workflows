@@ -112,7 +112,7 @@ class TestUnpaywallRelease(unittest.TestCase):
             name="Unpaywall Dataset",
             address="project.dataset.table",
             service="bigquery",
-            connection=Workflow(id=1),
+            workflow=Workflow(id=1),
             dataset_type=DatasetType(id=1),
         )
         self.api.put_dataset(dataset)
@@ -365,7 +365,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
             name="Unpaywall Dataset",
             address="project.dataset.table",
             service="bigquery",
-            connection=Workflow(id=1),
+            workflow=Workflow(id=1),
             dataset_type=DatasetType(id=1),
         )
         result = self.api.put_dataset(dataset)

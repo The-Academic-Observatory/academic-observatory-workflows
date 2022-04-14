@@ -859,7 +859,7 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
             name="Web of Science Dataset",
             address="project.dataset.table",
             service="bigquery",
-            connection=telescope,
+            workflow=telescope,
             dataset_type={"id": 1},
             created=dt,
             modified=dt,
