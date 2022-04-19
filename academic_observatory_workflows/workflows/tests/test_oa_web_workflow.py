@@ -46,7 +46,6 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     make_logo_url,
     remove_text_between_brackets,
     shorten_text_full_sentences,
-    split_largest_remainder,
     trigger_repository_dispatch,
     val_empty,
 )
@@ -84,19 +83,6 @@ class TestFunctions(TestCase):
         actual = clean_ror_id("https://ror.org/02n415q13")
         expected = "02n415q13"
         self.assertEqual(actual, expected)
-
-    def test_split_largest_remainder(self):
-        # Check that if ratios do not sum to 1 an AssertionError is raised
-        with self.assertRaises(AssertionError):
-            sample_size = 100
-            ratios = [0.1, 0.2, 0.4, 100]
-            split_largest_remainder(sample_size, *ratios)
-
-        # Test that correct absolute values are returned
-        sample_size = 10
-        ratios = [0.11, 0.21, 0.68]
-        results = split_largest_remainder(sample_size, *ratios)
-        self.assertEqual((1, 2, 7), results)
 
     def test_clean_url(self):
         url = "https://www.auckland.ac.nz/en.html"
@@ -461,14 +447,14 @@ class TestOaWebRelease(TestCase):
                     "n_outputs_no_guarantees": 16,
                     "p_outputs_open": 46.5,
                     "p_outputs_publisher_open": 37.0,
-                    "p_outputs_publisher_open_only": 13.0,
-                    "p_outputs_both": 25.0,
+                    "p_outputs_publisher_open_only": 12.5,
+                    "p_outputs_both": 24.5,
                     "p_outputs_other_platform_open": 34.0,
-                    "p_outputs_other_platform_open_only": 9.0,
-                    "p_outputs_closed": 53.0,
-                    "p_outputs_oa_journal": 53.0,
-                    "p_outputs_hybrid": 26.0,
-                    "p_outputs_no_guarantees": 21.0,
+                    "p_outputs_other_platform_open_only": 9.5,
+                    "p_outputs_closed": 53.5,
+                    "p_outputs_oa_journal": 52.7,
+                    "p_outputs_hybrid": 25.68,
+                    "p_outputs_no_guarantees": 21.62,
                 }
             ]
             print("Checking country records:")
@@ -507,14 +493,14 @@ class TestOaWebRelease(TestCase):
                     "n_outputs_no_guarantees": 16,
                     "p_outputs_open": 46.5,
                     "p_outputs_publisher_open": 37.0,
-                    "p_outputs_publisher_open_only": 13.0,
-                    "p_outputs_both": 25.0,
+                    "p_outputs_publisher_open_only": 12.5,
+                    "p_outputs_both": 24.5,
                     "p_outputs_other_platform_open": 34.0,
-                    "p_outputs_other_platform_open_only": 9.0,
-                    "p_outputs_closed": 53.0,
-                    "p_outputs_oa_journal": 53.0,
-                    "p_outputs_hybrid": 26.0,
-                    "p_outputs_no_guarantees": 21.0,
+                    "p_outputs_other_platform_open_only": 9.5,
+                    "p_outputs_closed": 53.5,
+                    "p_outputs_oa_journal": 52.7,
+                    "p_outputs_hybrid": 25.68,
+                    "p_outputs_no_guarantees": 21.62,
                     "identifiers": [
                         {"type": "ROR", "id": "02n415q13", "url": "https://ror.org/02n415q13"},
                         {
@@ -681,14 +667,14 @@ class TestOaWebRelease(TestCase):
                         "n_outputs_no_guarantees": 16,
                         "p_outputs_open": 46.5,
                         "p_outputs_publisher_open": 37.0,
-                        "p_outputs_publisher_open_only": 13.0,
-                        "p_outputs_both": 25.0,
+                        "p_outputs_publisher_open_only": 12.5,
+                        "p_outputs_both": 24.5,
                         "p_outputs_other_platform_open": 34.0,
-                        "p_outputs_other_platform_open_only": 9.0,
-                        "p_outputs_closed": 53.0,
-                        "p_outputs_oa_journal": 53.0,
-                        "p_outputs_hybrid": 26.0,
-                        "p_outputs_no_guarantees": 21.0,
+                        "p_outputs_other_platform_open_only": 9.5,
+                        "p_outputs_closed": 53.5,
+                        "p_outputs_oa_journal": 52.7,
+                        "p_outputs_hybrid": 25.68,
+                        "p_outputs_no_guarantees": 21.62,
                     },
                     "years": [
                         {
@@ -714,9 +700,9 @@ class TestOaWebRelease(TestCase):
                                 "p_outputs_other_platform_open": 37.0,
                                 "p_outputs_other_platform_open_only": 11.0,
                                 "p_outputs_closed": 52.0,
-                                "p_outputs_oa_journal": 51.0,
-                                "p_outputs_hybrid": 27.0,
-                                "p_outputs_no_guarantees": 22.0,
+                                "p_outputs_oa_journal": 51.35,
+                                "p_outputs_hybrid": 27.03,
+                                "p_outputs_no_guarantees": 21.62,
                             },
                         },
                         {
@@ -742,9 +728,9 @@ class TestOaWebRelease(TestCase):
                                 "p_outputs_other_platform_open": 31.0,
                                 "p_outputs_other_platform_open_only": 8.0,
                                 "p_outputs_closed": 55.0,
-                                "p_outputs_oa_journal": 54.0,
-                                "p_outputs_hybrid": 24.0,
-                                "p_outputs_no_guarantees": 22.0,
+                                "p_outputs_oa_journal": 54.05,
+                                "p_outputs_hybrid": 24.32,
+                                "p_outputs_no_guarantees": 21.62,
                             },
                         },
                     ],
@@ -802,14 +788,14 @@ class TestOaWebRelease(TestCase):
                     "n_outputs_no_guarantees": 16,
                     "p_outputs_open": 46.5,
                     "p_outputs_publisher_open": 37.0,
-                    "p_outputs_publisher_open_only": 13.0,
-                    "p_outputs_both": 25.0,
+                    "p_outputs_publisher_open_only": 12.5,
+                    "p_outputs_both": 24.5,
                     "p_outputs_other_platform_open": 34.0,
-                    "p_outputs_other_platform_open_only": 9.0,
-                    "p_outputs_closed": 53.0,
-                    "p_outputs_oa_journal": 53.0,
-                    "p_outputs_hybrid": 26.0,
-                    "p_outputs_no_guarantees": 21.0,
+                    "p_outputs_other_platform_open_only": 9.5,
+                    "p_outputs_closed": 53.5,
+                    "p_outputs_oa_journal": 52.7,
+                    "p_outputs_hybrid": 25.68,
+                    "p_outputs_no_guarantees": 21.62,
                 },
                 "years": [
                     {
@@ -835,9 +821,9 @@ class TestOaWebRelease(TestCase):
                             "p_outputs_other_platform_open": 37.0,
                             "p_outputs_other_platform_open_only": 11.0,
                             "p_outputs_closed": 52.0,
-                            "p_outputs_oa_journal": 51.0,
-                            "p_outputs_hybrid": 27.0,
-                            "p_outputs_no_guarantees": 22.0,
+                            "p_outputs_oa_journal": 51.35,
+                            "p_outputs_hybrid": 27.03,
+                            "p_outputs_no_guarantees": 21.62,
                         },
                     },
                     {
@@ -863,9 +849,9 @@ class TestOaWebRelease(TestCase):
                             "p_outputs_other_platform_open": 31.0,
                             "p_outputs_other_platform_open_only": 8.0,
                             "p_outputs_closed": 55.0,
-                            "p_outputs_oa_journal": 54.0,
-                            "p_outputs_hybrid": 24.0,
-                            "p_outputs_no_guarantees": 22.0,
+                            "p_outputs_oa_journal": 54.05,
+                            "p_outputs_hybrid": 24.32,
+                            "p_outputs_no_guarantees": 21.62,
                         },
                     },
                 ],

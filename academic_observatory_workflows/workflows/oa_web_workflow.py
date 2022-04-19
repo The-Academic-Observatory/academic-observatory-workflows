@@ -852,7 +852,7 @@ class OaWebRelease(SnapshotRelease):
 
         for numerator_key, denominator_key in keys:
             p_key = f"p_{numerator_key}"
-            df[p_key] = df[f"n_{numerator_key}"] / df[denominator_key] * 100
+            df[p_key] = round(df[f"n_{numerator_key}"] / df[denominator_key] * 100, 2)
 
             # Fill in NaN caused by denominator of zero
             df[p_key] = df[p_key].fillna(0)
