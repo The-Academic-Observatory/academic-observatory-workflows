@@ -60,7 +60,6 @@ class Table:
 class Transform:
     inputs: Dict = None
     output_table: Table = None
-    output_cluster: bool = False
     output_clustering_fields: List = None
 
 
@@ -96,7 +95,6 @@ def make_dataset_transforms(
             Transform(
                 inputs={"crossref_events": Table(dataset_id_crossref_events, "crossref_events")},
                 output_table=Table(dataset_id_observatory_intermediate, "crossref_events"),
-                output_cluster=True,
                 output_clustering_fields=["doi"],
             ),
             Transform(
@@ -105,7 +103,6 @@ def make_dataset_transforms(
                     "crossref_metadata": Table(dataset_id_crossref_metadata, "crossref_metadata", sharded=True),
                 },
                 output_table=Table(dataset_id_observatory_intermediate, "crossref_fundref"),
-                output_cluster=True,
                 output_clustering_fields=["doi"],
             ),
             Transform(
@@ -121,25 +118,21 @@ def make_dataset_transforms(
                     "settings": Table(dataset_id_settings),
                 },
                 output_table=Table(dataset_id_observatory_intermediate, "mag"),
-                output_cluster=True,
                 output_clustering_fields=["Doi"],
             ),
             Transform(
                 inputs={"orcid": Table(dataset_id_orcid, "orcid")},
                 output_table=Table(dataset_id_observatory_intermediate, "orcid"),
-                output_cluster=True,
                 output_clustering_fields=["doi"],
             ),
             Transform(
                 inputs={"open_citations": Table(dataset_id_open_citations, "open_citations", sharded=True)},
                 output_table=Table(dataset_id_observatory_intermediate, "open_citations"),
-                output_cluster=True,
                 output_clustering_fields=["doi"],
             ),
             Transform(
                 inputs={"unpaywall": Table(dataset_id_unpaywall, "unpaywall", sharded=False)},
                 output_table=Table(dataset_id_observatory_intermediate, "unpaywall"),
-                output_cluster=True,
                 output_clustering_fields=["doi"],
             ),
         ],
@@ -151,7 +144,6 @@ def make_dataset_transforms(
                 "settings": Table(dataset_id_settings),
             },
             output_table=Table(dataset_id_observatory, "doi"),
-            output_cluster=True,
             output_clustering_fields=["doi"],
         ),
         Transform(
@@ -160,7 +152,6 @@ def make_dataset_transforms(
                 "crossref_events": Table(dataset_id_observatory_intermediate, "crossref_events", sharded=True),
             },
             output_table=Table(dataset_id_observatory, "book"),
-            output_cluster=True,
             output_clustering_fields=["isbn"],
         ),
     )
@@ -532,7 +523,6 @@ class DoiWorkflow(Workflow):
             inputs=transform.inputs,
             output_dataset_id=transform.output_table.dataset_id,
             output_table_id=transform.output_table.table_id,
-            output_cluster=transform.output_cluster,
             output_clustering_fields=transform.output_clustering_fields,
         )
 
@@ -667,14 +657,12 @@ class ObservatoryRelease:
         inputs: Dict,
         output_dataset_id: str,
         output_table_id: str,
-        output_cluster: bool,
-        output_clustering_fields: List,
+        output_clustering_fields: List = None,
     ):
         """Create an intermediate table.
         :param inputs: the input datasets.
         :param output_dataset_id: the output dataset id.
         :param output_table_id: the output table id.
-        :param output_cluster: whether to cluster or not.
         :param output_clustering_fields: the fields to cluster on.
         :return: None.
         """
@@ -707,7 +695,6 @@ class ObservatoryRelease:
             dataset_id=output_dataset_id,
             table_id=output_table_id_sharded,
             location=self.data_location,
-            cluster=output_cluster,
             clustering_fields=output_clustering_fields,
         )
 
@@ -766,7 +753,6 @@ class ObservatoryRelease:
             dataset_id=self.observatory_dataset_id,
             table_id=sharded_table_id,
             location=self.data_location,
-            cluster=True,
             clustering_fields=["id"],
         )
 
