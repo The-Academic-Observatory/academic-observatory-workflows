@@ -20,14 +20,12 @@ import dataclasses
 import datetime
 import json
 import logging
-import math
 import os
 import os.path
 import shutil
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import field
-from operator import itemgetter
 from typing import Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
@@ -127,16 +125,16 @@ class PublicationStats:
     n_outputs_no_guarantees: int = None
 
     # Percentage fields
-    p_outputs_open: int = None
-    p_outputs_publisher_open: int = None
-    p_outputs_publisher_open_only: int = None
-    p_outputs_both: int = None
-    p_outputs_other_platform_open: int = None
-    p_outputs_other_platform_open_only: int = None
-    p_outputs_closed: int = None
-    p_outputs_oa_journal: int = None
-    p_outputs_hybrid: int = None
-    p_outputs_no_guarantees: int = None
+    p_outputs_open: float = None
+    p_outputs_publisher_open: float = None
+    p_outputs_publisher_open_only: float = None
+    p_outputs_both: float = None
+    p_outputs_other_platform_open: float = None
+    p_outputs_other_platform_open_only: float = None
+    p_outputs_closed: float = None
+    p_outputs_oa_journal: float = None
+    p_outputs_hybrid: float = None
+    p_outputs_no_guarantees: float = None
 
     @staticmethod
     def from_dict(dict_: Dict) -> PublicationStats:
@@ -214,42 +212,6 @@ class PublicationStats:
             "p_outputs_hybrid": self.p_outputs_hybrid,
             "p_outputs_no_guarantees": self.p_outputs_no_guarantees,
         }
-
-
-def split_largest_remainder(sample_size: int, *ratios) -> Tuple:
-    """Split a sample size into different groups based on a list of ratios (that add to 1.0) using the largest
-    remainder method: https://en.wikipedia.org/wiki/Largest_remainder_method.
-
-    Copyright 2021 James Diprose
-
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
-
-      http://www.apache.org/licenses/LICENSE-2.0
-
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
-
-    :param sample_size: the absolute sample size.
-    :param ratios: the list of ratios, must add to 1.0.
-    :return: the absolute numbers of each group.
-    """
-
-    assert math.isclose(sum(ratios), 1), "ratios must sum to 1.0"
-    sizes = [sample_size * ratio for ratio in ratios]
-    sizes_whole = [math.floor(size) for size in sizes]
-
-    while (sample_size - sum(sizes_whole)) > 0:
-        remainders = [size % 1 for size in sizes]
-        max_index = max(enumerate(remainders), key=itemgetter(1))[0]
-        sizes_whole[max_index] = sizes_whole[max_index] + 1
-        sizes[max_index] = sizes_whole[max_index]
-
-    return tuple(sizes_whole)
 
 
 @dataclasses.dataclass
@@ -869,9 +831,6 @@ class OaWebRelease(SnapshotRelease):
         # Add percentages to dataframe
         self.update_df_with_percentages(df_index_table, self.PERCENTAGE_FIELD_KEYS)
 
-        # Make percentages add to 100% when integers
-        self.quantize_df_percentages(df_index_table)
-
         # Sort from highest oa percentage to lowest
         df_index_table.sort_values(by=["n_outputs_open"], ascending=False, inplace=True)
 
@@ -893,40 +852,10 @@ class OaWebRelease(SnapshotRelease):
 
         for numerator_key, denominator_key in keys:
             p_key = f"p_{numerator_key}"
-            df[p_key] = df[f"n_{numerator_key}"] / df[denominator_key] * 100
+            df[p_key] = round(df[f"n_{numerator_key}"] / df[denominator_key] * 100, 2)
 
             # Fill in NaN caused by denominator of zero
             df[p_key] = df[p_key].fillna(0)
-
-    def quantize_df_percentages(self, df: pd.DataFrame):
-        """Makes percentages add to 100% when integers
-
-        :param df: the Pandas dataframe.
-        :return: None.
-        """
-
-        for i, row in df.iterrows():
-            # Make percentage publisher open only, both, other platform open only and closed add to 100
-            sample_size = 100
-            keys = [
-                "p_outputs_publisher_open_only",
-                "p_outputs_both",
-                "p_outputs_other_platform_open_only",
-                "p_outputs_closed",
-            ]
-            ratios = [row[key] / 100.0 for key in keys]
-            results = split_largest_remainder(sample_size, *ratios)
-            for key, value in zip(keys, results):
-                df.loc[i, key] = value
-
-            # Make percentage oa_journal, hybrid and no_guarantees add to 100
-            keys = ["p_outputs_oa_journal", "p_outputs_hybrid", "p_outputs_no_guarantees"]
-            ratios = [row[key] / 100.0 for key in keys]
-            has_publisher_open = row["n_outputs_publisher_open"] > 0
-            if has_publisher_open:
-                results = split_largest_remainder(sample_size, *ratios)
-                for key, value in zip(keys, results):
-                    df.loc[i, key] = value
 
     def update_index_with_logos(self, category: str, df_index_table: pd.DataFrame):
         """Update the index with logos, downloading logos if they don't exist.
@@ -1094,9 +1023,6 @@ class OaWebRelease(SnapshotRelease):
                 self.update_df_with_percentages(df_group, self.PERCENTAGE_FIELD_KEYS)
                 df_group = df_group.sort_values(by=[key_year])
                 df_group = df_group.loc[:, ~df_group.columns.str.contains("^Unnamed")]
-
-                # Make percentages add to 100% when integers
-                self.quantize_df_percentages(df_group)
 
                 # Create entity
                 entity_dict: Dict = df_index_table.loc[df_index_table[key_id] == entity_id].to_dict(key_records)[0]
@@ -1310,7 +1236,7 @@ class OaWebWorkflow(Workflow):
         agg_dataset_id: str = "observatory",
         ror_dataset_id: str = "ror",
         settings_dataset_id: str = "settings",
-        version: str = "v2",
+        version: str = "v3",
     ):
         """Create the OaWebWorkflow.
 
