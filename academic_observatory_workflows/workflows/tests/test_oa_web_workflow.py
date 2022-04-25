@@ -48,6 +48,7 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     shorten_text_full_sentences,
     trigger_repository_dispatch,
     val_empty,
+    Zenodo,
 )
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.test_utils import (
@@ -60,6 +61,92 @@ from observatory.platform.utils.test_utils import (
 )
 
 academic_observatory_workflows.workflows.oa_web_workflow.INCLUSION_THRESHOLD = 0
+
+
+class MockResponse:
+    def __init__(self):
+        self.data = None
+        self.status_code = None
+
+    def json(self):
+        return self.data
+
+
+class MockZenodo(Zenodo):
+    """Mock Zenodo class for running tests."""
+
+    def get_versions(self, concept_doi: str, all_versions: int = 0, size: int = 10, sort: str = "mostrecent"):
+        res = MockResponse()
+        res.status_code = 200
+
+        if all_versions == 0:
+            res.data = [
+                {
+                    "conceptdoi": "10.5072/zenodo.1044668",
+                    "id": 3,
+                    "state": "unsubmitted",
+                    "created": "2022-04-25T22:16:16.145039+00:00",
+                    "files": [{"id": "596c128f-d240-4008-87b6-cecf143e9d48"}],
+                }
+            ]
+        else:
+            res.data = [
+                {
+                    "conceptdoi": "10.5072/zenodo.1044668",
+                    "id": 3,
+                    "state": "unsubmitted",
+                    "created": "2022-04-25T22:16:16.145039+00:00",
+                    "files": [{"id": "596c128f-d240-4008-87b6-cecf143e9d48"}],
+                },
+                {
+                    "conceptdoi": "10.5072/zenodo.1044668",
+                    "id": 2,
+                    "state": "done",
+                    "created": "2022-03-25T22:16:16.145039+00:00",
+                    "files": [{"id": "596c128f-d240-4008-87b6-cecf143e9d48"}],
+                },
+                {
+                    "conceptdoi": "10.5072/zenodo.1044668",
+                    "id": 1,
+                    "state": "done",
+                    "created": "2022-02-25T22:16:16.145039+00:00",
+                    "files": [{"id": "bcf58bee-8e04-4e0a-bee6-378a2faebc2a"}],
+                },
+            ]
+
+        return res
+
+    def create_new_version(self, id: str):
+        res = MockResponse()
+        res.status_code = 201
+        return res
+
+    def get_deposition(self, id: str):
+        res = MockResponse()
+        res.status_code = 200
+        res.data = {
+            "conceptdoi": "10.5072/zenodo.1044668",
+            "id": 3,
+            "state": "unsubmitted",
+            "created": "2022-04-25T22:16:16.145039+00:00",
+            "files": [{"id": "596c128f-d240-4008-87b6-cecf143e9d48"}],
+        }
+        return res
+
+    def delete_file(self, id: str, file_id: str):
+        res = MockResponse()
+        res.status_code = 201
+        return res
+
+    def upload_file(self, id: str, file_path: str):
+        res = MockResponse()
+        res.status_code = 201
+        return res
+
+    def publish(self, id: str):
+        res = MockResponse()
+        res.status_code = 202
+        return res
 
 
 class TestFunctions(TestCase):
@@ -937,8 +1024,10 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "doi_sensor": ["check_dependencies"],
                     "check_dependencies": ["query"],
                     "query": ["download"],
-                    "download": ["transform"],
-                    "transform": ["upload_dataset"],
+                    "download": ["make_draft_zenodo_version"],
+                    "make_draft_zenodo_version": ["transform"],
+                    "transform": ["publish_zenodo_version"],
+                    "publish_zenodo_version": ["upload_dataset"],
                     "upload_dataset": ["repository_dispatch"],
                     "repository_dispatch": ["cleanup"],
                     "cleanup": [],
@@ -986,19 +1075,22 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 tables=tables, bucket_name=bucket_name, release_date=release_date, data_location=self.data_location
             )
 
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo")
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.trigger_repository_dispatch")
-    def test_telescope(self, mock_trigger_repository_dispatch):
+    def test_telescope(self, mock_trigger_repository_dispatch, mock_zenodo):
         """Test the telescope end to end.
 
         :return: None.
         """
 
+        mock_zenodo.return_value = MockZenodo()
         execution_date = pendulum.datetime(2021, 11, 13)
         env = ObservatoryEnvironment(project_id=self.project_id, data_location=self.data_location, enable_api=False)
         dataset_id = env.add_dataset("data")
         dataset_id_settings = env.add_dataset("settings")
         data_bucket = env.add_bucket()
         github_token = "github-token"
+        zenodo_token = "zenodo-token"
 
         with env.create() as t:
             # Add data bucket variable
@@ -1006,6 +1098,9 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
             # Add Github token connection
             env.add_connection(Connection(conn_id=OaWebWorkflow.GITHUB_TOKEN_CONN, uri=f"http://:{github_token}@"))
+
+            # Add Zenodo token connection
+            env.add_connection(Connection(conn_id=OaWebWorkflow.ZENODO_TOKEN_CONN, uri=f"http://:{zenodo_token}@"))
 
             # Run fake DOI workflow
             dag = make_dummy_dag("doi", execution_date)
@@ -1052,6 +1147,10 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     path = os.path.join(base_folder, file_name)
                     self.assertTrue(os.path.isfile(path))
 
+                # Make draft Zenodo version
+                ti = env.run_task(workflow.make_draft_zenodo_version.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+
                 # Transform data
                 ti = env.run_task(workflow.transform.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
@@ -1071,6 +1170,10 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     latest_file = os.path.join(base_folder, file_name)
                     print(f"\t{latest_file}")
                     self.assertTrue(os.path.isfile(latest_file))
+
+                # Publish Zenodo version
+                ti = env.run_task(workflow.publish_zenodo_version.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
 
                 # Upload data to bucket
                 ti = env.run_task(workflow.upload_dataset.__name__)

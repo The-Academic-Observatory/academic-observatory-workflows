@@ -697,11 +697,11 @@ class Zenodo:
 
     def create_new_version(self, id: str):
         url = self.make_url(f"/api/deposit/depositions/{id}/actions/newversion")
-        return requests.post(url, params={"access_token": self.access_token}).json()
+        return requests.post(url, params={"access_token": self.access_token})
 
     def get_deposition(self, id: str):
         url = self.make_url(f"/api/deposit/depositions/{id}")
-        return requests.get(url, params={"access_token": self.access_token}).json()
+        return requests.get(url, params={"access_token": self.access_token})
 
     def delete_file(self, id: str, file_id: str):
         url = self.make_url(f"/api/deposit/depositions/{id}/files/{file_id}")
@@ -732,7 +732,7 @@ def make_draft_version(zenodo: Zenodo, concept_doi: str):
     latest = versions[0]
     draft_id = latest["id"]
     state = latest["state"]
-    if state != "unpublished":
+    if state == "done":
         # If published then create a new draft
         res = zenodo.create_new_version(draft_id)
         if res.status_code != 200:
@@ -780,21 +780,21 @@ class OaWebRelease(SnapshotRelease):
         dag_id: str,
         project_id: str,
         release_date: pendulum.DateTime,
-        zenodo: Zenodo,
         data_bucket_name: str,
         change_chart_years: int = 10,
         agg_dataset_id: str = "observatory",
         ror_dataset_id: str = "ror",
+        zenodo: Zenodo = Zenodo(),
     ):
         """Create an OaWebRelease instance.
 
         :param dag_id: the dag id.
         :param project_id: the Google Cloud project id.
         :param release_date: the release date.
-        :param zenodo: the zenodo instance.
         :param change_chart_years: the number of years to include in the change charts.
         :param agg_dataset_id: the dataset to use for aggregation.
         :param ror_dataset_id: the ROR dataset id.
+        :param zenodo: the zenodo instance.
         """
 
         super().__init__(dag_id=dag_id, release_date=release_date)
@@ -1349,7 +1349,8 @@ class OaWebWorkflow(Workflow):
         ror_dataset_id: str = "ror",
         settings_dataset_id: str = "settings",
         version: str = "v3",
-        concept_doi: str = "10.5281/zenodo.1044668",
+        concept_doi: str = "10.5281/zenodo.6399462",
+        zenodo_host: str = "https://zenodo.org"
     ):
         """Create the OaWebWorkflow.
 
@@ -1391,6 +1392,7 @@ class OaWebWorkflow(Workflow):
         self.table_ids = table_ids
         self.version = version
         self.concept_doi = concept_doi
+        self.zenodo_host = zenodo_host
         if table_ids is None:
             self.table_ids = ["country", "institution"]
 
@@ -1421,16 +1423,16 @@ class OaWebWorkflow(Workflow):
         release_date = make_release_date(**kwargs)
         data_bucket_name = Variable.get(self.DATA_BUCKET)
         zenodo_token = get_airflow_connection_password(self.ZENODO_TOKEN_CONN)
-        zenodo = Zenodo(access_token=zenodo_token)
+        zenodo = Zenodo(host=self.zenodo_host, access_token=zenodo_token)
 
         return OaWebRelease(
             dag_id=self.dag_id,
             project_id=project_id,
             data_bucket_name=data_bucket_name,
-            zenodo=zenodo,
             release_date=release_date,
             ror_dataset_id=self.ror_dataset_id,
             agg_dataset_id=self.agg_dataset_id,
+            zenodo=zenodo,
         )
 
     def query(self, release: OaWebRelease, **kwargs):
@@ -1616,11 +1618,11 @@ class OaWebWorkflow(Workflow):
             raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
         draft = res.json()[0]
         draft_id = draft["id"]
-        if draft["stats"] != "unpublished":
+        if draft["state"] != "unsubmitted":
             raise AirflowException(f"Latest version is not a draft: {draft_id}")
 
         file_path = os.path.join(release.transform_folder, "coki-oa-dataset.zip")
-        publish_new_version(release.zenodo, draft_id, file_path)
+        publish_new_version(release.zenodo, draft, file_path)
 
     def upload_dataset(self, release: OaWebRelease, **kwargs):
         """Publish the dataset produced by this workflow.
