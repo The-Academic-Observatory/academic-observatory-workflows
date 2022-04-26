@@ -18,8 +18,8 @@ import json
 import os
 from typing import List
 from unittest import TestCase
-from unittest.mock import patch
-
+from unittest.mock import patch, ANY, MagicMock, Mock
+import io
 import httpretty
 import jsonlines
 import nltk
@@ -49,6 +49,8 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     trigger_repository_dispatch,
     val_empty,
     Zenodo,
+    make_draft_version,
+    publish_new_version,
 )
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.test_utils import (
@@ -133,6 +135,116 @@ class MockZenodo(Zenodo):
         res = MockResponse()
         res.status_code = 202
         return res
+
+
+class TestZenodo(TestCase):
+    def setUp(self) -> None:
+        self.host = "https://localhost"
+        self.access_token = "abcdef"
+        self.zenodo = Zenodo(host=self.host, access_token=self.access_token)
+
+    def test_make_url(self):
+        host = "https://localhost"
+        zenodo = Zenodo(host=host)
+        url = zenodo.make_url("/api/deposit")
+        self.assertEqual("https://localhost/api/deposit", url)
+
+        host = "https://localhost/"
+        zenodo = Zenodo(host=host)
+        url = zenodo.make_url("api/deposit")
+        self.assertEqual("https://localhost/api/deposit", url)
+
+        host = "https://localhost/"
+        zenodo = Zenodo(host=host)
+        url = zenodo.make_url("/api/deposit")
+        self.assertEqual("https://localhost/api/deposit", url)
+
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.get")
+    def test_get_versions(self, mock_get):
+        conceptrecid = 1
+        all_versions = 0
+        size = 10
+        sort = "mostrecent"
+        self.zenodo.get_versions(conceptrecid, all_versions=all_versions, size=size, sort=sort)
+        mock_get.assert_called_once_with(
+            f"{self.host}/api/deposit/depositions",
+            params={
+                "q": f"conceptrecid:{conceptrecid}",
+                "all_versions": all_versions,
+                "access_token": self.access_token,
+                "sort": sort,
+                "size": size,
+            },
+            timeout=self.zenodo.timeout,
+        )
+
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.post")
+    def test_create_new_version(self, mock_post):
+        id = 1
+        self.zenodo.create_new_version(id)
+        mock_post.assert_called_once_with(
+            f"{self.host}/api/deposit/depositions/{id}/actions/newversion", params={"access_token": self.access_token}
+        )
+
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.get")
+    def test_get_deposition(self, mock_get):
+        id = 1
+        self.zenodo.get_deposition(id)
+        mock_get.assert_called_once_with(
+            f"{self.host}/api/deposit/depositions/{id}", params={"access_token": self.access_token}
+        )
+
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.delete")
+    def test_delete_file(self, mock_delete):
+        id = 1
+        file_id = "596c128f-d240-4008-87b6-cecf143e9d48"
+        self.zenodo.delete_file(id, file_id)
+        mock_delete.assert_called_once_with(
+            f"{self.host}/api/deposit/depositions/{id}/files/{file_id}", params={"access_token": self.access_token}
+        )
+
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.post")
+    def test_upload_file(self, mock_post: MagicMock):
+        with CliRunner().isolated_filesystem() as t:
+            # Make file
+            file_name = "file.txt"
+            file_path = os.path.join(t, file_name)
+            with open(file_path, mode="w") as f:
+                f.write("Hello World")
+
+            id = 1
+            data = {"name": file_name}
+            self.zenodo.upload_file(id, file_path)
+            mock_post.assert_called_once_with(
+                f"{self.host}/api/deposit/depositions/{id}/files",
+                data=data,
+                files=ANY,
+                params={
+                    "access_token": self.access_token
+                }
+            )
+
+            # Check that correct file was set to be uploaded
+            actual_buffered_reader = mock_post.call_args.kwargs["files"]["file"]
+            self.assertIsInstance(actual_buffered_reader, io.BufferedReader)
+            self.assertEqual(file_path, actual_buffered_reader.name)
+
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.post")
+    def test_publish(self, mock_post):
+        id = 1
+        self.zenodo.publish(id)
+        mock_post.assert_called_once_with(
+            f"{self.host}/api/deposit/depositions/{id}/actions/publish",
+            params={
+                "access_token": self.access_token
+            }
+        )
+    #
+    # def test_make_draft_version(self):
+    #     make_draft_version()
+    #
+    # def test_publish_new_version(self):
+    #     publish_new_version()
 
 
 class TestFunctions(TestCase):

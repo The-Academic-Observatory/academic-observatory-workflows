@@ -679,7 +679,16 @@ class Zenodo:
         self.timeout = timeout
 
     def make_url(self, path: str):
-        return f"{self.host}{path}"
+        # Remove last / from host
+        host = self.host
+        if self.host[-1] == "/":
+            host = self.host[:-1]
+
+        # Add leading / to path
+        if path[0] != "/":
+            path = f"/{path}"
+
+        return f"{host}{path}"
 
     def get_versions(self, conceptrecid: int, all_versions: int = 0, size: int = 10, sort: str = "mostrecent"):
         query = f"conceptrecid:{conceptrecid}"
@@ -709,7 +718,6 @@ class Zenodo:
 
     def upload_file(self, id: int, file_path: str):
         url = self.make_url(f"/api/deposit/depositions/{id}/files")
-        requests.post(url, params={"access_token": self.access_token})
         data = {"name": os.path.basename(file_path)}
         files = {"file": open(file_path, "rb")}
         return requests.post(url, data=data, files=files, params={"access_token": self.access_token})
@@ -1362,11 +1370,19 @@ class OaWebWorkflow(Workflow):
         :param start_date: the start date.
         :param schedule_interval: the schedule interval.
         :param catchup: whether to catchup or not.
+        :param ext_dag_id: the DAG id to wait for.
         :param table_ids: the table ids.
+        :param airflow_vars: required Airflow Variables.
+        :param airflow_conns: required Airflow Connections.
+        :param agg_dataset_id: the id of the dataset where the Academic Observatory aggregated data lives.
+        :param ror_dataset_id: the id of the dataset containing the ROR table.
+        :param settings_dataset_id: the id of the settings dataset, which contains the country table.
         :param version: the dataset version published by this workflow. The Github Action pulls from a specific dataset
         version: https://github.com/The-Academic-Observatory/coki-oa-web/blob/develop/.github/workflows/build-on-data-update.yml#L68-L74.
         This is so that when breaking changes are made to the schema, the web application won't break.
-        :param airflow_vars: required Airflow Variables.
+        :param conceptrecid: the Zenodo Concept Record ID for the COKI Open Access Dataset. The Concept Record ID is
+        the last set of numbers from the Concept DOI.
+        :param zenodo_host: the Zenodo hostname, can be changed to https://sandbox.zenodo.org for testing.
         """
 
         if airflow_vars is None:
