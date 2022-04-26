@@ -256,7 +256,7 @@ class ZenodoVersion:
     download_url: str
 
     def to_dict(self) -> Dict:
-        return {"date": self.release_date.strftime("%Y-%m-%d"), "download_url": self.download_url}
+        return {"release_date": self.release_date.strftime("%Y-%m-%d"), "download_url": self.download_url}
 
 
 @dataclasses.dataclass
