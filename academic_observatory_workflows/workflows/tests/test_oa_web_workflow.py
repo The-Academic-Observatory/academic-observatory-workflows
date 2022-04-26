@@ -75,43 +75,29 @@ class MockResponse:
 class MockZenodo(Zenodo):
     """Mock Zenodo class for running tests."""
 
-    def get_versions(self, concept_doi: str, all_versions: int = 0, size: int = 10, sort: str = "mostrecent"):
+    def get_versions(self, conceptrecid: int, all_versions: int = 0, size: int = 10, sort: str = "mostrecent"):
         res = MockResponse()
         res.status_code = 200
 
         if all_versions == 0:
             res.data = [
                 {
-                    "conceptdoi": "10.5072/zenodo.1044668",
+                    "conceptrecid": 1044668,
                     "id": 3,
                     "state": "unsubmitted",
                     "created": "2022-04-25T22:16:16.145039+00:00",
-                    "files": [{"id": "596c128f-d240-4008-87b6-cecf143e9d48"}],
                 }
             ]
         else:
             res.data = [
                 {
-                    "conceptdoi": "10.5072/zenodo.1044668",
+                    "conceptrecid": 1044668,
                     "id": 3,
                     "state": "unsubmitted",
                     "created": "2022-04-25T22:16:16.145039+00:00",
-                    "files": [{"id": "596c128f-d240-4008-87b6-cecf143e9d48"}],
                 },
-                {
-                    "conceptdoi": "10.5072/zenodo.1044668",
-                    "id": 2,
-                    "state": "done",
-                    "created": "2022-03-25T22:16:16.145039+00:00",
-                    "files": [{"id": "596c128f-d240-4008-87b6-cecf143e9d48"}],
-                },
-                {
-                    "conceptdoi": "10.5072/zenodo.1044668",
-                    "id": 1,
-                    "state": "done",
-                    "created": "2022-02-25T22:16:16.145039+00:00",
-                    "files": [{"id": "bcf58bee-8e04-4e0a-bee6-378a2faebc2a"}],
-                },
+                {"conceptrecid": 1044668, "id": 2, "state": "done", "created": "2022-03-25T22:16:16.145039+00:00"},
+                {"conceptrecid": 1044668, "id": 1, "state": "done", "created": "2022-02-25T22:16:16.145039+00:00"},
             ]
 
         return res
@@ -125,7 +111,7 @@ class MockZenodo(Zenodo):
         res = MockResponse()
         res.status_code = 200
         res.data = {
-            "conceptdoi": "10.5072/zenodo.1044668",
+            "conceptrecid": 1044668,
             "id": 3,
             "state": "unsubmitted",
             "created": "2022-04-25T22:16:16.145039+00:00",
@@ -135,7 +121,7 @@ class MockZenodo(Zenodo):
 
     def delete_file(self, id: str, file_id: str):
         res = MockResponse()
-        res.status_code = 201
+        res.status_code = 204
         return res
 
     def upload_file(self, id: str, file_path: str):

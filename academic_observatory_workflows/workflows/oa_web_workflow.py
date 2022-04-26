@@ -681,8 +681,8 @@ class Zenodo:
     def make_url(self, path: str):
         return f"{self.host}{path}"
 
-    def get_versions(self, concept_doi: str, all_versions: int = 0, size: int = 10, sort: str = "mostrecent"):
-        query = f"conceptdoi:{concept_doi.replace('/', '//')}"
+    def get_versions(self, conceptrecid: int, all_versions: int = 0, size: int = 10, sort: str = "mostrecent"):
+        query = f"conceptrecid:{conceptrecid}"
         return requests.get(
             self.make_url("/api/deposit/depositions"),
             params={
@@ -695,33 +695,33 @@ class Zenodo:
             timeout=self.timeout,
         )
 
-    def create_new_version(self, id: str):
+    def create_new_version(self, id: int):
         url = self.make_url(f"/api/deposit/depositions/{id}/actions/newversion")
         return requests.post(url, params={"access_token": self.access_token})
 
-    def get_deposition(self, id: str):
+    def get_deposition(self, id: int):
         url = self.make_url(f"/api/deposit/depositions/{id}")
         return requests.get(url, params={"access_token": self.access_token})
 
-    def delete_file(self, id: str, file_id: str):
+    def delete_file(self, id: int, file_id: str):
         url = self.make_url(f"/api/deposit/depositions/{id}/files/{file_id}")
         return requests.delete(url, params={"access_token": self.access_token})
 
-    def upload_file(self, id: str, file_path: str):
+    def upload_file(self, id: int, file_path: str):
         url = self.make_url(f"/api/deposit/depositions/{id}/files")
         requests.post(url, params={"access_token": self.access_token})
         data = {"name": os.path.basename(file_path)}
         files = {"file": open(file_path, "rb")}
         return requests.post(url, data=data, files=files, params={"access_token": self.access_token})
 
-    def publish(self, id: str):
+    def publish(self, id: int):
         url = self.make_url(f"/api/deposit/depositions/{id}/actions/publish")
         return requests.post(url, params={"access_token": self.access_token})
 
 
-def make_draft_version(zenodo: Zenodo, concept_doi: str):
+def make_draft_version(zenodo: Zenodo, conceptrecid: int):
     # Make new draft version
-    res = zenodo.get_versions(concept_doi)
+    res = zenodo.get_versions(conceptrecid)
     if res.status_code != 200:
         raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
 
@@ -735,24 +735,28 @@ def make_draft_version(zenodo: Zenodo, concept_doi: str):
     if state == "done":
         # If published then create a new draft
         res = zenodo.create_new_version(draft_id)
-        if res.status_code != 200:
+        if res.status_code != 201:
             raise AirflowException(f"zenodo.create_new_version status_code {res.status_code}")
 
 
-def publish_new_version(zenodo: Zenodo, draft: Dict, file_path: str):
-    draft_id = draft["id"]
+def publish_new_version(zenodo: Zenodo, draft_id: int, file_path: str):
+    # Get full deposition which contains files
+    res = zenodo.get_deposition(draft_id)
+    if res.status_code != 200:
+        raise AirflowException(f"zenodo.get_deposition {res.status_code}")
+    draft = res.json()
 
     # Delete existing files
     for file in draft["files"]:
         file_id = file["id"]
         res = zenodo.delete_file(draft_id, file_id)
-        if res.status_code != 201:
+        if res.status_code != 204:
             raise AirflowException(f"zenodo.delete_file status_code {res.status_code}")
 
     # Upload new file
     res = zenodo.upload_file(draft_id, file_path)
     if res.status_code != 201:
-        raise AirflowException(f"zenodo.delete_file upload_file {res.status_code}")
+        raise AirflowException(f"zenodo.upload_file status_code {res.status_code}")
 
     # Publish
     res = zenodo.publish(draft_id)
@@ -1349,8 +1353,8 @@ class OaWebWorkflow(Workflow):
         ror_dataset_id: str = "ror",
         settings_dataset_id: str = "settings",
         version: str = "v3",
-        concept_doi: str = "10.5281/zenodo.6399462",
-        zenodo_host: str = "https://zenodo.org"
+        conceptrecid: int = 6399462,
+        zenodo_host: str = "https://zenodo.org",
     ):
         """Create the OaWebWorkflow.
 
@@ -1391,7 +1395,7 @@ class OaWebWorkflow(Workflow):
         self.settings_dataset_id = settings_dataset_id
         self.table_ids = table_ids
         self.version = version
-        self.concept_doi = concept_doi
+        self.conceptrecid = conceptrecid
         self.zenodo_host = zenodo_host
         if table_ids is None:
             self.table_ids = ["country", "institution"]
@@ -1515,7 +1519,7 @@ class OaWebWorkflow(Workflow):
         :return: None.
         """
 
-        make_draft_version(release.zenodo, self.concept_doi)
+        make_draft_version(release.zenodo, self.conceptrecid)
 
     def transform(self, release: OaWebRelease, **kwargs):
         """Transform the queried data into the final format for the open access website.
@@ -1528,7 +1532,7 @@ class OaWebWorkflow(Workflow):
         """
 
         # Get versions
-        res = release.zenodo.get_versions(self.concept_doi, all_versions=1)
+        res = release.zenodo.get_versions(self.conceptrecid, all_versions=1)
         if res.status_code != 200:
             raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
         versions = res.json()
@@ -1613,7 +1617,7 @@ class OaWebWorkflow(Workflow):
         """
 
         zenodo = release.zenodo
-        res = zenodo.get_versions(self.concept_doi, all_versions=0)
+        res = zenodo.get_versions(self.conceptrecid, all_versions=0)
         if res.status_code != 200:
             raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
         draft = res.json()[0]
@@ -1622,7 +1626,7 @@ class OaWebWorkflow(Workflow):
             raise AirflowException(f"Latest version is not a draft: {draft_id}")
 
         file_path = os.path.join(release.transform_folder, "coki-oa-dataset.zip")
-        publish_new_version(release.zenodo, draft, file_path)
+        publish_new_version(release.zenodo, draft_id, file_path)
 
     def upload_dataset(self, release: OaWebRelease, **kwargs):
         """Publish the dataset produced by this workflow.
