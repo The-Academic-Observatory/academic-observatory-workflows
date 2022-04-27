@@ -760,11 +760,12 @@ def make_draft_version(zenodo: Zenodo, conceptrecid: int):
             raise AirflowException(f"zenodo.create_new_version status_code {res.status_code}")
         draft_id = int(res.json()["links"]["latest_draft"].split("/")[-1])
 
-    # Update metadata
+    # Fetch draft deposition
     res = zenodo.get_deposition(draft_id)
     if res.status_code != 200:
         raise AirflowException(f"zenodo.get_deposition status_code {res.status_code}")
 
+    # Update metadata
     draft = res.json()
     publication_date = pendulum.now().format("YYYY-MM-DD")
     metadata = draft["metadata"]

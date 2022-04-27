@@ -233,6 +233,18 @@ class TestZenodo(TestCase):
             self.assertIsInstance(actual_buffered_reader, io.BufferedReader)
             self.assertEqual(file_path, actual_buffered_reader.name)
 
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.put")
+    def test_update(self, mock_put: MagicMock):
+        id = 1
+        data = {"title": "hello"}
+        self.zenodo.update(id, data)
+        mock_put.assert_called_once_with(
+            f"{self.host}/api/deposit/depositions/{id}",
+            data=json.dumps(data),
+            headers={"Content-Type": "application/json"},
+            params={"access_token": self.access_token},
+        )
+
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.post")
     def test_publish(self, mock_post):
         id = 1
@@ -241,9 +253,11 @@ class TestZenodo(TestCase):
             f"{self.host}/api/deposit/depositions/{id}/actions/publish", params={"access_token": self.access_token}
         )
 
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.update")
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.get_deposition")
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.get_versions")
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.create_new_version")
-    def test_make_draft_version(self, mock_create_new_version, mock_get_versions):
+    def test_make_draft_version(self, mock_create_new_version, mock_get_versions, mock_get_deposition, mock_update):
         # An error
         res = MockResponse()
         res.status_code = 500
@@ -266,13 +280,30 @@ class TestZenodo(TestCase):
         mock_get_versions.return_value = res_get_versions
         res_create_new_version = MockResponse()
         res_create_new_version.status_code = 500
+        res_create_new_version.data = {"id": 2, "state": "unsubmitted", "links": {"latest_draft": "/2"}}
         mock_create_new_version.return_value = res_create_new_version
         with self.assertRaises(AirflowException):
             make_draft_version(self.zenodo, 1)
 
-        # Success
+        # Could not get deposition
         res_create_new_version.status_code = 201
-        mock_create_new_version.return_value = res_create_new_version
+        res_get_deposition = MockResponse()
+        res_get_deposition.status_code = 500
+        res_get_deposition.data = {"id": 2, "state": "done", "metadata": {}}
+        mock_get_deposition.return_value = res_get_deposition
+        with self.assertRaises(AirflowException):
+            make_draft_version(self.zenodo, 2)
+
+        # Could not update
+        res_get_deposition.status_code = 200
+        res_update = MockResponse()
+        res_update.status_code = 500
+        mock_update.return_value = res_update
+        with self.assertRaises(AirflowException):
+            make_draft_version(self.zenodo, 2)
+
+        # Success
+        res_update.status_code = 200
         make_draft_version(self.zenodo, 1)
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.get_deposition")
