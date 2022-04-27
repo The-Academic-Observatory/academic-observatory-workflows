@@ -17,7 +17,7 @@
 import io
 import json
 import os
-from typing import List
+from typing import List, Dict
 from unittest import TestCase
 from unittest.mock import patch, ANY, MagicMock
 
@@ -130,6 +130,11 @@ class MockZenodo(Zenodo):
     def upload_file(self, id: str, file_path: str):
         res = MockResponse()
         res.status_code = 201
+        return res
+
+    def update(self, id: str, data: Dict):
+        res = MockResponse()
+        res.status_code = 200
         return res
 
     def publish(self, id: str):
