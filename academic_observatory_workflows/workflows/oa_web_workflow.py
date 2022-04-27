@@ -99,11 +99,20 @@ and is available in JSON Lines format. The data is visualised at the COKI Open A
 [COKI Open Access Dataset](https://open.coki.ac/data/) © {{ year }} by [Curtin University](https://www.curtin.edu.au/)
 is licenced under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 
+## Citing
+If you use the website or website code, please cite it as below:
+
+> James P. Diprose, Richard Hosking, Richard Rigoni, Aniek Roelofs, Kathryn R. Napier, Tuan-Yow Chien, Katie S. Wilson, Lucy Montgomery, & Cameron Neylon. (2022). COKI Open Access Website. Zenodo. https://doi.org/10.5281/zenodo.6374486
+
+If you use this dataset, please cite it as below:
+
+> Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Lucy Montgomery, & Cameron Neylon. (2022). COKI Open Access Dataset [Data set]. Zenodo. https://doi.org/10.5281/zenodo.6399463
+
 ## Attributions
-This work contains information from:
+The COKI Open Access Dataset contains information from:
 * [Microsoft Academic Graph](https://www.microsoft.com/en-us/research/project/microsoft-academic-graph/) which is made available under the [ODC Attribution License](https://opendatacommons.org/licenses/by/1-0/).
 * [Crossref Metadata](https://www.crossref.org/documentation/metadata-plus/) via the Metadata Plus program. Bibliographic metadata is made available without copyright restriction and Crossref generated data with a [CC0 licence](https://creativecommons.org/share-your-work/public-domain/cc0/). See [metadata licence information](https://www.crossref.org/documentation/retrieve-metadata/rest-api/rest-api-metadata-license-information/) for more details.
-* [Unpaywall Data Feed](https://unpaywall.org/products/data-feed).
+* [Unpaywall](https://unpaywall.org/). The [Unpaywall Data Feed](https://unpaywall.org/products/data-feed) is used under license. Data is freely available from Unpaywall via the API, data dumps and as a data feed.
 * [Research Organization Registry](https://ror.org/) which is made available under a [CC0 licence](https://creativecommons.org/share-your-work/public-domain/cc0/).
 """
 
@@ -242,12 +251,22 @@ class Year:
 
 
 @dataclasses.dataclass
+class ZenodoVersion:
+    release_date: pendulum.DateTime
+    download_url: str
+
+    def to_dict(self) -> Dict:
+        return {"release_date": self.release_date.strftime("%Y-%m-%d"), "download_url": self.download_url}
+
+
+@dataclasses.dataclass
 class Stats:
     start_year: int
     end_year: int
     last_updated: str
     n_countries: int
     n_institutions: int
+    zenodo_versions: List[ZenodoVersion]
 
     def to_dict(self) -> Dict:
         return {
@@ -256,6 +275,7 @@ class Stats:
             "last_updated": self.last_updated,
             "n_countries": self.n_countries,
             "n_institutions": self.n_institutions,
+            "zenodo_versions": [z.to_dict() for z in self.zenodo_versions],
         }
 
 
@@ -652,6 +672,106 @@ def calc_oa_stats(
     return n_outputs_publisher_open_only, n_outputs_both, n_outputs_closed
 
 
+class Zenodo:
+    def __init__(self, host: str = "https://zenodo.org", access_token: str = None, timeout: int = 60):
+        self.host = host
+        self.access_token = access_token
+        self.timeout = timeout
+
+    def make_url(self, path: str):
+        # Remove last / from host
+        host = self.host
+        if self.host[-1] == "/":
+            host = self.host[:-1]
+
+        # Add leading / to path
+        if path[0] != "/":
+            path = f"/{path}"
+
+        return f"{host}{path}"
+
+    def get_versions(self, conceptrecid: int, all_versions: int = 0, size: int = 10, sort: str = "mostrecent"):
+        query = f"conceptrecid:{conceptrecid}"
+        return requests.get(
+            self.make_url("/api/deposit/depositions"),
+            params={
+                "q": query,
+                "all_versions": all_versions,
+                "access_token": self.access_token,
+                "sort": sort,
+                "size": size,
+            },
+            timeout=self.timeout,
+        )
+
+    def create_new_version(self, id: int):
+        url = self.make_url(f"/api/deposit/depositions/{id}/actions/newversion")
+        return requests.post(url, params={"access_token": self.access_token})
+
+    def get_deposition(self, id: int):
+        url = self.make_url(f"/api/deposit/depositions/{id}")
+        return requests.get(url, params={"access_token": self.access_token})
+
+    def delete_file(self, id: int, file_id: str):
+        url = self.make_url(f"/api/deposit/depositions/{id}/files/{file_id}")
+        return requests.delete(url, params={"access_token": self.access_token})
+
+    def upload_file(self, id: int, file_path: str):
+        url = self.make_url(f"/api/deposit/depositions/{id}/files")
+        data = {"name": os.path.basename(file_path)}
+        files = {"file": open(file_path, "rb")}
+        return requests.post(url, data=data, files=files, params={"access_token": self.access_token})
+
+    def publish(self, id: int):
+        url = self.make_url(f"/api/deposit/depositions/{id}/actions/publish")
+        return requests.post(url, params={"access_token": self.access_token})
+
+
+def make_draft_version(zenodo: Zenodo, conceptrecid: int):
+    # Make new draft version
+    res = zenodo.get_versions(conceptrecid)
+    if res.status_code != 200:
+        raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
+
+    versions = res.json()
+    if len(versions) == 0:
+        raise AirflowException(f"make_draft_version: at least 1 version must exist")
+
+    latest = versions[0]
+    draft_id = latest["id"]
+    state = latest["state"]
+    if state == "done":
+        # If published then create a new draft
+        res = zenodo.create_new_version(draft_id)
+        if res.status_code != 201:
+            raise AirflowException(f"zenodo.create_new_version status_code {res.status_code}")
+
+
+def publish_new_version(zenodo: Zenodo, draft_id: int, file_path: str):
+    # Get full deposition which contains files
+    res = zenodo.get_deposition(draft_id)
+    if res.status_code != 200:
+        raise AirflowException(f"zenodo.get_deposition {res.status_code}")
+    draft = res.json()
+
+    # Delete existing files
+    for file in draft["files"]:
+        file_id = file["id"]
+        res = zenodo.delete_file(draft_id, file_id)
+        if res.status_code != 204:
+            raise AirflowException(f"zenodo.delete_file status_code {res.status_code}")
+
+    # Upload new file
+    res = zenodo.upload_file(draft_id, file_path)
+    if res.status_code != 201:
+        raise AirflowException(f"zenodo.upload_file status_code {res.status_code}")
+
+    # Publish
+    res = zenodo.publish(draft_id)
+    if res.status_code != 202:
+        raise AirflowException(f"zenodo.publish status_code {res.status_code}")
+
+
 class OaWebRelease(SnapshotRelease):
     PERCENTAGE_FIELD_KEYS = [
         ("outputs_open", "n_outputs"),
@@ -676,6 +796,7 @@ class OaWebRelease(SnapshotRelease):
         change_chart_years: int = 10,
         agg_dataset_id: str = "observatory",
         ror_dataset_id: str = "ror",
+        zenodo: Zenodo = Zenodo(),
     ):
         """Create an OaWebRelease instance.
 
@@ -685,10 +806,12 @@ class OaWebRelease(SnapshotRelease):
         :param change_chart_years: the number of years to include in the change charts.
         :param agg_dataset_id: the dataset to use for aggregation.
         :param ror_dataset_id: the ROR dataset id.
+        :param zenodo: the zenodo instance.
         """
 
         super().__init__(dag_id=dag_id, release_date=release_date)
         self.project_id = project_id
+        self.zenodo = zenodo
         self.data_bucket_name = data_bucket_name
         self.change_chart_years = change_chart_years
         self.agg_dataset_id = agg_dataset_id
@@ -1175,6 +1298,7 @@ class OaWebRelease(SnapshotRelease):
 class OaWebWorkflow(Workflow):
     DATA_BUCKET = "oa_web_data_bucket"
     GITHUB_TOKEN_CONN = "oa_web_github_token"
+    ZENODO_TOKEN_CONN = "oa_web_zenodo_token"
 
     """The OaWebWorkflow generates data files for the COKI Open Access Dashboard.
 
@@ -1237,6 +1361,8 @@ class OaWebWorkflow(Workflow):
         ror_dataset_id: str = "ror",
         settings_dataset_id: str = "settings",
         version: str = "v3",
+        conceptrecid: int = 6399462,
+        zenodo_host: str = "https://zenodo.org",
     ):
         """Create the OaWebWorkflow.
 
@@ -1244,11 +1370,19 @@ class OaWebWorkflow(Workflow):
         :param start_date: the start date.
         :param schedule_interval: the schedule interval.
         :param catchup: whether to catchup or not.
+        :param ext_dag_id: the DAG id to wait for.
         :param table_ids: the table ids.
+        :param airflow_vars: required Airflow Variables.
+        :param airflow_conns: required Airflow Connections.
+        :param agg_dataset_id: the id of the dataset where the Academic Observatory aggregated data lives.
+        :param ror_dataset_id: the id of the dataset containing the ROR table.
+        :param settings_dataset_id: the id of the settings dataset, which contains the country table.
         :param version: the dataset version published by this workflow. The Github Action pulls from a specific dataset
         version: https://github.com/The-Academic-Observatory/coki-oa-web/blob/develop/.github/workflows/build-on-data-update.yml#L68-L74.
         This is so that when breaking changes are made to the schema, the web application won't break.
-        :param airflow_vars: required Airflow Variables.
+        :param conceptrecid: the Zenodo Concept Record ID for the COKI Open Access Dataset. The Concept Record ID is
+        the last set of numbers from the Concept DOI.
+        :param zenodo_host: the Zenodo hostname, can be changed to https://sandbox.zenodo.org for testing.
         """
 
         if airflow_vars is None:
@@ -1262,7 +1396,7 @@ class OaWebWorkflow(Workflow):
             ]
 
         if airflow_conns is None:
-            airflow_conns = [self.GITHUB_TOKEN_CONN]
+            airflow_conns = [self.GITHUB_TOKEN_CONN, self.ZENODO_TOKEN_CONN]
 
         super().__init__(
             dag_id=dag_id,
@@ -1277,6 +1411,8 @@ class OaWebWorkflow(Workflow):
         self.settings_dataset_id = settings_dataset_id
         self.table_ids = table_ids
         self.version = version
+        self.conceptrecid = conceptrecid
+        self.zenodo_host = zenodo_host
         if table_ids is None:
             self.table_ids = ["country", "institution"]
 
@@ -1286,7 +1422,9 @@ class OaWebWorkflow(Workflow):
         self.add_setup_task(self.check_dependencies)
         self.add_task(self.query)
         self.add_task(self.download)
+        self.add_task(self.make_draft_zenodo_version)
         self.add_task(self.transform)
+        self.add_task(self.publish_zenodo_version)
         self.add_task(self.upload_dataset)
         self.add_task(self.repository_dispatch)
         self.add_task(self.cleanup)
@@ -1304,6 +1442,8 @@ class OaWebWorkflow(Workflow):
         project_id = Variable.get(AirflowVars.PROJECT_ID)
         release_date = make_release_date(**kwargs)
         data_bucket_name = Variable.get(self.DATA_BUCKET)
+        zenodo_token = get_airflow_connection_password(self.ZENODO_TOKEN_CONN)
+        zenodo = Zenodo(host=self.zenodo_host, access_token=zenodo_token)
 
         return OaWebRelease(
             dag_id=self.dag_id,
@@ -1312,6 +1452,7 @@ class OaWebWorkflow(Workflow):
             release_date=release_date,
             ror_dataset_id=self.ror_dataset_id,
             agg_dataset_id=self.agg_dataset_id,
+            zenodo=zenodo,
         )
 
     def query(self, release: OaWebRelease, **kwargs):
@@ -1384,6 +1525,18 @@ class OaWebWorkflow(Workflow):
         if not state:
             raise AirflowException("OaWebWorkflow.download failed")
 
+    def make_draft_zenodo_version(self, release: OaWebRelease, **kwargs):
+        """Make a draft Zenodo version of the dataset.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+
+        make_draft_version(release.zenodo, self.conceptrecid)
+
     def transform(self, release: OaWebRelease, **kwargs):
         """Transform the queried data into the final format for the open access website.
 
@@ -1393,6 +1546,12 @@ class OaWebWorkflow(Workflow):
         passed to this argument.
         :return: None.
         """
+
+        # Get versions
+        res = release.zenodo.get_versions(self.conceptrecid, all_versions=1)
+        if res.status_code != 200:
+            raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
+        versions = res.json()
 
         # Make required folders
         auto_complete = []
@@ -1444,10 +1603,17 @@ class OaWebWorkflow(Workflow):
 
         # Save stats as json
         end_year = pendulum.now().year - 1
-        last_updated = pendulum.now().format("D MMMM YYYY")
         n_countries = len(countries)
         n_institutions = len(institutions)
-        stats = Stats(START_YEAR, end_year, last_updated, n_countries, n_institutions)
+        zenodo_versions = [
+            ZenodoVersion(
+                pendulum.parse(version["created"]),
+                f"https://zenodo.org/record/{version['id']}/files/coki-oa-dataset.zip?download=1",
+            )
+            for version in versions
+        ]
+        last_updated = zenodo_versions[0].release_date.format("D MMMM YYYY")
+        stats = Stats(START_YEAR, end_year, last_updated, n_countries, n_institutions, zenodo_versions)
         release.save_stats(stats)
         logging.info(f"Saved stats data")
 
@@ -1455,6 +1621,28 @@ class OaWebWorkflow(Workflow):
         dst = os.path.join(release.transform_folder, "latest")
         shutil.copytree(release.build_path, dst)
         shutil.make_archive(dst, "zip", dst)
+
+    def publish_zenodo_version(self, release: OaWebRelease, **kwargs):
+        """Publish the new Zenodo version of the dataset.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+
+        zenodo = release.zenodo
+        res = zenodo.get_versions(self.conceptrecid, all_versions=0)
+        if res.status_code != 200:
+            raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
+        draft = res.json()[0]
+        draft_id = draft["id"]
+        if draft["state"] != "unsubmitted":
+            raise AirflowException(f"Latest version is not a draft: {draft_id}")
+
+        file_path = os.path.join(release.transform_folder, "coki-oa-dataset.zip")
+        publish_new_version(release.zenodo, draft_id, file_path)
 
     def upload_dataset(self, release: OaWebRelease, **kwargs):
         """Publish the dataset produced by this workflow.
