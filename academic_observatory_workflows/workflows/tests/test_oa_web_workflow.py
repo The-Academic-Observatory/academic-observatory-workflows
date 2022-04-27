@@ -14,12 +14,13 @@
 
 # Author: James Diprose, Aniek Roelofs
 
+import io
 import json
 import os
 from typing import List
 from unittest import TestCase
-from unittest.mock import patch, ANY, MagicMock, Mock
-import io
+from unittest.mock import patch, ANY, MagicMock
+
 import httpretty
 import jsonlines
 import nltk
@@ -219,9 +220,7 @@ class TestZenodo(TestCase):
                 f"{self.host}/api/deposit/depositions/{id}/files",
                 data=data,
                 files=ANY,
-                params={
-                    "access_token": self.access_token
-                }
+                params={"access_token": self.access_token},
             )
 
             # Check that correct file was set to be uploaded
@@ -234,17 +233,104 @@ class TestZenodo(TestCase):
         id = 1
         self.zenodo.publish(id)
         mock_post.assert_called_once_with(
-            f"{self.host}/api/deposit/depositions/{id}/actions/publish",
-            params={
-                "access_token": self.access_token
-            }
+            f"{self.host}/api/deposit/depositions/{id}/actions/publish", params={"access_token": self.access_token}
         )
-    #
-    # def test_make_draft_version(self):
-    #     make_draft_version()
-    #
-    # def test_publish_new_version(self):
-    #     publish_new_version()
+
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.get_versions")
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.create_new_version")
+    def test_make_draft_version(self, mock_create_new_version, mock_get_versions):
+        # An error
+        res = MockResponse()
+        res.status_code = 500
+        mock_get_versions.return_value = res
+        with self.assertRaises(AirflowException):
+            make_draft_version(self.zenodo, 1)
+
+        # No versions found
+        res = MockResponse()
+        res.data = []
+        res.status_code = 200
+        mock_get_versions.return_value = res
+        with self.assertRaises(AirflowException):
+            make_draft_version(self.zenodo, 1)
+
+        # Could not create a new version
+        res_get_versions = MockResponse()
+        res_get_versions.status_code = 200
+        res_get_versions.data = [{"id": 1, "state": "done"}]
+        mock_get_versions.return_value = res_get_versions
+        res_create_new_version = MockResponse()
+        res_create_new_version.status_code = 500
+        mock_create_new_version.return_value = res_create_new_version
+        with self.assertRaises(AirflowException):
+            make_draft_version(self.zenodo, 1)
+
+        # Success
+        res_create_new_version.status_code = 201
+        mock_create_new_version.return_value = res_create_new_version
+        make_draft_version(self.zenodo, 1)
+
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.get_deposition")
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.delete_file")
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.upload_file")
+    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.publish")
+    def test_publish_new_version(self, mock_publish, mock_upload_file, mock_delete_file, mock_get_deposition):
+        draft_id = 3
+        file_path = "/path/to/file"
+
+        # Error getting deposition
+        res_get_deposition = MockResponse()
+        res_get_deposition.status_code = 500
+        mock_get_deposition.return_value = res_get_deposition
+        with self.assertRaises(AirflowException):
+            publish_new_version(self.zenodo, draft_id, file_path)
+
+        # Error deleting files
+        res_get_deposition = MockResponse()
+        res_get_deposition.status_code = 200
+        res_get_deposition.data = {
+            "conceptrecid": 1044668,
+            "id": draft_id,
+            "state": "unsubmitted",
+            "created": "2022-04-25T22:16:16.145039+00:00",
+            "files": [{"id": "596c128f-d240-4008-87b6-cecf143e9d48"}],
+        }
+        mock_get_deposition.return_value = res_get_deposition
+
+        res_delete_file = MockResponse()
+        res_delete_file.status_code = 500
+        mock_delete_file.return_value = res_delete_file
+        with self.assertRaises(AirflowException):
+            publish_new_version(self.zenodo, draft_id, file_path)
+
+        # Error uploading new file
+        res_delete_file = MockResponse()
+        res_delete_file.status_code = 204
+        mock_delete_file.return_value = res_delete_file
+
+        res_upload_file = MockResponse()
+        res_upload_file.status_code = 500
+        mock_upload_file.return_value = res_upload_file
+        with self.assertRaises(AirflowException):
+            publish_new_version(self.zenodo, draft_id, file_path)
+
+        # Error publish
+        res_upload_file = MockResponse()
+        res_upload_file.status_code = 201
+        mock_upload_file.return_value = res_upload_file
+
+        res_publish = MockResponse()
+        res_publish.status_code = 500
+        mock_publish.return_value = res_publish
+
+        with self.assertRaises(AirflowException):
+            publish_new_version(self.zenodo, draft_id, file_path)
+
+        # Success
+        res_publish = MockResponse()
+        res_publish.status_code = 202
+        mock_publish.return_value = res_publish
+        publish_new_version(self.zenodo, draft_id, file_path)
 
 
 class TestFunctions(TestCase):
