@@ -119,6 +119,7 @@ class MockZenodo(Zenodo):
             "state": "unsubmitted",
             "created": "2022-04-25T22:16:16.145039+00:00",
             "files": [{"id": "596c128f-d240-4008-87b6-cecf143e9d48"}],
+            "metadata": {}
         }
         return res
 
