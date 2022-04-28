@@ -82,7 +82,11 @@ SELECT
   agg.access_types.gold_doaj.total_outputs AS n_outputs_oa_journal,
   agg.access_types.hybrid.total_outputs AS n_outputs_hybrid,
   agg.access_types.bronze.total_outputs AS n_outputs_no_guarantees,
-  ror.external_ids AS identifiers
+  ror.external_ids AS identifiers,
+  CASE
+    WHEN agg.id = country.alpha3 THEN []
+    ELSE ror.acronyms
+    END AS acronyms,
 FROM
   `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg 
   LEFT OUTER JOIN `{project_id}.{ror_dataset_id}.{ror_table_id}` as ror ON agg.id = ror.id
@@ -385,6 +389,7 @@ class Entity:
     stats: PublicationStats = None
     identifiers: List[Identifier] = field(default_factory=lambda: [])
     years: List[Year] = field(default_factory=lambda: [])
+    acronyms: [str] = None
 
     @staticmethod
     def from_dict(dict_: Dict) -> Entity:
@@ -403,6 +408,7 @@ class Entity:
         end_year = dict_.get("end_year")
         institution_types = dict_.get("institution_types", [])
         identifiers = [Identifier.from_dict(obj) for obj in dict_.get("identifiers", [])]
+        acronyms = dict_.get("acronyms", [])
 
         return Entity(
             id,
@@ -420,6 +426,7 @@ class Entity:
             end_year=end_year,
             institution_types=institution_types,
             identifiers=identifiers,
+            acronyms=acronyms
         )
 
     def to_dict(self) -> Dict:
@@ -441,6 +448,7 @@ class Entity:
             "stats": self.stats.to_dict(),
             "identifiers": [obj.to_dict() for obj in self.identifiers],
             "years": [obj.to_dict() for obj in self.years],
+            "acronyms": self.acronyms,
         }
         # Filter out key val pairs with empty lists and values
         dict_ = {k: v for k, v in dict_.items() if not val_empty(v)}
@@ -1107,6 +1115,7 @@ class OaWebRelease(SnapshotRelease):
             "subregion": None,
             "region": None,
             "institution_types": None,
+            "acronyms": None,
             "stats": {
                 "n_outputs": None,
                 "n_outputs_open": None,
@@ -1187,40 +1196,6 @@ class OaWebRelease(SnapshotRelease):
             output_path = os.path.join(base_path, f"{entity.id}.json")
             entity_dict = entity.to_dict()
             save_json(output_path, entity_dict)
-
-    @deprecated(reason="Will be replaced by save_search_index")
-    def make_auto_complete(self, df_index_table: pd.DataFrame, category: str) -> List[Dict]:
-        """Build the autocomplete data.
-
-        :param df_index_table: index table Pandas dataframe.
-        :param category: the category, i.e. country or institution.
-        :return: autocomplete records.
-        """
-
-        records = []
-        for i, row in df_index_table.iterrows():
-            id = row["id"]
-            name = row["name"]
-            logo = row["logo_s"]
-            records.append({"id": id, "name": name, "category": category, "logo_s": logo})
-        return records
-
-    @deprecated(reason="Will be replaced by save_search_index")
-    def save_autocomplete(self, auto_complete: List[Dict]):
-        """Save the autocomplete data.
-
-        :param auto_complete: the autocomplete list.
-        :return: None.
-        """
-
-        base_path = os.path.join(self.build_path, "data")
-        os.makedirs(base_path, exist_ok=True)
-
-        # Save as JSON
-        output_path = os.path.join(base_path, "autocomplete.json")
-        df_ac = pd.DataFrame(auto_complete)
-        records = df_ac.to_dict("records")
-        save_json(output_path, records)
 
     def save_coki_oa_dataset(self, countries: List[Entity], institutions: List[Entity]):
         """Save the COKI Open Access Dataset to a zip file.
@@ -1572,9 +1547,6 @@ class OaWebWorkflow(Workflow):
             release.update_index_with_wiki_descriptions(df_index_table)
             entities = release.make_entities(df_index_table, df)
 
-            # Make autocomplete data for this category
-            auto_complete += release.make_auto_complete(df_index_table, category)
-
             # Make search index data for this category
             all_entities += entities
 
@@ -1590,10 +1562,6 @@ class OaWebWorkflow(Workflow):
                 institutions = entities
             else:
                 raise AirflowException(f"Category type unknown: {category}")
-
-        # Save auto complete data as json
-        release.save_autocomplete(auto_complete)
-        logging.info(f"Saved autocomplete data")
 
         # Save all entities as json
         release.save_index(all_entities, "index.json")

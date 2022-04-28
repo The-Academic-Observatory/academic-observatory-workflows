@@ -1154,36 +1154,6 @@ class TestOaWebRelease(TestCase):
                     print(f"Assert exists: {path}")
                     self.assertTrue(os.path.isfile(path))
 
-    def test_make_auto_complete(self):
-        category = "country"
-        expected = [
-            {"id": "NZL", "name": "New Zealand", "logo_s": "/logos/country/NZL.svg"},
-            {"id": "AUS", "name": "Australia", "logo_s": "/logos/country/AUS.svg"},
-            {"id": "USA", "name": "United States", "logo_s": "/logos/country/USA.svg"},
-        ]
-        df = pd.DataFrame(expected)
-        records = self.release.make_auto_complete(df, category)
-        for e in expected:
-            e["category"] = category
-        self.assertEqual(expected, records)
-
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_save_autocomplete(self, mock_var_get):
-        with CliRunner().isolated_filesystem() as t:
-            mock_var_get.return_value = t
-            category = "country"
-            expected = [
-                {"id": "NZL", "name": "New Zealand", "logo_s": "/logos/country/NZL.svg"},
-                {"id": "AUS", "name": "Australia", "logo_s": "/logos/country/AUS.svg"},
-                {"id": "USA", "name": "United States", "logo_s": "/logos/country/USA.svg"},
-            ]
-            df = pd.DataFrame(expected)
-            records = self.release.make_auto_complete(df, category)
-            self.release.save_autocomplete(records)
-
-            path = os.path.join(self.release.build_path, "data", "autocomplete.json")
-            self.assertTrue(os.path.isfile(path))
-
 
 class TestOaWebWorkflow(ObservatoryTestCase):
     def setUp(self) -> None:
@@ -1391,7 +1361,7 @@ def make_expected_build_files(base_path: str) -> List[str]:
 
     # Add base data files
     data_path = os.path.join(base_path, "data")
-    file_names = ["stats.json", "autocomplete.json", "country.json", "institution.json", "index.json"]
+    file_names = ["stats.json", "country.json", "institution.json", "index.json"]
     for file_name in file_names:
         expected.append(os.path.join(data_path, file_name))
 
