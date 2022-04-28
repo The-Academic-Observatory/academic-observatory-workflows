@@ -724,6 +724,11 @@ class Zenodo:
         url = self.make_url(f"/api/deposit/depositions/{id}/files/{file_id}")
         return requests.delete(url, params={"access_token": self.access_token})
 
+    def update(self, id: int, data: Dict):
+        url = self.make_url(f"/api/deposit/depositions/{id}")
+        headers = {"Content-Type": "application/json"}
+        return requests.put(url, data=json.dumps(data), headers=headers, params={"access_token": self.access_token})
+
     def upload_file(self, id: int, file_path: str):
         url = self.make_url(f"/api/deposit/depositions/{id}/files")
         data = {"name": os.path.basename(file_path)}
@@ -753,6 +758,23 @@ def make_draft_version(zenodo: Zenodo, conceptrecid: int):
         res = zenodo.create_new_version(draft_id)
         if res.status_code != 201:
             raise AirflowException(f"zenodo.create_new_version status_code {res.status_code}")
+        draft_id = int(res.json()["links"]["latest_draft"].split("/")[-1])
+
+    # Fetch draft deposition
+    res = zenodo.get_deposition(draft_id)
+    if res.status_code != 200:
+        raise AirflowException(f"zenodo.get_deposition status_code {res.status_code}")
+
+    # Update metadata
+    draft = res.json()
+    publication_date = pendulum.now().format("YYYY-MM-DD")
+    metadata = draft["metadata"]
+    metadata["publication_date"] = publication_date
+    metadata["version"] = publication_date
+    data = {"metadata": metadata}
+    res = zenodo.update(draft_id, data)
+    if res.status_code != 200:
+        raise AirflowException(f"zenodo.update status_code {res.status_code}")
 
 
 def publish_new_version(zenodo: Zenodo, draft_id: int, file_path: str):
