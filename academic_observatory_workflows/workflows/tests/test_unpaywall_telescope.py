@@ -317,7 +317,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.project_id = os.getenv("TESTS_GOOGLE_CLOUD_PROJECT_ID")
+        self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
 
         self.fixture_dir = test_fixtures_folder("unpaywall")
