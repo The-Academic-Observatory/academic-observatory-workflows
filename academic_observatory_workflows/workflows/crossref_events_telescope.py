@@ -77,7 +77,7 @@ class CrossrefEventsRelease(StreamRelease):
     def urls(self) -> list:
         urls = []
         start_date = self.start_date.date()
-        end_date = self.end_date.date()
+        end_date = self.end_date.subtract(days=1).date()
         period = pendulum.period(start_date, end_date)
         for dt in period.range("days"):
             date_str = dt.strftime("%Y-%m-%d")
@@ -225,6 +225,7 @@ class CrossrefEventsTelescope(StreamTelescope):
         mailto: str = "aniek.roelofs@curtin.edu.au",
         max_threads: int = min(32, os.cpu_count() + 4),
         max_processes: int = os.cpu_count(),
+        workflow_id: int = None,
     ):
         """Construct a CrossrefEventsTelescope instance.
 
@@ -241,6 +242,7 @@ class CrossrefEventsTelescope(StreamTelescope):
         :param mailto: Email address used in the download url
         :param max_threads: Max processes used for parallel downloading, default is based on 7 days x 3 url categories
         :param max_processes: max processes for transforming files.
+        :param workflow_id: api workflow id.
         """
 
         if airflow_vars is None:
@@ -262,6 +264,7 @@ class CrossrefEventsTelescope(StreamTelescope):
             queue=queue,
             batch_load=batch_load,
             airflow_vars=airflow_vars,
+            workflow_id=workflow_id,
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
         )
         self.mailto = mailto
@@ -272,7 +275,7 @@ class CrossrefEventsTelescope(StreamTelescope):
         self.add_task_chain(
             [self.download, self.upload_downloaded, self.transform, self.upload_transformed, self.bq_load_partition]
         )
-        self.add_task_chain([self.bq_delete_old, self.bq_append_new, self.cleanup], trigger_rule="none_failed")
+        self.add_task_chain([self.bq_delete_old, self.bq_append_new, self.cleanup, self.add_new_dataset_releases])
 
     def make_release(self, **kwargs) -> CrossrefEventsRelease:
         """Make a Release instance

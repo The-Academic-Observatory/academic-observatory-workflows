@@ -39,6 +39,20 @@ from observatory.platform.utils.test_utils import (
     module_file_path,
 )
 from observatory.platform.utils.workflow_utils import blob_name, table_ids_from_path
+from observatory.platform.utils.workflow_utils import blob_name
+from observatory.api.testing import ObservatoryApiEnvironment
+from observatory.api.client import ApiClient, Configuration
+from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
+from observatory.api.client.model.organisation import Organisation
+from observatory.api.client.model.workflow import Workflow
+from observatory.api.client.model.workflow_type import WorkflowType
+from observatory.api.client.model.dataset import Dataset
+from observatory.api.client.model.dataset_type import DatasetType
+from observatory.api.client.model.table_type import TableType
+from observatory.platform.utils.release_utils import get_dataset_releases
+from observatory.platform.utils.airflow_utils import AirflowConns
+from airflow.models import Connection
+from airflow.utils.state import State
 
 
 class MockResponse:
@@ -346,11 +360,71 @@ class TestGridTelescopeDag(ObservatoryTestCase):
         #     f"http://{self.httpserver.host}:{self.httpserver.port}" + "/v2/articles/{article_id}/files"
         # )
 
+        # API environment
+        self.host = "localhost"
+        self.port = 5001
+        configuration = Configuration(host=f"http://{self.host}:{self.port}")
+        api_client = ApiClient(configuration)
+        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
+        self.env = ObservatoryApiEnvironment(host=self.host, port=self.port)
+        self.org_name = "Curtin University"
+
+    def setup_api(self):
+        dt = pendulum.now("UTC")
+
+        name = "GRID Telescope"
+        workflow_type = WorkflowType(name=name, type_id=GridTelescope.DAG_ID)
+        self.api.put_workflow_type(workflow_type)
+
+        organisation = Organisation(
+            name="Curtin University",
+            project_id="project",
+            download_bucket="download_bucket",
+            transform_bucket="transform_bucket",
+        )
+        self.api.put_organisation(organisation)
+
+        telescope = Workflow(
+            name=name,
+            workflow_type=WorkflowType(id=1),
+            organisation=Organisation(id=1),
+            extra={},
+        )
+        self.api.put_workflow(telescope)
+
+        table_type = TableType(
+            type_id="partitioned",
+            name="partitioned bq table",
+        )
+        self.api.put_table_type(table_type)
+
+        dataset_type = DatasetType(
+            type_id="grid",
+            name="ds type",
+            extra={},
+            table_type=TableType(id=1),
+        )
+        self.api.put_dataset_type(dataset_type)
+
+        dataset = Dataset(
+            name="GRID Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            workflow=Workflow(id=1),
+            dataset_type=DatasetType(id=1),
+        )
+        self.api.put_dataset(dataset)
+
+    def setup_connections(self, env):
+        # Add Observatory API connection
+        conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.port}")
+        env.add_connection(conn)
+
     def __del__(self):
         self.httpserver.stop()
 
     def setup_observatory_environment(self):
-        env = ObservatoryEnvironment(self.project_id, self.data_location)
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
         self.dataset_id = env.add_dataset()
         return env
 
@@ -371,7 +445,8 @@ class TestGridTelescopeDag(ObservatoryTestCase):
                 "transform": ["upload_transformed"],
                 "upload_transformed": ["bq_load"],
                 "bq_load": ["cleanup"],
-                "cleanup": [],
+                "cleanup": ["add_new_dataset_releases"],
+                "add_new_dataset_releases": [],
             },
             dag,
         )
@@ -382,8 +457,11 @@ class TestGridTelescopeDag(ObservatoryTestCase):
         :return: None
         """
 
-        env = ObservatoryEnvironment(self.project_id, self.data_location)
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
+
         with env.create():
+            self.setup_connections(env)
+            self.setup_api()
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "grid_telescope.py")
             self.assert_dag_load("grid", dag_file)
 
@@ -392,12 +470,14 @@ class TestGridTelescopeDag(ObservatoryTestCase):
         """Test running the telescope. Functional test."""
 
         env = self.setup_observatory_environment()
-        telescope = GridTelescope(dag_id="grid", dataset_id=self.dataset_id)
+        telescope = GridTelescope(dag_id="grid", dataset_id=self.dataset_id, workflow_id=1)
         dag = telescope.make_dag()
         execution_date = pendulum.datetime(year=2015, month=9, day=22)
 
         # Create the Observatory environment and run tests
         with env.create():
+            self.setup_connections(env)
+            self.setup_api()
             with env.create_dag_run(dag, execution_date):
                 with patch.object(
                     GridTelescope,
@@ -486,3 +566,11 @@ class TestGridTelescopeDag(ObservatoryTestCase):
                         )
                         env.run_task(telescope.cleanup.__name__)
                         self.assert_cleanup(download_folder, extract_folder, transform_folder)
+
+                        # add_dataset_release_task
+                        dataset_releases = get_dataset_releases(dataset_id=1)
+                        self.assertEqual(len(dataset_releases), 0)
+                        ti = env.run_task("add_new_dataset_releases")
+                        self.assertEqual(ti.state, State.SUCCESS)
+                        dataset_releases = get_dataset_releases(dataset_id=1)
+                        self.assertEqual(len(dataset_releases), 1)

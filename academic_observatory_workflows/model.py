@@ -887,6 +887,7 @@ def bq_load_observatory_dataset(
     dataset_id_settings: str,
     release_date: DateTime,
     data_location: str,
+    project_id: int,
 ):
     """Load the fake Observatory Dataset in BigQuery.
 
@@ -896,6 +897,7 @@ def bq_load_observatory_dataset(
     :param dataset_id_settings: the dataset id for settings tables.
     :param release_date: the release date for the observatory dataset.
     :param data_location: the location of the BigQuery dataset.
+    :param project_id: api project id.
     :return: None.
     """
 
@@ -989,7 +991,13 @@ def bq_load_observatory_dataset(
             Table("orcid", False, dataset_id_all, [], "orcid", analysis_schema_path),
         ]
 
-        bq_load_tables(tables=tables, bucket_name=bucket_name, release_date=release_date, data_location=data_location)
+        bq_load_tables(
+            tables=tables,
+            bucket_name=bucket_name,
+            release_date=release_date,
+            data_location=data_location,
+            project_id=project_id,
+        )
 
 
 def aggregate_events(events: List[Event]) -> Tuple[List[Dict], List[Dict], List[Dict]]:

@@ -44,7 +44,11 @@ Every week the following tables are overwritten for visualisation in the Data St
 """
 
 from academic_observatory_workflows.workflows.doi_workflow import DoiWorkflow
+from observatory.platform.utils.api import make_observatory_api
 
-# Outputs data into:
-doi_workflow = DoiWorkflow()
+
+api = make_observatory_api()
+workflow_type = api.get_workflow_type(type_id=DoiWorkflow.DAG_ID)
+workflows = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
+doi_workflow = DoiWorkflow(workflow_id=workflows[0].id)
 globals()[doi_workflow.dag_id] = doi_workflow.make_dag()

@@ -153,6 +153,7 @@ class GeonamesTelescope(SnapshotTelescope):
         table_descriptions: Dict = None,
         catchup: bool = False,
         airflow_vars: List = None,
+        workflow_id: int = None,
     ):
 
         """The Geonames telescope.
@@ -168,6 +169,7 @@ class GeonamesTelescope(SnapshotTelescope):
         :param table_descriptions: a dictionary with table ids and corresponding table descriptions.
         :param catchup:  whether to catchup the DAG or not.
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow.
+        :param workflow_id: api workflow id.
         """
 
         if load_bigquery_table_kwargs is None:
@@ -200,6 +202,7 @@ class GeonamesTelescope(SnapshotTelescope):
             table_descriptions=table_descriptions,
             catchup=catchup,
             airflow_vars=airflow_vars,
+            workflow_id=workflow_id,
         )
         self.add_setup_task(self.check_dependencies)
         self.add_setup_task(self.fetch_release_date)
@@ -210,6 +213,7 @@ class GeonamesTelescope(SnapshotTelescope):
         self.add_task(self.upload_transformed)
         self.add_task(self.bq_load)
         self.add_task(self.cleanup)
+        self.add_task(self.add_new_dataset_releases)
 
     def make_release(self, **kwargs) -> List[GeonamesRelease]:
         """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is

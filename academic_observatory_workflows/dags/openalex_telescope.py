@@ -18,6 +18,11 @@
 # https://airflow.apache.org/docs/stable/faq.html
 
 from academic_observatory_workflows.workflows.openalex_telescope import OpenAlexTelescope
+from observatory.platform.utils.api import make_observatory_api
 
-telescope = OpenAlexTelescope()
-globals()[telescope.dag_id] = telescope.make_dag()
+
+api = make_observatory_api()
+workflow_type = api.get_workflow_type(type_id=OpenAlexTelescope.DAG_ID)
+workflows = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
+workflow = OpenAlexTelescope(workflow_id=workflows[0].id)
+globals()[workflow.dag_id] = workflow.make_dag()

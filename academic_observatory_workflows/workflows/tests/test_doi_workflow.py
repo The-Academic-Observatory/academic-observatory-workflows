@@ -45,6 +45,20 @@ from observatory.platform.utils.test_utils import (
     make_dummy_dag,
     module_file_path,
 )
+from observatory.api.testing import ObservatoryApiEnvironment
+from observatory.api.client import ApiClient, Configuration
+from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
+from observatory.api.client.model.organisation import Organisation
+from observatory.api.client.model.workflow import Workflow
+from observatory.api.client.model.workflow_type import WorkflowType
+from observatory.api.client.model.dataset import Dataset
+from observatory.api.client.model.dataset_release import DatasetRelease
+from observatory.api.client.model.dataset_type import DatasetType
+from observatory.api.client.model.table_type import TableType
+from observatory.platform.utils.release_utils import get_dataset_releases
+from observatory.platform.utils.airflow_utils import AirflowConns
+from airflow.models import Connection
+from airflow.utils.state import State
 
 
 class TestDoiWorkflow(ObservatoryTestCase):
@@ -53,9 +67,9 @@ class TestDoiWorkflow(ObservatoryTestCase):
     def __init__(self, *args, **kwargs):
         super(TestDoiWorkflow, self).__init__(*args, **kwargs)
         # GCP settings
-        self.gcp_project_id: str = os.getenv("TEST_GCP_PROJECT_ID")
-        self.gcp_bucket_name: str = os.getenv("TEST_GCP_BUCKET_NAME")
-        self.gcp_data_location: str = os.getenv("TEST_GCP_DATA_LOCATION")
+        self.project_id: str = os.getenv("TEST_GCP_PROJECT_ID")
+        self.bucket_name: str = os.getenv("TEST_GCP_BUCKET_NAME")
+        self.data_location: str = os.getenv("TEST_GCP_DATA_LOCATION")
 
         # Institutions
         inst_curtin = Institution(
@@ -98,6 +112,66 @@ class TestDoiWorkflow(ObservatoryTestCase):
             coordinates="-36.852304, 174.767734",
         )
         self.institutions = [inst_curtin, inst_anu, inst_akl]
+
+        # API environment
+        self.host = "localhost"
+        self.port = 5001
+        configuration = Configuration(host=f"http://{self.host}:{self.port}")
+        api_client = ApiClient(configuration)
+        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
+        self.env = ObservatoryApiEnvironment(host=self.host, port=self.port)
+        self.org_name = "Curtin University"
+
+    def setup_api(self):
+        dt = pendulum.now("UTC")
+
+        name = "Doi Workflow"
+        workflow_type = WorkflowType(name=name, type_id="doi")
+        self.api.put_workflow_type(workflow_type)
+
+        organisation = Organisation(
+            name="Curtin University",
+            project_id="project",
+            download_bucket="download_bucket",
+            transform_bucket="transform_bucket",
+        )
+        self.api.put_organisation(organisation)
+
+        telescope = Workflow(
+            name=name,
+            workflow_type=WorkflowType(id=1),
+            organisation=Organisation(id=1),
+            extra={},
+        )
+        self.api.put_workflow(telescope)
+
+        table_type = TableType(
+            type_id="partitioned",
+            name="partitioned bq table",
+        )
+        self.api.put_table_type(table_type)
+
+        dataset_type = DatasetType(
+            type_id=DoiWorkflow.DAG_ID,
+            name="ds type",
+            extra={},
+            table_type=TableType(id=1),
+        )
+        self.api.put_dataset_type(dataset_type)
+
+        dataset = Dataset(
+            name="Example Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            workflow=Workflow(id=1),
+            dataset_type=DatasetType(id=1),
+        )
+        self.api.put_dataset(dataset)
+
+    def setup_connections(self, env):
+        # Add Observatory API connection
+        conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.port}")
+        env.add_connection(conn)
 
     def test_set_task_state(self):
         """Test
@@ -178,15 +252,16 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     "export_region",
                     "export_subregion",
                 ],
-                "export_country": [],
-                "export_funder": [],
-                "export_group": [],
-                "export_institution": [],
-                "export_author": [],
-                "export_journal": [],
-                "export_publisher": [],
-                "export_region": [],
-                "export_subregion": [],
+                "export_country": ["add_new_dataset_releases"],
+                "export_funder": ["add_new_dataset_releases"],
+                "export_group": ["add_new_dataset_releases"],
+                "export_institution": ["add_new_dataset_releases"],
+                "export_author": ["add_new_dataset_releases"],
+                "export_journal": ["add_new_dataset_releases"],
+                "export_publisher": ["add_new_dataset_releases"],
+                "export_region": ["add_new_dataset_releases"],
+                "export_subregion": ["add_new_dataset_releases"],
+                "add_new_dataset_releases": [],
             },
             dag,
         )
@@ -197,8 +272,10 @@ class TestDoiWorkflow(ObservatoryTestCase):
         :return: None
         """
 
-        env = ObservatoryEnvironment(self.gcp_project_id, self.gcp_data_location)
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
         with env.create():
+            self.setup_connections(env)
+            self.setup_api()
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "doi_workflow.py")
             self.assert_dag_load("doi", dag_file)
 
@@ -210,7 +287,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
         # Create datasets
         env = ObservatoryEnvironment(
-            project_id=self.gcp_project_id, data_location=self.gcp_data_location, enable_api=False
+            project_id=self.project_id, data_location=self.data_location, api_host=self.host, api_port=self.port
         )
         fake_dataset_id = env.add_dataset(prefix="fake")
         intermediate_dataset_id = env.add_dataset(prefix="intermediate")
@@ -234,6 +311,9 @@ class TestDoiWorkflow(ObservatoryTestCase):
         transforms, transform_doi, transform_book = dataset_transforms
 
         with env.create(task_logging=True):
+            self.setup_connections(env)
+            self.setup_api()
+
             # Make dag
             start_date = pendulum.datetime(year=2021, month=10, day=10)
             workflow = DoiWorkflow(
@@ -243,6 +323,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 elastic_dataset_id=elastic_dataset_id,
                 transforms=dataset_transforms,
                 start_date=start_date,
+                workflow_id=1,
             )
 
             # Disable dag check on dag run sensor
@@ -295,7 +376,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     fake_dataset_id,
                     settings_dataset_id,
                     release_date,
-                    self.gcp_data_location,
+                    self.data_location,
+                    project_id=self.project_id,
                 )
 
                 # Test that source dataset transformations run
@@ -309,7 +391,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 self.assertEqual(expected_state, ti.state)
 
                 # DOI assert table exists
-                expected_table_id = f"{self.gcp_project_id}.{observatory_dataset_id}.doi{release_suffix}"
+                expected_table_id = f"{self.project_id}.{observatory_dataset_id}.doi{release_suffix}"
                 expected_rows = len(observatory_dataset.papers)
                 self.assert_table_integrity(expected_table_id, expected_rows=expected_rows)
 
@@ -322,7 +404,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 # Test create book
                 ti = env.run_task("create_book")
                 self.assertEqual(expected_state, ti.state)
-                expected_table_id = f"{self.gcp_project_id}.{observatory_dataset_id}.book{release_suffix}"
+                expected_table_id = f"{self.project_id}.{observatory_dataset_id}.book{release_suffix}"
                 expected_rows = 0
                 self.assert_table_integrity(expected_table_id, expected_rows)
 
@@ -333,7 +415,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     self.assertEqual(expected_state, ti.state)
 
                     # Aggregation assert table exists
-                    expected_table_id = f"{self.gcp_project_id}.{observatory_dataset_id}.{agg.table_id}{release_suffix}"
+                    expected_table_id = f"{self.project_id}.{observatory_dataset_id}.{agg.table_id}{release_suffix}"
                     self.assert_table_integrity(expected_table_id)
 
                 # Assert country aggregation output
@@ -350,13 +432,13 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 self.assertEqual(expected_state, ti.state)
                 table_ids = [agg.table_id for agg in DoiWorkflow.AGGREGATIONS] + ["doi"]
                 for table_id in table_ids:
-                    self.assert_table_integrity(f"{self.gcp_project_id}.{dashboards_dataset_id}.{table_id}")
+                    self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{table_id}")
 
                 # Test create dashboard views
                 ti = env.run_task("create_dashboard_views")
                 self.assertEqual(expected_state, ti.state)
                 for table_id in ["country", "funder", "group", "institution", "publisher", "subregion"]:
-                    self.assert_table_integrity(f"{self.gcp_project_id}.{dashboards_dataset_id}.{table_id}_comparison")
+                    self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{table_id}_comparison")
 
                 # Test create exported tables for Elasticsearch
                 for agg in DoiWorkflow.AGGREGATIONS:
@@ -380,9 +462,17 @@ class TestDoiWorkflow(ObservatoryTestCase):
                         aggregate = table["aggregate"]
                         facet = table["facet"]
                         expected_table_id = (
-                            f"{self.gcp_project_id}.{elastic_dataset_id}.ao_{aggregate}_{facet}{release_suffix}"
+                            f"{self.project_id}.{elastic_dataset_id}.ao_{aggregate}_{facet}{release_suffix}"
                         )
                         self.assert_table_integrity(expected_table_id)
+
+                # add_dataset_release_task
+                dataset_releases = get_dataset_releases(dataset_id=1)
+                self.assertEqual(len(dataset_releases), 0)
+                ti = env.run_task("add_new_dataset_releases")
+                self.assertEqual(ti.state, State.SUCCESS)
+                dataset_releases = get_dataset_releases(dataset_id=1)
+                self.assertEqual(len(dataset_releases), 1)
 
     def query_table(self, observatory_dataset_id: str, table_id: str, order_by_field: str) -> List[Dict]:
         """Query a BigQuery table, sorting the results and returning results as a list of dicts.
@@ -396,7 +486,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
         return [
             dict(row)
             for row in run_bigquery_query(
-                f"SELECT * from {self.gcp_project_id}.{observatory_dataset_id}.{table_id} ORDER BY {order_by_field} ASC;"
+                f"SELECT * from {self.project_id}.{observatory_dataset_id}.{table_id} ORDER BY {order_by_field} ASC;"
             )
         ]
 

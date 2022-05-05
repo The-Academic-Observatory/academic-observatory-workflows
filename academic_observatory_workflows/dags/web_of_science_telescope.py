@@ -26,20 +26,20 @@ from observatory.platform.utils.api import make_observatory_api
 from observatory.platform.utils.workflow_utils import make_dag_id
 
 api = make_observatory_api()
-telescope_type = api.get_telescope_type(type_id=WebOfScienceTelescope.DAG_ID)
-telescopes = api.get_telescopes(telescope_type_id=telescope_type.id, limit=1000)
+workflow_type = api.get_workflow_type(type_id=WebOfScienceTelescope.DAG_ID)
+workflows = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
 
 # Create workflows for each organisation
-for telescope in telescopes:
-    dag_id = make_dag_id(WebOfScienceTelescope.DAG_ID, telescope.organisation.name)
-    airflow_conns = telescope.extra.get("airflow_connections")
-    institution_ids = telescope.extra.get("institution_ids")
+for workflow in workflows:
+    dag_id = make_dag_id(WebOfScienceTelescope.DAG_ID, workflow.organisation.name)
+    airflow_conns = workflow.extra.get("airflow_connections")
+    institution_ids = workflow.extra.get("institution_ids")
 
     if airflow_conns is None or institution_ids is None:
         raise Exception(f"airflow_conns: {airflow_conns} or institution_ids: {institution_ids} is None")
 
     # earliest_date is parsed into a datetime.date object by the Python API client
-    earliest_date_str = telescope.extra.get("earliest_date")
+    earliest_date_str = workflow.extra.get("earliest_date")
     earliest_date = pendulum.parse(earliest_date_str)
 
     airflow_vars = [
@@ -47,12 +47,13 @@ for telescope in telescopes:
         AirflowVars.DATA_LOCATION,
     ]
 
-    telescope = WebOfScienceTelescope(
+    workflow = WebOfScienceTelescope(
         dag_id=dag_id,
         airflow_conns=airflow_conns,
         airflow_vars=airflow_vars,
         institution_ids=institution_ids,
         earliest_date=earliest_date,
+        workflow_id=workflow.id,
     )
 
-    globals()[telescope.dag_id] = telescope.make_dag()
+    globals()[workflow.dag_id] = workflow.make_dag()

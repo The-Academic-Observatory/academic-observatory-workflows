@@ -20,7 +20,6 @@ import os
 import shutil
 from typing import List
 from unittest.mock import patch
-
 import pendulum
 import vcr
 from academic_observatory_workflows.config import test_fixtures_folder
@@ -40,6 +39,19 @@ from observatory.platform.utils.workflow_utils import (
     bigquery_sharded_table_id,
     blob_name,
 )
+from observatory.api.testing import ObservatoryApiEnvironment
+from observatory.api.client import ApiClient, Configuration
+from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
+from observatory.api.client.model.organisation import Organisation
+from observatory.api.client.model.workflow import Workflow
+from observatory.api.client.model.workflow_type import WorkflowType
+from observatory.api.client.model.dataset import Dataset
+from observatory.api.client.model.dataset_release import DatasetRelease
+from observatory.api.client.model.dataset_type import DatasetType
+from observatory.api.client.model.table_type import TableType
+from observatory.platform.utils.release_utils import get_dataset_releases
+from observatory.platform.utils.airflow_utils import AirflowConns
+from airflow.models import Connection
 
 
 class TestUnpaywallSnapshotRelease(ObservatoryTestCase):
@@ -58,7 +70,7 @@ class TestUnpaywallSnapshotRelease(ObservatoryTestCase):
         self.unpaywall_test_path = test_fixtures_folder("unpaywall_snapshot", "unpaywall_snapshot.jsonl.gz")
         self.unpaywall_test_file = "unpaywall_3000-01-27T153236.jsonl.gz"
         self.unpaywall_test_url = "http://localhost/unpaywall_3000-01-27T153236.jsonl.gz"
-        self.unpaywall_test_date = pendulum.datetime(year=3000, month=1, day=27)
+        self.unpaywall_test_date = pendulum.datetime(3000, 1, 27, 15, 32, 36)
         self.unpaywall_test_decompress_hash = "fe4e72ce54c4bb236802ddbb3dbee905"
         self.unpaywall_test_transform_hash = "62cbb5af5a78d2e0769a28d976971cba"
 
@@ -196,14 +208,80 @@ class TestUnpaywallSnapshotTelescope(ObservatoryTestCase):
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
         self.unpaywall_test_path = test_fixtures_folder("unpaywall_snapshot", "unpaywall_snapshot.jsonl.gz")
 
-    def test_ctor(self):
-        # set table description
-        telescope = UnpaywallSnapshotTelescope(table_descriptions="something")
-        self.assertEqual(telescope.table_descriptions, "something")
+        # API environment
+        self.host = "localhost"
+        self.port = 5001
+        configuration = Configuration(host=f"http://{self.host}:{self.port}")
+        api_client = ApiClient(configuration)
+        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
+        self.env = ObservatoryApiEnvironment(host=self.host, port=self.port)
+        self.org_name = "Curtin University"
 
-        # set airflow_vars
-        telescope = UnpaywallSnapshotTelescope(airflow_vars=[])
-        self.assertEqual(telescope.airflow_vars, ["transform_bucket"])
+    def setup_api(self):
+        dt = pendulum.now("UTC")
+
+        name = "Unpaywall Snapshot Telescope"
+        workflow_type = WorkflowType(name=name, type_id=UnpaywallSnapshotTelescope.DAG_ID)
+        self.api.put_workflow_type(workflow_type)
+
+        organisation = Organisation(
+            name="Curtin University",
+            project_id="project",
+            download_bucket="download_bucket",
+            transform_bucket="transform_bucket",
+        )
+        self.api.put_organisation(organisation)
+
+        telescope = Workflow(
+            name=name,
+            workflow_type=WorkflowType(id=1),
+            organisation=Organisation(id=1),
+            extra={},
+        )
+        self.api.put_workflow(telescope)
+
+        table_type = TableType(
+            type_id="partitioned",
+            name="partitioned bq table",
+        )
+        self.api.put_table_type(table_type)
+
+        dataset_type = DatasetType(
+            type_id="dataset_type_id",
+            name="ds type",
+            extra={},
+            table_type=TableType(id=1),
+        )
+        self.api.put_dataset_type(dataset_type)
+
+        dataset = Dataset(
+            name="Unpaywall Snapshot Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            workflow=Workflow(id=1),
+            dataset_type=DatasetType(id=1),
+        )
+        self.api.put_dataset(dataset)
+
+    def setup_connections(self, env):
+        # Add Observatory API connection
+        conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.port}")
+        env.add_connection(conn)
+
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_ctor(self, m_makeapi):
+        m_makeapi.return_value = self.api
+
+        with self.env.create():
+            self.setup_api()
+
+            # set table description
+            telescope = UnpaywallSnapshotTelescope(table_descriptions="something", workflow_id=1)
+            self.assertEqual(telescope.table_descriptions, "something")
+
+            # set airflow_vars
+            telescope = UnpaywallSnapshotTelescope(airflow_vars=[])
+            self.assertEqual(telescope.airflow_vars, ["transform_bucket"])
 
     @patch("academic_observatory_workflows.workflows.unpaywall_snapshot_telescope.get_airflow_connection_url")
     @patch("observatory.platform.utils.workflow_utils.Variable.get")
@@ -216,8 +294,6 @@ class TestUnpaywallSnapshotTelescope(ObservatoryTestCase):
         data_path = "data"
         mock_variable_get.return_value = data_path
         m_get_conn.return_value = "http://localhost/"
-
-        telescope = UnpaywallSnapshotTelescope()
 
         with CliRunner().isolated_filesystem():
             with vcr.use_cassette(self.list_unpaywall_releases_path):
@@ -235,7 +311,6 @@ class TestUnpaywallSnapshotTelescope(ObservatoryTestCase):
         m_get.return_value = data_path
         m_get_conn.return_value = "http://localhost/"
         m_get_xml_dict.side_effect = ConnectionError("Test")
-        telescope = UnpaywallSnapshotTelescope()
 
         # Fetch error
         self.assertRaises(ConnectionError, UnpaywallSnapshotTelescope.list_releases, self.start_date, self.end_date)
@@ -247,8 +322,6 @@ class TestUnpaywallSnapshotTelescope(ObservatoryTestCase):
         data_path = "data"
         m_get.return_value = data_path
         m_get_conn.return_value = "http://localhost/"
-
-        telescope = UnpaywallSnapshotTelescope()
 
         m_get_xmldict.return_value = {
             "ListBucketResult": {
@@ -265,90 +338,113 @@ class TestUnpaywallSnapshotTelescope(ObservatoryTestCase):
         def xcom_push(self, *args):
             pass
 
-    @patch("academic_observatory_workflows.workflows.unpaywall_snapshot_telescope.bigquery_table_exists")
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
     @patch(
         "academic_observatory_workflows.workflows.unpaywall_snapshot_telescope.UnpaywallSnapshotTelescope.list_releases"
     )
     @patch("observatory.platform.utils.workflow_utils.Variable.get")
-    def test_get_release_info(self, m_get, m_releases, m_bq_table_exist):
+    def test_get_release_info(self, m_get, m_releases, m_makeapi):
         m_get.return_value = "projectid"
+        m_makeapi.return_value = self.api
 
         # No release
         m_releases.return_value = []
-        m_bq_table_exist.return_value = True
-        telescope = UnpaywallSnapshotTelescope()
-        continue_dag = telescope.get_release_info(
-            **{
-                "ti": TestUnpaywallSnapshotTelescope.MockTI(),
-                "execution_date": datetime.datetime(2021, 1, 1),
-                "next_execution_date": datetime.datetime(2021, 2, 1),
-            }
-        )
 
-        self.assertEqual(continue_dag, False)
+        with self.env.create():
+            self.setup_api()
+            telescope = UnpaywallSnapshotTelescope(workflow_id=1)
+            continue_dag = telescope.get_release_info(
+                **{
+                    "ti": TestUnpaywallSnapshotTelescope.MockTI(),
+                    "execution_date": datetime.datetime(2021, 1, 1),
+                    "next_execution_date": datetime.datetime(2021, 2, 1),
+                }
+            )
 
-        # Single release exists
-        m_releases.return_value = [{"date": "20210101", "file_name": "some file"}]
-        m_bq_table_exist.return_value = True
-        continue_dag = telescope.get_release_info(
-            **{
-                "ti": TestUnpaywallSnapshotTelescope.MockTI(),
-                "execution_date": datetime.datetime(2021, 1, 1),
-                "next_execution_date": datetime.datetime(2021, 2, 1),
-            }
-        )
-        self.assertEqual(continue_dag, False)
+            self.assertEqual(continue_dag, False)
 
-        # Single release, not exist
-        m_releases.return_value = [{"date": "20210101", "file_name": "some file"}]
-        m_bq_table_exist.return_value = False
-        continue_dag = telescope.get_release_info(
-            **{
-                "ti": TestUnpaywallSnapshotTelescope.MockTI(),
-                "execution_date": datetime.datetime(2021, 1, 1),
-                "next_execution_date": datetime.datetime(2021, 2, 1),
-            }
-        )
-        self.assertEqual(continue_dag, True)
+            # Single release, not processed
+            m_releases.return_value = [{"date": "20210101", "file_name": "some file"}]
+            continue_dag = telescope.get_release_info(
+                **{
+                    "ti": TestUnpaywallSnapshotTelescope.MockTI(),
+                    "execution_date": datetime.datetime(2021, 1, 1),
+                    "next_execution_date": datetime.datetime(2021, 2, 1),
+                }
+            )
+            self.assertEqual(continue_dag, True)
 
-    def test_dag_structure(self):
+            # Single release, already processed
+            m_releases.return_value = [{"date": "20210101", "file_name": "some file"}]
+            dt = pendulum.datetime(2021, 1, 1)
+            dataset_release = DatasetRelease(
+                dataset=Dataset(id=1),
+                start_date=dt,
+                end_date=dt,
+            )
+            self.api.put_dataset_release(dataset_release)
+
+            continue_dag = telescope.get_release_info(
+                **{
+                    "ti": TestUnpaywallSnapshotTelescope.MockTI(),
+                    "execution_date": datetime.datetime(2021, 1, 1),
+                    "next_execution_date": datetime.datetime(2021, 2, 1),
+                }
+            )
+            self.assertEqual(continue_dag, False)
+
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_dag_structure(self, m_makeapi):
         """Test that the Crossref Events DAG has the correct structure."""
 
-        dag = UnpaywallSnapshotTelescope().make_dag()
-        self.assert_dag_structure(
-            {
-                "check_dependencies": ["get_release_info"],
-                "get_release_info": ["download"],
-                "download": ["upload_downloaded"],
-                "upload_downloaded": ["extract"],
-                "extract": ["transform"],
-                "transform": ["upload_transformed"],
-                "upload_transformed": ["bq_load"],
-                "bq_load": ["cleanup"],
-                "cleanup": [],
-            },
-            dag,
-        )
+        m_makeapi.return_value = self.api
 
-    def test_dag_load(self):
+        with self.env.create():
+            self.setup_api()
+            dag = UnpaywallSnapshotTelescope().make_dag()
+            self.assert_dag_structure(
+                {
+                    "check_dependencies": ["get_release_info"],
+                    "get_release_info": ["download"],
+                    "download": ["upload_downloaded"],
+                    "upload_downloaded": ["extract"],
+                    "extract": ["transform"],
+                    "transform": ["upload_transformed"],
+                    "upload_transformed": ["bq_load"],
+                    "bq_load": ["cleanup"],
+                    "cleanup": ["add_new_dataset_releases"],
+                    "add_new_dataset_releases": [],
+                },
+                dag,
+            )
+
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_dag_load(self, m_makeapi):
         """Test that the DAG can be loaded from a DAG bag."""
 
-        with ObservatoryEnvironment().create():
+        m_makeapi.return_value = self.api
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
+
+        with env.create():
+            self.setup_connections(env)
+            self.setup_api()
             dag_file = os.path.join(
                 module_file_path("academic_observatory_workflows.dags"), "unpaywall_snapshot_telescope.py"
             )
             self.assert_dag_load("unpaywall_snapshot", dag_file)
 
     def setup_observatory_env(self):
-        env = ObservatoryEnvironment(self.project_id, self.data_location)
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
         self.dataset_id = env.add_dataset()
         return env
 
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
     @patch("airflow.hooks.base.BaseHook.get_connection")
-    def test_telescope(self, m_base_get_con):
+    def test_telescope(self, m_base_get_con, m_makeapi):
         """Test the Telescope end to end."""
 
         m_base_get_con.return_value = "http://localhost"
+        m_makeapi.return_value = self.api
 
         # Setup http server to serve files
         httpserver = HttpServer(directory=test_fixtures_folder("unpaywall_snapshot"))
@@ -368,7 +464,8 @@ class TestUnpaywallSnapshotTelescope(ObservatoryTestCase):
                 file_name = "unpaywall_snapshot.jsonl.gz"
 
                 with env.create():
-                    telescope = UnpaywallSnapshotTelescope(dataset_id=self.dataset_id)
+                    self.setup_api()
+                    telescope = UnpaywallSnapshotTelescope(dataset_id=self.dataset_id, workflow_id=1)
                     dag = telescope.make_dag()
 
                     release = UnpaywallSnapshotRelease(
@@ -443,3 +540,11 @@ class TestUnpaywallSnapshotTelescope(ObservatoryTestCase):
                         env.run_task(telescope.cleanup.__name__)
                         self.assertEqual(ti.state, State.SUCCESS)
                         self.assert_cleanup(download_folder, extract_folder, transform_folder)
+
+                        # add_dataset_release_task
+                        dataset_releases = get_dataset_releases(dataset_id=1)
+                        self.assertEqual(len(dataset_releases), 0)
+                        ti = env.run_task("add_new_dataset_releases")
+                        self.assertEqual(ti.state, State.SUCCESS)
+                        dataset_releases = get_dataset_releases(dataset_id=1)
+                        self.assertEqual(len(dataset_releases), 1)

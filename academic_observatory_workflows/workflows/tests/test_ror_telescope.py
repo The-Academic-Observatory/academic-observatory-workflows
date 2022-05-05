@@ -38,6 +38,19 @@ from observatory.platform.utils.test_utils import (
 from observatory.platform.utils.workflow_utils import (
     blob_name,
 )
+from observatory.api.testing import ObservatoryApiEnvironment
+from observatory.api.client import ApiClient, Configuration
+from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
+from observatory.api.client.model.organisation import Organisation
+from observatory.api.client.model.workflow import Workflow
+from observatory.api.client.model.workflow_type import WorkflowType
+from observatory.api.client.model.dataset import Dataset
+from observatory.api.client.model.dataset_type import DatasetType
+from observatory.api.client.model.table_type import TableType
+from observatory.platform.utils.release_utils import get_dataset_releases
+from observatory.platform.utils.airflow_utils import AirflowConns
+from airflow.models import Connection
+from airflow.utils.state import State
 
 
 class TestRorTelescope(ObservatoryTestCase):
@@ -78,6 +91,66 @@ class TestRorTelescope(ObservatoryTestCase):
         }
         self.release = RorRelease("ror", pendulum.datetime(2021, 1, 1), "https://myurl")
 
+        # API environment
+        self.host = "localhost"
+        self.port = 5001
+        configuration = Configuration(host=f"http://{self.host}:{self.port}")
+        api_client = ApiClient(configuration)
+        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
+        self.env = ObservatoryApiEnvironment(host=self.host, port=self.port)
+        self.org_name = "Curtin University"
+
+    def setup_api(self):
+        dt = pendulum.now("UTC")
+
+        name = "RoR Telescope"
+        workflow_type = WorkflowType(name=name, type_id=RorTelescope.DAG_ID)
+        self.api.put_workflow_type(workflow_type)
+
+        organisation = Organisation(
+            name="Curtin University",
+            project_id="project",
+            download_bucket="download_bucket",
+            transform_bucket="transform_bucket",
+        )
+        self.api.put_organisation(organisation)
+
+        telescope = Workflow(
+            name=name,
+            workflow_type=WorkflowType(id=1),
+            organisation=Organisation(id=1),
+            extra={},
+        )
+        self.api.put_workflow(telescope)
+
+        table_type = TableType(
+            type_id="partitioned",
+            name="partitioned bq table",
+        )
+        self.api.put_table_type(table_type)
+
+        dataset_type = DatasetType(
+            type_id="ror",
+            name="ds type",
+            extra={},
+            table_type=TableType(id=1),
+        )
+        self.api.put_dataset_type(dataset_type)
+
+        dataset = Dataset(
+            name="RoR Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            workflow=Workflow(id=1),
+            dataset_type=DatasetType(id=1),
+        )
+        self.api.put_dataset(dataset)
+
+    def setup_connections(self, env):
+        # Add Observatory API connection
+        conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.port}")
+        env.add_connection(conn)
+
     def test_dag_structure(self):
         """Test that the ROR DAG has the correct structure.
 
@@ -95,36 +168,49 @@ class TestRorTelescope(ObservatoryTestCase):
                 "transform": ["upload_transformed"],
                 "upload_transformed": ["bq_load"],
                 "bq_load": ["cleanup"],
-                "cleanup": [],
+                "cleanup": ["add_new_dataset_releases"],
+                "add_new_dataset_releases": [],
             },
             dag,
         )
 
-    def test_dag_load(self):
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_dag_load(self, m_makeapi):
         """Test that the ROR DAG can be loaded from a DAG bag.
 
         :return: None
         """
-        with ObservatoryEnvironment().create():
+
+        m_makeapi.return_value = self.api
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
+
+        with env.create():
+            self.setup_connections(env)
+            self.setup_api()
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "ror_telescope.py")
             self.assert_dag_load("ror", dag_file)
 
-    def test_telescope(self):
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_telescope(self, m_makeapi):
         """Test the ROR telescope end to end.
 
         :return: None.
         """
+
+        m_makeapi.return_value = self.api
+
         # Setup Observatory environment
-        env = ObservatoryEnvironment(self.project_id, self.data_location)
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
         dataset_id = env.add_dataset()
 
         # Setup Telescope
         execution_date = pendulum.datetime(year=2021, month=9, day=19)
-        telescope = RorTelescope(dataset_id=dataset_id)
+        telescope = RorTelescope(dataset_id=dataset_id, workflow_id=1)
         dag = telescope.make_dag()
 
         # Create the Observatory environment and run tests
         with env.create():
+            self.setup_api()
             with env.create_dag_run(dag, execution_date):
                 # Test that all dependencies are specified: no error should be thrown
                 env.run_task(telescope.check_dependencies.__name__)
@@ -220,6 +306,14 @@ class TestRorTelescope(ObservatoryTestCase):
                 env.run_task(telescope.cleanup.__name__)
                 for i, release in enumerate(releases):
                     self.assert_cleanup(download_folders[i], extract_folders[i], transform_folders[i])
+
+                # add_dataset_release_task
+                dataset_releases = get_dataset_releases(dataset_id=1)
+                self.assertEqual(len(dataset_releases), 0)
+                ti = env.run_task("add_new_dataset_releases")
+                self.assertEqual(ti.state, State.SUCCESS)
+                dataset_releases = get_dataset_releases(dataset_id=1)
+                self.assertEqual(len(dataset_releases), 2)
 
     @patch("academic_observatory_workflows.workflows.ror_telescope.list_ror_records")
     def test_list_releases(self, mock_list_records):

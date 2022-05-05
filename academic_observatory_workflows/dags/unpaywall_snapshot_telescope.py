@@ -31,6 +31,15 @@ Does not work with the following releases:
 from academic_observatory_workflows.workflows.unpaywall_snapshot_telescope import (
     UnpaywallSnapshotTelescope,
 )
+from observatory.platform.utils.api import make_observatory_api
 
-telescope = UnpaywallSnapshotTelescope()
-globals()[telescope.dag_id] = telescope.make_dag()
+
+api = make_observatory_api()
+workflow_type = api.get_workflow_type(type_id=UnpaywallSnapshotTelescope.DAG_ID)
+workflows = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
+
+# Better to throw error here. If setting up for multi instance, then need to standardise dag_id etc.
+workflow = workflows[0]
+
+workflow = UnpaywallSnapshotTelescope(workflow_id=workflow.id)
+globals()[workflow.dag_id] = workflow.make_dag()

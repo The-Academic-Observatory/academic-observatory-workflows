@@ -27,10 +27,6 @@ from observatory.platform.utils.airflow_utils import (
     get_airflow_connection_url,
 )
 from observatory.platform.utils.file_utils import find_replace_file, gunzip_files
-from observatory.platform.utils.gc_utils import (
-    bigquery_sharded_table_id,
-    bigquery_table_exists,
-)
 from observatory.platform.utils.http_download import download_file
 from observatory.platform.utils.url_utils import (
     get_http_response_xml_to_dict,
@@ -40,6 +36,7 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
+from observatory.platform.utils.release_utils import get_new_release_dates, get_datasets
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
 
@@ -111,7 +108,7 @@ class UnpaywallSnapshotRelease(SnapshotRelease):
         :return: date.
         """
 
-        date = re.search(r"\d{4}-\d{2}-\d{2}", file_name).group()
+        date = re.search(r"\d{4}-\d{2}-\d{2}T\d{1,}", file_name).group()
         return pendulum.parse(date)
 
     def download(self):
@@ -151,6 +148,8 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
         table_descriptions: Dict = None,
         catchup: bool = True,
         airflow_vars: Union[List[AirflowVars], None] = None,
+        org_name: str = "Curtin University",
+        workflow_id: int = None,
     ):
         """Initialise the telescope.
 
@@ -164,6 +163,8 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
         :param table_descriptions: Descriptions of the tables.
         :param catchup: Whether Airflow should catch up past dag runs.
         :param airflow_vars: List of Airflow variables to use.
+        :param org_name: Organisation name in the API associated with this Telescope instance.
+        :param workflow_id: api workflow id.
         """
 
         if table_descriptions is None:
@@ -195,6 +196,7 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
             airflow_vars=airflow_vars,
             airflow_conns=airflow_conns,
             queue=queue,
+            workflow_id=workflow_id,
         )
 
         self.add_setup_task(self.check_dependencies)
@@ -206,6 +208,7 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
         self.add_task(self.upload_transformed)
         self.add_task(self.bq_load)
         self.add_task(self.cleanup)
+        self.add_task(self.add_new_dataset_releases)
 
     @staticmethod
     def list_releases(start_date: pendulum.DateTime, end_date: pendulum.DateTime) -> List[Dict]:
@@ -254,33 +257,23 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
         :return: Whether the DAG should continue.
         """
 
-        # Get variables
-        project_id = Variable.get(AirflowVars.PROJECT_ID)
-
         # List releases between a start and end date
         execution_date = pendulum.instance(kwargs["execution_date"])
         next_execution_date = pendulum.instance(kwargs["next_execution_date"])
         releases_list = UnpaywallSnapshotTelescope.list_releases(execution_date, next_execution_date)
         logging.info(f"Releases between {execution_date} and {next_execution_date}:\n{releases_list}\n")
 
-        # Check if the BigQuery table exists for each release to see if the workflow needs to process
-        releases_list_out = []
-        for release in releases_list:
-            table_id = bigquery_sharded_table_id(UnpaywallSnapshotTelescope.DAG_ID, pendulum.parse(release["date"]))
-
-            file = release["file_name"]
-            if bigquery_table_exists(project_id, self.dataset_id, table_id):
-                logging.info(f"Skipping as table exists for {file}: " f"{project_id}.{self.dataset_id}.{table_id}")
-            else:
-                logging.info(f"Table doesn't exist yet, processing {file} in this workflow")
-                releases_list_out.append(release)
+        dataset = get_datasets(workflow_id=self.workflow_id)[0]
+        releases = [pendulum.parse(release["date"]) for release in releases_list]
+        new_dates = get_new_release_dates(dataset_id=dataset.id, releases=releases)
+        new_releases = list(filter(lambda release: release["date"] in new_dates, releases_list))
 
         # If releases_list_out contains items then the DAG will continue (return True) otherwise it will
         # stop (return False)
-        continue_dag = len(releases_list_out) > 0
+        continue_dag = len(new_releases) > 0
         if continue_dag:
             ti: TaskInstance = kwargs["ti"]
-            ti.xcom_push(UnpaywallSnapshotTelescope.RELEASE_INFO, releases_list_out, execution_date)
+            ti.xcom_push(UnpaywallSnapshotTelescope.RELEASE_INFO, new_releases, execution_date)
         return continue_dag
 
     def make_release(self, **kwargs) -> List[UnpaywallSnapshotRelease]:

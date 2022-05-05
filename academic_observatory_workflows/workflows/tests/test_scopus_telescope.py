@@ -56,6 +56,20 @@ from observatory.platform.utils.workflow_utils import (
     build_schedule,
     make_dag_id,
 )
+from observatory.api.client import ApiClient, Configuration
+from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
+from observatory.platform.utils.release_utils import get_dataset_releases
+from observatory.api.client import ApiClient, Configuration
+from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
+from observatory.api.client.model.organisation import Organisation
+from observatory.api.client.model.workflow import Workflow
+from observatory.api.client.model.workflow_type import WorkflowType
+from observatory.api.client.model.dataset import Dataset
+from observatory.api.client.model.dataset_type import DatasetType
+from observatory.api.client.model.table_type import TableType
+from observatory.platform.utils.release_utils import get_dataset_releases
+from observatory.platform.utils.airflow_utils import AirflowConns
+from airflow.models import Connection
 
 
 class TestScopusUtility(unittest.TestCase):
@@ -630,6 +644,11 @@ class TestScopusTelescope(ObservatoryTestCase):
             self.results_str = f.read()
         self.results_len = 1
 
+        # API environment
+        configuration = Configuration(host=f"http://{self.host}:{self.api_port}")
+        api_client = ApiClient(configuration)
+        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
+
     def setup_connections(self, env):
         # Add Observatory API connection
         conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.api_port}")
@@ -639,52 +658,71 @@ class TestScopusTelescope(ObservatoryTestCase):
         conn = Connection(conn_id=self.conn_id, uri=f"http://login:password@localhost")
         env.add_connection(conn)
 
-    def setup_api(self, env, extra=None):
+    def setup_api(self, extra=None):
         dt = pendulum.now("UTC")
+
+        name = "Scopus Telescope"
+        workflow_type = WorkflowType(name=name, type_id=ScopusTelescope.DAG_ID)
+        self.api.put_workflow_type(workflow_type)
+
+        organisation = Organisation(
+            name="Curtin University",
+            project_id="project",
+            download_bucket="download_bucket",
+            transform_bucket="transform_bucket",
+        )
+        self.api.put_organisation(organisation)
+
+        telescope = Workflow(
+            name=name,
+            workflow_type=WorkflowType(id=1),
+            organisation=Organisation(id=1),
+            extra={},
+        )
+        self.api.put_workflow(telescope)
+
+        table_type = TableType(
+            type_id="partitioned",
+            name="partitioned bq table",
+        )
+        self.api.put_table_type(table_type)
 
         if extra is None:
             extra = {
                 "airflow_connections": [self.conn_id],
-                "institution_ids": ["123"],
                 "earliest_date": self.earliest_date.isoformat(),
+                "institution_ids": ["123"],
                 "view": "STANDARD",
             }
 
-        name = "Scopus Telescope"
-        telescope_type = orm.TelescopeType(name=name, type_id=ScopusTelescope.DAG_ID, created=dt, modified=dt)
-        env.api_session.add(telescope_type)
-
-        organisation = orm.Organisation(
-            name=self.org_name,
-            created=dt,
-            modified=dt,
-            gcp_project_id=self.project_id,
-            gcp_download_bucket=env.download_bucket,
-            gcp_transform_bucket=env.transform_bucket,
-        )
-
-        env.api_session.add(organisation)
-        telescope = orm.Telescope(
-            name=name,
-            telescope_type=telescope_type,
-            organisation=organisation,
-            modified=dt,
-            created=dt,
+        dataset_type = DatasetType(
+            type_id="scopus",
+            name="scopus",
             extra=extra,
+            table_type=TableType(id=1),
         )
-        env.api_session.add(telescope)
-        env.api_session.commit()
+        self.api.put_dataset_type(dataset_type)
+
+        dataset = Dataset(
+            name="Scopus Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            workflow=Workflow(id=1),
+            dataset_type=DatasetType(id=1),
+        )
+        self.api.put_dataset(dataset)
 
     def get_telescope(self, dataset_id):
         api = make_observatory_api()
-        telescope_type = api.get_telescope_type(type_id=ScopusTelescope.DAG_ID)
-        telescopes = api.get_telescopes(telescope_type_id=telescope_type.id, limit=1000)
+        workflow_type = api.get_workflow_type(type_id=ScopusTelescope.DAG_ID)
+        telescopes = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
         self.assertEqual(len(telescopes), 1)
+        dataset_type = api.get_dataset_type(type_id="scopus")
 
         dag_id = make_dag_id(ScopusTelescope.DAG_ID, telescopes[0].organisation.name)
-        airflow_conns = telescopes[0].extra.get("airflow_connections")
-        institution_ids = telescopes[0].extra.get("institution_ids")
-        earliest_date_str = telescopes[0].extra.get("earliest_date")
+        airflow_conns = dataset_type.extra.get("airflow_connections")
+        institution_ids = dataset_type.extra.get("institution_ids")
+        earliest_date_str = dataset_type.extra.get("earliest_date")
         earliest_date = pendulum.parse(earliest_date_str)
 
         airflow_vars = [
@@ -699,6 +737,7 @@ class TestScopusTelescope(ObservatoryTestCase):
             airflow_vars=airflow_vars,
             institution_ids=institution_ids,
             earliest_date=earliest_date,
+            workflow_id=1,
         )
 
         return telescope
@@ -726,50 +765,61 @@ class TestScopusTelescope(ObservatoryTestCase):
             earliest_date=pendulum.now("UTC"),
         )
 
-    def test_dag_structure(self):
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_dag_structure(self, m_makeapi):
         """Test that the ScopusTelescope DAG has the correct structure.
 
         :return: None
         """
-        dag = ScopusTelescope(
-            dag_id="dag",
-            airflow_conns=["conn"],
-            airflow_vars=[],
-            institution_ids=["10"],
-            earliest_date=pendulum.now("UTC"),
-            view="standard",
-        ).make_dag()
-        self.assert_dag_structure(
-            {
-                "check_dependencies": ["download"],
-                "download": ["upload_downloaded"],
-                "upload_downloaded": ["transform"],
-                "transform": ["upload_transformed"],
-                "upload_transformed": ["bq_load"],
-                "bq_load": ["cleanup"],
-                "cleanup": [],
-            },
-            dag,
-        )
 
-    def test_dag_load(self):
+        m_makeapi.return_value = self.api
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
+        with env.create():
+            self.setup_connections(env)
+            self.setup_api()
+            dag = ScopusTelescope(
+                dag_id="dag",
+                airflow_conns=["conn"],
+                airflow_vars=[],
+                institution_ids=["10"],
+                earliest_date=pendulum.now("UTC"),
+                view="standard",
+            ).make_dag()
+            self.assert_dag_structure(
+                {
+                    "check_dependencies": ["download"],
+                    "download": ["upload_downloaded"],
+                    "upload_downloaded": ["transform"],
+                    "transform": ["upload_transformed"],
+                    "upload_transformed": ["bq_load"],
+                    "bq_load": ["cleanup"],
+                    "cleanup": ["add_new_dataset_releases"],
+                    "add_new_dataset_releases": [],
+                },
+                dag,
+            )
+
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_dag_load(self, m_makeapi):
         """Test that the DAG can be loaded from a DAG bag."""
 
+        m_makeapi.return_value = self.api
         dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
-
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
 
         with env.create():
             self.setup_connections(env)
-            self.setup_api(env)
+            self.setup_api()
 
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
             dag_id = make_dag_id(ScopusTelescope.DAG_ID, self.org_name)
             self.assert_dag_load(dag_id, dag_file)
 
-    def test_dag_load_missing_params(self):
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_dag_load_missing_params(self, m_makeapi):
         """Test that the DAG can be loaded from a DAG bag."""
 
+        m_makeapi.return_value = self.api
         dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
         extra = {
@@ -780,18 +830,22 @@ class TestScopusTelescope(ObservatoryTestCase):
 
         with env.create():
             self.setup_connections(env)
-            self.setup_api(env, extra=extra)
+            self.setup_api(extra=extra)
 
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
             dag_id = make_dag_id(ScopusTelescope.DAG_ID, self.org_name)
             self.assertRaises(AssertionError, self.assert_dag_load, dag_id, dag_file)
 
-    def test_telescope(self):
+    @patch("academic_observatory_workflows.workflows.web_of_science_telescope.pendulum.now")
+    @patch("observatory.platform.utils.release_utils.make_observatory_api")
+    def test_telescope(self, m_makeapi, m_pendnow):
+        m_makeapi.return_value = self.api
+        m_pendnow.return_value = pendulum.datetime(2021, 2, 1)
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
 
         with env.create():
             self.setup_connections(env)
-            self.setup_api(env)
+            self.setup_api()
             dataset_id = env.add_dataset()
 
             execution_date = pendulum.datetime(2021, 1, 1)
@@ -879,3 +933,11 @@ class TestScopusTelescope(ObservatoryTestCase):
                 env.run_task(telescope.cleanup.__name__)
                 self.assertEqual(ti.state, State.SUCCESS)
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
+
+                # add_dataset_release_task
+                dataset_releases = get_dataset_releases(dataset_id=1)
+                self.assertEqual(len(dataset_releases), 0)
+                ti = env.run_task("add_new_dataset_releases")
+                self.assertEqual(ti.state, State.SUCCESS)
+                dataset_releases = get_dataset_releases(dataset_id=1)
+                self.assertEqual(len(dataset_releases), 1)
