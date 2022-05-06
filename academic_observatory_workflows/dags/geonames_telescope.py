@@ -23,6 +23,7 @@ from observatory.platform.utils.api import make_observatory_api
 
 api = make_observatory_api()
 workflow_type = api.get_workflow_type(type_id=GeonamesTelescope.DAG_ID)
-workflows = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
-workflow = GeonamesTelescope(workflow_id=workflows[0].id)
-globals()[workflow.dag_id] = workflow.make_dag()
+workflows = api.get_workflows(workflow_type_id=workflow_type.id, limit=1)
+if len(workflows):
+    workflow = GeonamesTelescope(workflow_id=workflows[0].id)
+    globals()[workflow.dag_id] = workflow.make_dag()
