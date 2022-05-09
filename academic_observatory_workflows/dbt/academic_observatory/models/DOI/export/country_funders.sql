@@ -1,0 +1,1 @@
+{{ aggregate_relations('country', ref('country'), 'funders') }}

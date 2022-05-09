@@ -1,0 +1,1 @@
+SELECT country_id, funders_id, published_year FROM {{ ref('country_funders')}} GROUP BY country_id, funders_id, published_year HAVING count(*) > 1

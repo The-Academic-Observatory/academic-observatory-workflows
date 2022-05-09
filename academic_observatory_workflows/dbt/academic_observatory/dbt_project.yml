@@ -38,12 +38,10 @@ models:
   academic_observatory:
     # Config indicated by + and applies to all files under models/example/
     example:
-#      +enabled: false
-      +materialized: view
+     +enabled: false
+     +materialized: view
 
 vars:
-  publisher: "anu-press"
   # From release date
-  shard_date: "20220219"
-  # From Observatory API
-  orig_isbn: "eISBN"
+  shard_date_mag: "20211206"
+  shard_date: "20211206"

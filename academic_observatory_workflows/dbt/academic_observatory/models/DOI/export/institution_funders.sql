@@ -1,0 +1,1 @@
+{{ aggregate_relations('institution', ref('institution'), 'funders') }}

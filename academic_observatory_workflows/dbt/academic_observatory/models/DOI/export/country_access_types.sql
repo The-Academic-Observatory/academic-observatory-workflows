@@ -1,0 +1,1 @@
+{{ aggregate_access_types('country', ref('country')) }}

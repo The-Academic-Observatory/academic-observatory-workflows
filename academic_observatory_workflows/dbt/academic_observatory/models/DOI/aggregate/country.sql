@@ -1,0 +1,1 @@
+{{ create_aggregate(ref('doi'), 'countries', 'published_year', relate_to_members=True, relate_to_journals=True, relate_to_funders=True, relate_to_publishers=True) }}

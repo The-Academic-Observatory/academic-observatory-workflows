@@ -1,0 +1,52 @@
+/*
+Copyright 2020 Curtin University
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+Author: Richard Hosking, Aniek Roelofs
+*/
+
+
+-- This query extracts the uri, given_names, family_name and a list of DOIs for each author from ORCID, allowing the following query to be simplified
+WITH
+  orcid_processed AS (
+  SELECT
+    orcid.orcid_identifier.uri,
+    orcid.person.name.given_names,
+    orcid.person.name.family_name,
+    ARRAY(
+    SELECT
+      DISTINCT UPPER(TRIM(external_id.external_id_value))
+    FROM
+      UNNEST(activities_summary.works.group) AS work_group,
+      UNNEST(work_group.work_summary[OFFSET(0)].external_ids.external_id) AS external_id
+    WHERE
+      external_id.external_id_type = "doi" ) AS works
+  FROM
+    {{ source('orcid', 'orcid') }} AS orcid )
+
+-- This is the main query, which inverts the ORCID centered data to be DOI centric, so it has a list of authors per DOI, instead of a list of DOIs per author
+SELECT
+  doi,
+  ARRAY_AGG(orcid) AS orcid
+FROM (
+  SELECT
+    doi,
+    STRUCT( orcid.uri,
+      orcid.given_names,
+      orcid.family_name) AS orcid
+  FROM
+    orcid_processed AS orcid,
+    UNNEST(works) AS doi)
+GROUP BY
+  doi

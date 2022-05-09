@@ -1,0 +1,158 @@
+version: 2
+
+sources:  
+  - name: crossref
+    # database:  "workflows-dev"
+    tables:
+      - name: "crossref_metadata{{ var('shard_date') }}"
+      - name: "crossref_events"
+      - name: "crossref_fundref{{ var('shard_date') }}"
+  
+  - name: mag
+    tables:
+      - name: "Affiliations{{ var('shard_date_mag') }}"
+      - name: "ConferenceInstances{{ var('shard_date_mag') }}"
+      - name: "ConferenceSeries{{ var('shard_date_mag') }}"
+      - name: "FieldsOfStudy{{ var('shard_date_mag') }}"
+      - name: "FieldOfStudyExtendedAttributes{{ var('shard_date_mag') }}"
+      - name: "Journals{{ var('shard_date_mag') }}"
+      - name: "Papers{{ var('shard_date_mag') }}"
+      - name: "PaperAbstractsInvertedIndex{{ var('shard_date_mag') }}"
+      - name: "PaperAuthorAffiliations{{ var('shard_date_mag') }}"
+      - name: "PaperExtendedAttributes{{ var('shard_date_mag') }}"
+      - name: "PaperFieldsOfStudy{{ var('shard_date_mag') }}"
+      - name: "PaperMeSH{{ var('shard_date_mag') }}"
+      - name: "PaperResources{{ var('shard_date_mag') }}"
+      - name: "PaperUrls{{ var('shard_date_mag') }}"
+
+  - name: open_citations
+    tables:
+      - name: "open_citations{{ var('shard_date') }}"
+
+  - name: orcid
+    database: "workflows-dev"
+    tables:
+      - name: "orcid"
+
+  - name: our_research
+    tables:
+      - name: "unpaywall"
+
+  - name: ror
+    tables:
+      - name: "ror{{ var('shard_date') }}"
+
+  - name: settings
+    tables:
+      - name: "mag_affiliation_override"
+      - name: "country"
+      - name: "groupings"
+
+models:
+# Intermediate tables
+  - name: crossref_events
+    config:
+      materialized: view
+      schema: observatory_intermediate
+      alias: "crossref_events{{ var('shard_date') }}"
+  
+  - name: crossref_fundref
+    config:
+      materialized: view
+      schema: observatory_intermediate
+      alias: "crossref_fundref{{ var('shard_date') }}"
+
+  - name: mag
+    config:
+      materialized: view
+      schema: observatory_intermediate
+      alias: "mag{{ var('shard_date') }}"
+
+  - name: open_citations
+    config:
+      materialized: view
+      schema: observatory_intermediate
+      alias: "open_citations{{ var('shard_date') }}"
+
+  - name: orcid
+    config:
+      materialized: view
+      schema: observatory_intermediate
+      alias: "orcid{{ var('shard_date') }}"
+   
+  - name: ror
+    config:
+      materialized: view
+      schema: observatory_intermediate
+      alias: "ror{{ var('shard_date') }}"
+    
+  - name: unpaywall
+    config:
+      materialized: view
+      schema: observatory_intermediate
+      alias: "unpawall{{ var('shard_date') }}"
+
+# Observatory tables / aggregates
+  - name: doi
+    config:
+      materialized: view
+      schema: observatory
+      alias: "doi{{ var('shard_date') }}"
+    description: "The DOI table"
+    columns:
+      - name: doi
+        description: The DOI value
+      - name: crossref.title
+        description: The title from crossref metadata
+
+
+  - name: book
+    config:
+      materialized: view
+      schema: observatory
+      alias: "book{{ var('shard_date') }}"
+
+  - name: country
+    config:
+      materialized: view
+      schema: observatory
+      alias: "country{{ var('shard_date') }}"
+
+  - name: institution
+    config:
+      materialized: view
+      schema: observatory
+      alias: "institution{{ var('shard_date') }}"
+
+# Export tables
+  - name: country_access_types
+    config:
+      materialized: view
+      schema: data_export
+      alias: "ao_country_access_types{{ var('shard_date') }}"
+
+  - name: country_funders
+    config:
+      materialized: view
+      schema: data_export
+      alias: "ao_country_funders{{ var('shard_date') }}"
+    description: "Country and funders aggregate"
+    columns:
+      - name: country_id
+        description: The country ID
+        # tests:
+        #   - test_unique_country_funders
+
+        
+  - name: institution_access_types
+    config:
+      materialized: view
+      schema: data_export
+      alias: "ao_institution_access_types{{ var('shard_date') }}"
+
+  - name: institution_funders
+    config:
+      materialized: view
+      schema: data_export
+      alias: "ao_institution_funders{{ var('shard_date') }}"
+
