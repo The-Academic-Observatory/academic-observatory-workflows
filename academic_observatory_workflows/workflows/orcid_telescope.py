@@ -33,8 +33,9 @@ import pendulum
 import xmltodict
 from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.hooks.base_hook import BaseHook
-from airflow.models.taskinstance import TaskInstance
 from airflow.models.variable import Variable
+
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowConns
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.gc_utils import (
@@ -46,8 +47,6 @@ from observatory.platform.workflows.stream_telescope import (
     StreamRelease,
     StreamTelescope,
 )
-
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 
 
 class OrcidRelease(StreamRelease):

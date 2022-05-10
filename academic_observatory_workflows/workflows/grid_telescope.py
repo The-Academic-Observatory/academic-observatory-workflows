@@ -25,10 +25,11 @@ from typing import List
 from zipfile import BadZipFile, ZipFile
 
 import pendulum
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from airflow.exceptions import AirflowException
 from airflow.models.taskinstance import TaskInstance
 from google.cloud.bigquery import SourceFormat
+
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.file_utils import list_to_jsonl_gz
 from observatory.platform.utils.http_download import download_file

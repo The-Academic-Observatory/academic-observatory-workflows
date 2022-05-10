@@ -153,7 +153,7 @@ class UnpaywallRelease(StreamRelease):
             target_start_date = pendulum.instance(latest_release.start_date).subtract(days=1).start_of("day")
         # Day after recorded end date
         else:
-            target_start_date = latest_release.end_date.add(seconds=1)
+            target_start_date = pendulum.instance(latest_release.end_date).add(seconds=1)
 
         feeds = UnpaywallRelease.get_unpaywall_daily_feeds()
         filtered_releases = list(

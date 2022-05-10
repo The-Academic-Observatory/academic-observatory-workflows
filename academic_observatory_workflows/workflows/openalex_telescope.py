@@ -32,6 +32,8 @@ from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.hooks.base import BaseHook
 from airflow.models.variable import Variable
 from google.cloud import storage
+
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.gc_utils import aws_to_google_cloud_storage_transfer
 from observatory.platform.utils.proc_utils import wait_for_process
@@ -39,8 +41,6 @@ from observatory.platform.workflows.stream_telescope import (
     StreamRelease,
     StreamTelescope,
 )
-
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 
 
 class OpenAlexRelease(StreamRelease):
