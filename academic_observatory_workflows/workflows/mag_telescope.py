@@ -26,7 +26,6 @@ from subprocess import Popen
 from typing import List
 
 import pendulum
-from academic_observatory_workflows.config import schema_folder
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
 from airflow.models.taskinstance import TaskInstance
@@ -35,8 +34,9 @@ from google.cloud import storage
 from google.cloud.bigquery import SourceFormat
 from google.cloud.storage import Blob
 from natsort import natsorted
+
+from academic_observatory_workflows.config import schema_folder
 from observatory.platform.utils.airflow_utils import (
-    AirflowConns,
     AirflowVars,
     check_connections,
     check_variables,
@@ -58,7 +58,6 @@ from observatory.platform.utils.workflow_utils import (
     delete_old_xcoms,
     workflow_path,
 )
-from sqlalchemy.sql.expression import delete
 
 MAG_GCP_BUCKET_PATH = "telescopes/mag"
 

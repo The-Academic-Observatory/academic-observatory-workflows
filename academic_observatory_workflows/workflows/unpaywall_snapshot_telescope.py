@@ -20,14 +20,16 @@ import re
 from typing import Dict, List, Union
 
 import pendulum
-from airflow.models import Variable
 from airflow.models.taskinstance import TaskInstance
+
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import (
     AirflowVars,
     get_airflow_connection_url,
 )
 from observatory.platform.utils.file_utils import find_replace_file, gunzip_files
 from observatory.platform.utils.http_download import download_file
+from observatory.platform.utils.release_utils import get_new_release_dates, get_datasets
 from observatory.platform.utils.url_utils import (
     get_http_response_xml_to_dict,
     get_observatory_http_header,
@@ -36,9 +38,6 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
-from observatory.platform.utils.release_utils import get_new_release_dates, get_datasets
-
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 
 
 class UnpaywallSnapshotRelease(SnapshotRelease):
@@ -148,7 +147,6 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
         table_descriptions: Dict = None,
         catchup: bool = True,
         airflow_vars: Union[List[AirflowVars], None] = None,
-        org_name: str = "Curtin University",
         workflow_id: int = None,
     ):
         """Initialise the telescope.
@@ -163,7 +161,6 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
         :param table_descriptions: Descriptions of the tables.
         :param catchup: Whether Airflow should catch up past dag runs.
         :param airflow_vars: List of Airflow variables to use.
-        :param org_name: Organisation name in the API associated with this Telescope instance.
         :param workflow_id: api workflow id.
         """
 
