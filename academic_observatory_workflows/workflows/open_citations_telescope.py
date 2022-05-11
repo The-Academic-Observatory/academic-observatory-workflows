@@ -19,11 +19,12 @@ import zipfile
 from typing import Dict, List
 
 import pendulum
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from airflow.models import Variable
 from airflow.models.taskinstance import TaskInstance
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
+
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.gc_utils import (
     bigquery_sharded_table_id,

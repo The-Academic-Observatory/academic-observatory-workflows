@@ -36,10 +36,7 @@ from observatory.platform.utils.api import make_observatory_api
 
 api = make_observatory_api()
 workflow_type = api.get_workflow_type(type_id=UnpaywallSnapshotTelescope.DAG_ID)
-workflows = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
-
-# Better to throw error here. If setting up for multi instance, then need to standardise dag_id etc.
-workflow = workflows[0]
-
-workflow = UnpaywallSnapshotTelescope(workflow_id=workflow.id)
-globals()[workflow.dag_id] = workflow.make_dag()
+workflows = api.get_workflows(workflow_type_id=workflow_type.id, limit=1)
+if len(workflows):
+    workflow = UnpaywallSnapshotTelescope(workflow_id=workflows[0].id)
+    globals()[workflow.dag_id] = workflow.make_dag()

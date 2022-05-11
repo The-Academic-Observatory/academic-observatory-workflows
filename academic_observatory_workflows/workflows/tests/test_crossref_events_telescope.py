@@ -15,11 +15,16 @@
 # Author: Aniek Roelofs
 
 import os
-from datetime import timedelta
 from unittest.mock import patch
 
 import pendulum
 import vcr
+from airflow.exceptions import AirflowSkipException
+from airflow.models import Connection
+from airflow.utils.state import State
+from click.testing import CliRunner
+from google.cloud import bigquery
+
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.crossref_events_telescope import (
     CrossrefEventsRelease,
@@ -27,9 +32,17 @@ from academic_observatory_workflows.workflows.crossref_events_telescope import (
     parse_event_url,
     transform_batch,
 )
-from airflow.exceptions import AirflowSkipException
-from click.testing import CliRunner
-from google.cloud import bigquery
+from observatory.api.client import ApiClient, Configuration
+from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
+from observatory.api.client.model.dataset import Dataset
+from observatory.api.client.model.dataset_type import DatasetType
+from observatory.api.client.model.organisation import Organisation
+from observatory.api.client.model.table_type import TableType
+from observatory.api.client.model.workflow import Workflow
+from observatory.api.client.model.workflow_type import WorkflowType
+from observatory.api.testing import ObservatoryApiEnvironment
+from observatory.platform.utils.airflow_utils import AirflowConns
+from observatory.platform.utils.release_utils import get_dataset_releases
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
@@ -37,20 +50,6 @@ from observatory.platform.utils.test_utils import (
 )
 from observatory.platform.utils.url_utils import get_user_agent
 from observatory.platform.utils.workflow_utils import blob_name, create_date_table_id
-from observatory.api.testing import ObservatoryApiEnvironment
-from observatory.api.client import ApiClient, Configuration
-from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
-from observatory.api.client.model.organisation import Organisation
-from observatory.api.client.model.workflow import Workflow
-from observatory.api.client.model.workflow_type import WorkflowType
-from observatory.api.client.model.dataset import Dataset
-from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.api.client.model.dataset_type import DatasetType
-from observatory.api.client.model.table_type import TableType
-from observatory.platform.utils.release_utils import get_dataset_releases
-from observatory.platform.utils.airflow_utils import AirflowConns
-from airflow.models import Connection
-from airflow.utils.state import State
 
 
 class TestCrossrefEventsTelescope(ObservatoryTestCase):

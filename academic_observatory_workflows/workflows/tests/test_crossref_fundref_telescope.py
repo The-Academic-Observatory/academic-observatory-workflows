@@ -21,6 +21,7 @@ from unittest.mock import patch
 import httpretty
 import pendulum
 import vcr
+from airflow.models import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
 
@@ -31,7 +32,18 @@ from academic_observatory_workflows.workflows.crossref_fundref_telescope import 
     list_releases,
     strip_whitespace,
 )
+from observatory.api.client import ApiClient, Configuration
+from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
+from observatory.api.client.model.dataset import Dataset
+from observatory.api.client.model.dataset_type import DatasetType
+from observatory.api.client.model.organisation import Organisation
+from observatory.api.client.model.table_type import TableType
+from observatory.api.client.model.workflow import Workflow
+from observatory.api.client.model.workflow_type import WorkflowType
+from observatory.api.testing import ObservatoryApiEnvironment
+from observatory.platform.utils.airflow_utils import AirflowConns
 from observatory.platform.utils.file_utils import get_file_hash
+from observatory.platform.utils.release_utils import get_dataset_releases
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
@@ -41,20 +53,6 @@ from observatory.platform.utils.workflow_utils import (
     bigquery_sharded_table_id,
     blob_name,
 )
-from observatory.api.testing import ObservatoryApiEnvironment
-from observatory.api.client import ApiClient, Configuration
-from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
-from observatory.api.client.model.organisation import Organisation
-from observatory.api.client.model.workflow import Workflow
-from observatory.api.client.model.workflow_type import WorkflowType
-from observatory.api.client.model.dataset import Dataset
-from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.api.client.model.dataset_type import DatasetType
-from observatory.api.client.model.table_type import TableType
-from observatory.platform.utils.release_utils import get_dataset_releases
-from observatory.platform.utils.airflow_utils import AirflowConns
-from airflow.models import Connection
-from airflow.utils.state import State
 
 
 class TestCrossrefFundrefTelescope(ObservatoryTestCase):

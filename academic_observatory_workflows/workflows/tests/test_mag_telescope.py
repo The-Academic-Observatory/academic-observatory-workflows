@@ -22,6 +22,10 @@ from zipfile import ZipFile
 
 import natsort
 import pendulum
+from click.testing import CliRunner
+from google.cloud import bigquery, storage
+from google.cloud.storage import Blob
+
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.mag_telescope import (
     MagTelescope,
@@ -30,9 +34,6 @@ from academic_observatory_workflows.workflows.mag_telescope import (
     transform_mag_file,
     transform_mag_release,
 )
-from click.testing import CliRunner
-from google.cloud import bigquery, storage
-from google.cloud.storage import Blob
 from observatory.platform.utils.gc_utils import upload_files_to_cloud_storage
 from observatory.platform.utils.test_utils import ObservatoryTestCase, random_id
 

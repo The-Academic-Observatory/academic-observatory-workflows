@@ -20,15 +20,30 @@ import os
 import shutil
 from typing import List
 from unittest.mock import patch
+
 import pendulum
 import vcr
+from airflow.models import Connection
+from airflow.utils.state import State
+from click.testing import CliRunner
+
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.unpaywall_snapshot_telescope import (
     UnpaywallSnapshotRelease,
     UnpaywallSnapshotTelescope,
 )
-from airflow.utils.state import State
-from click.testing import CliRunner
+from observatory.api.client import ApiClient, Configuration
+from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
+from observatory.api.client.model.dataset import Dataset
+from observatory.api.client.model.dataset_release import DatasetRelease
+from observatory.api.client.model.dataset_type import DatasetType
+from observatory.api.client.model.organisation import Organisation
+from observatory.api.client.model.table_type import TableType
+from observatory.api.client.model.workflow import Workflow
+from observatory.api.client.model.workflow_type import WorkflowType
+from observatory.api.testing import ObservatoryApiEnvironment
+from observatory.platform.utils.airflow_utils import AirflowConns
+from observatory.platform.utils.release_utils import get_dataset_releases
 from observatory.platform.utils.test_utils import (
     HttpServer,
     ObservatoryEnvironment,
@@ -39,19 +54,6 @@ from observatory.platform.utils.workflow_utils import (
     bigquery_sharded_table_id,
     blob_name,
 )
-from observatory.api.testing import ObservatoryApiEnvironment
-from observatory.api.client import ApiClient, Configuration
-from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
-from observatory.api.client.model.organisation import Organisation
-from observatory.api.client.model.workflow import Workflow
-from observatory.api.client.model.workflow_type import WorkflowType
-from observatory.api.client.model.dataset import Dataset
-from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.api.client.model.dataset_type import DatasetType
-from observatory.api.client.model.table_type import TableType
-from observatory.platform.utils.release_utils import get_dataset_releases
-from observatory.platform.utils.airflow_utils import AirflowConns
-from airflow.models import Connection
 
 
 class TestUnpaywallSnapshotRelease(ObservatoryTestCase):
@@ -87,7 +89,7 @@ class TestUnpaywallSnapshotRelease(ObservatoryTestCase):
         release_date = UnpaywallSnapshotRelease.parse_release_date(self.unpaywall_test_file)
         self.assertEqual(self.unpaywall_test_date, release_date)
 
-    @patch("academic_observatory_workflows.workflows.unpaywall_snapshot_telescope.Variable.get")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
     def test_extract_release(self, mock_variable_get):
         """Test that the release is decompressed as expected.
 
@@ -136,7 +138,7 @@ class TestUnpaywallSnapshotRelease(ObservatoryTestCase):
             self.assert_file_integrity(release.transform_path, self.unpaywall_test_transform_hash, "md5")
 
     @patch("academic_observatory_workflows.workflows.unpaywall_snapshot_telescope.get_airflow_connection_url")
-    @patch("academic_observatory_workflows.workflows.unpaywall_snapshot_telescope.Variable.get")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
     @patch("academic_observatory_workflows.workflows.unpaywall_snapshot_telescope.download_file")
     def test_download(self, m_download_files, m_varget, m_get_conn):
         release = UnpaywallSnapshotRelease(
@@ -160,7 +162,7 @@ class TestUnpaywallSnapshotRelease(ObservatoryTestCase):
         )
 
     @patch("academic_observatory_workflows.workflows.unpaywall_snapshot_telescope.get_airflow_connection_url")
-    @patch("academic_observatory_workflows.workflows.unpaywall_snapshot_telescope.Variable.get")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
     def test_extract_outputs(self, m_variable_get, m_get_conn):
         # Create data path and mock getting data path
         data_path = "data"
@@ -176,7 +178,7 @@ class TestUnpaywallSnapshotRelease(ObservatoryTestCase):
             self.assertEqual(len(release.extract_files), 1)
 
     @patch("academic_observatory_workflows.workflows.unpaywall_snapshot_telescope.get_airflow_connection_url")
-    @patch("academic_observatory_workflows.workflows.unpaywall_snapshot_telescope.Variable.get")
+    @patch("observatory.platform.utils.workflow_utils.Variable.get")
     def test_transform_outputs(self, m_variable_get, m_get_conn):
         # Create data path and mock getting data path
         data_path = "data"

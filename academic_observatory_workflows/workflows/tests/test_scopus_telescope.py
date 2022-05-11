@@ -17,15 +17,16 @@
 import json
 import os
 import unittest
-import unittest.mock as mock
-from logging import error
 from queue import Empty, Queue
 from threading import Event, Thread
-from time import sleep
 from unittest.mock import MagicMock, patch
 
-import observatory.api.server.orm as orm
 import pendulum
+from airflow import AirflowException
+from airflow.models import Connection
+from airflow.utils.state import State
+from freezegun import freeze_time
+
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.scopus_telescope import (
     ScopusClient,
@@ -35,16 +36,20 @@ from academic_observatory_workflows.workflows.scopus_telescope import (
     ScopusUtility,
     ScopusUtilWorker,
 )
-from airflow import AirflowException
-from airflow.models import Connection
-from airflow.utils.state import State
-from click.testing import CliRunner
-from freezegun import freeze_time
-from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
+from observatory.api.client import ApiClient, Configuration
+from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
+from observatory.api.client.model.dataset import Dataset
+from observatory.api.client.model.dataset_type import DatasetType
+from observatory.api.client.model.organisation import Organisation
+from observatory.api.client.model.table_type import TableType
+from observatory.api.client.model.workflow import Workflow
+from observatory.api.client.model.workflow_type import WorkflowType
+from observatory.platform.utils.airflow_utils import AirflowConns
+from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.api import make_observatory_api
 from observatory.platform.utils.gc_utils import run_bigquery_query
+from observatory.platform.utils.release_utils import get_dataset_releases
 from observatory.platform.utils.test_utils import (
-    HttpServer,
     ObservatoryEnvironment,
     ObservatoryTestCase,
     module_file_path,
@@ -53,23 +58,8 @@ from observatory.platform.utils.url_utils import get_user_agent
 from observatory.platform.utils.workflow_utils import (
     bigquery_sharded_table_id,
     blob_name,
-    build_schedule,
     make_dag_id,
 )
-from observatory.api.client import ApiClient, Configuration
-from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
-from observatory.platform.utils.release_utils import get_dataset_releases
-from observatory.api.client import ApiClient, Configuration
-from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
-from observatory.api.client.model.organisation import Organisation
-from observatory.api.client.model.workflow import Workflow
-from observatory.api.client.model.workflow_type import WorkflowType
-from observatory.api.client.model.dataset import Dataset
-from observatory.api.client.model.dataset_type import DatasetType
-from observatory.api.client.model.table_type import TableType
-from observatory.platform.utils.release_utils import get_dataset_releases
-from observatory.platform.utils.airflow_utils import AirflowConns
-from airflow.models import Connection
 
 
 class TestScopusUtility(unittest.TestCase):
@@ -673,11 +663,18 @@ class TestScopusTelescope(ObservatoryTestCase):
         )
         self.api.put_organisation(organisation)
 
+        if extra is None:
+            extra = {
+                "airflow_connections": [self.conn_id],
+                "earliest_date": self.earliest_date.isoformat(),
+                "institution_ids": ["123"],
+                "view": "STANDARD",
+            }
         telescope = Workflow(
             name=name,
             workflow_type=WorkflowType(id=1),
             organisation=Organisation(id=1),
-            extra={},
+            extra=extra,
         )
         self.api.put_workflow(telescope)
 
@@ -687,18 +684,9 @@ class TestScopusTelescope(ObservatoryTestCase):
         )
         self.api.put_table_type(table_type)
 
-        if extra is None:
-            extra = {
-                "airflow_connections": [self.conn_id],
-                "earliest_date": self.earliest_date.isoformat(),
-                "institution_ids": ["123"],
-                "view": "STANDARD",
-            }
-
         dataset_type = DatasetType(
             type_id="scopus",
             name="scopus",
-            extra=extra,
             table_type=TableType(id=1),
         )
         self.api.put_dataset_type(dataset_type)
@@ -717,12 +705,12 @@ class TestScopusTelescope(ObservatoryTestCase):
         workflow_type = api.get_workflow_type(type_id=ScopusTelescope.DAG_ID)
         telescopes = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
         self.assertEqual(len(telescopes), 1)
-        dataset_type = api.get_dataset_type(type_id="scopus")
 
-        dag_id = make_dag_id(ScopusTelescope.DAG_ID, telescopes[0].organisation.name)
-        airflow_conns = dataset_type.extra.get("airflow_connections")
-        institution_ids = dataset_type.extra.get("institution_ids")
-        earliest_date_str = dataset_type.extra.get("earliest_date")
+        workflow = telescopes[0]
+        dag_id = make_dag_id(ScopusTelescope.DAG_ID, workflow.organisation.name)
+        airflow_conns = workflow.extra.get("airflow_connections")
+        institution_ids = workflow.extra.get("institution_ids")
+        earliest_date_str = workflow.extra.get("earliest_date")
         earliest_date = pendulum.parse(earliest_date_str)
 
         airflow_vars = [

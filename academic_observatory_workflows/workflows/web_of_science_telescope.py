@@ -26,9 +26,13 @@ import backoff
 import jsonlines
 import pendulum
 import xmltodict
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from airflow.exceptions import AirflowException
 from google.cloud.bigquery import WriteDisposition
+from ratelimit import limits, sleep_and_retry
+from suds import WebFault
+from wos import WosClient
+
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import (
     AirflowConns,
     AirflowVars,
@@ -49,9 +53,6 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
-from ratelimit import limits, sleep_and_retry
-from suds import WebFault
-from wos import WosClient
 
 
 class WosUtilConst:

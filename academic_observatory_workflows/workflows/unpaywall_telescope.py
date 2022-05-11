@@ -14,25 +14,26 @@
 
 # Author: Tuan Chien
 
-import logging
 import os
-from datetime import datetime, timedelta
-from typing import Generator, List, Optional, Tuple, Union
-from airflow.models.taskinstance import TaskInstance
-import requests
+from typing import List
+
 import pendulum
+from airflow.models.taskinstance import TaskInstance
+
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from academic_observatory_workflows.workflows.unpaywall_snapshot_telescope import UnpaywallSnapshotRelease
-from airflow.exceptions import AirflowException
-from airflow.models.dagrun import DagRun
-from croniter import croniter
-from dateutil.relativedelta import relativedelta
 from observatory.platform.utils.airflow_utils import (
     AirflowVars,
     get_airflow_connection_password,
 )
 from observatory.platform.utils.file_utils import find_replace_file, gunzip_files
 from observatory.platform.utils.http_download import download_file
+from observatory.platform.utils.release_utils import (
+    get_dataset_releases,
+    is_first_release,
+    get_datasets,
+    get_latest_dataset_release,
+)
 from observatory.platform.utils.url_utils import (
     get_http_response_json,
     get_observatory_http_header,
@@ -41,12 +42,6 @@ from observatory.platform.utils.url_utils import (
 from observatory.platform.workflows.stream_telescope import (
     StreamRelease,
     StreamTelescope,
-)
-from observatory.platform.utils.release_utils import (
-    get_dataset_releases,
-    is_first_release,
-    get_datasets,
-    get_latest_dataset_release,
 )
 
 
@@ -158,7 +153,7 @@ class UnpaywallRelease(StreamRelease):
             target_start_date = pendulum.instance(latest_release.start_date).subtract(days=1).start_of("day")
         # Day after recorded end date
         else:
-            target_start_date = latest_release.end_date.add(seconds=1)
+            target_start_date = pendulum.instance(latest_release.end_date).add(seconds=1)
 
         feeds = UnpaywallRelease.get_unpaywall_daily_feeds()
         filtered_releases = list(
@@ -207,7 +202,6 @@ class UnpaywallTelescope(StreamTelescope):
         merge_partition_field: str = "doi",
         schema_folder: str = default_schema_folder(),
         airflow_vars: List = None,
-        org_name: str = "Curtin University",
         workflow_id: int = None,
     ):
         """Unpaywall Data Feed telescope.
@@ -220,7 +214,6 @@ class UnpaywallTelescope(StreamTelescope):
         :param merge_partition_field: the BigQuery field used to match partitions for a merge
         :param schema_folder: the SQL schema path.
         :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
-        :param org_name: Organisation name in the API associated with this Telescope instance.
         :param workflow_id: API workflow id.
         """
 
@@ -290,7 +283,7 @@ class UnpaywallTelescope(StreamTelescope):
             dataset = get_datasets(workflow_id=self.workflow_id)[0]
             api_releases = get_dataset_releases(dataset_id=dataset.id)
             latest_release = get_latest_dataset_release(api_releases)
-            start_date = latest_release.start_date.isoformat()
+            start_date = latest_release.end_date.isoformat()
             end_date = pendulum.instance(kwargs["data_interval_end"]).start_of("day")
             releases = UnpaywallRelease.get_diff_releases(end_date=end_date, workflow_id=self.workflow_id)
 

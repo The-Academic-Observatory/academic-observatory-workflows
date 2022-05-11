@@ -16,15 +16,19 @@
 
 
 import json
-import logging
 import os
 import unittest
 from collections import OrderedDict
 from typing import OrderedDict
 from unittest.mock import MagicMock, call, patch
 
-import observatory.api.server.orm as orm
 import pendulum
+from airflow.exceptions import AirflowException
+from airflow.models import Connection
+from airflow.utils.state import State
+from click.testing import CliRunner
+
+import observatory.api.server.orm as orm
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.web_of_science_telescope import (
     WebOfScienceRelease,
@@ -34,13 +38,12 @@ from academic_observatory_workflows.workflows.web_of_science_telescope import (
     WosUtilConst,
     WosUtility,
 )
-from airflow.exceptions import AirflowException
-from airflow.models import Connection
-from airflow.utils.state import State
-from click.testing import CliRunner
+from observatory.api.client import ApiClient, Configuration
+from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
 from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
 from observatory.platform.utils.api import make_observatory_api
 from observatory.platform.utils.gc_utils import run_bigquery_query
+from observatory.platform.utils.release_utils import get_dataset_releases
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
@@ -51,9 +54,6 @@ from observatory.platform.utils.workflow_utils import (
     blob_name,
     make_dag_id,
 )
-from observatory.api.client import ApiClient, Configuration
-from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
-from observatory.platform.utils.release_utils import get_dataset_releases
 
 
 class TestWosUtility(unittest.TestCase):

@@ -38,7 +38,6 @@ import requests
 from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
 from airflow.sensors.external_task import ExternalTaskSensor
-from deprecated import deprecated
 from jinja2 import Template
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
@@ -426,7 +425,7 @@ class Entity:
             end_year=end_year,
             institution_types=institution_types,
             identifiers=identifiers,
-            acronyms=acronyms
+            acronyms=acronyms,
         )
 
     def to_dict(self) -> Dict:

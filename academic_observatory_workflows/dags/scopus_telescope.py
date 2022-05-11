@@ -26,20 +26,19 @@ from observatory.platform.utils.workflow_utils import make_dag_id
 api = make_observatory_api()
 workflow_type = api.get_workflow_type(type_id=ScopusTelescope.DAG_ID)
 workflows = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
-dataset_type = api.get_dataset_type(type_id="scopus")
 
 # Create workflows for each organisation
 for workflow in workflows:
     dag_id = make_dag_id(ScopusTelescope.DAG_ID, workflow.organisation.name)
-    airflow_conns = dataset_type.extra.get("airflow_connections")
-    institution_ids = dataset_type.extra.get("institution_ids")
-    view = dataset_type.extra.get("view")
+    airflow_conns = workflow.extra.get("airflow_connections")
+    institution_ids = workflow.extra.get("institution_ids")
+    view = workflow.extra.get("view")
 
     if airflow_conns is None or institution_ids is None or view is None:
         raise Exception(f"airflow_conns: {airflow_conns} or institution_ids: {institution_ids} or view: {view} is None")
 
     # earliest_date is parsed into a datetime.date object by the Python API client
-    earliest_date_str = dataset_type.extra.get("earliest_date")
+    earliest_date_str = workflow.extra.get("earliest_date")
     earliest_date = pendulum.parse(earliest_date_str)
 
     airflow_vars = [
