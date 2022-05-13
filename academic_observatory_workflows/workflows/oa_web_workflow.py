@@ -23,11 +23,13 @@ import logging
 import os
 import os.path
 import shutil
+import statistics
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import field
 from typing import Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
+from zipfile import ZipFile
 
 import google.cloud.bigquery as bigquery
 import jsonlines
@@ -49,6 +51,7 @@ from observatory.platform.utils.gc_utils import (
     download_blobs_from_cloud_storage,
     select_table_shard_dates,
     upload_file_to_cloud_storage,
+    download_blob_from_cloud_storage,
 )
 from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
@@ -270,6 +273,8 @@ class Stats:
     n_countries: int
     n_institutions: int
     zenodo_versions: List[ZenodoVersion]
+    country_medians: PublicationStats
+    institution_medians: PublicationStats
 
     def to_dict(self) -> Dict:
         return {
@@ -279,6 +284,8 @@ class Stats:
             "n_countries": self.n_countries,
             "n_institutions": self.n_institutions,
             "zenodo_versions": [z.to_dict() for z in self.zenodo_versions],
+            "country_medians": self.country_medians.to_dict(),
+            "institution_medians": self.institution_medians.to_dict(),
         }
 
 
@@ -377,6 +384,7 @@ class Entity:
     category: str = None
     logo_s: str = None
     logo_l: str = None
+    logo_xl: str = None
     url: str = None
     wikipedia_url: str = None
     country: Optional[str] = None
@@ -399,6 +407,7 @@ class Entity:
         category = dict_.get("category")
         logo_s = dict_.get("logo_s")
         logo_l = dict_.get("logo_l")
+        logo_xl = dict_.get("logo_xl")
         url = dict_.get("url")
         country = dict_.get("country")
         subregion = dict_.get("subregion")
@@ -416,6 +425,7 @@ class Entity:
             category=category,
             logo_s=logo_s,
             logo_l=logo_l,
+            logo_xl=logo_xl,
             url=url,
             wikipedia_url=wikipedia_url,
             country=country,
@@ -436,6 +446,7 @@ class Entity:
             "category": self.category,
             "logo_s": self.logo_s,
             "logo_l": self.logo_l,
+            "logo_xl": self.logo_xl,
             "url": self.url,
             "wikipedia_url": self.wikipedia_url,
             "region": self.region,
@@ -1017,7 +1028,7 @@ class OaWebRelease(SnapshotRelease):
         :return: None.
         """
 
-        sizes = ["s", "l"]
+        sizes = ["s", "l", "xl"]
         for size in sizes:
             base_path = os.path.join(self.build_path, "logos", category, size)
             os.makedirs(base_path, exist_ok=True)
@@ -1025,10 +1036,11 @@ class OaWebRelease(SnapshotRelease):
         # Make logos
         if category == "country":
             logging.info("Copying local logos")
+            country_sizes = sizes[:2]
             with ThreadPoolExecutor() as executor:
                 futures = []
                 # Copy and rename logo images from using alpha2 to alpha3 country codes
-                for size in sizes:
+                for size in country_sizes:
                     base_path = os.path.join(self.build_path, "logos", category, size)
                     for alpha3, alpha2 in zip(df_index_table["id"], df_index_table["alpha2"]):
                         src_path = os.path.join(self.data_path, "flags", size, f"{alpha2}.svg")
@@ -1039,14 +1051,21 @@ class OaWebRelease(SnapshotRelease):
 
             # Add logo urls to index
             for size in sizes:
+                # For xl size point to l svg
+                make_logo_url_size = size
+                if size == "xl":
+                    make_logo_url_size = "l"
                 df_index_table[f"logo_{size}"] = df_index_table["id"].apply(
-                    lambda country_code: make_logo_url(category=category, entity_id=country_code, size=size, fmt="svg")
+                    lambda country_code: make_logo_url(
+                        category=category, entity_id=country_code, size=make_logo_url_size, fmt="svg"
+                    )
                 )
+
         elif category == "institution":
-            logging.info("Downloading logos using Clearbit")
-            fmt = "jpg"
             # Get the institution logo and the path to the logo image
-            for size, width in zip(sizes, [32, 128]):
+            logging.info("Downloading logos using Clearbit")
+            institution_sizes = [("s", 32, "jpg"), ("l", 128, "jpg"), ("xl", 532, "png")]
+            for size, width, fmt in institution_sizes:
                 with ThreadPoolExecutor() as executor:
                     futures = []
                     logo_paths = []
@@ -1291,6 +1310,16 @@ class OaWebRelease(SnapshotRelease):
         save_json(output_path, stats.to_dict())
 
 
+def calc_median_p_oa(entities: List[Entity]) -> float:
+    """Calculate the median percentage OA.
+
+    :param entities: a list of entities.
+    :return: the median.
+    """
+
+    return statistics.median([entity.stats.p_outputs_open for entity in entities])
+
+
 class OaWebWorkflow(Workflow):
     DATA_BUCKET = "oa_web_data_bucket"
     GITHUB_TOKEN_CONN = "oa_web_github_token"
@@ -1419,6 +1448,7 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.query)
         self.add_task(self.download)
         self.add_task(self.make_draft_zenodo_version)
+        self.add_task(self.download_twitter_cards)
         self.add_task(self.transform)
         self.add_task(self.publish_zenodo_version)
         self.add_task(self.upload_dataset)
@@ -1533,6 +1563,26 @@ class OaWebWorkflow(Workflow):
 
         make_draft_version(release.zenodo, self.conceptrecid)
 
+    def download_twitter_cards(self, release: OaWebRelease, **kwargs):
+        """Download current twitter cards
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+
+        # Download twitter cards
+        blob_name = "twitter.zip"
+        file_path = os.path.join(release.transform_folder, blob_name)
+        download_blob_from_cloud_storage(bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path)
+
+        # Unzip into build
+        unzip_folder_path = os.path.join(release.build_path)
+        with ZipFile(file_path) as zip_file:
+            zip_file.extractall(unzip_folder_path)
+
     def transform(self, release: OaWebRelease, **kwargs):
         """Transform the queried data into the final format for the open access website.
 
@@ -1550,7 +1600,6 @@ class OaWebWorkflow(Workflow):
         versions = res.json()
 
         # Make required folders
-        auto_complete = []
         all_entities = []
         countries = []
         institutions = []
@@ -1602,7 +1651,18 @@ class OaWebWorkflow(Workflow):
             for version in versions
         ]
         last_updated = zenodo_versions[0].release_date.format("D MMMM YYYY")
-        stats = Stats(START_YEAR, end_year, last_updated, n_countries, n_institutions, zenodo_versions)
+        country_medians = PublicationStats(p_outputs_open=calc_median_p_oa(countries))
+        institution_medians = PublicationStats(p_outputs_open=calc_median_p_oa(institutions))
+        stats = Stats(
+            START_YEAR,
+            end_year,
+            last_updated,
+            n_countries,
+            n_institutions,
+            zenodo_versions,
+            country_medians,
+            institution_medians,
+        )
         release.save_stats(stats)
         logging.info(f"Saved stats data")
 
