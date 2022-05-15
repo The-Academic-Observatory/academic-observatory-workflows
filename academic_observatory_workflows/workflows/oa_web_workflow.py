@@ -1385,7 +1385,7 @@ class OaWebWorkflow(Workflow):
         agg_dataset_id: str = "observatory",
         ror_dataset_id: str = "ror",
         settings_dataset_id: str = "settings",
-        version: str = "v3",
+        version: str = "v4",
         conceptrecid: int = 6399462,
         zenodo_host: str = "https://zenodo.org",
     ):
