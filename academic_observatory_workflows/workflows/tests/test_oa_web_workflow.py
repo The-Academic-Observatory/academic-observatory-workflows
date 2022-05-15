@@ -896,6 +896,7 @@ class TestOaWebRelease(TestCase):
             df = pd.DataFrame(institutions)
             df = self.release.preprocess_df(category, df)
             df_index_table = self.release.make_index(category, df)
+            sizes = ["l", "s", "xl"]
             with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "test_make_logos.yaml")):
                 self.release.update_index_with_logos(category, df_index_table)
                 curtin_row = df_index_table.loc["02n415q13"]
@@ -908,7 +909,10 @@ class TestOaWebRelease(TestCase):
 
                     # Check that correct path created
                     item_id = curtin_row["id"]
-                    expected_curtin_path = f"/logos/{category}/{size}/{item_id}.jpg"
+                    fmt = "jpg"
+                    if size == "xl":
+                        fmt = "png"
+                    expected_curtin_path = f"/logos/{category}/{size}/{item_id}.{fmt}"
                     expected_foo_path = f"/unknown.svg"
                     self.assertEqual(expected_curtin_path, curtin_row[key])
                     self.assertEqual(expected_foo_path, foo_row[key])
@@ -1217,7 +1221,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "check_dependencies": ["query"],
                     "query": ["download"],
                     "download": ["make_draft_zenodo_version"],
-                    "make_draft_zenodo_version": ["transform"],
+                    "make_draft_zenodo_version": ["download_twitter_cards"],
+                    "download_twitter_cards": ["transform"],
                     "transform": ["publish_zenodo_version"],
                     "publish_zenodo_version": ["upload_dataset"],
                     "upload_dataset": ["repository_dispatch"],
