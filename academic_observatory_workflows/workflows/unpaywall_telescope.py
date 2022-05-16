@@ -124,6 +124,12 @@ class UnpaywallRelease(StreamRelease):
 
         download_file(url=UnpaywallRelease.snapshot_url(), headers=self.http_header, prefix_dir=self.download_folder)
 
+        # Rename to unpaywall.jsonl.gz. Need for current method of schema detection.
+        for file in self.download_files:
+            dst = os.path.join(self.download_folder, "unpaywall.jsonl.gz")
+            os.rename(file, dst)
+
+
     @staticmethod
     def get_unpaywall_daily_feeds():
         url = UnpaywallRelease.data_feed_url()
@@ -234,7 +240,7 @@ class UnpaywallTelescope(StreamTelescope):
             merge_partition_field,
             schema_folder,
             dataset_description=dataset_description,
-            batch_load=True,
+            batch_load=False,
             airflow_vars=airflow_vars,
             airflow_conns=[UnpaywallTelescope.AIRFLOW_CONNECTION],
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
@@ -249,6 +255,7 @@ class UnpaywallTelescope(StreamTelescope):
         self.add_task(self.extract)
         self.add_task(self.transform)
         self.add_task(self.upload_transformed)
+        self.add_task(self.merge_update_files)
         self.add_task(self.bq_load_partition)
         self.add_task(self.bq_delete_old)
         self.add_task(self.bq_append_new)
