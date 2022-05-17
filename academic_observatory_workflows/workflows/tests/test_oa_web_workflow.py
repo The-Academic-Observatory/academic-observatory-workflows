@@ -54,6 +54,7 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     publish_new_version,
 )
 from observatory.platform.utils.file_utils import load_jsonl
+from observatory.platform.utils.gc_utils import upload_file_to_cloud_storage
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
@@ -895,6 +896,7 @@ class TestOaWebRelease(TestCase):
             df = pd.DataFrame(institutions)
             df = self.release.preprocess_df(category, df)
             df_index_table = self.release.make_index(category, df)
+            sizes = ["l", "s", "xl"]
             with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "test_make_logos.yaml")):
                 self.release.update_index_with_logos(category, df_index_table)
                 curtin_row = df_index_table.loc["02n415q13"]
@@ -907,7 +909,10 @@ class TestOaWebRelease(TestCase):
 
                     # Check that correct path created
                     item_id = curtin_row["id"]
-                    expected_curtin_path = f"/logos/{category}/{size}/{item_id}.jpg"
+                    fmt = "jpg"
+                    if size == "xl":
+                        fmt = "png"
+                    expected_curtin_path = f"/logos/{category}/{size}/{item_id}.{fmt}"
                     expected_foo_path = f"/unknown.svg"
                     self.assertEqual(expected_curtin_path, curtin_row[key])
                     self.assertEqual(expected_foo_path, foo_row[key])
@@ -1216,7 +1221,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "check_dependencies": ["query"],
                     "query": ["download"],
                     "download": ["make_draft_zenodo_version"],
-                    "make_draft_zenodo_version": ["transform"],
+                    "make_draft_zenodo_version": ["download_twitter_cards"],
+                    "download_twitter_cards": ["transform"],
                     "transform": ["publish_zenodo_version"],
                     "publish_zenodo_version": ["upload_dataset"],
                     "upload_dataset": ["repository_dispatch"],
@@ -1308,6 +1314,12 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 release_date=execution_date,
             )
 
+            # Upload fake twitter.zip file to bucket
+            file_path = os.path.join(
+                module_file_path("academic_observatory_workflows.workflows.data.oa_web_workflow"), "twitter.zip"
+            )
+            upload_file_to_cloud_storage(data_bucket, "twitter.zip", file_path)
+
             # Run workflow
             workflow = OaWebWorkflow(
                 agg_dataset_id=dataset_id, ror_dataset_id=dataset_id, settings_dataset_id=dataset_id_settings
@@ -1340,6 +1352,10 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
                 # Make draft Zenodo version
                 ti = env.run_task(workflow.make_draft_zenodo_version.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # Download twitter cards
+                ti = env.run_task(workflow.download_twitter_cards.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Transform data
