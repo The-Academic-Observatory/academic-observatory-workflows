@@ -109,7 +109,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 "Institution": 3259,
                 "Venue": 2108,
                 "Work": 11804,
-            }
+            },
         }
         self.second_run = {
             "execution_date": pendulum.datetime(year=2022, month=2, day=1),
@@ -122,7 +122,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 "Institution": 6518,
                 "Venue": 4216,
                 "Work": 23608,
-            }
+            },
         }
 
         # API environment
@@ -258,7 +258,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
             # Add connection
             conn = Connection(
-                conn_id=OpenAlexTelescope.AIRFLOW_CONN_AWS, uri='aws://UWLA41aAhdja:AJLD91saAJSKAL0AjAhkaka@'
+                conn_id=OpenAlexTelescope.AIRFLOW_CONN_AWS, uri="aws://UWLA41aAhdja:AJLD91saAJSKAL0AjAhkaka@"
             )
             env.add_connection(conn)
 
@@ -366,15 +366,21 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         f_out.writelines(f_in)
 
                     if entity == "authors" or entity == "venues":
-                        download_blob = f"telescopes/{release.dag_id}/{release.release_id}/unchanged/" \
-                                        f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
-                        transform_blob = f"telescopes/{release.dag_id}/{release.release_id}/" \
-                                         f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                        download_blob = (
+                            f"telescopes/{release.dag_id}/{release.release_id}/unchanged/"
+                            f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                        )
+                        transform_blob = (
+                            f"telescopes/{release.dag_id}/{release.release_id}/"
+                            f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                        )
                         upload_file_to_cloud_storage(release.download_bucket, download_blob, gzip_path)
                         upload_file_to_cloud_storage(release.transform_bucket, transform_blob, gzip_path)
                     else:
-                        download_blob = f"telescopes/{release.dag_id}/{release.release_id}/transform/" \
-                                        f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                        download_blob = (
+                            f"telescopes/{release.dag_id}/{release.release_id}/transform/"
+                            f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                        )
                         upload_file_to_cloud_storage(release.download_bucket, download_blob, gzip_path)
 
                 # Test that file was downloaded
@@ -444,8 +450,9 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 author_dataset_releases = get_dataset_releases(dataset_id=2)
                 self.assertEqual(1, len(institution_dataset_releases))
                 self.assertEqual(1, len(author_dataset_releases))
-                self.assertEqual(pendulum.from_format("2021-12-17", "YYYY-MM-DD"), institution_dataset_releases[
-                    0].end_date)
+                self.assertEqual(
+                    pendulum.from_format("2021-12-17", "YYYY-MM-DD"), institution_dataset_releases[0].end_date
+                )
 
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
 
@@ -554,15 +561,21 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         f_out.writelines(f_in)
 
                     if entity == "authors" or entity == "venues":
-                        download_blob = f"telescopes/{release.dag_id}/{release.release_id}/unchanged/" \
-                                        f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
-                        transform_blob = f"telescopes/{release.dag_id}/{release.release_id}/" \
-                                         f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                        download_blob = (
+                            f"telescopes/{release.dag_id}/{release.release_id}/unchanged/"
+                            f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                        )
+                        transform_blob = (
+                            f"telescopes/{release.dag_id}/{release.release_id}/"
+                            f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                        )
                         upload_file_to_cloud_storage(release.download_bucket, download_blob, gzip_path)
                         upload_file_to_cloud_storage(release.transform_bucket, transform_blob, gzip_path)
                     else:
-                        download_blob = f"telescopes/{release.dag_id}/{release.release_id}/transform/" \
-                                        f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                        download_blob = (
+                            f"telescopes/{release.dag_id}/{release.release_id}/transform/"
+                            f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
+                        )
                         upload_file_to_cloud_storage(release.download_bucket, download_blob, gzip_path)
 
                 # Test that file was downloaded
@@ -635,8 +648,9 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 author_dataset_releases = get_dataset_releases(dataset_id=2)
                 self.assertEqual(2, len(institution_dataset_releases))
                 self.assertEqual(2, len(author_dataset_releases))
-                self.assertEqual(pendulum.from_format("2022-1-17", "YYYY-MM-DD"), institution_dataset_releases[
-                    1].end_date)
+                self.assertEqual(
+                    pendulum.from_format("2022-1-17", "YYYY-MM-DD"), institution_dataset_releases[1].end_date
+                )
 
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
 
@@ -645,20 +659,22 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
     @patch("academic_observatory_workflows.workflows.openalex_telescope.boto3.client")
     @patch("academic_observatory_workflows.workflows.openalex_telescope.get_aws_conn_info")
     @patch("academic_observatory_workflows.workflows.openalex_telescope.Variable.get")
-    def test_write_transfer_manifest(self, mock_variable_get, mock_aws_info, mock_boto3, mock_get_datasets,
-                                     mock_get_releases):
+    def test_write_transfer_manifest(
+        self, mock_variable_get, mock_aws_info, mock_boto3, mock_get_datasets, mock_get_releases
+    ):
         """Test write_transfer_manifest method of the OpenAlex release.
 
         :param mock_variable_get: Mock Airflow Variable get() method
         :param mock_boto3: Mock the boto3 client
         :return: None.
         """
-        mock_get_datasets.return_value = [SimpleNamespace(name="OpenAlex Author Dataset", id=1),
-                                          SimpleNamespace(name="OpenAlex Concept Dataset", id=2),
-                                          SimpleNamespace(name="OpenAlex Institution Dataset", id=3),
-                                          SimpleNamespace(name="OpenAlex Venue Dataset", id=4),
-                                          SimpleNamespace(name="OpenAlex Work Dataset", id=5)
-                                          ]
+        mock_get_datasets.return_value = [
+            SimpleNamespace(name="OpenAlex Author Dataset", id=1),
+            SimpleNamespace(name="OpenAlex Concept Dataset", id=2),
+            SimpleNamespace(name="OpenAlex Institution Dataset", id=3),
+            SimpleNamespace(name="OpenAlex Venue Dataset", id=4),
+            SimpleNamespace(name="OpenAlex Work Dataset", id=5),
+        ]
         mock_variable_get.return_value = "data"
         mock_aws_info.return_value = "key_id", "secret_key"
         # Mock response of get_object on last_modified file, mocking lambda file
@@ -727,23 +743,27 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             # Test successful transfer with prefixes for unchanged, no prefixes for transform
             release.transfer(max_retries=1)
             self.assertDictEqual(
-                {"aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                 "include_prefixes": ["prefix1", "prefix2"],
-                 "gc_project_id": "project_id",
-                 "gc_bucket": "download-bucket",
-                 "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/unchanged/",
-                 "description": "Transfer OpenAlex data from Airflow telescope to download-bucket"
-                 },
-                mock_transfer.call_args_list[0][1])
+                {
+                    "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
+                    "include_prefixes": ["prefix1", "prefix2"],
+                    "gc_project_id": "project_id",
+                    "gc_bucket": "download-bucket",
+                    "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/unchanged/",
+                    "description": "Transfer OpenAlex data from Airflow telescope to download-bucket",
+                },
+                mock_transfer.call_args_list[0][1],
+            )
             self.assertDictEqual(
-                {"aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                 "include_prefixes": ["prefix1", "prefix2"],
-                 "gc_project_id": "project_id",
-                 "gc_bucket": "transform-bucket",
-                 "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/",
-                 "description": "Transfer OpenAlex data from Airflow telescope to transform-bucket"
-                 },
-                mock_transfer.call_args_list[1][1])
+                {
+                    "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
+                    "include_prefixes": ["prefix1", "prefix2"],
+                    "gc_project_id": "project_id",
+                    "gc_bucket": "transform-bucket",
+                    "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/",
+                    "description": "Transfer OpenAlex data from Airflow telescope to transform-bucket",
+                },
+                mock_transfer.call_args_list[1][1],
+            )
             mock_transfer.reset_mock()
 
             # Test failed transfer

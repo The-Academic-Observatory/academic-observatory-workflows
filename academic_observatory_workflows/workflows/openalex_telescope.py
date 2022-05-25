@@ -39,13 +39,14 @@ from academic_observatory_workflows.config import schema_folder as default_schem
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.gc_utils import aws_to_google_cloud_storage_transfer, upload_file_to_cloud_storage
 from observatory.platform.utils.proc_utils import wait_for_process
-from observatory.platform.utils.release_utils import add_dataset_release, get_dataset_releases, get_datasets, \
-    get_latest_dataset_release, is_first_release
-from observatory.platform.utils.workflow_utils import (
-    blob_name,
-    bq_append_from_file,
-    bq_delete_old_rows
+from observatory.platform.utils.release_utils import (
+    add_dataset_release,
+    get_dataset_releases,
+    get_datasets,
+    get_latest_dataset_release,
+    is_first_release,
 )
+from observatory.platform.utils.workflow_utils import blob_name, bq_append_from_file, bq_delete_old_rows
 from observatory.platform.workflows.stream_telescope import (
     StreamRelease,
     StreamTelescope,
@@ -54,13 +55,13 @@ from observatory.platform.workflows.stream_telescope import (
 
 class OpenAlexRelease(StreamRelease):
     def __init__(
-            self,
-            dag_id: str,
-            workflow_id: int,
-            start_date: pendulum.DateTime,
-            end_date: pendulum.DateTime,
-            first_release: bool,
-            max_processes: int,
+        self,
+        dag_id: str,
+        workflow_id: int,
+        start_date: pendulum.DateTime,
+        end_date: pendulum.DateTime,
+        first_release: bool,
+        max_processes: int,
     ):
         """Construct a OpenAlexRelease instance
 
@@ -72,8 +73,7 @@ class OpenAlexRelease(StreamRelease):
         :param max_processes: max processes for transforming files.
         """
         super().__init__(
-            dag_id, start_date, end_date, first_release, download_files_regex=".*.gz",
-            transform_files_regex=".*.gz"
+            dag_id, start_date, end_date, first_release, download_files_regex=".*.gz", transform_files_regex=".*.gz"
         )
         self.max_processes = max_processes
         self.workflow_id = workflow_id
@@ -147,7 +147,7 @@ class OpenAlexRelease(StreamRelease):
 
         updated_entities_count = 0
         with open(self.transfer_manifest_path_unchanged, "w") as f_unchanged, open(
-                self.transfer_manifest_path_transform, "w"
+            self.transfer_manifest_path_transform, "w"
         ) as f_transform:
             for entity in entities:
                 manifest_obj = s3client.get_object(Bucket=OpenAlexTelescope.AWS_BUCKET, Key=f"data/{entity}/manifest")
@@ -179,11 +179,11 @@ class OpenAlexRelease(StreamRelease):
 
         # Transfer files that are ready to load directly (unchanged) into BQ to both download and transform bucket,
         # transfer files that need to be transformed first only to download bucket.
-        transfers = [{"manifest": self.transfer_manifest_path_unchanged, "bucket": self.download_bucket,
-                      "subdir": "unchanged/"},
-                     {"manifest": self.transfer_manifest_path_unchanged, "bucket": self.transform_bucket, "subdir": ""},
-                     {"manifest": self.transfer_manifest_path_transform, "bucket": self.download_bucket,
-                      "subdir": "transform/"}]
+        transfers = [
+            {"manifest": self.transfer_manifest_path_unchanged, "bucket": self.download_bucket, "subdir": "unchanged/"},
+            {"manifest": self.transfer_manifest_path_unchanged, "bucket": self.transform_bucket, "subdir": ""},
+            {"manifest": self.transfer_manifest_path_transform, "bucket": self.download_bucket, "subdir": "transform/"},
+        ]
         total_count = 0
         for transfer in transfers:
             success = False
@@ -276,13 +276,13 @@ class OpenAlexRelease(StreamRelease):
                 future.result()
 
     def get_update_date(self) -> Dict[datetime]:
-        """ Get the last update date for the different entities from the manifest records.
+        """Get the last update date for the different entities from the manifest records.
 
         :return: A dictionary with last update date for each entity
         """
         lines = []
         with open(self.transfer_manifest_path_unchanged, "r") as f_unchanged, open(
-                self.transfer_manifest_path_transform, "r"
+            self.transfer_manifest_path_transform, "r"
         ) as f_transform:
             lines += f_unchanged.readlines()
             lines += f_transform.readlines()
@@ -308,19 +308,19 @@ class OpenAlexTelescope(StreamTelescope):
     AIRFLOW_CONN_AWS = "openalex"
 
     def __init__(
-            self,
-            dag_id: str = DAG_ID,
-            start_date: pendulum.DateTime = pendulum.datetime(2021, 12, 1),
-            schedule_interval: str = "@weekly",
-            dataset_id: str = "openalex",
-            dataset_description: str = "The OpenAlex dataset: https://docs.openalex.org/about-the-data",
-            queue: str = "remote_queue",
-            merge_partition_field: str = "id",
-            schema_folder: str = os.path.join(default_schema_folder(), "openalex"),
-            airflow_vars: List = None,
-            airflow_conns: List = None,
-            max_processes: int = os.cpu_count(),
-            workflow_id: int = None,
+        self,
+        dag_id: str = DAG_ID,
+        start_date: pendulum.DateTime = pendulum.datetime(2021, 12, 1),
+        schedule_interval: str = "@weekly",
+        dataset_id: str = "openalex",
+        dataset_description: str = "The OpenAlex dataset: https://docs.openalex.org/about-the-data",
+        queue: str = "remote_queue",
+        merge_partition_field: str = "id",
+        schema_folder: str = os.path.join(default_schema_folder(), "openalex"),
+        airflow_vars: List = None,
+        airflow_conns: List = None,
+        max_processes: int = os.cpu_count(),
+        workflow_id: int = None,
     ):
         """Construct an OpenAlexTelescope instance.
 
@@ -480,7 +480,7 @@ class OpenAlexTelescope(StreamTelescope):
                 table_description=table_description,
                 partition=True,
                 partition_type=bigquery.TimePartitioningType.DAY,
-                partition_decorator=release.end_date.format('YYYYMMDD'),
+                partition_decorator=release.end_date.format("YYYYMMDD"),
                 **self.load_bigquery_table_kwargs,
             )
 
@@ -512,8 +512,9 @@ class OpenAlexTelescope(StreamTelescope):
         """
 
         start_date, end_date, first_release = self.get_release_info(**kwargs)
-        release = OpenAlexRelease(self.dag_id, self.workflow_id, start_date, end_date, first_release,
-                                  self.max_processes)
+        release = OpenAlexRelease(
+            self.dag_id, self.workflow_id, start_date, end_date, first_release, self.max_processes
+        )
         return release
 
     def write_transfer_manifest(self, release: OpenAlexRelease, **kwargs):
