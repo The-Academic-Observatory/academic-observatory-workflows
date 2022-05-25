@@ -20,8 +20,8 @@ import io
 import json
 import os
 from subprocess import Popen
+from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
-from dateutil import tz
 
 import pendulum
 from airflow.exceptions import AirflowException, AirflowSkipException
@@ -29,6 +29,7 @@ from airflow.models import Connection
 from airflow.utils.state import State
 from botocore.response import StreamingBody
 from click.testing import CliRunner
+from dateutil import tz
 
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.openalex_telescope import (
@@ -257,7 +258,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
             # Add connection
             conn = Connection(
-                conn_id=OpenAlexTelescope.AIRFLOW_CONN_AWS, uri="aws://UWLA41aAhdja:AJLD91saAJSKAL0AjAhkaka@"
+                conn_id=OpenAlexTelescope.AIRFLOW_CONN_AWS, uri='aws://UWLA41aAhdja:AJLD91saAJSKAL0AjAhkaka@'
             )
             env.add_connection(conn)
 
@@ -423,7 +424,6 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 # Test create bigquery snapshot
                 ti = env.run_task(telescope.bq_create_snapshot.__name__)
                 self.assertEqual(ti.state, State.SUCCESS)
-
 
                 # Test adding of dataset releases as well as cleanup
                 download_folder, extract_folder, transform_folder = (
@@ -653,7 +653,6 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         :param mock_boto3: Mock the boto3 client
         :return: None.
         """
-        from types import SimpleNamespace
         mock_get_datasets.return_value = [SimpleNamespace(name="OpenAlex Author Dataset", id=1),
                                           SimpleNamespace(name="OpenAlex Concept Dataset", id=2),
                                           SimpleNamespace(name="OpenAlex Institution Dataset", id=3),
@@ -729,20 +728,20 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             release.transfer(max_retries=1)
             self.assertDictEqual(
                 {"aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                "include_prefixes": ["prefix1", "prefix2"],
-                "gc_project_id": "project_id",
-                "gc_bucket": "download-bucket",
-                "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/unchanged/",
-                "description": "Transfer OpenAlex data from Airflow telescope to download-bucket"
+                 "include_prefixes": ["prefix1", "prefix2"],
+                 "gc_project_id": "project_id",
+                 "gc_bucket": "download-bucket",
+                 "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/unchanged/",
+                 "description": "Transfer OpenAlex data from Airflow telescope to download-bucket"
                  },
                 mock_transfer.call_args_list[0][1])
             self.assertDictEqual(
                 {"aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                "include_prefixes": ["prefix1", "prefix2"],
-                "gc_project_id": "project_id",
-                "gc_bucket": "transform-bucket",
-                "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/",
-                "description": "Transfer OpenAlex data from Airflow telescope to transform-bucket"
+                 "include_prefixes": ["prefix1", "prefix2"],
+                 "gc_project_id": "project_id",
+                 "gc_bucket": "transform-bucket",
+                 "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/",
+                 "description": "Transfer OpenAlex data from Airflow telescope to transform-bucket"
                  },
                 mock_transfer.call_args_list[1][1])
             mock_transfer.reset_mock()
