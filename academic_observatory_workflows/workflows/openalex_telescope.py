@@ -37,7 +37,11 @@ from google.cloud import bigquery, storage
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowVars
-from observatory.platform.utils.gc_utils import aws_to_google_cloud_storage_transfer, upload_file_to_cloud_storage
+from observatory.platform.utils.gc_utils import (
+    aws_to_google_cloud_storage_transfer,
+    upload_file_to_cloud_storage,
+    bq_delete_old_rows,
+)
 from observatory.platform.utils.proc_utils import wait_for_process
 from observatory.platform.utils.release_utils import (
     add_dataset_release,
@@ -46,7 +50,7 @@ from observatory.platform.utils.release_utils import (
     get_latest_dataset_release,
     is_first_release,
 )
-from observatory.platform.utils.workflow_utils import blob_name, bq_append_from_file, bq_delete_old_rows
+from observatory.platform.utils.workflow_utils import blob_name, bq_append_from_file
 from observatory.platform.workflows.stream_telescope import (
     StreamRelease,
     StreamTelescope,
