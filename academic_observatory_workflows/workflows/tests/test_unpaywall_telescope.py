@@ -401,7 +401,8 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                     "upload_downloaded": ["extract"],
                     "extract": ["transform"],
                     "transform": ["upload_transformed"],
-                    "upload_transformed": ["bq_load_partition"],
+                    "upload_transformed": ["merge_update_files"],
+                    "merge_update_files": ["bq_load_partition"],
                     "bq_load_partition": ["bq_delete_old"],
                     "bq_delete_old": ["bq_append_new"],
                     "bq_append_new": ["cleanup"],
@@ -525,6 +526,11 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                             for file in release.transform_files:
                                 self.assert_blob_integrity(env.transform_bucket, blob_name(file), file)
 
+                            # Merge updates
+                            ti = env.run_task(telescope.merge_update_files.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            self.assertEqual(len(release.transform_files), 1)
+
                             # Load bq table partitions
                             ti = env.run_task(telescope.bq_load_partition.__name__)
                             self.assertEqual(ti.state, State.SUCCESS)
@@ -593,6 +599,10 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                             ti = env.run_task(telescope.upload_transformed.__name__)
                             self.assertEqual(ti.state, State.SKIPPED)
 
+                            # Merge updates
+                            ti = env.run_task(telescope.merge_update_files.__name__)
+                            self.assertEqual(ti.state, State.SKIPPED)
+
                             # Load bq table partitions
                             ti = env.run_task(telescope.bq_load_partition.__name__)
                             self.assertEqual(ti.state, State.SKIPPED)
@@ -651,6 +661,11 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                             for file in release.transform_files:
                                 self.assert_blob_integrity(env.transform_bucket, blob_name(file), file)
 
+                            # Merge updates
+                            ti = env.run_task(telescope.merge_update_files.__name__)
+                            self.assertEqual(ti.state, State.SUCCESS)
+                            self.assertEqual(len(release.transform_files), 1)
+
                             # Load bq table partitions
                             ti = env.run_task(telescope.bq_load_partition.__name__)
                             self.assertEqual(ti.state, State.SUCCESS)
@@ -659,7 +674,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                                 partition_table_id, release.end_date, bigquery.TimePartitioningType.DAY
                             )
                             table_id = f"{self.project_id}.{telescope.dataset_id}.{table_id}"
-                            expected_rows = 6
+                            expected_rows = 2
                             self.assert_table_integrity(table_id, expected_rows)
 
                             # Delete changed data from main table
@@ -674,7 +689,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                             ti = env.run_task(telescope.bq_append_new.__name__)
                             self.assertEqual(ti.state, State.SUCCESS)
                             table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
-                            expected_rows = 105
+                            expected_rows = 101
                             self.assert_table_integrity(table_id, expected_rows)
 
                             # Cleanup files
