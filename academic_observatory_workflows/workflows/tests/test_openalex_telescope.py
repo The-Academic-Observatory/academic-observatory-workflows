@@ -100,7 +100,6 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
         self.first_run = {
             "execution_date": pendulum.datetime(year=2022, month=1, day=2),
-            "next_execution_date": pendulum.datetime(year=2022, month=1, day=9),
             "manifest_date": "2021-12-17",
             "manifest_unchanged_hash": "6400ca22b963599af6bad9db030fe11a",
             "manifest_transform_hash": "9ab1f7c9eb0adbdaf07baaf8b97a110e",
@@ -114,7 +113,6 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         }
         self.second_run = {
             "execution_date": pendulum.datetime(year=2022, month=1, day=9),
-            "next_execution_date": pendulum.datetime(year=2022, month=1, day=16),
             "manifest_date": "2022-01-17",
             "manifest_unchanged_hash": "50e2eff06007a32c4394df8df7f5e907",
             "manifest_transform_hash": "f4cea919d06caa0811ad5976bf98986a",
@@ -284,10 +282,11 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 # Test that all dependencies are specified: no error should be thrown
                 env.run_task(telescope.check_dependencies.__name__)
                 start_date, end_date, first_release = telescope.get_release_info(
-                    dag=dag, data_interval_end=run["next_execution_date"]
+                    dag=dag,
+                    data_interval_end=pendulum.datetime(year=2021, month=12, day=26),
                 )
                 self.assertEqual(dag.default_args["start_date"], start_date)
-                self.assertEqual(run["next_execution_date"], end_date)
+                self.assertEqual(pendulum.datetime(year=2021, month=12, day=26), end_date)
                 self.assertTrue(first_release)
 
                 # Use release info for other tasks
@@ -484,10 +483,11 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 # Test that all dependencies are specified: no error should be thrown
                 env.run_task(telescope.check_dependencies.__name__)
                 start_date, end_date, first_release = telescope.get_release_info(
-                    dag=dag, data_interval_end=run["next_execution_date"]
+                    dag=dag,
+                    data_interval_end=pendulum.datetime(year=2022, month=1, day=2),
                 )
                 self.assertEqual(release.end_date, start_date)
-                self.assertEqual(run["next_execution_date"], end_date)
+                self.assertEqual(pendulum.datetime(year=2022, month=1, day=2), end_date)
                 self.assertFalse(first_release)
 
                 # Use release info for other tasks
