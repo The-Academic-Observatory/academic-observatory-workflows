@@ -99,7 +99,8 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         }
 
         self.first_run = {
-            "execution_date": pendulum.datetime(year=2022, month=1, day=1),
+            "execution_date": pendulum.datetime(year=2022, month=1, day=2),
+            "next_execution_date": pendulum.datetime(year=2022, month=1, day=9),
             "manifest_date": "2021-12-17",
             "manifest_unchanged_hash": "6400ca22b963599af6bad9db030fe11a",
             "manifest_transform_hash": "9ab1f7c9eb0adbdaf07baaf8b97a110e",
@@ -112,7 +113,8 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             },
         }
         self.second_run = {
-            "execution_date": pendulum.datetime(year=2022, month=2, day=1),
+            "execution_date": pendulum.datetime(year=2022, month=1, day=9),
+            "next_execution_date": pendulum.datetime(year=2022, month=1, day=16),
             "manifest_date": "2022-01-17",
             "manifest_unchanged_hash": "50e2eff06007a32c4394df8df7f5e907",
             "manifest_transform_hash": "f4cea919d06caa0811ad5976bf98986a",
@@ -162,12 +164,18 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         self.api.put_table_type(table_type)
 
         dataset_type1 = DatasetType(
+            type_id="openalex",
+            name="OpenAlex",
+            extra={},
+            table_type=TableType(id=1),
+        )
+        dataset_type2 = DatasetType(
             type_id="openalex_institution",
             name="OpenAlex Institution",
             extra={},
             table_type=TableType(id=1),
         )
-        dataset_type2 = DatasetType(
+        dataset_type3 = DatasetType(
             type_id="openalex_author",
             name="OpenAlex Author",
             extra={},
@@ -175,23 +183,32 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         )
         self.api.put_dataset_type(dataset_type1)
         self.api.put_dataset_type(dataset_type2)
+        self.api.put_dataset_type(dataset_type3)
 
         dataset1 = Dataset(
-            name="OpenAlex Institution Dataset",
+            name="OpenAlex Dataset",
             address="project.dataset.table",
             service="bigquery",
             workflow=Workflow(id=1),
             dataset_type=DatasetType(id=1),
         )
         dataset2 = Dataset(
-            name="OpenAlex Author Dataset",
+            name="OpenAlex Institution Dataset",
             address="project.dataset.table",
             service="bigquery",
             workflow=Workflow(id=1),
             dataset_type=DatasetType(id=2),
         )
+        dataset3 = Dataset(
+            name="OpenAlex Author Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            workflow=Workflow(id=1),
+            dataset_type=DatasetType(id=3),
+        )
         self.api.put_dataset(dataset1)
         self.api.put_dataset(dataset2)
+        self.api.put_dataset(dataset3)
 
     def setup_connections(self, env):
         # Add Observatory API connection
@@ -267,16 +284,17 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 # Test that all dependencies are specified: no error should be thrown
                 env.run_task(telescope.check_dependencies.__name__)
                 start_date, end_date, first_release = telescope.get_release_info(
-                    dag=dag,
+                    dag=dag, data_interval_end=run["next_execution_date"]
                 )
                 self.assertEqual(dag.default_args["start_date"], start_date)
-                self.assertEqual(pendulum.datetime(2022, 1, 2), end_date)
+                self.assertEqual(run["next_execution_date"], end_date)
                 self.assertTrue(first_release)
 
                 # Use release info for other tasks
                 release = OpenAlexRelease(
                     telescope.dag_id,
                     telescope.workflow_id,
+                    telescope.dataset_type_id,
                     start_date,
                     end_date,
                     first_release,
@@ -438,18 +456,23 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     release.transform_folder,
                 )
 
-                institution_dataset_releases = get_dataset_releases(dataset_id=1)
-                author_dataset_releases = get_dataset_releases(dataset_id=2)
+                openalex_dataset_releases = get_dataset_releases(dataset_id=1)
+                institution_dataset_releases = get_dataset_releases(dataset_id=2)
+                author_dataset_releases = get_dataset_releases(dataset_id=3)
+                self.assertListEqual([], openalex_dataset_releases)
                 self.assertListEqual([], institution_dataset_releases)
                 self.assertListEqual([], author_dataset_releases)
 
                 ti = env.run_task(telescope.add_new_dataset_releases.__name__)
                 self.assertEqual(ti.state, State.SUCCESS)
 
-                institution_dataset_releases = get_dataset_releases(dataset_id=1)
-                author_dataset_releases = get_dataset_releases(dataset_id=2)
+                openalex_dataset_releases = get_dataset_releases(dataset_id=1)
+                institution_dataset_releases = get_dataset_releases(dataset_id=2)
+                author_dataset_releases = get_dataset_releases(dataset_id=3)
+                self.assertEqual(1, len(openalex_dataset_releases))
                 self.assertEqual(1, len(institution_dataset_releases))
                 self.assertEqual(1, len(author_dataset_releases))
+                self.assertEqual(release.end_date, openalex_dataset_releases[0].end_date)
                 self.assertEqual(
                     pendulum.from_format("2021-12-17", "YYYY-MM-DD"), institution_dataset_releases[0].end_date
                 )
@@ -461,16 +484,17 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 # Test that all dependencies are specified: no error should be thrown
                 env.run_task(telescope.check_dependencies.__name__)
                 start_date, end_date, first_release = telescope.get_release_info(
-                    dag=dag,
+                    dag=dag, data_interval_end=run["next_execution_date"]
                 )
                 self.assertEqual(release.end_date, start_date)
-                self.assertEqual(pendulum.datetime(2022, 2, 6), end_date)
+                self.assertEqual(run["next_execution_date"], end_date)
                 self.assertFalse(first_release)
 
                 # Use release info for other tasks
                 release = OpenAlexRelease(
                     telescope.dag_id,
                     telescope.workflow_id,
+                    telescope.dataset_type_id,
                     start_date,
                     end_date,
                     first_release,
@@ -636,18 +660,23 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     release.transform_folder,
                 )
 
-                institution_dataset_releases = get_dataset_releases(dataset_id=1)
-                author_dataset_releases = get_dataset_releases(dataset_id=2)
+                openalex_dataset_releases = get_dataset_releases(dataset_id=1)
+                institution_dataset_releases = get_dataset_releases(dataset_id=2)
+                author_dataset_releases = get_dataset_releases(dataset_id=3)
+                self.assertEqual(1, len(openalex_dataset_releases))
                 self.assertEqual(1, len(institution_dataset_releases))
                 self.assertEqual(1, len(author_dataset_releases))
 
                 ti = env.run_task(telescope.add_new_dataset_releases.__name__)
                 self.assertEqual(ti.state, State.SUCCESS)
 
-                institution_dataset_releases = get_dataset_releases(dataset_id=1)
-                author_dataset_releases = get_dataset_releases(dataset_id=2)
+                openalex_dataset_releases = get_dataset_releases(dataset_id=1)
+                institution_dataset_releases = get_dataset_releases(dataset_id=2)
+                author_dataset_releases = get_dataset_releases(dataset_id=3)
+                self.assertEqual(2, len(openalex_dataset_releases))
                 self.assertEqual(2, len(institution_dataset_releases))
                 self.assertEqual(2, len(author_dataset_releases))
+                self.assertEqual(release.end_date, openalex_dataset_releases[1].end_date)
                 self.assertEqual(
                     pendulum.from_format("2022-1-17", "YYYY-MM-DD"), institution_dataset_releases[1].end_date
                 )

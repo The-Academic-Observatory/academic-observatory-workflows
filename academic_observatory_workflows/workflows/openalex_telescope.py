@@ -62,6 +62,7 @@ class OpenAlexRelease(StreamRelease):
         self,
         dag_id: str,
         workflow_id: int,
+        dataset_type_id: str,
         start_date: pendulum.DateTime,
         end_date: pendulum.DateTime,
         first_release: bool,
@@ -81,6 +82,7 @@ class OpenAlexRelease(StreamRelease):
         )
         self.max_processes = max_processes
         self.workflow_id = workflow_id
+        self.dataset_type_id = dataset_type_id
 
     @property
     def transfer_manifest_path_unchanged(self) -> str:
@@ -132,7 +134,9 @@ class OpenAlexRelease(StreamRelease):
         if not self.first_release:
             datasets = get_datasets(workflow_id=self.workflow_id)
             for dataset in datasets:
-                entity = dataset.name.split()[1].lower() + "s"
+                if dataset.dataset_type.type_id == self.dataset_type_id:
+                    continue
+                entity = dataset.dataset_type.type_id.split("openalex_")[1] + "s"
                 if entity in entities.keys():
                     releases = get_dataset_releases(dataset_id=dataset.id)
                     latest_release = sorted(releases, key=lambda x: x["end_date"], reverse=True)[0]
@@ -325,6 +329,7 @@ class OpenAlexTelescope(StreamTelescope):
         airflow_conns: List = None,
         max_processes: int = os.cpu_count(),
         workflow_id: int = None,
+        dataset_type_id: str = "openalex",
     ):
         """Construct an OpenAlexTelescope instance.
 
@@ -365,6 +370,7 @@ class OpenAlexTelescope(StreamTelescope):
             airflow_vars=airflow_vars,
             airflow_conns=airflow_conns,
             workflow_id=workflow_id,
+            dataset_type_id=dataset_type_id,
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
         )
         self.max_processes = max_processes
@@ -381,33 +387,6 @@ class OpenAlexTelescope(StreamTelescope):
         self.add_task(self.bq_create_snapshot)
         self.add_task(self.add_new_dataset_releases)
 
-    def get_release_info(self, **kwargs) -> Tuple[pendulum.DateTime, pendulum.DateTime, bool]:
-        """Return release information with the start and end date.
-        The start date is customised compared to the parent class to use the 'created' date from the latest dataset
-        release. This is because there are multiple dataset releases for one OpenAlexRelease. Each dataset release
-        maps to one of the OpenAlex entities and has a different end date, the created date should be the same for
-        all of them.
-
-        :param kwargs: The context passed from the PythonOperator.
-        :return: None.
-        """
-        # Check if first release or not
-        first_release = is_first_release(self.workflow_id)
-        if first_release:
-            # When first release, set start date to the start of the DAG
-            # Can we get away with using data_interval_start instead?
-            start_date = pendulum.instance(kwargs["dag"].default_args["start_date"]).start_of("day")
-        else:
-            datasets = get_datasets(workflow_id=self.workflow_id)
-            releases = get_dataset_releases(dataset_id=datasets[0].id)
-            latest_release = get_latest_dataset_release(releases=releases)
-            start_date = pendulum.instance(latest_release.created).start_of("day")  # custom start date
-
-        end_date = pendulum.today(tz="UTC").start_of("day")
-        logging.info(f"Start date: {start_date}, end date: {end_date}, first release: {first_release}")
-
-        return start_date, end_date, first_release
-
     def add_new_dataset_releases(self, release: OpenAlexRelease, **kwargs):
         """Task to add new DatasetRelease records in the API after the workflow is done.
         Also cleans up the local files. This has to be done in the same task, because one of the local files is
@@ -423,10 +402,14 @@ class OpenAlexTelescope(StreamTelescope):
         update_dates = release.get_update_date()
         datasets = get_datasets(workflow_id=self.workflow_id)
         for dataset in datasets:
-            entity = dataset.name.split()[1].lower() + "s"
+            if dataset.dataset_type.type_id == self.dataset_type_id:
+                end_date = release.end_date
+            else:
+                entity = dataset.dataset_type.type_id.split("openalex_")[1] + "s"
+                end_date = update_dates[entity]
             add_dataset_release(
                 start_date=release.start_date,
-                end_date=update_dates[entity],
+                end_date=end_date,
                 dataset_id=dataset.id,
             )
 
@@ -517,7 +500,7 @@ class OpenAlexTelescope(StreamTelescope):
 
         start_date, end_date, first_release = self.get_release_info(**kwargs)
         release = OpenAlexRelease(
-            self.dag_id, self.workflow_id, start_date, end_date, first_release, self.max_processes
+            self.dag_id, self.workflow_id, self.dataset_type_id, start_date, end_date, first_release, self.max_processes
         )
         return release
 
