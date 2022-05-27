@@ -720,7 +720,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         with CliRunner().isolated_filesystem():
             # Test with entries in manifest objects that are after end date of latest release
             mock_get_releases.return_value = [{"end_date": datetime.datetime(2021, 1, 1, tzinfo=tz.UTC)}]
-            release = OpenAlexRelease("dag_id", 1, start_date, end_date, False, 1)
+            release = OpenAlexRelease("dag_id", 1, "dataset_type", start_date, end_date, False, 1)
 
             release.write_transfer_manifest()
             self.assert_file_integrity(
@@ -732,7 +732,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
             # Test with entries in manifest objects that are before end date of latest release
             mock_get_releases.return_value = [{"end_date": datetime.datetime(2022, 2, 1, tzinfo=tz.UTC)}]
-            release = OpenAlexRelease("dag_id", 1, start_date, end_date, False, 1)
+            release = OpenAlexRelease("dag_id", 1, "dataset_type_id", start_date, end_date, False, 1)
 
             with self.assertRaises(AirflowSkipException):
                 release.write_transfer_manifest()
@@ -761,7 +761,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             # Create release
             start_date = pendulum.DateTime(2022, 1, 1)
             end_date = pendulum.DateTime(2022, 2, 1)
-            release = OpenAlexRelease("dag_id", 1, start_date, end_date, False, 1)
+            release = OpenAlexRelease("dag_id", 1, "dataset_type_id", start_date, end_date, False, 1)
 
             # Create transfer manifest files
             with open(release.transfer_manifest_path_unchanged, "w") as f:

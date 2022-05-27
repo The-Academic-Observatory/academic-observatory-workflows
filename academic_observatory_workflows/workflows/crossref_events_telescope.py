@@ -226,6 +226,7 @@ class CrossrefEventsTelescope(StreamTelescope):
         max_threads: int = min(32, os.cpu_count() + 4),
         max_processes: int = os.cpu_count(),
         workflow_id: int = None,
+        dataset_type_id: str = DAG_ID,
     ):
         """Construct a CrossrefEventsTelescope instance.
 
@@ -265,6 +266,7 @@ class CrossrefEventsTelescope(StreamTelescope):
             batch_load=batch_load,
             airflow_vars=airflow_vars,
             workflow_id=workflow_id,
+            dataset_type_id=dataset_type_id,
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
         )
         self.mailto = mailto

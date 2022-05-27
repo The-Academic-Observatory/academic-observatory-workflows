@@ -128,7 +128,7 @@ class TestOrcidTelescope(ObservatoryTestCase):
         self.api.put_table_type(table_type)
 
         dataset_type = DatasetType(
-            type_id="orcid",
+            type_id=OrcidTelescope.DAG_ID,
             name="ds type",
             extra={},
             table_type=TableType(id=1),

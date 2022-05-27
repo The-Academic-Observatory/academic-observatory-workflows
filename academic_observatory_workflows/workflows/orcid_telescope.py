@@ -259,6 +259,7 @@ class OrcidTelescope(StreamTelescope):
         airflow_conns: List = None,
         max_processes: int = min(32, os.cpu_count() + 4),
         workflow_id: int = None,
+        dataset_type_id: str = DAG_ID,
     ):
         """Construct an OrcidTelescope instance.
 
@@ -309,6 +310,7 @@ class OrcidTelescope(StreamTelescope):
             airflow_conns=airflow_conns,
             batch_load=batch_load,
             workflow_id=workflow_id,
+            dataset_type_id=dataset_type_id,
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
         )
         self.max_processes = max_processes
