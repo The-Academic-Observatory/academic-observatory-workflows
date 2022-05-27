@@ -698,11 +698,20 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         :return: None.
         """
         mock_get_datasets.return_value = [
-            SimpleNamespace(name="OpenAlex Author Dataset", id=1),
-            SimpleNamespace(name="OpenAlex Concept Dataset", id=2),
-            SimpleNamespace(name="OpenAlex Institution Dataset", id=3),
-            SimpleNamespace(name="OpenAlex Venue Dataset", id=4),
-            SimpleNamespace(name="OpenAlex Work Dataset", id=5),
+            SimpleNamespace(name="OpenAlex Dataset", dataset_type=SimpleNamespace(type_id="openalex"), id=1),
+            SimpleNamespace(
+                name="OpenAlex Author Dataset", dataset_type=SimpleNamespace(type_id="openalex_author"), id=2
+            ),
+            SimpleNamespace(
+                name="OpenAlex Concept Dataset", dataset_type=SimpleNamespace(type_id="openalex_concept"), id=3
+            ),
+            SimpleNamespace(
+                name="OpenAlex Institution Dataset", dataset_type=SimpleNamespace(type_id="openalex_institution"), id=4
+            ),
+            SimpleNamespace(
+                name="OpenAlex Venue Dataset", dataset_type=SimpleNamespace(type_id="openalex_venue"), id=5
+            ),
+            SimpleNamespace(name="OpenAlex Work Dataset", dataset_type=SimpleNamespace(type_id="openalex_work"), id=6),
         ]
         mock_variable_get.return_value = "data"
         mock_aws_info.return_value = "key_id", "secret_key"
@@ -720,7 +729,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         with CliRunner().isolated_filesystem():
             # Test with entries in manifest objects that are after end date of latest release
             mock_get_releases.return_value = [{"end_date": datetime.datetime(2021, 1, 1, tzinfo=tz.UTC)}]
-            release = OpenAlexRelease("dag_id", 1, "dataset_type", start_date, end_date, False, 1)
+            release = OpenAlexRelease("dag_id", 1, OpenAlexTelescope.DAG_ID, start_date, end_date, False, 1)
 
             release.write_transfer_manifest()
             self.assert_file_integrity(
@@ -732,7 +741,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
             # Test with entries in manifest objects that are before end date of latest release
             mock_get_releases.return_value = [{"end_date": datetime.datetime(2022, 2, 1, tzinfo=tz.UTC)}]
-            release = OpenAlexRelease("dag_id", 1, "dataset_type_id", start_date, end_date, False, 1)
+            release = OpenAlexRelease("dag_id", 1, OpenAlexTelescope.DAG_ID, start_date, end_date, False, 1)
 
             with self.assertRaises(AirflowSkipException):
                 release.write_transfer_manifest()
