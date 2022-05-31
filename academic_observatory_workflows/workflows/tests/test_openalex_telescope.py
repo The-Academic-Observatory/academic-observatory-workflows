@@ -31,6 +31,7 @@ from botocore.response import StreamingBody
 from click.testing import CliRunner
 from dateutil import tz
 
+from academic_observatory_workflows.api_type_ids import DatasetTypeId
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.openalex_telescope import (
     OpenAlexRelease,
@@ -162,19 +163,19 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         self.api.put_table_type(table_type)
 
         dataset_type1 = DatasetType(
-            type_id="openalex",
+            type_id=DatasetTypeId.openalex,
             name="OpenAlex",
             extra={},
             table_type=TableType(id=1),
         )
         dataset_type2 = DatasetType(
-            type_id="openalex_institution",
+            type_id=DatasetTypeId.openalex_institution,
             name="OpenAlex Institution",
             extra={},
             table_type=TableType(id=1),
         )
         dataset_type3 = DatasetType(
-            type_id="openalex_author",
+            type_id=DatasetTypeId.openalex_author,
             name="OpenAlex Author",
             extra={},
             table_type=TableType(id=1),

@@ -36,6 +36,7 @@ from dateutil import tz
 from google.cloud import bigquery, storage
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
+from academic_observatory_workflows.api_type_ids import DatasetTypeId
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.gc_utils import (
     aws_to_google_cloud_storage_transfer,
@@ -329,7 +330,7 @@ class OpenAlexTelescope(StreamTelescope):
         airflow_conns: List = None,
         max_processes: int = os.cpu_count(),
         workflow_id: int = None,
-        dataset_type_id: str = "openalex",
+        dataset_type_id: str = DatasetTypeId.openalex,
     ):
         """Construct an OpenAlexTelescope instance.
 
