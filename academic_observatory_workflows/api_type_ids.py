@@ -40,22 +40,8 @@ class DatasetTypeId:
     unpaywall = "unpaywall"
     web_of_science = "web_of_science"
 
-    # oaebu workflows
-    doab = "doab"
-    oapen_metadata = "oapen_metadata"
-    onix = "onix"
-    google_analytics = "google_analytics"
-    google_books_sales = "google_books_sales"
-    google_books_traffic = "google_books_traffic"
-    jstor_country = "jstor_country"
-    jstor_institution = "jstor_institution"
-    oapen_irus_uk = "oapen_irus_uk"
-    ucl_discovery = "ucl_discovery"
-
     # Workflow dataset types, i.e., dataset types for datasets created by various non Telescope workflows.
     doi_workflow = "doi"
-    onix_workflow = "onix_workflow"
-    oapen_workflow = "oapen_workflow"
 
 
 class WorkflowTypeId:
@@ -77,17 +63,5 @@ class WorkflowTypeId:
     unpaywall = "unpaywall"
     web_of_science = "web_of_science"
 
-    # oaebu workflows
-    doab = "doab"
-    oapen_metadata = "oapen_metadata"
-    onix = "onix"
-    google_analytics = "google_analytics"
-    google_books = "google_books"
-    jstor = "jstor"
-    oapen_irus_uk = "oapen_irus_uk"
-    ucl_discovery = "ucl_discovery"
-
     # Workflow dataset types, i.e., dataset types for datasets created by various non Telescope workflows.
     doi_workflow = "doi"
-    onix_workflow = "onix_workflow"
-    oapen_workflow = "oapen_workflow"
