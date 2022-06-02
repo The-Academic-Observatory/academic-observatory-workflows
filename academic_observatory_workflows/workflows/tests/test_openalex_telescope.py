@@ -219,7 +219,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         :return: None
         """
 
-        dag = OpenAlexTelescope().make_dag()
+        dag = OpenAlexTelescope(workflow_id=0).make_dag()
         self.assert_dag_structure(
             {
                 "check_dependencies": ["write_transfer_manifest"],

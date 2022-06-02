@@ -246,6 +246,7 @@ class OrcidTelescope(StreamTelescope):
 
     def __init__(
         self,
+        workflow_id: int,
         dag_id: str = DAG_ID,
         start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
         schedule_interval: str = "@weekly",
@@ -259,7 +260,6 @@ class OrcidTelescope(StreamTelescope):
         airflow_vars: List = None,
         airflow_conns: List = None,
         max_processes: int = min(32, os.cpu_count() + 4),
-        workflow_id: int = None,
         dataset_type_id: str = DatasetTypeId.orcid,
     ):
         """Construct an OrcidTelescope instance.

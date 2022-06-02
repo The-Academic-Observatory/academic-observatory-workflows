@@ -148,7 +148,7 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
         :return: None
         """
 
-        dag = CrossrefEventsTelescope().make_dag()
+        dag = CrossrefEventsTelescope(workflow_id=0).make_dag()
         self.assert_dag_structure(
             {
                 "check_dependencies": ["download"],

@@ -318,6 +318,7 @@ class OpenAlexTelescope(StreamTelescope):
 
     def __init__(
         self,
+        workflow_id: int,
         dag_id: str = DAG_ID,
         start_date: pendulum.DateTime = pendulum.datetime(2021, 12, 1),
         schedule_interval: str = "@weekly",
@@ -329,7 +330,6 @@ class OpenAlexTelescope(StreamTelescope):
         airflow_vars: List = None,
         airflow_conns: List = None,
         max_processes: int = os.cpu_count(),
-        workflow_id: int = None,
         dataset_type_id: str = DatasetTypeId.openalex,
     ):
         """Construct an OpenAlexTelescope instance.

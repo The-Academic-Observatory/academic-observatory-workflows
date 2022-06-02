@@ -154,7 +154,7 @@ class TestOrcidTelescope(ObservatoryTestCase):
         :return: None
         """
 
-        dag = OrcidTelescope().make_dag()
+        dag = OrcidTelescope(workflow_id=0).make_dag()
         self.assert_dag_structure(
             {
                 "check_dependencies": ["transfer"],
@@ -694,9 +694,9 @@ class TestOrcidTelescope(ObservatoryTestCase):
 
         # Test that all dependencies are specified: no error should be thrown
         mock_bucket_exists.return_value = True
-        OrcidTelescope().check_dependencies()
+        OrcidTelescope(workflow_id=0).check_dependencies()
 
         # Test that dependency is missing, no existing storage bucket
         mock_bucket_exists.return_value = False
         with self.assertRaises(AirflowException):
-            OrcidTelescope().check_dependencies()
+            OrcidTelescope(workflow_id=0).check_dependencies()

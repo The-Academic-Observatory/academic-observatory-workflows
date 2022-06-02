@@ -392,7 +392,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
         m_makeapi.return_value = self.api
         with self.env.create():
             self.setup_api()
-            dag = UnpaywallTelescope().make_dag()
+            dag = UnpaywallTelescope(workflow_id=0).make_dag()
             self.assert_dag_structure(
                 {
                     "check_dependencies": ["check_releases"],

@@ -213,6 +213,7 @@ class CrossrefEventsTelescope(StreamTelescope):
 
     def __init__(
         self,
+        workflow_id: int,
         dag_id: str = DAG_ID,
         start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
         schedule_interval: str = "@weekly",
@@ -226,7 +227,6 @@ class CrossrefEventsTelescope(StreamTelescope):
         mailto: str = "aniek.roelofs@curtin.edu.au",
         max_threads: int = min(32, os.cpu_count() + 4),
         max_processes: int = os.cpu_count(),
-        workflow_id: int = None,
         dataset_type_id: str = DatasetTypeId.crossref_events,
     ):
         """Construct a CrossrefEventsTelescope instance.

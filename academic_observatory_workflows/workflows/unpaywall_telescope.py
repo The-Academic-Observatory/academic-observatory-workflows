@@ -200,6 +200,7 @@ class UnpaywallTelescope(StreamTelescope):
 
     def __init__(
         self,
+        workflow_id: int,
         dag_id: str = DAG_ID,
         start_date: pendulum.DateTime = pendulum.datetime(2021, 7, 2),
         schedule_interval: str = "@daily",
@@ -208,7 +209,6 @@ class UnpaywallTelescope(StreamTelescope):
         merge_partition_field: str = "doi",
         schema_folder: str = default_schema_folder(),
         airflow_vars: List = None,
-        workflow_id: int = None,
         dataset_type_id: str = DatasetTypeId.unpaywall,
     ):
         """Unpaywall Data Feed telescope.
