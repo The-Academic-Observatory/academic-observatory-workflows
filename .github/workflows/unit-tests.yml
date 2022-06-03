@@ -33,7 +33,7 @@ jobs:
           python -m pip install --upgrade pip
 
           cd ..
-          git clone -b INF-361_bigquery_snapshot https://github.com/The-Academic-Observatory/observatory-platform.git
+          git clone https://github.com/The-Academic-Observatory/observatory-platform.git
           cd observatory-platform
           pip install -e observatory-api
           pip install -e observatory-platform
