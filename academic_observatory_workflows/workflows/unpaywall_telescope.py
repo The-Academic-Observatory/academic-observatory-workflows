@@ -20,6 +20,7 @@ from typing import List
 import pendulum
 from airflow.models.taskinstance import TaskInstance
 
+from academic_observatory_workflows.api_type_ids import DatasetTypeId
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from academic_observatory_workflows.workflows.unpaywall_snapshot_telescope import UnpaywallSnapshotRelease
 from observatory.platform.utils.airflow_utils import (
@@ -129,7 +130,6 @@ class UnpaywallRelease(StreamRelease):
             dst = os.path.join(self.download_folder, "unpaywall.jsonl.gz")
             os.rename(file, dst)
 
-
     @staticmethod
     def get_unpaywall_daily_feeds():
         url = UnpaywallRelease.data_feed_url()
@@ -200,6 +200,7 @@ class UnpaywallTelescope(StreamTelescope):
 
     def __init__(
         self,
+        workflow_id: int,
         dag_id: str = DAG_ID,
         start_date: pendulum.DateTime = pendulum.datetime(2021, 7, 2),
         schedule_interval: str = "@daily",
@@ -208,7 +209,7 @@ class UnpaywallTelescope(StreamTelescope):
         merge_partition_field: str = "doi",
         schema_folder: str = default_schema_folder(),
         airflow_vars: List = None,
-        workflow_id: int = None,
+        dataset_type_id: str = DatasetTypeId.unpaywall,
     ):
         """Unpaywall Data Feed telescope.
 
@@ -245,6 +246,7 @@ class UnpaywallTelescope(StreamTelescope):
             airflow_conns=[UnpaywallTelescope.AIRFLOW_CONNECTION],
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
             workflow_id=workflow_id,
+            dataset_type_id=dataset_type_id,
         )
 
         self.add_setup_task(self.check_dependencies)

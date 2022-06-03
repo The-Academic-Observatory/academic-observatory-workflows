@@ -35,6 +35,7 @@ from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.hooks.base_hook import BaseHook
 from airflow.models.variable import Variable
 
+from academic_observatory_workflows.api_type_ids import DatasetTypeId
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowConns
 from observatory.platform.utils.airflow_utils import AirflowVars
@@ -245,6 +246,7 @@ class OrcidTelescope(StreamTelescope):
 
     def __init__(
         self,
+        workflow_id: int,
         dag_id: str = DAG_ID,
         start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
         schedule_interval: str = "@weekly",
@@ -258,7 +260,7 @@ class OrcidTelescope(StreamTelescope):
         airflow_vars: List = None,
         airflow_conns: List = None,
         max_processes: int = min(32, os.cpu_count() + 4),
-        workflow_id: int = None,
+        dataset_type_id: str = DatasetTypeId.orcid,
     ):
         """Construct an OrcidTelescope instance.
 
@@ -309,6 +311,7 @@ class OrcidTelescope(StreamTelescope):
             airflow_conns=airflow_conns,
             batch_load=batch_load,
             workflow_id=workflow_id,
+            dataset_type_id=dataset_type_id,
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
         )
         self.max_processes = max_processes

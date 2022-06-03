@@ -28,6 +28,7 @@ import requests
 from airflow.exceptions import AirflowSkipException
 from tenacity import RetryError, retry, stop_after_attempt, wait_exponential, wait_fixed
 
+from academic_observatory_workflows.api_type_ids import DatasetTypeId
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.url_utils import get_user_agent
@@ -212,6 +213,7 @@ class CrossrefEventsTelescope(StreamTelescope):
 
     def __init__(
         self,
+        workflow_id: int,
         dag_id: str = DAG_ID,
         start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
         schedule_interval: str = "@weekly",
@@ -225,7 +227,7 @@ class CrossrefEventsTelescope(StreamTelescope):
         mailto: str = "aniek.roelofs@curtin.edu.au",
         max_threads: int = min(32, os.cpu_count() + 4),
         max_processes: int = os.cpu_count(),
-        workflow_id: int = None,
+        dataset_type_id: str = DatasetTypeId.crossref_events,
     ):
         """Construct a CrossrefEventsTelescope instance.
 
@@ -265,6 +267,7 @@ class CrossrefEventsTelescope(StreamTelescope):
             batch_load=batch_load,
             airflow_vars=airflow_vars,
             workflow_id=workflow_id,
+            dataset_type_id=dataset_type_id,
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
         )
         self.mailto = mailto
