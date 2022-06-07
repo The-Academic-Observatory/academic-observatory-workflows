@@ -204,25 +204,28 @@ class OpenAlexRelease(StreamRelease):
             if not prefixes:
                 continue
 
-            for i in range(max_retries):
-                if success:
-                    break
-                # TODO use transfer manifest instead of prefixes when that is working (https://issuetracker.google.com/issues/216057461)
-                success, objects_count = aws_to_google_cloud_storage_transfer(
-                    aws_access_key_id,
-                    aws_secret_access_key,
-                    aws_bucket=OpenAlexTelescope.AWS_BUCKET,
-                    include_prefixes=prefixes,
-                    gc_project_id=gc_project_id,
-                    gc_bucket=transfer["bucket"],
-                    gc_bucket_path=f"telescopes/{self.dag_id}/{self.release_id}/{transfer['subdir']}",
-                    description=f"Transfer OpenAlex data from Airflow telescope to {transfer['bucket']}",
-                    # transfer_manifest=f"gs://{self.download_bucket}/{self.transfer_manifest_blob}"
-                )
-                total_count += objects_count
+            # Split prefixes into chunks of max. 1000, this is the limit for a transfer job
+            prefixes_chunks = [prefixes[x:x+1000] for x in range(0, len(prefixes), 1000)]
+            for prefixes in prefixes_chunks:
+                for i in range(max_retries):
+                    if success:
+                        break
+                    # TODO use transfer manifest instead of prefixes when that is working (https://issuetracker.google.com/issues/216057461)
+                    success, objects_count = aws_to_google_cloud_storage_transfer(
+                        aws_access_key_id,
+                        aws_secret_access_key,
+                        aws_bucket=OpenAlexTelescope.AWS_BUCKET,
+                        include_prefixes=prefixes,
+                        gc_project_id=gc_project_id,
+                        gc_bucket=transfer["bucket"],
+                        gc_bucket_path=f"telescopes/{self.dag_id}/{self.release_id}/{transfer['subdir']}",
+                        description=f"Transfer OpenAlex data from Airflow telescope to {transfer['bucket']}",
+                        # transfer_manifest=f"gs://{self.download_bucket}/{self.transfer_manifest_blob}"
+                    )
+                    total_count += objects_count
 
-            if not success:
-                raise AirflowException(f"Google Storage Transfer unsuccessful, status: {success}")
+                if not success:
+                    raise AirflowException(f"Google Storage Transfer unsuccessful, status: {success}")
 
         logging.info(f"Total number of objects transferred: {total_count}")
 
