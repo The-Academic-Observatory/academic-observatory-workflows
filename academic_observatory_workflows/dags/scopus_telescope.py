@@ -18,6 +18,7 @@
 # https://airflow.apache.org/docs/stable/faq.html
 
 import pendulum
+
 from academic_observatory_workflows.workflows.scopus_telescope import ScopusTelescope
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.api import make_observatory_api

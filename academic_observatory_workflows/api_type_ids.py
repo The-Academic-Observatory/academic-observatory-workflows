@@ -19,7 +19,6 @@
 class DatasetTypeId:
     """DatasetType type_id constants"""
 
-    # academic observatory workflows
     crossref_events = "crossref_events"
     crossref_fundref = "crossref_fundref"
     crossref_metadata = "crossref_metadata"
@@ -47,7 +46,6 @@ class DatasetTypeId:
 class WorkflowTypeId:
     """WorkflowTypeId type_id constants"""
 
-    # academic observatory workflows
     crossref_events = "crossref_events"
     crossref_fundref = "crossref_fundref"
     crossref_metadata = "crossref_metadata"
