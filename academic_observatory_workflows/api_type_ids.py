@@ -16,6 +16,14 @@
 # Author: Tuan Chien
 
 
+class TableTypeId:
+    """TableTypeId type_id constants"""
+
+    regular = "regular"
+    sharded = "sharded"
+    partitioned = "partitioned"
+
+
 class DatasetTypeId:
     """DatasetType type_id constants"""
 
