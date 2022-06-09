@@ -25,7 +25,10 @@ from observatory.api.utils import get_api_client, seed_organisation
 def get_organisation_info():
     organisation_info = OrderedDict()
     organisation_info["Curtin University"] = Organisation(
-        name="Curtin University", project_id=None, download_bucket=None, transform_bucket=None
+        name="Curtin University",
+        project_id=None,
+        download_bucket=None,
+        transform_bucket=None,
     )
     return organisation_info
 

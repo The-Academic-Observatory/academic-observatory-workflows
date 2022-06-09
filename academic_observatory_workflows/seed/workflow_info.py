@@ -50,10 +50,16 @@ def get_workflow_info(api: ObservatoryApi):
         tags=None,
     )
     workflow_info["Geonames Telescope"] = Workflow(
-        name="Geonames Telescope", workflow_type=WorkflowType(id=wftids[WorkflowTypeId.geonames]), extra={}, tags=None
+        name="Geonames Telescope",
+        workflow_type=WorkflowType(id=wftids[WorkflowTypeId.geonames]),
+        extra={},
+        tags=None,
     )
     workflow_info["GRID Telescope"] = Workflow(
-        name="GRID Telescope", workflow_type=WorkflowType(id=wftids[WorkflowTypeId.grid]), extra={}, tags=None
+        name="GRID Telescope",
+        workflow_type=WorkflowType(id=wftids[WorkflowTypeId.grid]),
+        extra={},
+        tags=None,
     )
     workflow_info["Open Citations Telescope"] = Workflow(
         name="Open Citations Telescope",
@@ -62,13 +68,22 @@ def get_workflow_info(api: ObservatoryApi):
         tags=None,
     )
     workflow_info["OpenAlex Telescope"] = Workflow(
-        name="OpenAlex Telescope", workflow_type=WorkflowType(id=wftids[WorkflowTypeId.openalex]), extra={}, tags=None
+        name="OpenAlex Telescope",
+        workflow_type=WorkflowType(id=wftids[WorkflowTypeId.openalex]),
+        extra={},
+        tags=None,
     )
     workflow_info["ORCID Telescope"] = Workflow(
-        name="ORCID Telescope", workflow_type=WorkflowType(id=wftids[WorkflowTypeId.orcid]), extra={}, tags=None
+        name="ORCID Telescope",
+        workflow_type=WorkflowType(id=wftids[WorkflowTypeId.orcid]),
+        extra={},
+        tags=None,
     )
     workflow_info["ROR Telescope"] = Workflow(
-        name="ROR Telescope", workflow_type=WorkflowType(id=wftids[WorkflowTypeId.ror]), extra={}, tags=None
+        name="ROR Telescope",
+        workflow_type=WorkflowType(id=wftids[WorkflowTypeId.ror]),
+        extra={},
+        tags=None,
     )
     workflow_info["Unpaywall Snapshot Telescope"] = Workflow(
         name="Unpaywall Snapshot Telescope",
@@ -77,10 +92,16 @@ def get_workflow_info(api: ObservatoryApi):
         tags=None,
     )
     workflow_info["Unpaywall Telescope"] = Workflow(
-        name="Unpaywall Telescope", workflow_type=WorkflowType(id=wftids[WorkflowTypeId.unpaywall]), extra={}, tags=None
+        name="Unpaywall Telescope",
+        workflow_type=WorkflowType(id=wftids[WorkflowTypeId.unpaywall]),
+        extra={},
+        tags=None,
     )
     workflow_info["DOI Workflow"] = Workflow(
-        name="DOI Workflow", workflow_type=WorkflowType(id=wftids[WorkflowTypeId.doi_workflow]), extra={}, tags=None
+        name="DOI Workflow",
+        workflow_type=WorkflowType(id=wftids[WorkflowTypeId.doi_workflow]),
+        extra={},
+        tags=None,
     )
     workflow_info["Curtin Scopus Telescope"] = Workflow(
         name="Curtin Scopus Telescope",

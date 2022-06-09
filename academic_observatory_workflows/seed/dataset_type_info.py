@@ -45,16 +45,24 @@ def get_dataset_type_info(api: ObservatoryApi):
         table_type=TableType(id=ttids[TableTypeId.sharded]),
     )
     dataset_type_info[DatasetTypeId.geonames] = DatasetType(
-        type_id=DatasetTypeId.geonames, name="Geonames", table_type=TableType(id=ttids[TableTypeId.sharded])
+        type_id=DatasetTypeId.geonames,
+        name="Geonames",
+        table_type=TableType(id=ttids[TableTypeId.sharded]),
     )
     dataset_type_info[DatasetTypeId.grid] = DatasetType(
-        type_id=DatasetTypeId.grid, name="GRID", table_type=TableType(id=ttids[TableTypeId.sharded])
+        type_id=DatasetTypeId.grid,
+        name="GRID",
+        table_type=TableType(id=ttids[TableTypeId.sharded]),
     )
     dataset_type_info[DatasetTypeId.open_citations] = DatasetType(
-        type_id=DatasetTypeId.open_citations, name="Open Citations", table_type=TableType(id=ttids[TableTypeId.sharded])
+        type_id=DatasetTypeId.open_citations,
+        name="Open Citations",
+        table_type=TableType(id=ttids[TableTypeId.sharded]),
     )
     dataset_type_info[DatasetTypeId.openalex] = DatasetType(
-        type_id=DatasetTypeId.openalex, name="OpenAlex", table_type=TableType(id=ttids[TableTypeId.regular])
+        type_id=DatasetTypeId.openalex,
+        name="OpenAlex",
+        table_type=TableType(id=ttids[TableTypeId.regular]),
     )
     dataset_type_info[DatasetTypeId.openalex_author] = DatasetType(
         type_id=DatasetTypeId.openalex_author,
@@ -72,13 +80,19 @@ def get_dataset_type_info(api: ObservatoryApi):
         table_type=TableType(id=ttids[TableTypeId.regular]),
     )
     dataset_type_info[DatasetTypeId.openalex_venue] = DatasetType(
-        type_id=DatasetTypeId.openalex_venue, name="OpenAlex Venue", table_type=TableType(id=ttids[TableTypeId.regular])
+        type_id=DatasetTypeId.openalex_venue,
+        name="OpenAlex Venue",
+        table_type=TableType(id=ttids[TableTypeId.regular]),
     )
     dataset_type_info[DatasetTypeId.openalex_work] = DatasetType(
-        type_id=DatasetTypeId.openalex_work, name="OpenAlex Work", table_type=TableType(id=ttids[TableTypeId.regular])
+        type_id=DatasetTypeId.openalex_work,
+        name="OpenAlex Work",
+        table_type=TableType(id=ttids[TableTypeId.regular]),
     )
     dataset_type_info[DatasetTypeId.orcid] = DatasetType(
-        type_id=DatasetTypeId.orcid, name="ORCID", table_type=TableType(id=ttids[TableTypeId.regular])
+        type_id=DatasetTypeId.orcid,
+        name="ORCID",
+        table_type=TableType(id=ttids[TableTypeId.regular]),
     )
     dataset_type_info[DatasetTypeId.ror] = DatasetType(
         type_id=DatasetTypeId.ror,
@@ -86,7 +100,9 @@ def get_dataset_type_info(api: ObservatoryApi):
         table_type=TableType(id=ttids[TableTypeId.sharded]),
     )
     dataset_type_info[DatasetTypeId.scopus] = DatasetType(
-        type_id=DatasetTypeId.scopus, name="SCOPUS", table_type=TableType(id=ttids[TableTypeId.sharded])
+        type_id=DatasetTypeId.scopus,
+        name="SCOPUS",
+        table_type=TableType(id=ttids[TableTypeId.sharded]),
     )
     dataset_type_info[DatasetTypeId.unpaywall_snapshot] = DatasetType(
         type_id=DatasetTypeId.unpaywall_snapshot,
@@ -99,9 +115,13 @@ def get_dataset_type_info(api: ObservatoryApi):
         table_type=TableType(id=ttids[TableTypeId.regular]),
     )
     dataset_type_info[DatasetTypeId.web_of_science] = DatasetType(
-        type_id=DatasetTypeId.web_of_science, name="Web of Science", table_type=TableType(id=ttids[TableTypeId.sharded])
+        type_id=DatasetTypeId.web_of_science,
+        name="Web of Science",
+        table_type=TableType(id=ttids[TableTypeId.sharded]),
     )
     dataset_type_info[DatasetTypeId.doi_workflow] = DatasetType(
-        type_id=DatasetTypeId.doi_workflow, name="DOI Workflow", table_type=TableType(id=ttids[TableTypeId.sharded])
+        type_id=DatasetTypeId.doi_workflow,
+        name="DOI Workflow",
+        table_type=TableType(id=ttids[TableTypeId.sharded]),
     )
     return dataset_type_info

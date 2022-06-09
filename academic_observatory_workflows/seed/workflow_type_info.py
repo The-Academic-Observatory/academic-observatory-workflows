@@ -25,40 +25,60 @@ from observatory.api.client.model.workflow_type import WorkflowType
 def get_workflow_type_info():
     workflow_type_info = OrderedDict()
     workflow_type_info[WorkflowTypeId.crossref_events] = WorkflowType(
-        type_id="crossref_events", name="Crossref Events Telescope"
+        type_id="crossref_events",
+        name="Crossref Events Telescope",
     )
     workflow_type_info[WorkflowTypeId.crossref_fundref] = WorkflowType(
-        type_id="crossref_fundref", name="Crossref Fundref Telescope"
+        type_id="crossref_fundref",
+        name="Crossref Fundref Telescope",
     )
     workflow_type_info[WorkflowTypeId.crossref_metadata] = WorkflowType(
-        type_id="crossref_metadata", name="Crossref Metadata Telescope"
+        type_id="crossref_metadata",
+        name="Crossref Metadata Telescope",
     )
     workflow_type_info[WorkflowTypeId.geonames] = WorkflowType(
-        type_id=WorkflowTypeId.geonames, name="Geonames Telescope"
+        type_id=WorkflowTypeId.geonames,
+        name="Geonames Telescope",
     )
-    workflow_type_info[WorkflowTypeId.grid] = WorkflowType(type_id=WorkflowTypeId.grid, name="GRID Telescope")
+    workflow_type_info[WorkflowTypeId.grid] = WorkflowType(
+        type_id=WorkflowTypeId.grid,
+        name="GRID Telescope",
+    )
     workflow_type_info[WorkflowTypeId.open_citations] = WorkflowType(
-        type_id="open_citations", name="Open Citations Telescope"
+        type_id="open_citations",
+        name="Open Citations Telescope",
     )
     workflow_type_info[WorkflowTypeId.openalex] = WorkflowType(
-        type_id=WorkflowTypeId.openalex, name="OpenAlex Telescope"
+        type_id=WorkflowTypeId.openalex,
+        name="OpenAlex Telescope",
     )
-    workflow_type_info[WorkflowTypeId.orcid] = WorkflowType(type_id=WorkflowTypeId.orcid, name="ORCID Telescope")
+    workflow_type_info[WorkflowTypeId.orcid] = WorkflowType(
+        type_id=WorkflowTypeId.orcid,
+        name="ORCID Telescope",
+    )
     workflow_type_info[WorkflowTypeId.ror] = WorkflowType(
-        type_id="ror", name="Research Organisation Registry Telescope"
+        type_id="ror",
+        name="Research Organisation Registry Telescope",
     )
-    workflow_type_info[WorkflowTypeId.scopus] = WorkflowType(type_id=WorkflowTypeId.scopus, name="SCOPUS Telescope")
+    workflow_type_info[WorkflowTypeId.scopus] = WorkflowType(
+        type_id=WorkflowTypeId.scopus,
+        name="SCOPUS Telescope",
+    )
     workflow_type_info[WorkflowTypeId.unpaywall_snapshot] = WorkflowType(
-        type_id=WorkflowTypeId.unpaywall_snapshot, name="Unpaywall (snapshot) Telescope"
+        type_id=WorkflowTypeId.unpaywall_snapshot,
+        name="Unpaywall (snapshot) Telescope",
     )
     workflow_type_info[WorkflowTypeId.unpaywall] = WorkflowType(
-        type_id=WorkflowTypeId.unpaywall, name="Unpaywall (daily feeds) Telescope"
+        type_id=WorkflowTypeId.unpaywall,
+        name="Unpaywall (daily feeds) Telescope",
     )
     workflow_type_info[WorkflowTypeId.web_of_science] = WorkflowType(
-        type_id=WorkflowTypeId.web_of_science, name="Web of Science Telescope"
+        type_id=WorkflowTypeId.web_of_science,
+        name="Web of Science Telescope",
     )
     workflow_type_info[WorkflowTypeId.doi_workflow] = WorkflowType(
-        type_id=WorkflowTypeId.doi_workflow, name="DOI Workflow"
+        type_id=WorkflowTypeId.doi_workflow,
+        name="DOI Workflow",
     )
 
     return workflow_type_info

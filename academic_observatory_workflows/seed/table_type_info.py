@@ -29,9 +29,18 @@ def get_table_type_info():
 
     table_type_info = OrderedDict()
 
-    table_type_info[TableTypeId.regular] = TableType(type_id="regular", name="Regular BigQuery table")
-    table_type_info[TableTypeId.sharded] = TableType(type_id="sharded", name="Sharded BigQuery table")
-    table_type_info[TableTypeId.partitioned] = TableType(type_id="partitioned", name="Partitioned BigQuery table")
+    table_type_info[TableTypeId.regular] = TableType(
+        type_id="regular",
+        name="Regular BigQuery table",
+    )
+    table_type_info[TableTypeId.sharded] = TableType(
+        type_id="sharded",
+        name="Sharded BigQuery table",
+    )
+    table_type_info[TableTypeId.partitioned] = TableType(
+        type_id="partitioned",
+        name="Partitioned BigQuery table",
+    )
 
     return table_type_info
 

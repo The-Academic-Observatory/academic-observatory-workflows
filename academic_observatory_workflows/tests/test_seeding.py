@@ -20,12 +20,12 @@ from observatory.platform.utils.test_utils import ObservatoryTestCase
 from observatory.api.client import ApiClient, Configuration
 from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
 from observatory.api.testing import ObservatoryApiEnvironment
-from observatory.api.table_type_info import get_table_type_info
-from academic_observatory_workflows.dataset_type_info import get_dataset_type_info
-from academic_observatory_workflows.dataset_info import get_dataset_info
-from academic_observatory_workflows.workflow_info import get_workflow_info
-from academic_observatory_workflows.workflow_type_info import get_workflow_type_info
-from academic_observatory_workflows.organisation_info import get_organisation_info
+from academic_observatory_workflows.seed.table_type_info import get_table_type_info
+from academic_observatory_workflows.seed.dataset_type_info import get_dataset_type_info
+from academic_observatory_workflows.seed.dataset_info import get_dataset_info
+from academic_observatory_workflows.seed.workflow_info import get_workflow_info
+from academic_observatory_workflows.seed.workflow_type_info import get_workflow_type_info
+from academic_observatory_workflows.seed.organisation_info import get_organisation_info
 from observatory.api.utils import (
     seed_table_type,
     seed_dataset,
@@ -70,19 +70,19 @@ class TestSeeding(ObservatoryTestCase):
             seed_dataset(api=self.api, dataset_info=dataset_info)
             
             orgs = self.api.get_organisations(limit=limit)
-            self.assertEqual(len(orgs), 1)
+            self.assertEqual(len(orgs), len(organisation_info))
 
             tt = self.api.get_table_types(limit=limit)
-            self.assertEqual(len(tt), 3)
+            self.assertEqual(len(tt), len(table_type_info))
 
             dt = self.api.get_dataset_types(limit=limit)
-            self.assertEqual(len(dt), 19)
+            self.assertEqual(len(dt), len(dataset_type_info))
 
             wt = self.api.get_workflow_types(limit=limit)
-            self.assertEqual(len(wt), 14)
+            self.assertEqual(len(wt), len(workflow_type_info))
 
             wf = self.api.get_workflows(limit=limit)
-            self.assertEqual(len(wf), 14)
+            self.assertEqual(len(wf), len(workflow_info))
 
             ds = self.api.get_datasets(limit=limit)
-            self.assertEqual(len(ds), 19)
+            self.assertEqual(len(ds), len(dataset_info))
