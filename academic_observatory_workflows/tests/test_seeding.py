@@ -26,13 +26,14 @@ from academic_observatory_workflows.seed.dataset_info import get_dataset_info
 from academic_observatory_workflows.seed.workflow_info import get_workflow_info
 from academic_observatory_workflows.seed.workflow_type_info import get_workflow_type_info
 from academic_observatory_workflows.seed.organisation_info import get_organisation_info
+from academic_observatory_workflows.seed.seed import seed
 from observatory.api.utils import (
     seed_table_type,
     seed_dataset,
     seed_dataset_type,
     seed_organisation,
     seed_workflow,
-    seed_workflow_type
+    seed_workflow_type,
 )
 
 
@@ -40,49 +41,87 @@ class TestSeeding(ObservatoryTestCase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # API environment
-        self.host = "localhost"
-        self.port = 5001
-        configuration = Configuration(host=f"http://{self.host}:{self.port}")
+    def api_env(self, host="localhost", port: int = 5001):
+        env = ObservatoryApiEnvironment(host=host, port=port)
+        return env
+
+    def api_client(self, host: str = "localhost", port: int = 5001):
+        configuration = Configuration(host=f"http://{host}:{port}")
         api_client = ApiClient(configuration)
-        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
-        self.env = ObservatoryApiEnvironment(host=self.host, port=self.port)
+        api = ObservatoryApi(api_client=api_client)  # noqa: E501
+        return api
 
     def test_seeding(self):
         limit = int(1e6)
-        with self.env.create():
+        port = 5001
+        api = self.api_client(port=port)
+        env = self.api_env(port=port)
+        with env.create():
             organisation_info = get_organisation_info()
-            seed_organisation(api=self.api, organisation_info=organisation_info)
+            seed_organisation(api=api, organisation_info=organisation_info)
 
             table_type_info = get_table_type_info()
-            seed_table_type(api=self.api, table_type_info=table_type_info)
+            seed_table_type(api=api, table_type_info=table_type_info)
 
-            dataset_type_info = get_dataset_type_info(self.api)
-            seed_dataset_type(api=self.api, dataset_type_info=dataset_type_info)
+            dataset_type_info = get_dataset_type_info(api)
+            seed_dataset_type(api=api, dataset_type_info=dataset_type_info)
 
             workflow_type_info = get_workflow_type_info()
-            seed_workflow_type(api=self.api, workflow_type_info=workflow_type_info)
+            seed_workflow_type(api=api, workflow_type_info=workflow_type_info)
 
-            workflow_info = get_workflow_info(self.api)
-            seed_workflow(api=self.api, workflow_info=workflow_info)
+            workflow_info = get_workflow_info(api)
+            seed_workflow(api=api, workflow_info=workflow_info)
 
-            dataset_info = get_dataset_info(self.api)
-            seed_dataset(api=self.api, dataset_info=dataset_info)
-            
-            orgs = self.api.get_organisations(limit=limit)
+            dataset_info = get_dataset_info(api)
+            seed_dataset(api=api, dataset_info=dataset_info)
+
+            orgs = api.get_organisations(limit=limit)
             self.assertEqual(len(orgs), len(organisation_info))
 
-            tt = self.api.get_table_types(limit=limit)
+            tt = api.get_table_types(limit=limit)
             self.assertEqual(len(tt), len(table_type_info))
 
-            dt = self.api.get_dataset_types(limit=limit)
+            dt = api.get_dataset_types(limit=limit)
             self.assertEqual(len(dt), len(dataset_type_info))
 
-            wt = self.api.get_workflow_types(limit=limit)
+            wt = api.get_workflow_types(limit=limit)
             self.assertEqual(len(wt), len(workflow_type_info))
 
-            wf = self.api.get_workflows(limit=limit)
+            wf = api.get_workflows(limit=limit)
             self.assertEqual(len(wf), len(workflow_info))
 
-            ds = self.api.get_datasets(limit=limit)
+            ds = api.get_datasets(limit=limit)
+            self.assertEqual(len(ds), len(dataset_info))
+
+    def test_seed(self):
+        limit = int(1e6)
+        port = 5002
+        api = self.api_client(port=port)
+        env = self.api_env(port=port)
+        with env.create():
+            seed()
+
+            organisation_info = get_organisation_info()
+            table_type_info = get_table_type_info()
+            dataset_type_info = get_dataset_type_info(api)
+            workflow_type_info = get_workflow_type_info()
+            workflow_info = get_workflow_info(api)
+            dataset_info = get_dataset_info(api)
+
+            orgs = api.get_organisations(limit=limit)
+            self.assertEqual(len(orgs), len(organisation_info))
+
+            tt = api.get_table_types(limit=limit)
+            self.assertEqual(len(tt), len(table_type_info))
+
+            dt = api.get_dataset_types(limit=limit)
+            self.assertEqual(len(dt), len(dataset_type_info))
+
+            wt = api.get_workflow_types(limit=limit)
+            self.assertEqual(len(wt), len(workflow_type_info))
+
+            wf = api.get_workflows(limit=limit)
+            self.assertEqual(len(wf), len(workflow_info))
+
+            ds = api.get_datasets(limit=limit)
             self.assertEqual(len(ds), len(dataset_info))
