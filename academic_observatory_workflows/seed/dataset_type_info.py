@@ -96,22 +96,22 @@ def get_dataset_type_info(api: ObservatoryApi):
     )
     dataset_type_info[DatasetTypeId.ror] = DatasetType(
         type_id=DatasetTypeId.ror,
-        name="Research Organisation Registry",
+        name="ROR",
         table_type=TableType(id=ttids[TableTypeId.sharded]),
     )
     dataset_type_info[DatasetTypeId.scopus] = DatasetType(
         type_id=DatasetTypeId.scopus,
-        name="SCOPUS",
+        name="Scopus",
         table_type=TableType(id=ttids[TableTypeId.sharded]),
     )
     dataset_type_info[DatasetTypeId.unpaywall_snapshot] = DatasetType(
         type_id=DatasetTypeId.unpaywall_snapshot,
-        name="Unpaywall (snapshot)",
+        name="Unpaywall Snapshot",
         table_type=TableType(id=ttids[TableTypeId.sharded]),
     )
     dataset_type_info[DatasetTypeId.unpaywall] = DatasetType(
         type_id=DatasetTypeId.unpaywall,
-        name="Unpaywall (daily feeds)",
+        name="Unpaywall",
         table_type=TableType(id=ttids[TableTypeId.regular]),
     )
     dataset_type_info[DatasetTypeId.web_of_science] = DatasetType(

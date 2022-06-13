@@ -25,15 +25,15 @@ from observatory.api.client.model.workflow_type import WorkflowType
 def get_workflow_type_info():
     workflow_type_info = OrderedDict()
     workflow_type_info[WorkflowTypeId.crossref_events] = WorkflowType(
-        type_id="crossref_events",
+        type_id=WorkflowTypeId.crossref_events,
         name="Crossref Events Telescope",
     )
     workflow_type_info[WorkflowTypeId.crossref_fundref] = WorkflowType(
-        type_id="crossref_fundref",
+        type_id=WorkflowTypeId.crossref_fundref,
         name="Crossref Fundref Telescope",
     )
     workflow_type_info[WorkflowTypeId.crossref_metadata] = WorkflowType(
-        type_id="crossref_metadata",
+        type_id=WorkflowTypeId.crossref_metadata,
         name="Crossref Metadata Telescope",
     )
     workflow_type_info[WorkflowTypeId.geonames] = WorkflowType(
@@ -57,20 +57,20 @@ def get_workflow_type_info():
         name="ORCID Telescope",
     )
     workflow_type_info[WorkflowTypeId.ror] = WorkflowType(
-        type_id="ror",
-        name="Research Organisation Registry Telescope",
+        type_id=WorkflowTypeId.ror,
+        name="ROR Telescope",
     )
     workflow_type_info[WorkflowTypeId.scopus] = WorkflowType(
         type_id=WorkflowTypeId.scopus,
-        name="SCOPUS Telescope",
+        name="Scopus Telescope",
     )
     workflow_type_info[WorkflowTypeId.unpaywall_snapshot] = WorkflowType(
         type_id=WorkflowTypeId.unpaywall_snapshot,
-        name="Unpaywall (snapshot) Telescope",
+        name="Unpaywall Snapshot Telescope",
     )
     workflow_type_info[WorkflowTypeId.unpaywall] = WorkflowType(
         type_id=WorkflowTypeId.unpaywall,
-        name="Unpaywall (daily feeds) Telescope",
+        name="Unpaywall Telescope",
     )
     workflow_type_info[WorkflowTypeId.web_of_science] = WorkflowType(
         type_id=WorkflowTypeId.web_of_science,

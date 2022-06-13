@@ -31,80 +31,93 @@ def get_workflow_info(api: ObservatoryApi):
     orgids = get_organisation_ids(api)
 
     workflow_info = OrderedDict()
-    workflow_info["Crossref Events Telescope"] = Workflow(
-        name="Crossref Events Telescope",
+    name = "Crossref Events Telescope"
+    workflow_info[name] = Workflow(
+        name=name,
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.crossref_events]),
         extra={},
         tags=None,
     )
-    workflow_info["Crossref Fundref Telescope"] = Workflow(
-        name="Crossref Fundref Telescope",
+    name = "Crossref Fundref Telescope"
+    workflow_info[name] = Workflow(
+        name=name,
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.crossref_fundref]),
         extra={},
         tags=None,
     )
-    workflow_info["Crossref Metadata Telescope"] = Workflow(
-        name="Crossref Metadata Telescope",
+    name = "Crossref Metadata Telescope"
+    workflow_info[name] = Workflow(
+        name=name,
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.crossref_metadata]),
         extra={},
         tags=None,
     )
-    workflow_info["Geonames Telescope"] = Workflow(
-        name="Geonames Telescope",
+    name = "Geonames Telescope"
+    workflow_info[name] = Workflow(
+        name=name,
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.geonames]),
         extra={},
         tags=None,
     )
-    workflow_info["GRID Telescope"] = Workflow(
-        name="GRID Telescope",
+    name = "GRID Telescope"
+    workflow_info[name] = Workflow(
+        name=name,
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.grid]),
         extra={},
         tags=None,
     )
-    workflow_info["Open Citations Telescope"] = Workflow(
+    name = "Open Citations Telescope"
+    workflow_info[name] = Workflow(
         name="Open Citations Telescope",
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.open_citations]),
         extra={},
         tags=None,
     )
-    workflow_info["OpenAlex Telescope"] = Workflow(
-        name="OpenAlex Telescope",
+    name = "OpenAlex Telescope"
+    workflow_info[name] = Workflow(
+        name=name,
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.openalex]),
         extra={},
         tags=None,
     )
-    workflow_info["ORCID Telescope"] = Workflow(
-        name="ORCID Telescope",
+    name = "ORCID Telescope"
+    workflow_info[name] = Workflow(
+        name=name,
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.orcid]),
         extra={},
         tags=None,
     )
-    workflow_info["ROR Telescope"] = Workflow(
-        name="ROR Telescope",
+    name = "ROR Telescope"
+    workflow_info[name] = Workflow(
+        name=name,
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.ror]),
         extra={},
         tags=None,
     )
-    workflow_info["Unpaywall Snapshot Telescope"] = Workflow(
-        name="Unpaywall Snapshot Telescope",
+    name = "Unpaywall Snapshot Telescope"
+    workflow_info[name] = Workflow(
+        name=name,
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.unpaywall_snapshot]),
         extra={},
         tags=None,
     )
-    workflow_info["Unpaywall Telescope"] = Workflow(
-        name="Unpaywall Telescope",
+    name = "Unpaywall Telescope"
+    workflow_info[name] = Workflow(
+        name=name,
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.unpaywall]),
         extra={},
         tags=None,
     )
-    workflow_info["DOI Workflow"] = Workflow(
-        name="DOI Workflow",
+    name = "DOI Workflow"
+    workflow_info[name] = Workflow(
+        name=name,
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.doi_workflow]),
         extra={},
         tags=None,
     )
-    workflow_info["Curtin Scopus Telescope"] = Workflow(
-        name="Curtin Scopus Telescope",
+    name = "Curtin Scopus Telescope"
+    workflow_info[name] = Workflow(
+        name=name,
         organisation=Organisation(id=orgids["Curtin University"]),
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.scopus]),
         tags=None,
@@ -119,8 +132,9 @@ def get_workflow_info(api: ObservatoryApi):
             "view": "STANDARD",
         },
     )
-    workflow_info["Curtin Web of Science Telescope"] = Workflow(
-        name="Curtin Web of Science Telescope",
+    name = "Curtin Web of Science Telescope"
+    workflow_info[name] = Workflow(
+        name=name,
         organisation=Organisation(id=orgids["Curtin University"]),
         workflow_type=WorkflowType(id=wftids[WorkflowTypeId.web_of_science]),
         extra={
