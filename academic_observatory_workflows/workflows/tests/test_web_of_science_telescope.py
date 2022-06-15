@@ -48,6 +48,7 @@ from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
     module_file_path,
+    find_free_port,
 )
 from observatory.platform.utils.workflow_utils import (
     bigquery_sharded_table_id,
@@ -786,7 +787,7 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
 
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.host = "localhost"
-        self.api_port = 5000
+        self.api_port = find_free_port()
         self.data_location = "us"
 
         self.org_name = "Curtin University"

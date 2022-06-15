@@ -34,8 +34,8 @@ from observatory.api.utils import (
 )
 
 
-def seed():
-    api = get_api_client()
+def seed(host="localhost", port=5002):
+    api = get_api_client(host=host, port=port)
 
     print("Seeding TableType")
     table_type_info = get_table_type_info()
