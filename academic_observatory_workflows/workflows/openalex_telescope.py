@@ -103,21 +103,21 @@ class OpenAlexRelease(StreamRelease):
         """
         return os.path.join(self.download_folder, "transfer_manifest_transform.csv")
 
-    # @property
-    # def transfer_manifest_blob_unchanged(self) -> str:
-    #     """ Create blob name for the transfer manifest file
-    #
-    #     :return: blob name
-    #     """
-    #     return blob_name(self.transfer_manifest_path_unchanged)
-    #
-    # @property
-    # def transfer_manifest_blob_transform(self) -> str:
-    #     """ Create blob name for the transfer manifest file
-    #
-    #     :return: blob name
-    #     """
-    #     return blob_name(self.transfer_manifest_path_transform)
+    @property
+    def transfer_manifest_blob_unchanged(self) -> str:
+        """Create blob name for the transfer manifest file
+
+        :return: blob name
+        """
+        return blob_name(self.transfer_manifest_path_unchanged)
+
+    @property
+    def transfer_manifest_blob_transform(self) -> str:
+        """Create blob name for the transfer manifest file
+
+        :return: blob name
+        """
+        return blob_name(self.transfer_manifest_path_transform)
 
     def write_transfer_manifest(self):
         """Write a transfer manifest file with filenames of files changed since the start date of this release.
@@ -189,35 +189,27 @@ class OpenAlexRelease(StreamRelease):
         # Transfer files that are ready to load directly (unchanged) into BQ to both download and transform bucket,
         # transfer files that need to be transformed first only to download bucket.
         transfers = [
-            {"manifest": self.transfer_manifest_path_unchanged, "bucket": self.download_bucket, "subdir": "unchanged/"},
-            {"manifest": self.transfer_manifest_path_unchanged, "bucket": self.transform_bucket, "subdir": ""},
-            {"manifest": self.transfer_manifest_path_transform, "bucket": self.download_bucket, "subdir": "transform/"},
+            {"manifest": self.transfer_manifest_blob_unchanged, "bucket": self.download_bucket, "subdir": "unchanged/"},
+            {"manifest": self.transfer_manifest_blob_unchanged, "bucket": self.transform_bucket, "subdir": ""},
+            {"manifest": self.transfer_manifest_blob_transform, "bucket": self.download_bucket, "subdir": "transform/"},
         ]
         total_count = 0
         for transfer in transfers:
             success = False
-            prefixes = []
-            with open(transfer["manifest"], "r") as f:
-                for line in f:
-                    prefixes.append(line.strip("\n").strip('"'))
-
-            if not prefixes:
-                continue
 
             for i in range(max_retries):
                 if success:
                     break
-                # TODO use transfer manifest instead of prefixes when that is working (https://issuetracker.google.com/issues/216057461)
                 success, objects_count = aws_to_google_cloud_storage_transfer(
                     aws_access_key_id,
                     aws_secret_access_key,
                     aws_bucket=OpenAlexTelescope.AWS_BUCKET,
-                    include_prefixes=prefixes,
+                    include_prefixes=[],
                     gc_project_id=gc_project_id,
                     gc_bucket=transfer["bucket"],
                     gc_bucket_path=f"telescopes/{self.dag_id}/{self.release_id}/{transfer['subdir']}",
                     description=f"Transfer OpenAlex data from Airflow telescope to {transfer['bucket']}",
-                    # transfer_manifest=f"gs://{self.download_bucket}/{self.transfer_manifest_blob}"
+                    transfer_manifest=f"gs://{self.download_bucket}/{transfer['manifest']}",
                 )
                 total_count += objects_count
 
@@ -378,7 +370,7 @@ class OpenAlexTelescope(StreamTelescope):
 
         self.add_setup_task(self.check_dependencies)
         self.add_task(self.write_transfer_manifest)
-        # self.add_task(self.upload_transfer_manifest)
+        self.add_task(self.upload_transfer_manifest)
         self.add_task(self.transfer)
         self.add_task(self.download_transferred)
         self.add_task(self.transform)
@@ -514,17 +506,19 @@ class OpenAlexTelescope(StreamTelescope):
         """
         release.write_transfer_manifest()
 
-    # def upload_transfer_manifest(self, release: OpenAlexRelease, **kwargs):
-    #     """ Upload transfer manifest files to Google Cloud bucket.
-    #
-    #     :param release: an OpenAlexRelease instance.
-    #     :param kwargs: The context passed from the PythonOperator.
-    #     :return: None.
-    #     """
-    #     upload_file_to_cloud_storage(release.download_bucket, release.transfer_manifest_blob_unchanged,
-    #                                  release.transfer_manifest_path_unchanged)
-    #     upload_file_to_cloud_storage(release.download_bucket, release.transfer_manifest_blob_transform,
-    #                                  release.transfer_manifest_path_transform)
+    def upload_transfer_manifest(self, release: OpenAlexRelease, **kwargs):
+        """Upload transfer manifest files to Google Cloud bucket.
+
+        :param release: an OpenAlexRelease instance.
+        :param kwargs: The context passed from the PythonOperator.
+        :return: None.
+        """
+        upload_file_to_cloud_storage(
+            release.download_bucket, release.transfer_manifest_blob_unchanged, release.transfer_manifest_path_unchanged
+        )
+        upload_file_to_cloud_storage(
+            release.download_bucket, release.transfer_manifest_blob_transform, release.transfer_manifest_path_transform
+        )
 
     def transfer(self, release: OpenAlexRelease, **kwargs):
         """Task to transfer the OpenAlex data

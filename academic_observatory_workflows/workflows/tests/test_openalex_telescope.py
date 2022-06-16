@@ -223,7 +223,8 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         self.assert_dag_structure(
             {
                 "check_dependencies": ["write_transfer_manifest"],
-                "write_transfer_manifest": ["transfer"],
+                "write_transfer_manifest": ["upload_transfer_manifest"],
+                "upload_transfer_manifest": ["transfer"],
                 "transfer": ["download_transferred"],
                 "download_transferred": ["transform"],
                 "transform": ["upload_transformed"],
@@ -319,8 +320,18 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     release.transfer_manifest_path_transform, run["manifest_transform_hash"], "md5"
                 )
 
-                # # Test upload transfer manifest task
-                # env.run_task(telescope.upload_transfer_manifest.__name__)
+                # Test upload transfer manifest task
+                env.run_task(telescope.upload_transfer_manifest.__name__)
+                self.assert_blob_integrity(
+                    env.download_bucket,
+                    release.transfer_manifest_blob_unchanged,
+                    release.transfer_manifest_path_unchanged,
+                )
+                self.assert_blob_integrity(
+                    env.download_bucket,
+                    release.transfer_manifest_blob_transform,
+                    release.transfer_manifest_path_transform,
+                )
 
                 # Test transfer task
                 mock_transfer.reset_mock()
@@ -337,43 +348,36 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     mock_transfer.call_args_list[0][1],
                     {
                         "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                        "include_prefixes": [
-                            f"data/authors/updated_date={run['manifest_date']}/0000_part_00.gz",
-                            f"data/venues/updated_date={run['manifest_date']}/0000_part_00.gz",
-                        ],
+                        "include_prefixes": [],
                         "gc_project_id": self.project_id,
                         "gc_bucket": release.download_bucket,
                         "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/unchanged/",
                         "description": f"Transfer OpenAlex data from Airflow telescope to {release.download_bucket}",
+                        "transfer_manifest": f"gs://{release.download_bucket}/{release.transfer_manifest_blob_unchanged}",
                     },
                 )
                 self.assertDictEqual(
                     mock_transfer.call_args_list[1][1],
                     {
                         "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                        "include_prefixes": [
-                            f"data/authors/updated_date={run['manifest_date']}/0000_part_00.gz",
-                            f"data/venues/updated_date={run['manifest_date']}/0000_part_00.gz",
-                        ],
+                        "include_prefixes": [],
                         "gc_project_id": self.project_id,
                         "gc_bucket": release.transform_bucket,
                         "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/",
                         "description": f"Transfer OpenAlex data from Airflow telescope to {release.transform_bucket}",
+                        "transfer_manifest": f"gs://{release.download_bucket}/{release.transfer_manifest_blob_unchanged}",
                     },
                 )
                 self.assertDictEqual(
                     mock_transfer.call_args_list[2][1],
                     {
                         "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                        "include_prefixes": [
-                            f"data/concepts/updated_date={run['manifest_date']}/0000_part_00.gz",
-                            f"data/institutions/updated_date={run['manifest_date']}/0000_part_00.gz",
-                            f"data/works/updated_date={run['manifest_date']}/0000_part_00.gz",
-                        ],
+                        "include_prefixes": [],
                         "gc_project_id": self.project_id,
                         "gc_bucket": release.download_bucket,
                         "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/transform/",
                         "description": f"Transfer OpenAlex data from Airflow telescope to {release.download_bucket}",
+                        "transfer_manifest": f"gs://{release.download_bucket}/{release.transfer_manifest_blob_transform}",
                     },
                 )
 
@@ -520,8 +524,18 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     release.transfer_manifest_path_transform, run["manifest_transform_hash"], "md5"
                 )
 
-                # # Test upload transfer manifest task
-                # env.run_task(telescope.upload_transfer_manifest.__name__)
+                # Test upload transfer manifest task
+                env.run_task(telescope.upload_transfer_manifest.__name__)
+                self.assert_blob_integrity(
+                    env.download_bucket,
+                    release.transfer_manifest_blob_unchanged,
+                    release.transfer_manifest_path_unchanged,
+                )
+                self.assert_blob_integrity(
+                    env.download_bucket,
+                    release.transfer_manifest_blob_transform,
+                    release.transfer_manifest_path_transform,
+                )
 
                 # Test transfer task
                 mock_transfer.reset_mock()
@@ -539,43 +553,36 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     mock_transfer.call_args_list[0][1],
                     {
                         "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                        "include_prefixes": [
-                            f"data/authors/updated_date={run['manifest_date']}/0000_part_00.gz",
-                            f"data/venues/updated_date={run['manifest_date']}/0000_part_00.gz",
-                        ],
+                        "include_prefixes": [],
                         "gc_project_id": self.project_id,
                         "gc_bucket": release.download_bucket,
                         "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/unchanged/",
                         "description": f"Transfer OpenAlex data from Airflow telescope to {release.download_bucket}",
+                        "transfer_manifest": f"gs://{release.download_bucket}/{release.transfer_manifest_blob_unchanged}",
                     },
                 )
                 self.assertDictEqual(
                     mock_transfer.call_args_list[1][1],
                     {
                         "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                        "include_prefixes": [
-                            f"data/authors/updated_date={run['manifest_date']}/0000_part_00.gz",
-                            f"data/venues/updated_date={run['manifest_date']}/0000_part_00.gz",
-                        ],
+                        "include_prefixes": [],
                         "gc_project_id": self.project_id,
                         "gc_bucket": release.transform_bucket,
                         "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/",
                         "description": f"Transfer OpenAlex data from Airflow telescope to {release.transform_bucket}",
+                        "transfer_manifest": f"gs://{release.download_bucket}/{release.transfer_manifest_blob_unchanged}",
                     },
                 )
                 self.assertDictEqual(
                     mock_transfer.call_args_list[2][1],
                     {
                         "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                        "include_prefixes": [
-                            f"data/concepts/updated_date={run['manifest_date']}/0000_part_00.gz",
-                            f"data/institutions/updated_date={run['manifest_date']}/0000_part_00.gz",
-                            f"data/works/updated_date={run['manifest_date']}/0000_part_00.gz",
-                        ],
+                        "include_prefixes": [],
                         "gc_project_id": self.project_id,
                         "gc_bucket": release.download_bucket,
                         "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/transform/",
                         "description": f"Transfer OpenAlex data from Airflow telescope to {release.download_bucket}",
+                        "transfer_manifest": f"gs://{release.download_bucket}/{release.transfer_manifest_blob_transform}",
                     },
                 )
 
@@ -781,27 +788,42 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
             # Test successful transfer with prefixes for unchanged, no prefixes for transform
             release.transfer(max_retries=1)
+            self.assertEqual(3, len(mock_transfer.call_args_list))
             self.assertDictEqual(
                 {
                     "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                    "include_prefixes": ["prefix1", "prefix2"],
+                    "include_prefixes": [],
                     "gc_project_id": "project_id",
                     "gc_bucket": "download-bucket",
                     "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/unchanged/",
                     "description": "Transfer OpenAlex data from Airflow telescope to download-bucket",
+                    "transfer_manifest": "gs://download-bucket/telescopes/dag_id/2022_01_01-2022_02_01/transfer_manifest_unchanged.csv",
                 },
                 mock_transfer.call_args_list[0][1],
             )
             self.assertDictEqual(
                 {
                     "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                    "include_prefixes": ["prefix1", "prefix2"],
+                    "include_prefixes": [],
                     "gc_project_id": "project_id",
                     "gc_bucket": "transform-bucket",
                     "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/",
                     "description": "Transfer OpenAlex data from Airflow telescope to transform-bucket",
+                    "transfer_manifest": "gs://download-bucket/telescopes/dag_id/2022_01_01-2022_02_01/transfer_manifest_unchanged.csv",
                 },
                 mock_transfer.call_args_list[1][1],
+            )
+            self.assertDictEqual(
+                {
+                    "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
+                    "include_prefixes": [],
+                    "gc_project_id": "project_id",
+                    "gc_bucket": "download-bucket",
+                    "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/transform/",
+                    "description": "Transfer OpenAlex data from Airflow telescope to download-bucket",
+                    "transfer_manifest": "gs://download-bucket/telescopes/dag_id/2022_01_01-2022_02_01/transfer_manifest_transform.csv",
+                },
+                mock_transfer.call_args_list[2][1],
             )
             mock_transfer.reset_mock()
 
