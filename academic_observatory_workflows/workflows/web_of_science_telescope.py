@@ -53,6 +53,7 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
+from academic_observatory_workflows.dag_tag import Tag
 
 
 class WosUtilConst:
@@ -921,6 +922,7 @@ class WebOfScienceTelescope(SnapshotTelescope):
             airflow_conns=airflow_conns,
             load_bigquery_table_kwargs=load_bigquery_table_kwargs,
             workflow_id=workflow_id,
+            tags=[Tag.academic_observatory],
         )
 
         if len(airflow_conns) == 0:

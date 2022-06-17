@@ -56,6 +56,8 @@ from observatory.platform.utils.gc_utils import (
 from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
 from observatory.platform.workflows.workflow import Workflow
+from academic_observatory_workflows.dag_tag import Tag
+
 
 # The minimum number of outputs before including an entity in the analysis
 INCLUSION_THRESHOLD = 1000
@@ -1430,6 +1432,7 @@ class OaWebWorkflow(Workflow):
             catchup=catchup,
             airflow_vars=airflow_vars,
             airflow_conns=airflow_conns,
+            tags=[Tag.academic_observatory],
         )
         self.agg_dataset_id = agg_dataset_id
         self.ror_dataset_id = ror_dataset_id

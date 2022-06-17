@@ -44,6 +44,7 @@ from observatory.platform.workflows.stream_telescope import (
     StreamRelease,
     StreamTelescope,
 )
+from academic_observatory_workflows.dag_tag import Tag
 
 
 class UnpaywallRelease(StreamRelease):
@@ -247,6 +248,7 @@ class UnpaywallTelescope(StreamTelescope):
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
             workflow_id=workflow_id,
             dataset_type_id=dataset_type_id,
+            tags=[Tag.academic_observatory],
         )
 
         self.add_setup_task(self.check_dependencies)

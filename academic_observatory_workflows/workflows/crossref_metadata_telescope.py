@@ -45,6 +45,7 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
+from academic_observatory_workflows.dag_tag import Tag
 
 
 class CrossrefMetadataRelease(SnapshotRelease):
@@ -238,6 +239,7 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
             airflow_conns=airflow_conns,
             max_active_runs=max_active_runs,
             workflow_id=workflow_id,
+            tags=[Tag.academic_observatory],
         )
         self.max_processes = max_processes
 

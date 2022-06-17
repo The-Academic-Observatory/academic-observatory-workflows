@@ -44,6 +44,7 @@ from observatory.platform.utils.jinja2_utils import (
 )
 from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.workflow import Workflow
+from academic_observatory_workflows.dag_tag import Tag
 
 MAX_QUERIES = 100
 
@@ -401,6 +402,7 @@ class DoiWorkflow(Workflow):
             catchup=catchup,
             airflow_vars=airflow_vars,
             workflow_id=workflow_id,
+            tags=[Tag.academic_observatory],
         )
 
         self.intermediate_dataset_id = intermediate_dataset_id
