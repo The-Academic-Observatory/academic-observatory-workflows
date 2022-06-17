@@ -16,7 +16,7 @@
 # Author: Tuan Chien
 
 
-from observatory.platform.utils.test_utils import ObservatoryTestCase
+from observatory.platform.utils.test_utils import ObservatoryTestCase, find_free_port
 from observatory.api.client import ApiClient, Configuration
 from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
 from observatory.api.testing import ObservatoryApiEnvironment
@@ -53,7 +53,7 @@ class TestSeeding(ObservatoryTestCase):
 
     def test_seeding(self):
         limit = int(1e6)
-        port = 5001
+        port = find_free_port()
         api = self.api_client(port=port)
         env = self.api_env(port=port)
         with env.create():
@@ -95,11 +95,11 @@ class TestSeeding(ObservatoryTestCase):
 
     def test_seed(self):
         limit = int(1e6)
-        port = 5002
+        port = find_free_port()
         api = self.api_client(port=port)
         env = self.api_env(port=port)
         with env.create():
-            seed()
+            seed(port=port)
 
             organisation_info = get_organisation_info()
             table_type_info = get_table_type_info()
