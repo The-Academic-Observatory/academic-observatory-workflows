@@ -47,6 +47,7 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
+from observatory.platform.utils.release_utils import get_new_release_dates, get_datasets
 
 
 class CrossrefFundrefRelease(SnapshotRelease):
@@ -292,23 +293,14 @@ class CrossrefFundrefTelescope(SnapshotTelescope):
         prev_execution_date = pendulum.instance(kwargs["prev_execution_date"])
         execution_date = pendulum.instance(kwargs["execution_date"])
         releases_list = list_releases(prev_execution_date, execution_date)
+        release_dates = [pendulum.parse(release["date"]) for release in releases_list]
+        api_datasets = get_datasets(workflow_id=self.workflow_id)
+        new_releases = get_new_release_dates(dataset_id=api_datasets[0].id, releases=release_dates)
+        ymd = lambda x: pendulum.parse(x["date"]).strftime("%Y%m%d")
+        releases_list_out = list(filter(lambda x: ymd(x) in new_releases, releases_list))
+
         logging.info(f"Releases between prev ({prev_execution_date}) and current ({execution_date}) execution date:")
         logging.info(releases_list)
-
-        # Check if the BigQuery table for each release already exists and only process release if the table
-        # doesn't exist
-        releases_list_out = []
-        for release in releases_list:
-            release_date = pendulum.parse(release["date"])
-            table_id = bigquery_sharded_table_id(CrossrefFundrefTelescope.DAG_ID, release_date)
-            logging.info("Checking if bigquery table already exists:")
-            if bigquery_table_exists(project_id, self.dataset_id, table_id):
-                logging.info(
-                    f"Skipping as table exists for {release['url']}: " f"{project_id}.{self.dataset_id}.{table_id}"
-                )
-            else:
-                logging.info(f"Table does not exist yet, processing {release['url']} in this workflow")
-                releases_list_out.append(release)
 
         # If releases_list_out contains items then the DAG will continue (return True) otherwise it will
         # stop (return False)

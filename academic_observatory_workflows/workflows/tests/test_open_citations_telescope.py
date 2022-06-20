@@ -143,72 +143,49 @@ class TestOpenCitationsTelescope(ObservatoryTestCase):
         releases = telescope._list_releases(start_date=start_date, end_date=end_date)
         self.assertEqual(len(releases), 0)
 
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.bigquery_table_exists")
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.bigquery_sharded_table_id")
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.Variable.get")
-    def test_process_release_no_files(self, m_get, m_bq_table_id, m_bq_table_exists):
-        m_get.return_value = "project_id"
-        m_bq_table_id.return_value = "1"
-        m_bq_table_exists.return_value = False
-        telescope = OpenCitationsTelescope()
-        releases = [
-            {"files": [], "date": "20210101"},
-            {"files": [1], "date": "20210101"},
-            {"files": [2], "date": "20210101"},
-        ]
-
-        filtered_releases = list(filter(telescope._process_release, releases))
-        self.assertEqual(len(filtered_releases), 2)
-
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.bigquery_table_exists")
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.bigquery_sharded_table_id")
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.Variable.get")
-    def test_process_release_table_exists(self, m_get, m_bq_table_id, m_bq_table_exists):
-        m_get.return_value = "project_id"
-        m_bq_table_id.return_value = "1"
-        m_bq_table_exists.side_effect = [False, True, False]
-
-        telescope = OpenCitationsTelescope()
-        releases = [
-            {"files": [0], "date": "20210101"},
-            {"files": [1], "date": "20210101"},
-            {"files": [2], "date": "20210101"},
-        ]
-
-        filtered_releases = list(filter(telescope._process_release, releases))
-        self.assertEqual(len(filtered_releases), 2)
-
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope._process_release")
     @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope._list_releases")
-    def test_get_release_info_continue(self, m_list_releases, m_process_release):
-        m_list_releases.return_value = [1, 2, 3]
-        m_process_release.return_value = True
+    def test_get_release_info_continue(self, m_list_releases):
+        releases = [
+            {"date": "20200101", "files": "file1.txt"},
+            {"date": "20200102", "files": "file2.txt"},
+            {"date": "20200103", "files": "file3.txt"},
+        ]
+        m_list_releases.return_value = releases
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
 
-        telescope = OpenCitationsTelescope()
-        execution_date = pendulum.datetime(2021, 1, 1)
-        next_execution_date = pendulum.datetime(2021, 1, 8)
-        ti = MagicMock()
-        continue_dag = telescope.get_release_info(
-            execution_date=execution_date, next_execution_date=next_execution_date, ti=ti
-        )
-        self.assertTrue(continue_dag)
-        self.assertEqual(len(ti.method_calls), 1)
+        with env.create():
+            self.setup_connections(env)
+            self.setup_api()
 
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope._process_release")
+            telescope = OpenCitationsTelescope(workflow_id=1)
+            execution_date = pendulum.datetime(2021, 1, 1)
+            next_execution_date = pendulum.datetime(2021, 1, 8)
+            ti = MagicMock()
+            continue_dag = telescope.get_release_info(
+                execution_date=execution_date, next_execution_date=next_execution_date, ti=ti
+            )
+            self.assertTrue(continue_dag)
+            self.assertEqual(len(ti.method_calls), 1)
+
     @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope._list_releases")
-    def test_get_release_info_skip(self, m_list_releases, m_process_release):
+    def test_get_release_info_skip(self, m_list_releases):
         m_list_releases.return_value = []
-        m_process_release.return_value = True
 
-        telescope = OpenCitationsTelescope()
-        execution_date = pendulum.datetime(2021, 1, 1)
-        next_execution_date = pendulum.datetime(2021, 1, 8)
-        ti = MagicMock()
-        continue_dag = telescope.get_release_info(
-            execution_date=execution_date, next_execution_date=next_execution_date, ti=ti
-        )
-        self.assertFalse(continue_dag)
-        self.assertEqual(len(ti.method_calls), 0)
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
+
+        with env.create():
+            self.setup_connections(env)
+            self.setup_api()
+
+            telescope = OpenCitationsTelescope(workflow_id=1)
+            execution_date = pendulum.datetime(2021, 1, 1)
+            next_execution_date = pendulum.datetime(2021, 1, 8)
+            ti = MagicMock()
+            continue_dag = telescope.get_release_info(
+                execution_date=execution_date, next_execution_date=next_execution_date, ti=ti
+            )
+            self.assertFalse(continue_dag)
+            self.assertEqual(len(ti.method_calls), 0)
 
     def create_templates(self, *, host, port):
         # list open citation releases

@@ -39,6 +39,7 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
+from observatory.platform.utils.release_utils import get_new_release_dates, get_datasets
 
 
 class OpenCitationsRelease(SnapshotRelease):
@@ -186,24 +187,6 @@ class OpenCitationsTelescope(SnapshotTelescope):
 
         return releases
 
-    def _process_release(self, release: Dict[str, str]) -> bool:
-        """Indicates whether we should process this release. If there are no files, or if the BigQuery table exists, we will not process this release.
-
-        :param release: Release to consider.
-        :return: Whether to process the release.
-        """
-
-        if len(release["files"]) == 0:
-            return False
-
-        project_id = Variable.get(AirflowVars.PROJECT_ID)
-        table_id = bigquery_sharded_table_id(self.dag_id, pendulum.parse(release["date"]))
-
-        if bigquery_table_exists(project_id, self.dataset_id, table_id):
-            return False
-
-        return True
-
     def get_release_info(self, **kwargs):
         """Calculate which releases require processing, and push the info to an XCom.
 
@@ -216,7 +199,11 @@ class OpenCitationsTelescope(SnapshotTelescope):
         start_date = kwargs["execution_date"]
         end_date = kwargs["next_execution_date"].subtract(microseconds=1)
         releases = self._list_releases(start_date=start_date, end_date=end_date)
-        filtered_releases = list(filter(self._process_release, releases))
+        release_dates = [pendulum.parse(release["date"]) for release in releases]
+        api_datasets = get_datasets(workflow_id=self.workflow_id)
+        new_releases = get_new_release_dates(dataset_id=api_datasets[0].id, releases=release_dates)
+        ymd = lambda x: pendulum.parse(x["date"]).strftime("%Y%m%d")
+        filtered_releases = list(filter(lambda x: ymd(x) in new_releases, releases))
 
         continue_dag = len(filtered_releases) > 0
         if continue_dag:
