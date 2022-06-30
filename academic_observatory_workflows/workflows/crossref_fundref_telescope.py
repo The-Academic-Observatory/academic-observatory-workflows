@@ -47,6 +47,7 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
+from academic_observatory_workflows.dag_tag import Tag
 
 
 class CrossrefFundrefRelease(SnapshotRelease):
@@ -231,6 +232,7 @@ class CrossrefFundrefTelescope(SnapshotTelescope):
             catchup=catchup,
             airflow_vars=airflow_vars,
             workflow_id=workflow_id,
+            tags=[Tag.academic_observatory],
         )
 
         # Create Gitlab pool to limit the number of connections to Gitlab, which is very quick to block requests if

@@ -39,6 +39,7 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
+from academic_observatory_workflows.dag_tag import Tag
 
 
 class OpenCitationsRelease(SnapshotRelease):
@@ -150,6 +151,7 @@ class OpenCitationsTelescope(SnapshotTelescope):
             catchup=catchup,
             airflow_vars=airflow_vars,
             workflow_id=workflow_id,
+            tags=[Tag.academic_observatory],
         )
 
         self.add_setup_task(self.check_dependencies)

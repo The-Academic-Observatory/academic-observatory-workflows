@@ -37,6 +37,7 @@ from observatory.platform.workflows.stream_telescope import (
     StreamRelease,
     StreamTelescope,
 )
+from academic_observatory_workflows.dag_tag import Tag
 
 
 class CrossrefEventsRelease(StreamRelease):
@@ -269,6 +270,7 @@ class CrossrefEventsTelescope(StreamTelescope):
             workflow_id=workflow_id,
             dataset_type_id=dataset_type_id,
             load_bigquery_table_kwargs={"ignore_unknown_values": True},
+            tags=[Tag.academic_observatory],
         )
         self.mailto = mailto
         self.max_threads = max_threads

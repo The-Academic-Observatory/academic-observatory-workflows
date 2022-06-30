@@ -36,6 +36,7 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
+from academic_observatory_workflows.dag_tag import Tag
 
 
 def fetch_release_date() -> pendulum.DateTime:
@@ -204,6 +205,7 @@ class GeonamesTelescope(SnapshotTelescope):
             catchup=catchup,
             airflow_vars=airflow_vars,
             workflow_id=workflow_id,
+            tags=[Tag.academic_observatory],
         )
         self.add_setup_task(self.check_dependencies)
         self.add_setup_task(self.fetch_release_date)

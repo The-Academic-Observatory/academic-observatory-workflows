@@ -52,6 +52,7 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
+from academic_observatory_workflows.dag_tag import Tag
 
 
 class ScopusRelease(SnapshotRelease):
@@ -220,6 +221,7 @@ class ScopusTelescope(SnapshotTelescope):
             airflow_conns=airflow_conns,
             workflow_id=workflow_id,
             load_bigquery_table_kwargs=load_bigquery_table_kwargs,
+            tags=[Tag.academic_observatory],
         )
 
         if len(airflow_conns) == 0:

@@ -38,6 +38,7 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
+from academic_observatory_workflows.dag_tag import Tag
 
 
 class UnpaywallSnapshotRelease(SnapshotRelease):
@@ -194,6 +195,7 @@ class UnpaywallSnapshotTelescope(SnapshotTelescope):
             airflow_conns=airflow_conns,
             queue=queue,
             workflow_id=workflow_id,
+            tags=[Tag.academic_observatory],
         )
 
         self.add_setup_task(self.check_dependencies)

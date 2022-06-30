@@ -31,6 +31,7 @@ from observatory.platform.workflows.elastic_import_workflow import (
     ElasticImportWorkflow,
     load_elastic_mappings_simple,
 )
+from academic_observatory_workflows.dag_tag import Tag
 
 DATASET_ID = "data_export"
 DATA_LOCATION = "us"
@@ -108,5 +109,6 @@ for config in configs:
         kibana_spaces=config.kibana_spaces,
         kibana_time_fields=config.kibana_time_fields,
         index_keep_info=config.index_keep_info,
+        tags=[Tag.academic_observatory],
     ).make_dag()
     globals()[dag.dag_id] = dag
