@@ -58,23 +58,23 @@
       {
         "name": "openalex",
         "type": "STRING",
-        "description": ""
+        "description": "this venue's OpenAlex ID. Same as Venue.id"
       },
       {
         "name": "issn_l",
         "type": "STRING",
-        "description": ""
+        "description": "this venue's ISSN-L. Same as Venue.issn_l"
       },
       {
         "name": "issn",
         "type": "STRING",
         "mode": "REPEATED",
-        "description": ""
+        "description": "a list of this venue's ISSNs. Same as Venue.issn"
       },
       {
         "name": "mag",
         "type": "INTEGER",
-        "description": ""
+        "description": "this venue's Microsoft Academic Graph ID"
       }
     ]
   },
@@ -143,5 +143,10 @@
     "name": "updated_date",
     "type": "STRING",
     "description": "The last time anything in this Venue object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  },
+  {
+    "name": "created_date",
+    "type": "STRING",
+    "description": "The date this Venue object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
   }
 ]

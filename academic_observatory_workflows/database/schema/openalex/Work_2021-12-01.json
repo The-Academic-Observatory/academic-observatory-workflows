@@ -37,12 +37,12 @@
       {
         "name": "openalex",
         "type": "STRING",
-        "description": "The OpenAlex ID, which is also found at Work.id"
+        "description": "The OpenAlex ID. Same as Work.id"
       },
       {
         "name": "doi",
         "type": "STRING",
-        "description": "The DOI. This is most likely, but not necessarily, a Crossref DOI"
+        "description": "The DOI. Same as Work.doi"
       },
       {
         "name": "mag",
@@ -53,6 +53,11 @@
         "name": "pmid",
         "type": "STRING",
         "description": "The Pubmed Identifier"
+      },
+      {
+        "name": "pmcid",
+        "type": "STRING",
+        "description": "the Pubmed Central identifier"
       }
     ]
   },
@@ -206,6 +211,11 @@
             "description": "The institution's primary type, using the ROR \"type\" controlled vocabulary. Possible values are: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, and Other."
           }
         ]
+      },
+      {
+        "name": "raw_affiliation_string",
+        "type": "STRING",
+        "description": "This author's affiliation as it originally came to us (on a webpage or in an API), as a raw unformatted string. "
       }
     ]
   },
@@ -439,5 +449,10 @@
     "name": "updated_date",
     "type": "STRING",
     "description": "The last time anything in this Work object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  },
+  {
+    "name": "created_date",
+    "type": "STRING",
+    "description": "The date this Work object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
   }
 ]

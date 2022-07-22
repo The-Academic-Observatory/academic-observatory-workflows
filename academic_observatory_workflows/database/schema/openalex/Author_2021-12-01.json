@@ -23,12 +23,12 @@
   {
     "name": "works_count",
     "type": "INTEGER",
-    "description": "The number of  Works this this author has created."
+    "description": "The number of Works this this author has created."
   },
   {
     "name": "cited_by_count",
     "type": "INTEGER",
-    "description": "The total number  Works that cite a work this author has created."
+    "description": "The total number Works that cite a work this author has created."
   },
   {
     "name": "ids",
@@ -38,32 +38,32 @@
       {
         "name": "openalex",
         "type": "STRING",
-        "description": ""
+        "description": "this author's OpenAlex ID. Same as Author.id"
       },
       {
         "name": "orcid",
         "type": "STRING",
-        "description": ""
+        "description": "this author's ORCID ID. Same as Author.orcid"
       },
       {
         "name": "scopus",
         "type": "STRING",
-        "description": ""
+        "description": "this author's Scopus author ID"
       },
       {
         "name": "twitter",
         "type": "STRING",
-        "description": ""
+        "description": "this author's Twitter handle"
       },
       {
         "name": "wikipedia",
         "type": "STRING",
-        "description": ""
+        "description": "this author's Wikipedia page"
       },
       {
         "name": "mag",
         "type": "INTEGER",
-        "description": ""
+        "description": "this author's Microsoft Academic Graph ID"
       }
     ]
   },
@@ -164,5 +164,10 @@
     "name": "updated_date",
     "type": "STRING",
     "description": "The last time anything in this author object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  },
+  {
+    "name": "created_date",
+    "type": "STRING",
+    "description": "The date this Author object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
   }
 ]

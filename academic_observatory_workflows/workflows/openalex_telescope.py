@@ -365,7 +365,7 @@ class OpenAlexTelescope(StreamTelescope):
             airflow_conns=airflow_conns,
             workflow_id=workflow_id,
             dataset_type_id=dataset_type_id,
-            load_bigquery_table_kwargs={"ignore_unknown_values": True},
+            load_bigquery_table_kwargs={"ignore_unknown_values": False},
             tags=[Tag.academic_observatory],
         )
         self.max_processes = max_processes

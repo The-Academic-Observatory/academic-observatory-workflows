@@ -7,7 +7,7 @@
   {
     "name": "wikidata",
     "type": "STRING",
-    "description": "The Wikidata ID for this concept. "
+    "description": "The Wikidata ID for this concept. This is the Canonical External ID for concepts."
   },
   {
     "name": "display_name",
@@ -42,34 +42,34 @@
       {
         "name": "openalex",
         "type": "STRING",
-        "description": ""
+        "description": "this concept's OpenAlex ID. Same as Concept.id"
       },
       {
         "name": "wikidata",
         "type": "STRING",
-        "description": ""
+        "description": "this concept's Wikidata ID. Same as Concept.wikidata"
       },
       {
         "name": "wikipedia",
         "type": "STRING",
-        "description": ""
+        "description": "this concept's Wikipedia page URL"
       },
       {
         "name": "umls_aui",
         "type": "STRING",
         "mode": "REPEATED",
-        "description": ""
+        "description": "this concept's Unified Medical Language System Atom Unique Identifiers"
       },
       {
         "name": "umls_cui",
         "type": "STRING",
         "mode": "REPEATED",
-        "description": ""
+        "description": "this concept's Unified Medical Language System Concept Unique Identifiers"
       },
       {
         "name": "mag",
         "type": "INTEGER",
-        "description": ""
+        "description": "this concept's Microsoft Academic Graph ID"
       }
     ]
   },
@@ -221,5 +221,10 @@
     "name": "updated_date",
     "type": "STRING",
     "description": "The last time anything in this concept object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  },
+  {
+    "name": "created_date",
+    "type": "STRING",
+    "description": "The date this Concept object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
   }
 ]

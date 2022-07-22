@@ -59,7 +59,7 @@ from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
     module_file_path,
-    find_free_port
+    find_free_port,
 )
 
 
@@ -110,7 +110,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 "Concept": 3947,
                 "Institution": 3259,
                 "Venue": 2108,
-                "Work": 11804,
+                "Work": 12657,
             },
         }
         self.second_run = {
@@ -123,7 +123,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 "Concept": 7894,
                 "Institution": 6518,
                 "Venue": 4216,
-                "Work": 23608,
+                "Work": 25314,
             },
         }
 

@@ -69,32 +69,32 @@
       {
         "name": "openalex",
         "type": "STRING",
-        "description": ""
+        "description": "this institution's OpenAlex ID. Same as Institution.id"
       },
       {
         "name": "ror",
         "type": "STRING",
-        "description": ""
+        "description": "this institution's ROR ID. Same as Institution.ror"
       },
       {
         "name": "grid",
         "type": "STRING",
-        "description": ""
+        "description": "this institution's GRID ID"
       },
       {
         "name": "wikipedia",
         "type": "STRING",
-        "description": ""
+        "description": "this institution's Wikipedia page URL"
       },
       {
         "name": "wikidata",
         "type": "STRING",
-        "description": ""
+        "description": "this institution's Wikidata ID"
       },
       {
         "name": "mag",
         "type": "INTEGER",
-        "description": ""
+        "description": "this institution's Microsoft Academic Graph ID"
       }
     ]
   },
@@ -288,5 +288,10 @@
     "name": "updated_date",
     "type": "STRING",
     "description": "The last time anything in this Institution changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  },
+  {
+    "name": "created_date",
+    "type": "STRING",
+    "description": "The date this Institution object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
   }
 ]
