@@ -84,7 +84,7 @@ SELECT
   agg.total_outputs as n_outputs,
   agg.access_types.oa.total_outputs AS n_outputs_open,
   agg.citations.mag.total_citations as n_citations,  
-  agg.access_types.publisher.total_outputs AS n_outputs_publisher_open,
+  agg.oa_coki.publisher.total AS n_outputs_publisher_open,
   agg.access_types.green.total_outputs AS n_outputs_other_platform_open,
   agg.access_types.green_only.total_outputs AS n_outputs_other_platform_open_only,
   agg.access_types.gold_doaj.total_outputs AS n_outputs_oa_journal,

@@ -16,8 +16,10 @@
 
 from __future__ import annotations
 
+import math
 import os
 import random
+import urllib.parse
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -95,6 +97,47 @@ FUNDING_BODY_SUBTYPES = {
 
 
 @dataclass
+class Repository:
+    """A repository."""
+
+    name: str
+    endpoint_id: str = None
+    pmh_domain: str = None
+    url_domain: str = None
+    category: str = None
+    ror_id: str = None
+
+    def _key(self):
+        return self.name, self.endpoint_id, self.pmh_domain, self.url_domain, self.category, self.ror_id
+
+    def __eq__(self, other):
+        if isinstance(other, Repository):
+            return self._key() == other._key()
+        raise NotImplementedError()
+
+    def __hash__(self):
+        return hash(self._key())
+
+    @staticmethod
+    def from_dict(dict_: Dict):
+        name = dict_.get("name")
+        endpoint_id = dict_.get("endpoint_id")
+        pmh_domain = dict_.get("pmh_domain")
+        url_domain = dict_.get("url_domain")
+        category = dict_.get("category")
+        ror_id = dict_.get("ror_id")
+
+        return Repository(
+            name,
+            endpoint_id=endpoint_id,
+            pmh_domain=pmh_domain,
+            url_domain=url_domain,
+            category=category,
+            ror_id=ror_id,
+        )
+
+
+@dataclass
 class Institution:
     """An institution.
 
@@ -123,6 +166,7 @@ class Institution:
     types: str = None
     country: str = None
     coordinates: str = None
+    repository: Repository = None
 
 
 def date_between_dates(start_ts: int, end_ts: int) -> DateTime:
@@ -153,9 +197,9 @@ class Paper:
     :param events: a list of events related to this paper.
     :param cited_by: a list of papers that this paper is cited by.
     :param fields_of_study: a list of the fields of study of the paper.
-    :param license:
-    :param is_free_to_read_at_publisher:
-    :param is_in_institutional_repo:
+    :param license: the papers license at the publisher.
+    :param is_free_to_read_at_publisher: whether the paper is free to read at the publisher.
+    :param repositories: the list of repositories where the paper can be read.
     """
 
     id: int
@@ -170,9 +214,9 @@ class Paper:
     events: List[Event] = None
     cited_by: List[Paper] = None
     fields_of_study: List[FieldOfStudy] = None
-    license: str = None
-    is_free_to_read_at_publisher: bool = False
-    is_in_institutional_repo: bool = False
+    publisher_license: str = None
+    publisher_is_free_to_read: bool = False
+    repositories: List[Repository] = None
 
     @property
     def access_type(self) -> AccessType:
@@ -182,15 +226,61 @@ class Paper:
         """
 
         gold_doaj = self.journal.license is not None
-        gold = gold_doaj or (self.is_free_to_read_at_publisher and self.license is not None and not gold_doaj)
-        hybrid = self.is_free_to_read_at_publisher and self.license is not None and not gold_doaj
-        bronze = self.is_free_to_read_at_publisher and self.license is None and not gold_doaj
-        green = self.is_in_institutional_repo
-        green_only = self.is_in_institutional_repo and not gold_doaj and not self.is_free_to_read_at_publisher
+        gold = gold_doaj or (self.publisher_is_free_to_read and self.publisher_license is not None and not gold_doaj)
+        hybrid = self.publisher_is_free_to_read and self.publisher_license is not None and not gold_doaj
+        bronze = self.publisher_is_free_to_read and self.publisher_license is None and not gold_doaj
+        green = len(self.repositories) > 0
+        green_only = green and not gold_doaj and not self.publisher_is_free_to_read
         oa = gold or hybrid or bronze or green
 
         return AccessType(
             oa=oa, green=green, gold=gold, gold_doaj=gold_doaj, hybrid=hybrid, bronze=bronze, green_only=green_only
+        )
+
+    @property
+    def oa_coki(self) -> COKIOpenAccess:
+        """Return the access type for the paper.
+
+        :return: AccessType.
+        """
+
+        at = self.access_type
+        open = at.oa
+        closed = not open
+        publisher = at.gold_doaj or at.hybrid or at.bronze
+        other_platform = at.green
+        publisher_only = publisher and not other_platform
+        both = publisher and other_platform
+        other_platform_only = at.green_only
+
+        # Publisher categories
+        oa_journal = at.gold_doaj
+        hybrid = at.hybrid
+        no_guarantees = at.bronze
+        publisher_categories = PublisherCategories(oa_journal, hybrid, no_guarantees)
+
+        # Other platform categories
+        preprint = any([repo.category == "Preprint" for repo in self.repositories])
+        domain = any([repo.category == "Domain" for repo in self.repositories])
+        institution = any([repo.category == "Institution" for repo in self.repositories])
+        public = any([repo.category == "Public" for repo in self.repositories])
+        aggregator = any([repo.category == "Aggregator" for repo in self.repositories])
+        other_internet = any([repo.category == "Other Internet" for repo in self.repositories])
+        unknown = any([repo.category == "Unknown" for repo in self.repositories])
+        other_platform_categories = OtherPlatformCategories(
+            preprint, domain, institution, public, aggregator, other_internet, unknown
+        )
+
+        return COKIOpenAccess(
+            open,
+            closed,
+            publisher,
+            other_platform,
+            publisher_only,
+            both,
+            other_platform_only,
+            publisher_categories,
+            other_platform_categories,
         )
 
 
@@ -217,6 +307,68 @@ class AccessType:
     hybrid: bool = None
     bronze: bool = None
     green_only: bool = None
+
+
+@dataclass
+class COKIOpenAccess:
+    """The COKI Open Access types.
+
+    :param open: .
+    :param closed: .
+    :param publisher: .
+    :param other_platform: .
+    :param publisher_only: .
+    :param both: .
+    :param other_platform_only: .
+    :param publisher_categories: .
+    :param other_platform_categories: .
+    """
+
+    open: bool = None
+    closed: bool = None
+    publisher: bool = None
+    other_platform: bool = None
+    publisher_only: bool = None
+    both: bool = None
+    other_platform_only: bool = None
+    publisher_categories: PublisherCategories = None
+    other_platform_categories: OtherPlatformCategories = None
+
+
+@dataclass
+class PublisherCategories:
+    """The publisher open subcategories.
+
+    :param oa_journal: .
+    :param hybrid: .
+    :param no_guarantees: .
+    """
+
+    oa_journal: bool = None
+    hybrid: bool = None
+    no_guarantees: bool = None
+
+
+@dataclass
+class OtherPlatformCategories:
+    """The other platform open subcategories
+
+    :param preprint: .
+    :param domain: .
+    :param institution: .
+    :param public: .
+    :param aggregator: .
+    :param other_internet: .
+    :param unknown: .
+    """
+
+    preprint: bool = None
+    domain: bool = None
+    institution: bool = None
+    public: bool = None
+    aggregator: bool = None
+    other_internet: bool = None
+    unknown: bool = None
 
 
 @dataclass
@@ -318,6 +470,7 @@ PublisherList = List[Publisher]
 PaperList = List[Paper]
 FieldOfStudyList = List[FieldOfStudy]
 EventsList = List[Event]
+RepositoryList = List[Repository]
 
 
 @dataclass
@@ -330,6 +483,7 @@ class ObservatoryDataset:
     :param publishers: list of publishers.
     :param papers: list of papers.
     :param fields_of_study: list of fields of study.
+    :param fields_of_study: list of fields of study.
     """
 
     institutions: InstitutionList
@@ -338,6 +492,7 @@ class ObservatoryDataset:
     publishers: PublisherList
     papers: PaperList
     fields_of_study: FieldOfStudyList
+    repositories: RepositoryList
 
 
 def make_doi(doi_prefix: int):
@@ -352,15 +507,17 @@ def make_doi(doi_prefix: int):
 
 def make_observatory_dataset(
     institutions: List[Institution],
+    repositories: List[Repository],
     n_funders: int = 5,
     n_publishers: int = 5,
     n_authors: int = 10,
-    n_papers: int = 50,
+    n_papers: int = 100,
     n_fields_of_study_per_level: int = 5,
 ) -> ObservatoryDataset:
     """Generate an observatory dataset.
 
     :param institutions: a list of institutions.
+    :param repositories: a list of known repositories.
     :param n_funders: the number of funders to generate.
     :param n_publishers: the number of publishers to generate.
     :param n_authors: the number of authors to generate.
@@ -382,10 +539,11 @@ def make_observatory_dataset(
         funders=funders,
         publishers=publishers,
         fields_of_study=fields_of_study,
+        repositories=repositories,
         faker=faker,
     )
 
-    return ObservatoryDataset(institutions, authors, funders, publishers, papers, fields_of_study)
+    return ObservatoryDataset(institutions, authors, funders, publishers, papers, fields_of_study, repositories)
 
 
 def make_funders(*, n_funders: int, doi_prefix: int, faker: Faker) -> FunderList:
@@ -504,6 +662,7 @@ def make_papers(
     funders: FunderList,
     publishers: PublisherList,
     fields_of_study: List,
+    repositories: List[Repository],
     faker: Faker,
     min_title_length: int = 2,
     max_title_length: int = 10,
@@ -515,6 +674,10 @@ def make_papers(
     max_events: int = 100,
     min_fields_of_study: int = 1,
     max_fields_of_study: int = 20,
+    min_repos: int = 1,
+    max_repos: int = 10,
+    min_year: int = 2017,
+    max_year: int = 2021,
 ) -> PaperList:
     """Generate the list of ground truth papers.
 
@@ -523,6 +686,7 @@ def make_papers(
     :param funders: the funders list.
     :param publishers: the publishers list.
     :param fields_of_study: the fields of study list.
+    :param repositories: the repositories.
     :param faker: the faker instance.
     :param min_title_length: the min paper title length.
     :param max_title_length: the max paper title length.
@@ -534,6 +698,10 @@ def make_papers(
     :param max_events: the max number of events per paper.
     :param min_fields_of_study: the min fields of study per paper.
     :param max_fields_of_study: the max fields of study per paper.
+    :param min_repos: the min repos per paper when green.
+    :param max_repos: the max repos per paper when green.
+    :param min_year: the min year.
+    :param max_year: the max year.
     :return: the list of papers.
     """
 
@@ -545,7 +713,14 @@ def make_papers(
         title_ = faker.sentence(nb_words=n_words_)
 
         # Random date
-        published_date_ = pendulum.from_format(faker.date(), "YYYY-MM-DD").date()
+        published_date_ = pendulum.from_format(
+            str(
+                faker.date_between_dates(
+                    date_start=pendulum.datetime(min_year, 1, 1), date_end=pendulum.datetime(max_year, 12, 31)
+                )
+            ),
+            "YYYY-MM-DD",
+        ).date()
         published_date_ = pendulum.date(year=published_date_.year, month=published_date_.month, day=published_date_.day)
 
         # Output type
@@ -590,7 +765,7 @@ def make_papers(
         fields_of_study_.extend(random.sample(fields_of_study, n_fos_))
 
         # Open access status
-        is_free_to_read_at_publisher_ = True
+        publisher_is_free_to_read_ = True
         if journal_.license is not None:
             # Gold
             license_ = journal_.license
@@ -598,12 +773,18 @@ def make_papers(
             license_ = random.choice(LICENSES)
             if license_ is None:
                 # Bronze: free to read on publisher website but no license
-                is_free_to_read_at_publisher_ = bool(random.getrandbits(1))
+                publisher_is_free_to_read_ = bool(random.getrandbits(1))
             # Hybrid: license=True
 
         # Green: in a 'repository'
-        is_in_institutional_repo_ = bool(random.getrandbits(1))
-        # Green not bronze: Not free to read at publisher but in a 'repository'
+        paper_repos = []
+        if bool(random.getrandbits(1)):
+            # There can be multiple authors from the same institution so the repos have to be sampled from a set
+            n_repos_ = random.randint(min_repos, max_repos)
+            repos = set()
+            for repo in [author.institution.repository for author in authors_] + repositories:
+                repos.add(repo)
+            paper_repos += random.sample(repos, n_repos_)
 
         # Make paper
         paper = Paper(
@@ -618,9 +799,9 @@ def make_papers(
             publisher=publisher_,
             events=events_,
             fields_of_study=fields_of_study_,
-            license=license_,
-            is_free_to_read_at_publisher=is_free_to_read_at_publisher_,
-            is_in_institutional_repo=is_in_institutional_repo_,
+            publisher_license=license_,
+            publisher_is_free_to_read=publisher_is_free_to_read_,
+            repositories=paper_repos,
         )
         papers.append(paper)
 
@@ -737,13 +918,24 @@ def make_unpaywall(dataset: ObservatoryDataset) -> List[Dict]:
         # Make OA status
         journal_is_in_doaj = paper.journal.license is not None
 
+        # Add publisher oa locations
         oa_locations = []
-        if paper.is_free_to_read_at_publisher:
-            oa_location = {"host_type": "publisher", "license": paper.license, "url": ""}
+        if paper.publisher_is_free_to_read:
+            oa_location = {"host_type": "publisher", "license": paper.publisher_license, "url": ""}
             oa_locations.append(oa_location)
 
-        if paper.is_in_institutional_repo:
-            oa_location = {"host_type": "repository", "license": paper.license, "url": ""}
+        # Add repository oa locations
+        for repo in paper.repositories:
+            pmh_id = None
+            if repo.pmh_domain is not None:
+                pmh_id = f"oai:{repo.pmh_domain}:{str(uuid.uuid4())}"
+            oa_location = {
+                "host_type": "repository",
+                "endpoint_id": repo.endpoint_id,
+                "url": f"https://{repo.url_domain}/{urllib.parse.quote(paper.title)}.pdf",
+                "pmh_id": pmh_id,
+                "repository_institution": repo.name,
+            }
             oa_locations.append(oa_location)
 
         is_oa = len(oa_locations) > 0
@@ -882,16 +1074,18 @@ def make_crossref_metadata(dataset: ObservatoryDataset) -> List[Dict]:
 
 def bq_load_observatory_dataset(
     observatory_dataset: ObservatoryDataset,
+    repository: List[Dict],
     bucket_name: str,
     dataset_id_all: str,
     dataset_id_settings: str,
     release_date: DateTime,
     data_location: str,
-    project_id: int,
+    project_id: str,
 ):
     """Load the fake Observatory Dataset in BigQuery.
 
     :param observatory_dataset: the Observatory Dataset.
+    :param repository: the repository table data.
     :param bucket_name: the Google Cloud Storage bucket name.
     :param dataset_id_all: the dataset id for all data tables.
     :param dataset_id_settings: the dataset id for settings tables.
@@ -918,78 +1112,35 @@ def bq_load_observatory_dataset(
 
     analysis_schema_path = schema_folder()
     with CliRunner().isolated_filesystem() as t:
+        # fmt: off
         tables = [
+            Table("repository", False, dataset_id_settings, repository, "repository", analysis_schema_path),
             Table("crossref_events", False, dataset_id_all, crossref_events, "crossref_events", analysis_schema_path),
-            Table(
-                "crossref_metadata", True, dataset_id_all, crossref_metadata, "crossref_metadata", analysis_schema_path
-            ),
+            Table("crossref_metadata", True, dataset_id_all, crossref_metadata, "crossref_metadata", analysis_schema_path),
             Table("crossref_fundref", True, dataset_id_all, crossref_fundref, "crossref_fundref", analysis_schema_path),
             Table("Affiliations", True, dataset_id_all, mag.affiliations, "MagAffiliations", analysis_schema_path),
             Table("FieldsOfStudy", True, dataset_id_all, mag.fields_of_study, "MagFieldsOfStudy", analysis_schema_path),
-            Table(
-                "PaperAuthorAffiliations",
-                True,
-                dataset_id_all,
-                mag.paper_author_affiliations,
-                "MagPaperAuthorAffiliations",
-                analysis_schema_path,
-            ),
-            Table(
-                "PaperFieldsOfStudy",
-                True,
-                dataset_id_all,
-                mag.paper_fields_of_study,
-                "MagPaperFieldsOfStudy",
-                analysis_schema_path,
-            ),
+            Table("PaperAuthorAffiliations", True, dataset_id_all, mag.paper_author_affiliations, "MagPaperAuthorAffiliations", analysis_schema_path),
+            Table("PaperFieldsOfStudy", True, dataset_id_all, mag.paper_fields_of_study, "MagPaperFieldsOfStudy", analysis_schema_path),
             Table("Papers", True, dataset_id_all, mag.papers, "MagPapers", analysis_schema_path),
             Table("open_citations", True, dataset_id_all, open_citations, "open_citations", analysis_schema_path),
             Table("unpaywall", False, dataset_id_all, unpaywall, "unpaywall", analysis_schema_path),
             Table("ror", True, dataset_id_all, ror, "ror", analysis_schema_path),
-            Table(
-                "country",
-                False,
-                dataset_id_settings,
-                country,
-                "country",
-                analysis_schema_path,
-            ),
+            Table("country", False, dataset_id_settings, country, "country", analysis_schema_path),
             Table("groupings", False, dataset_id_settings, groupings, "groupings", analysis_schema_path),
-            Table(
-                "mag_affiliation_override",
-                False,
-                dataset_id_settings,
-                mag_affiliation_override,
-                "mag_affiliation_override",
-                analysis_schema_path,
-            ),
-            Table(
-                "PaperAbstractsInvertedIndex",
-                True,
-                dataset_id_all,
-                [],
-                "MagPaperAbstractsInvertedIndex",
-                analysis_schema_path,
-            ),
+            Table("mag_affiliation_override", False, dataset_id_settings, mag_affiliation_override, "mag_affiliation_override", analysis_schema_path),
+            Table("PaperAbstractsInvertedIndex", True, dataset_id_all, [], "MagPaperAbstractsInvertedIndex", analysis_schema_path),
             Table("Journals", True, dataset_id_all, [], "MagJournals", analysis_schema_path),
             Table("ConferenceInstances", True, dataset_id_all, [], "MagConferenceInstances", analysis_schema_path),
             Table("ConferenceSeries", True, dataset_id_all, [], "MagConferenceSeries", analysis_schema_path),
-            Table(
-                "FieldOfStudyExtendedAttributes",
-                True,
-                dataset_id_all,
-                [],
-                "MagFieldOfStudyExtendedAttributes",
-                analysis_schema_path,
-            ),
-            Table(
-                "PaperExtendedAttributes", True, dataset_id_all, [], "MagPaperExtendedAttributes", analysis_schema_path
-            ),
+            Table("FieldOfStudyExtendedAttributes", True, dataset_id_all, [], "MagFieldOfStudyExtendedAttributes", analysis_schema_path),
+            Table("PaperExtendedAttributes", True, dataset_id_all, [], "MagPaperExtendedAttributes", analysis_schema_path),
             Table("PaperResources", True, dataset_id_all, [], "MagPaperResources", analysis_schema_path),
             Table("PaperUrls", True, dataset_id_all, [], "MagPaperUrls", analysis_schema_path),
             Table("PaperMeSH", True, dataset_id_all, [], "MagPaperMeSH", analysis_schema_path),
             Table("orcid", False, dataset_id_all, [], "orcid", analysis_schema_path),
         ]
+        # fmt: on
 
         bq_load_tables(
             tables=tables,
@@ -1369,27 +1520,62 @@ def calc_percent(value: float, total: float) -> float:
     :return: the percentage.
     """
 
+    if math.isnan(value) or math.isnan(total) or total == 0:
+        return None
+
     return round(value / total * 100, 2)
 
 
-def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
-    """Generate the Observatory Country table from an ObservatoryDataset instance.
+def make_aggregate_table(agg: str, dataset: ObservatoryDataset) -> List[Dict]:
+    """Generate an aggregate table from an ObservatoryDataset instance.
 
+    :param agg: the aggregation type, e.g. country, institution.
     :param dataset: the Observatory Dataset.
     :return: table rows.
     """
 
     data = []
+    repos = []
     for paper in dataset.papers:
         for author in paper.authors:
             inst = author.institution
             at = paper.access_type
+            oa_coki = paper.oa_coki
+
+            # Choose id and name
+            if agg == "country":
+                id = inst.country_code
+                name = inst.country
+            elif agg == "institution":
+                id = inst.ror_id
+                name = inst.name
+            else:
+                raise ValueError(f"make_aggregate_table: agg type unknown: {agg}")
+
+            # Add repository info
+            for repo in paper.repositories:
+                repos.append(
+                    {
+                        "paper_id": paper.id,
+                        "agg_id": id,
+                        "time_period": paper.published_date.year,
+                        "name": repo.name,
+                        "name_lower": repo.name.lower(),
+                        "endpoint_id": repo.endpoint_id,
+                        "pmh_domain": repo.pmh_domain,
+                        "url_domain": repo.url_domain,
+                        "category": repo.category,
+                        "ror_id": repo.ror_id,
+                        "total_outputs": 1,
+                    }
+                )
+
             data.append(
                 {
                     "doi": paper.doi,
-                    "id": inst.country_code,
+                    "id": id,
                     "time_period": paper.published_date.year,
-                    "name": inst.country,
+                    "name": name,
                     "country": inst.country,
                     "country_code": inst.country_code,
                     "country_code_2": inst.country_code_2,
@@ -1397,6 +1583,7 @@ def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
                     "subregion": inst.subregion,
                     "coordinates": None,
                     "total_outputs": 1,
+                    # Access Types
                     "oa": at.oa,
                     "green": at.green,
                     "gold": at.gold,
@@ -1404,9 +1591,50 @@ def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
                     "hybrid": at.hybrid,
                     "bronze": at.bronze,
                     "green_only": at.green_only,
+                    # COKI Open Access Types
+                    "open": oa_coki.open,
+                    "closed": oa_coki.closed,
+                    "publisher": oa_coki.publisher,
+                    "other_platform": oa_coki.other_platform,
+                    "publisher_only": oa_coki.publisher_only,
+                    "both": oa_coki.both,
+                    "other_platform_only": oa_coki.other_platform_only,
+                    # Publisher Open categories
+                    "publisher_categories_oa_journal": oa_coki.publisher_categories.oa_journal,
+                    "publisher_categories_hybrid": oa_coki.publisher_categories.hybrid,
+                    "publisher_categories_no_guarantees": oa_coki.publisher_categories.no_guarantees,
+                    # Other Platform categories
+                    "publisher_categories_preprint": oa_coki.other_platform_categories.preprint,
+                    "publisher_categories_domain": oa_coki.other_platform_categories.domain,
+                    "publisher_categories_institution": oa_coki.other_platform_categories.institution,
+                    "publisher_categories_public": oa_coki.other_platform_categories.public,
+                    "publisher_categories_aggregator": oa_coki.other_platform_categories.aggregator,
+                    "publisher_categories_other_internet": oa_coki.other_platform_categories.other_internet,
+                    "publisher_categories_unknown": oa_coki.other_platform_categories.unknown,
                 }
             )
 
+    # Repos
+    df_repos = pd.DataFrame(repos)
+    df_repos.drop_duplicates(inplace=True)
+    agg = {
+        "agg_id": "first",
+        "time_period": "first",
+        "name": "first",
+        "name_lower": "first",
+        "endpoint_id": "first",
+        "pmh_domain": "first",
+        "url_domain": "first",
+        "category": "first",
+        "ror_id": "first",
+        "total_outputs": "sum",
+    }
+    df_repos = df_repos.groupby(["agg_id", "name", "time_period"], as_index=False).agg(agg)
+    df_repos.sort_values(
+        by=["agg_id", "time_period", "total_outputs", "name_lower"], ascending=[True, False, False, True], inplace=True
+    )
+
+    # Aggregate info
     df = pd.DataFrame(data)
     df.drop_duplicates(inplace=True)
     agg = {
@@ -1420,6 +1648,7 @@ def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
         "subregion": "first",
         "coordinates": "first",
         "total_outputs": "sum",
+        # Access types
         "oa": "sum",
         "green": "sum",
         "gold": "sum",
@@ -1427,11 +1656,34 @@ def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
         "hybrid": "sum",
         "bronze": "sum",
         "green_only": "sum",
+        # COKI OA types
+        "open": "sum",
+        "closed": "sum",
+        "publisher": "sum",
+        "other_platform": "sum",
+        "publisher_only": "sum",
+        "both": "sum",
+        "other_platform_only": "sum",
+        # Publisher Open categories
+        "publisher_categories_oa_journal": "sum",
+        "publisher_categories_hybrid": "sum",
+        "publisher_categories_no_guarantees": "sum",
+        # Other Platform categories
+        "publisher_categories_preprint": "sum",
+        "publisher_categories_domain": "sum",
+        "publisher_categories_institution": "sum",
+        "publisher_categories_public": "sum",
+        "publisher_categories_aggregator": "sum",
+        "publisher_categories_other_internet": "sum",
+        "publisher_categories_unknown": "sum",
     }
     df = df.groupby(["id", "time_period"], as_index=False).agg(agg).sort_values(by=["id", "time_period"])
+
     records = []
     for i, row in df.iterrows():
         total_outputs = row["total_outputs"]
+
+        # Access types
         oa = row["oa"]
         green = row["green"]
         gold = row["gold"]
@@ -1440,9 +1692,50 @@ def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
         bronze = row["bronze"]
         green_only = row["green_only"]
 
+        # COKI access types
+        open = row["open"]
+        closed = row["closed"]
+        publisher = row["publisher"]
+        other_platform = row["other_platform"]
+        publisher_only = row["publisher_only"]
+        both = row["both"]
+        other_platform_only = row["other_platform_only"]
+
+        # Publisher Open
+        publisher_categories_oa_journal = row["publisher_categories_oa_journal"]
+        publisher_categories_hybrid = row["publisher_categories_hybrid"]
+        publisher_categories_no_guarantees = row["publisher_categories_no_guarantees"]
+
+        # Other Platform categories
+        publisher_categories_preprint = row["publisher_categories_preprint"]
+        publisher_categories_domain = row["publisher_categories_domain"]
+        publisher_categories_institution = row["publisher_categories_institution"]
+        publisher_categories_public = row["publisher_categories_public"]
+        publisher_categories_aggregator = row["publisher_categories_aggregator"]
+        publisher_categories_other_internet = row["publisher_categories_other_internet"]
+        publisher_categories_unknown = row["publisher_categories_unknown"]
+
+        # Get repositories for year and id
+        id = row["id"]
+        time_period = row["time_period"]
+        df_repos_subset = df_repos[(df_repos["agg_id"] == id) & (df_repos["time_period"] == time_period)]
+        repositories = []
+        for j, repo_row in df_repos_subset.iterrows():
+            ror_id = repo_row["ror_id"]
+            home_repo = id == ror_id
+            repositories.append(
+                {
+                    "id": repo_row["name"],
+                    "total_outputs": repo_row["total_outputs"],
+                    "category": repo_row["category"],
+                    "home_repo": home_repo,
+                }
+            )
+
+        # fmt: off
         records.append(
             {
-                "id": row["id"],
+                "id": id,
                 "time_period": row["time_period"],
                 "name": row["name"],
                 "country": row["country"],
@@ -1461,6 +1754,30 @@ def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
                     "bronze": {"total_outputs": bronze, "percent": calc_percent(bronze, total_outputs)},
                     "green_only": {"total_outputs": green_only, "percent": calc_percent(green_only, total_outputs)},
                 },
+                "oa_coki": {
+                    "open": {"total": open, "percent": calc_percent(open, total_outputs)},
+                    "closed": {"total": closed, "percent": calc_percent(closed, total_outputs)},
+                    "publisher": {"total": publisher, "percent": calc_percent(publisher, total_outputs)},
+                    "other_platform": {"total": other_platform, "percent": calc_percent(other_platform, total_outputs)},
+                    "publisher_only": {"total": publisher_only, "percent": calc_percent(publisher_only, total_outputs)},
+                    "both": {"total": both, "percent": calc_percent(both, total_outputs)},
+                    "other_platform_only": {"total": other_platform_only, "percent": calc_percent(other_platform_only, total_outputs)},
+                    "publisher_categories": {
+                        "oa_journal": {"total": publisher_categories_oa_journal, "percent": calc_percent(publisher_categories_oa_journal, publisher)},
+                        "hybrid": {"total": publisher_categories_hybrid, "percent": calc_percent(publisher_categories_hybrid, publisher)},
+                        "no_guarantees": {"total": publisher_categories_no_guarantees, "percent": calc_percent(publisher_categories_no_guarantees, publisher)}
+                    },
+                    "other_platform_categories": {
+                        "preprint": {"total": publisher_categories_preprint, "percent": calc_percent(publisher_categories_preprint, other_platform)},
+                        "domain": {"total": publisher_categories_domain, "percent": calc_percent(publisher_categories_domain, other_platform)},
+                        "institution": {"total": publisher_categories_institution, "percent": calc_percent(publisher_categories_institution, other_platform)},
+                        "public": {"total": publisher_categories_public, "percent": calc_percent(publisher_categories_public, other_platform)},
+                        "aggregator": {"total": publisher_categories_aggregator, "percent": calc_percent(publisher_categories_aggregator, other_platform)},
+                        "other_internet": {"total": publisher_categories_other_internet, "percent": calc_percent(publisher_categories_other_internet, other_platform)},
+                        "unknown": {"total": publisher_categories_unknown, "percent": calc_percent(publisher_categories_unknown, other_platform)},
+                    },
+                },
+                "repositories": repositories,
                 "citations": {},
                 "output_types": [],
                 "disciplines": {},
@@ -1471,5 +1788,6 @@ def make_country_table(dataset: ObservatoryDataset) -> List[Dict]:
                 "events": [],
             }
         )
+        # fmt: on
 
     return records

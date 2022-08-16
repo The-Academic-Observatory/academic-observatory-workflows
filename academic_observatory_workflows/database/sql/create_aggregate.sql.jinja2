@@ -334,9 +334,6 @@ bronze.percent	            FLOAT	NULLABLE
 green_only	                RECORD	NULLABLE
 green_only.total_outputs	INTEGER	NULLABLE
 green_only.percent	        FLOAT	NULLABLE
-publisher	                RECORD	NULLABLE
-publisher.total_outputs	    INTEGER	NULLABLE
-publisher.percent	        FLOAT	NULLABLE
 breakdown	                RECORD	REPEATED
 
 * breakdown object array captured in compute_conditional_citations schema above
@@ -381,11 +378,6 @@ CREATE TEMP FUNCTION compute_access_types(
       ROUND(SAFE_DIVIDE( (COUNTIF(green_only is True)) * 100 , COUNT(doi)), 2) as percent
     ) as green_only,
 
-    STRUCT(
-      COUNTIF(gold OR gold_just_doaj OR hybrid OR bronze) as total_outputs,
-      ROUND(SAFE_DIVIDE( (COUNTIF(gold OR gold_just_doaj OR hybrid OR bronze)) * 100 , COUNT(doi)), 2) as percent
-    ) as publisher,
-
     ARRAY_CONCAT(
       compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(is_oa, false) as is_x)), "oa", "Open Access", "Not Open Access"),
       compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(green, false) as is_x)), "green", "Green", "Not Green"),
@@ -396,6 +388,110 @@ CREATE TEMP FUNCTION compute_access_types(
       compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(green_only, false) as is_x)), "green_only", "Green Only", "Not Green Only")
     ) as breakdown
 
+  FROM UNNEST(items))
+);
+
+-- Helper Function: compute COKI Open Access categories
+CREATE TEMP FUNCTION compute_coki_oa(items ARRAY<STRUCT<doi STRING,
+  oa_coki STRUCT< open BOOL,
+  closed BOOL,
+  publisher BOOL,
+  other_platform BOOL,
+  publisher_only BOOL,
+  both BOOL,
+  other_platform_only BOOL,
+  publisher_categories STRUCT<oa_journal BOOL, hybrid BOOL, no_guarantees BOOL>,
+  other_platform_categories STRUCT<preprint BOOL, domain BOOL, institution BOOL, public BOOL, aggregator BOOL, other_internet BOOL, unknown BOOL>>>>)
+  AS (
+  (SELECT AS STRUCT
+    STRUCT(
+      COUNTIF(oa_coki.open = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.open is True)) * 100, COUNT(doi)), 2) as percent
+    ) as open,
+
+    STRUCT(
+      COUNTIF(oa_coki.closed = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.closed is True)) * 100, COUNT(doi)), 2) as percent
+    ) as closed,
+
+    STRUCT(
+      COUNTIF(oa_coki.publisher = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.publisher is True)) * 100, COUNT(doi)), 2) as percent
+    ) as publisher,
+
+    STRUCT(
+      COUNTIF(oa_coki.other_platform = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform is True)) * 100, COUNT(doi)), 2) as percent
+    ) as other_platform,
+
+    STRUCT(
+      COUNTIF(oa_coki.publisher_only = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.publisher_only is True)) * 100, COUNT(doi)), 2) as percent
+    ) as publisher_only,
+
+    STRUCT(
+      COUNTIF(oa_coki.both = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.both is True)) * 100, COUNT(doi)), 2) as percent
+    ) as both,
+
+    STRUCT(
+      COUNTIF(oa_coki.other_platform_only = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_only is True)) * 100, COUNT(doi)), 2) as percent
+    ) as other_platform_only,
+
+    STRUCT(
+      STRUCT(
+        COUNTIF(oa_coki.publisher_categories.oa_journal = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.publisher_categories.oa_journal is True)) * 100, COUNTIF(oa_coki.publisher = True)), 2) as percent
+      ) as oa_journal,
+
+      STRUCT(
+        COUNTIF(oa_coki.publisher_categories.hybrid = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.publisher_categories.hybrid is True)) * 100, COUNTIF(oa_coki.publisher = True)), 2) as percent
+      ) as hybrid,
+
+      STRUCT(
+        COUNTIF(oa_coki.publisher_categories.no_guarantees = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.publisher_categories.no_guarantees is True)) * 100, COUNTIF(oa_coki.publisher = True)), 2) as percent
+      ) as no_guarantees
+    ) as publisher_categories,
+
+    STRUCT(
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.preprint = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.preprint is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as preprint,
+
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.domain = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.domain is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as domain,
+
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.institution = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.institution is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as institution,
+
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.public = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.public is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as public,
+
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.aggregator = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.aggregator is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as aggregator,
+
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.other_internet = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.other_internet is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as other_internet,
+
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.unknown = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.unknown is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as unknown
+    ) as other_platform_categories
   FROM UNNEST(items))
 );
 
@@ -595,17 +691,35 @@ id	                            STRING	NULLABLE
 total_outputs	                INTEGER	NULLABLE
 percentage_of_all_green	FLOAT	NULLABLE
 #}
-CREATE TEMP FUNCTION process_repositories(repositories ARRAY<STRING>, total_green INT64) as (
-  ARRAY(SELECT AS STRUCT
-          repository as id,
-          COUNT(repository) as total_outputs,
-          ROUND(SAFE_DIVIDE( COUNT(repository), total_green), 3) as percentage_of_all_green,
-      FROM UNNEST(repositories) as repository
-      WHERE repository IS NOT NULL
-      GROUP BY repository
-      ORDER BY total_outputs DESC
-      LIMIT 1000
-   )
+CREATE TEMP FUNCTION process_repositories(
+  repositories ARRAY<STRUCT<coki_repository_name STRING,
+  endpoint_id STRING,
+  repository_institution STRING,
+  pmh_domain STRING,
+  pmh_id STRING,
+  url STRING,
+  category STRING,
+  rors ARRAY<STRUCT<id STRING, name STRING>>>>,
+  ror_id STRING) AS (ARRAY(
+    SELECT as STRUCT
+      id,
+      total_outputs,
+      category,
+      CASE
+        WHEN ror_id IN UNNEST(ARRAY(SELECT id from UNNEST(rors_agg) WHERE id IS NOT NULL GROUP BY id)) THEN true
+        ELSE false
+      END as home_repo,
+    FROM (
+    SELECT AS STRUCT
+      coki_repository_name as id,
+      COUNT(repository) as total_outputs,
+      MAX(category) as category,
+      ARRAY_CONCAT_AGG(rors) as rors_agg,
+    FROM UNNEST(repositories) as repository
+    WHERE coki_repository_name IS NOT NULL
+    GROUP BY coki_repository_name
+    ORDER BY total_outputs DESC, LOWER(id) ASC)
+  )
 );
 
 ----
@@ -635,7 +749,17 @@ SELECT
         )
      )
   ) as access_types,
-  
+
+  -- COKI OA
+  compute_coki_oa(
+    ARRAY_AGG(
+      STRUCT(
+        dois.doi,
+        coki.oa_coki
+      )
+    )
+  ) as oa_coki,
+
   -- Citations
   compute_citations(
      ARRAY_AGG(
@@ -691,12 +815,13 @@ SELECT
   -- Repoistories
   {#
   This SQL block aggregrates the repository names, remebering we are inside a larger GROUP BY statement,
-  So what is being passed into the process_repositories function is a list of repository names and a count of total green for a given GROUP in the GROUP BY clause
   #}
+  -- Repositories
   process_repositories(
     ARRAY_CONCAT_AGG(
-      dois.unpaywall.repository_names
-    ), COUNTIF( unpaywall.green = True )
+      coki.repositories
+    ),
+    MAX(aggregrate.identifier)
   ) as repositories,
 
   {% if relate_to_institutions %}

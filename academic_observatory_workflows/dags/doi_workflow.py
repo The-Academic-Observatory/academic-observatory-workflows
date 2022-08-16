@@ -43,13 +43,29 @@ Every week the following tables are overwritten for visualisation in the Data St
     <project_id>.coki_dashboards.subregion
 """
 
+from airflow.models import Variable
+
 from academic_observatory_workflows.workflows.doi_workflow import DoiWorkflow
+from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.api import make_observatory_api
 
+# To test locally:
+#
+# doi_workflow = DoiWorkflow(
+#     input_project_id="production-project-id", output_project_id="my-dev-project-id", data_location="us", workflow_id=0
+# )
+# globals()[doi_workflow.dag_id] = doi_workflow.make_dag()
 
 api = make_observatory_api()
 workflow_type = api.get_workflow_type(type_id=DoiWorkflow.DAG_ID)
 workflows = api.get_workflows(workflow_type_id=workflow_type.id, limit=1)
 if len(workflows):
-    doi_workflow = DoiWorkflow(workflow_id=workflows[0].id)
+    project_id = Variable.get(AirflowVars.PROJECT_ID)
+    data_location = Variable.get(AirflowVars.DATA_LOCATION)
+    doi_workflow = DoiWorkflow(
+        input_project_id=project_id,
+        output_project_id=project_id,
+        data_location=data_location,
+        workflow_id=workflows[0].id,
+    )
     globals()[doi_workflow.dag_id] = doi_workflow.make_dag()
