@@ -52,6 +52,12 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     Zenodo,
     make_draft_version,
     publish_new_version,
+    make_entity_stats,
+    Entity,
+    PublicationStats,
+    EntityStats,
+    EntityHistograms,
+    Histogram,
 )
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import upload_file_to_cloud_storage
@@ -64,7 +70,7 @@ from observatory.platform.utils.test_utils import (
     module_file_path,
 )
 
-academic_observatory_workflows.workflows.oa_web_workflow.INCLUSION_THRESHOLD = 0
+academic_observatory_workflows.workflows.oa_web_workflow.INCLUSION_THRESHOLD = {"country": 0, "institution": 0}
 
 
 class MockResponse:
@@ -556,13 +562,44 @@ class TestFunctions(TestCase):
                     # Get wiki descriptions
                     get_wiki_descriptions(titles)
 
+    def test_make_entity_stats(self):
+        """Test make_entity_stats"""
+
+        # Input figures for multiple entities
+        p_outputs_open = [100, 50, 30]
+        n_outputs = [10, 100, 1000]
+        n_outputs_open = [10, 100, 1000]
+        entities = [
+            Entity(
+                "",
+                "",
+                Description("", ""),
+                stats=PublicationStats(
+                    p_outputs_open=p_outputs_open_, n_outputs=n_outputs_, n_outputs_open=n_outputs_open_
+                ),
+            )
+            for p_outputs_open_, n_outputs_, n_outputs_open_ in zip(p_outputs_open, n_outputs, n_outputs_open)
+        ]
+        stats = make_entity_stats(entities)
+        expected_stats = EntityStats(
+            3,
+            min=PublicationStats(p_outputs_open=30.0, n_outputs=10, n_outputs_open=10),
+            max=PublicationStats(p_outputs_open=100.0, n_outputs=1000, n_outputs_open=1000),
+            median=PublicationStats(p_outputs_open=50),
+            histograms=EntityHistograms(
+                p_outputs_open=Histogram(data=[2, 0, 1], bins=[30.0, 53.33333333333333, 76.66666666666666, 100.0]),
+                n_outputs=Histogram(data=[1, 1, 1], bins=[1.0, 1.6666666666666665, 2.333333333333333, 3.0]),
+                n_outputs_open=Histogram(data=[1, 1, 1], bins=[1.0, 1.6666666666666665, 2.333333333333333, 3.0]),
+            ),
+        )
+        self.assertEqual(expected_stats, stats)
+
 
 class TestOaWebRelease(TestCase):
     maxDiff = None
     dt_fmt = "YYYY-MM-DD"
 
     def setUp(self) -> None:
-
         self.release = OaWebRelease(
             dag_id="dag", project_id="project", release_date=pendulum.now(), data_bucket_name="data-bucket-name"
         )
@@ -931,7 +968,7 @@ class TestOaWebRelease(TestCase):
                 df = self.release.preprocess_df(category, df)
                 df_index_table = self.release.make_index(category, df)
                 self.release.update_index_with_logos(category, df_index_table)
-                entities = self.release.make_entities(df_index_table, df)
+                entities = self.release.make_entities(category, df_index_table, df)
                 file_name = f"{category}.json"
                 self.release.save_index(entities, file_name)
 
@@ -948,7 +985,7 @@ class TestOaWebRelease(TestCase):
             df = pd.DataFrame(self.countries)
             df = self.release.preprocess_df(category, df)
             df_index_table = self.release.make_index(category, df)
-            entities = self.release.make_entities(df_index_table, df)
+            entities = self.release.make_entities(category, df_index_table, df)
 
             expected = [
                 {
@@ -1059,7 +1096,7 @@ class TestOaWebRelease(TestCase):
         df = pd.DataFrame(self.institutions)
         df = self.release.preprocess_df(category, df)
         df_index_table = self.release.make_index(category, df)
-        entities = self.release.make_entities(df_index_table, df)
+        entities = self.release.make_entities(category, df_index_table, df)
 
         expected = [
             {
@@ -1187,7 +1224,7 @@ class TestOaWebRelease(TestCase):
 
                 # Save entities
                 df_index_table = self.release.make_index(category, df)
-                entities = self.release.make_entities(df_index_table, df)
+                entities = self.release.make_entities(category, df_index_table, df)
                 self.release.save_entities(category, entities)
 
                 # Check that entity json files are saved

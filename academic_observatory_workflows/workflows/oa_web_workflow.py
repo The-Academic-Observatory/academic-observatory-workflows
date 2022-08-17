@@ -20,6 +20,7 @@ import dataclasses
 import datetime
 import json
 import logging
+import math
 import os
 import os.path
 import shutil
@@ -34,6 +35,7 @@ from zipfile import ZipFile
 import google.cloud.bigquery as bigquery
 import jsonlines
 import nltk
+import numpy as np
 import pandas as pd
 import pendulum
 import requests
@@ -43,6 +45,7 @@ from airflow.sensors.external_task import ExternalTaskSensor
 from jinja2 import Template
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
+from academic_observatory_workflows.dag_tag import Tag
 from observatory.platform.utils.airflow_utils import AirflowVars, get_airflow_connection_password
 from observatory.platform.utils.config_utils import module_file_path
 from observatory.platform.utils.file_utils import load_jsonl
@@ -56,11 +59,12 @@ from observatory.platform.utils.gc_utils import (
 from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
 from observatory.platform.workflows.workflow import Workflow
-from academic_observatory_workflows.dag_tag import Tag
-
 
 # The minimum number of outputs before including an entity in the analysis
-INCLUSION_THRESHOLD = 1000
+INCLUSION_THRESHOLD = {
+    "country": 25,
+    "institution": 350
+}
 START_YEAR = 2000
 
 # The query that pulls data to be included in the dashboards
@@ -268,26 +272,63 @@ class ZenodoVersion:
 
 
 @dataclasses.dataclass
+class Histogram:
+    data: List[int]
+    bins: List[float]
+
+    def to_dict(self) -> Dict:
+        return {"data": self.data, "bins": self.bins}
+
+
+@dataclasses.dataclass
+class EntityHistograms:
+    p_outputs_open: Histogram
+    n_outputs: Histogram
+    n_outputs_open: Histogram
+
+    def to_dict(self) -> Dict:
+        return {
+            "p_outputs_open": self.p_outputs_open.to_dict(),
+            "n_outputs": self.n_outputs.to_dict(),
+            "n_outputs_open": self.n_outputs_open.to_dict(),
+        }
+
+
+@dataclasses.dataclass
+class EntityStats:
+    n_items: int
+    min: PublicationStats
+    max: PublicationStats
+    median: PublicationStats
+    histograms: EntityHistograms
+
+    def to_dict(self) -> Dict:
+        return {
+            "n_items": self.n_items,
+            "min": self.min.to_dict(),
+            "max": self.max.to_dict(),
+            "median": self.median.to_dict(),
+            "histograms": self.histograms.to_dict(),
+        }
+
+
+@dataclasses.dataclass
 class Stats:
     start_year: int
     end_year: int
     last_updated: str
-    n_countries: int
-    n_institutions: int
     zenodo_versions: List[ZenodoVersion]
-    country_medians: PublicationStats
-    institution_medians: PublicationStats
+    country: EntityStats
+    institution: EntityStats
 
     def to_dict(self) -> Dict:
         return {
             "start_year": self.start_year,
             "end_year": self.end_year,
             "last_updated": self.last_updated,
-            "n_countries": self.n_countries,
-            "n_institutions": self.n_institutions,
             "zenodo_versions": [z.to_dict() for z in self.zenodo_versions],
-            "country_medians": self.country_medians.to_dict(),
-            "institution_medians": self.institution_medians.to_dict(),
+            "country": self.country.to_dict(),
+            "institution": self.institution.to_dict(),
         }
 
 
@@ -991,7 +1032,7 @@ class OaWebRelease(SnapshotRelease):
         )
 
         # Exclude countries with small samples
-        df_index_table = df_index_table[df_index_table["n_outputs"] >= INCLUSION_THRESHOLD]
+        df_index_table = df_index_table[df_index_table["n_outputs"] >= INCLUSION_THRESHOLD[category]]
 
         # Add percentages to dataframe
         self.update_df_with_percentages(df_index_table, self.PERCENTAGE_FIELD_KEYS)
@@ -1176,9 +1217,10 @@ class OaWebRelease(SnapshotRelease):
         output_path = os.path.join(base_path, file_name)
         save_json(output_path, data)
 
-    def make_entities(self, df_index_table: pd.DataFrame, df: pd.DataFrame) -> List[Entity]:
+    def make_entities(self, category: str, df_index_table: pd.DataFrame, df: pd.DataFrame) -> List[Entity]:
         """Make entities.
 
+        :param category: the entity category.
         :param df_index_table: the index table Pandas Dataframe.
         :param df: the Pandas dataframe.
         :return: the Entity objects.
@@ -1193,7 +1235,7 @@ class OaWebRelease(SnapshotRelease):
         for entity_id, df_group in ts_groups:
             # Exclude institutions with small num outputs
             total_outputs = df_group["n_outputs"].sum()
-            if total_outputs >= INCLUSION_THRESHOLD:
+            if total_outputs >= INCLUSION_THRESHOLD[category]:
                 self.update_df_with_percentages(df_group, self.PERCENTAGE_FIELD_KEYS)
                 df_group = df_group.sort_values(by=[key_year])
                 df_group = df_group.loc[:, ~df_group.columns.str.contains("^Unnamed")]
@@ -1312,14 +1354,49 @@ class OaWebRelease(SnapshotRelease):
         save_json(output_path, stats.to_dict())
 
 
-def calc_median_p_oa(entities: List[Entity]) -> float:
-    """Calculate the median percentage OA.
+def make_entity_stats(entities: List[Entity]) -> EntityStats:
+    """Calculate stats for entities.
 
     :param entities: a list of entities.
-    :return: the median.
+    :return: the entity stats object.
     """
 
-    return statistics.median([entity.stats.p_outputs_open for entity in entities])
+    p_outputs_open = np.array([entity.stats.p_outputs_open for entity in entities])
+    n_outputs = np.array([entity.stats.n_outputs for entity in entities])
+    n_outputs_open = np.array([entity.stats.n_outputs_open for entity in entities])
+
+    # Make median, min and max values
+    stats_median = PublicationStats(p_outputs_open=statistics.median(p_outputs_open))
+    stats_min = PublicationStats(
+        p_outputs_open=math.floor(float(np.min(p_outputs_open))),
+        n_outputs=int(np.min(n_outputs)),
+        n_outputs_open=int(np.min(n_outputs_open)),
+    )
+    stats_max = PublicationStats(
+        p_outputs_open=math.ceil(float(np.max(p_outputs_open))),
+        n_outputs=int(np.max(n_outputs)),
+        n_outputs_open=int(np.max(n_outputs_open)),
+    )
+
+    # Make histograms
+    data, bins = np.histogram(p_outputs_open, bins="auto")
+    hist_p_outputs_open = Histogram(data.tolist(), bins.tolist())
+
+    data, bins = np.histogram(np.log10(n_outputs), bins="auto")
+    hist_n_outputs = Histogram(data.tolist(), bins.tolist())
+
+    data, bins = np.histogram(np.log10(n_outputs_open), bins="auto")
+    hist_n_outputs_open = Histogram(data.tolist(), bins.tolist())
+
+    return EntityStats(
+        n_items=len(entities),
+        min=stats_min,
+        max=stats_max,
+        median=stats_median,
+        histograms=EntityHistograms(
+            p_outputs_open=hist_p_outputs_open, n_outputs=hist_n_outputs, n_outputs_open=hist_n_outputs_open
+        ),
+    )
 
 
 class OaWebWorkflow(Workflow):
@@ -1387,7 +1464,7 @@ class OaWebWorkflow(Workflow):
         agg_dataset_id: str = "observatory",
         ror_dataset_id: str = "ror",
         settings_dataset_id: str = "settings",
-        version: str = "v4",
+        version: str = "v5",
         conceptrecid: int = 6399462,
         zenodo_host: str = "https://zenodo.org",
     ):
@@ -1618,7 +1695,7 @@ class OaWebWorkflow(Workflow):
             df_index_table = release.make_index(category, df)
             release.update_index_with_logos(category, df_index_table)
             release.update_index_with_wiki_descriptions(df_index_table)
-            entities = release.make_entities(df_index_table, df)
+            entities = release.make_entities(category, df_index_table, df)
 
             # Make search index data for this category
             all_entities += entities
@@ -1642,10 +1719,8 @@ class OaWebWorkflow(Workflow):
         # Save COKI Open Access Dataset
         release.save_coki_oa_dataset(countries, institutions)
 
-        # Save stats as json
+        # Make stats
         end_year = pendulum.now().year - 1
-        n_countries = len(countries)
-        n_institutions = len(institutions)
         zenodo_versions = [
             ZenodoVersion(
                 pendulum.parse(version["created"]),
@@ -1654,18 +1729,9 @@ class OaWebWorkflow(Workflow):
             for version in versions
         ]
         last_updated = zenodo_versions[0].release_date.format("D MMMM YYYY")
-        country_medians = PublicationStats(p_outputs_open=calc_median_p_oa(countries))
-        institution_medians = PublicationStats(p_outputs_open=calc_median_p_oa(institutions))
-        stats = Stats(
-            START_YEAR,
-            end_year,
-            last_updated,
-            n_countries,
-            n_institutions,
-            zenodo_versions,
-            country_medians,
-            institution_medians,
-        )
+        country_stats = make_entity_stats(countries)
+        institution_stats = make_entity_stats(institutions)
+        stats = Stats(START_YEAR, end_year, last_updated, zenodo_versions, country_stats, institution_stats)
         release.save_stats(stats)
         logging.info(f"Saved stats data")
 
