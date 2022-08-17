@@ -230,18 +230,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     "create_publisher",
                     "create_region",
                     "create_subregion",
-                ],
-                "create_country": ["copy_to_dashboards"],
-                "create_funder": ["copy_to_dashboards"],
-                "create_group": ["copy_to_dashboards"],
-                "create_institution": ["copy_to_dashboards"],
-                "create_author": ["copy_to_dashboards"],
-                "create_journal": ["copy_to_dashboards"],
-                "create_publisher": ["copy_to_dashboards"],
-                "create_region": ["copy_to_dashboards"],
-                "create_subregion": ["copy_to_dashboards"],
-                "copy_to_dashboards": ["create_dashboard_views"],
-                "create_dashboard_views": [
                     "export_country",
                     "export_funder",
                     "export_group",
@@ -252,6 +240,15 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     "export_region",
                     "export_subregion",
                 ],
+                "create_country": ["add_new_dataset_releases"],
+                "create_funder": ["add_new_dataset_releases"],
+                "create_group": ["add_new_dataset_releases"],
+                "create_institution": ["add_new_dataset_releases"],
+                "create_author": ["add_new_dataset_releases"],
+                "create_journal": ["add_new_dataset_releases"],
+                "create_publisher": ["add_new_dataset_releases"],
+                "create_region": ["add_new_dataset_releases"],
+                "create_subregion": ["add_new_dataset_releases"],
                 "export_country": ["add_new_dataset_releases"],
                 "export_funder": ["add_new_dataset_releases"],
                 "export_group": ["add_new_dataset_releases"],
@@ -426,19 +423,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     )
                 self.assert_aggregate(expected_output, actual_output)
                 # TODO: test correctness of remaining outputs
-
-                # Test copy to dashboards
-                ti = env.run_task("copy_to_dashboards")
-                self.assertEqual(expected_state, ti.state)
-                table_ids = [agg.table_id for agg in DoiWorkflow.AGGREGATIONS] + ["doi"]
-                for table_id in table_ids:
-                    self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{table_id}")
-
-                # Test create dashboard views
-                ti = env.run_task("create_dashboard_views")
-                self.assertEqual(expected_state, ti.state)
-                for table_id in ["country", "funder", "group", "institution", "publisher", "subregion"]:
-                    self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{table_id}_comparison")
 
                 # Test create exported tables for Elasticsearch
                 for agg in DoiWorkflow.AGGREGATIONS:
