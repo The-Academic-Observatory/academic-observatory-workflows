@@ -773,7 +773,7 @@ class ObservatoryRelease:
         """
 
         results = []
-        table_ids = [agg.table_id for agg in DoiWorkflow.AGGREGATIONS] + ["doi"]
+        table_ids = [agg.table_id for agg in DoiWorkflow.AGGREGATIONS]
         for table_id in table_ids:
             source_table_id = f"{self.project_id}.{self.observatory_dataset_id}.{bigquery_sharded_table_id(table_id, self.release_date)}"
             destination_table_id = f"{self.project_id}.{self.dashboards_dataset_id}.{table_id}"
