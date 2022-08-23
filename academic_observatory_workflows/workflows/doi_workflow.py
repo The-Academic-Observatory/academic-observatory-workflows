@@ -467,6 +467,10 @@ class DoiWorkflow(Workflow):
                     self.create_aggregate_table, op_kwargs={"aggregation": agg, "task_id": task_id}, task_id=task_id
                 )
 
+        # Copy tables and create views
+        self.add_task(self.copy_to_dashboards)
+        self.add_task(self.create_dashboard_views)
+
         # Export for Elastic
         with self.parallel_tasks():
             for agg in self.AGGREGATIONS:
