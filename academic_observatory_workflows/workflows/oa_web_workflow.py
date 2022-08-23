@@ -43,6 +43,7 @@ from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
 from airflow.sensors.external_task import ExternalTaskSensor
 from jinja2 import Template
+from pandas.api.types import is_string_dtype
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
 from academic_observatory_workflows.dag_tag import Tag
@@ -61,10 +62,8 @@ from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
 from observatory.platform.workflows.workflow import Workflow
 
 # The minimum number of outputs before including an entity in the analysis
-INCLUSION_THRESHOLD = {
-    "country": 25,
-    "institution": 350
-}
+INCLUSION_THRESHOLD = {"country": 25, "institution": 350}
+MAX_REPOSITORIES = 200
 START_YEAR = 2000
 
 # The query that pulls data to be included in the dashboards
@@ -80,17 +79,33 @@ SELECT
   agg.country as country,
   agg.subregion as subregion,
   agg.region as region,
-  ror.types AS institution_types,
-  agg.total_outputs as n_outputs,
-  agg.access_types.oa.total_outputs AS n_outputs_open,
+  ror.types AS institution_types,  
   agg.citations.mag.total_citations as n_citations,  
+  agg.total_outputs as n_outputs,
+  
+  -- COKI OA Categories
+  agg.oa_coki.open.total AS n_outputs_open,
   agg.oa_coki.publisher.total AS n_outputs_publisher_open,
-  agg.access_types.green.total_outputs AS n_outputs_other_platform_open,
-  agg.access_types.green_only.total_outputs AS n_outputs_other_platform_open_only,
-  agg.access_types.gold_doaj.total_outputs AS n_outputs_oa_journal,
-  agg.access_types.hybrid.total_outputs AS n_outputs_hybrid,
-  agg.access_types.bronze.total_outputs AS n_outputs_no_guarantees,
+  agg.oa_coki.publisher_only.total AS n_outputs_publisher_open_only,
+  agg.oa_coki.both.total AS n_outputs_both,
+  agg.oa_coki.other_platform.total AS n_outputs_other_platform_open,
+  agg.oa_coki.other_platform_only.total AS n_outputs_other_platform_open_only,
+  agg.oa_coki.closed.total AS n_outputs_closed,
+  
+  -- Publisher Open Categories
+  agg.oa_coki.publisher_categories.oa_journal.total AS n_outputs_oa_journal,
+  agg.oa_coki.publisher_categories.hybrid.total AS n_outputs_hybrid,
+  agg.oa_coki.publisher_categories.no_guarantees.total AS n_outputs_no_guarantees,
+  
+  -- Other Platform Open Categories
+  agg.oa_coki.other_platform_categories.preprint.total AS n_outputs_preprint,
+  agg.oa_coki.other_platform_categories.domain.total AS n_outputs_domain,
+  agg.oa_coki.other_platform_categories.institution.total AS n_outputs_institution,
+  agg.oa_coki.other_platform_categories.public.total AS n_outputs_public,
+  agg.oa_coki.other_platform_categories.aggregator.total + agg.oa_coki.other_platform_categories.other_internet.total + agg.oa_coki.other_platform_categories.unknown.total AS n_outputs_other_internet, 
+  
   ror.external_ids AS identifiers,
+  agg.repositories,
   CASE
     WHEN agg.id = country.alpha3 THEN []
     ELSE ror.acronyms
@@ -144,6 +159,11 @@ class PublicationStats:
     n_outputs_oa_journal: int = None
     n_outputs_hybrid: int = None
     n_outputs_no_guarantees: int = None
+    n_outputs_preprint: int = None
+    n_outputs_domain: int = None
+    n_outputs_institution: int = None
+    n_outputs_public: int = None
+    n_outputs_other_internet: int = None
 
     # Percentage fields
     p_outputs_open: float = None
@@ -156,6 +176,11 @@ class PublicationStats:
     p_outputs_oa_journal: float = None
     p_outputs_hybrid: float = None
     p_outputs_no_guarantees: float = None
+    p_outputs_preprint: int = None
+    p_outputs_domain: int = None
+    p_outputs_institution: int = None
+    p_outputs_public: int = None
+    p_outputs_other_internet: int = None
 
     @staticmethod
     def from_dict(dict_: Dict) -> PublicationStats:
@@ -171,6 +196,11 @@ class PublicationStats:
         n_outputs_oa_journal = dict_.get("n_outputs_oa_journal")
         n_outputs_hybrid = dict_.get("n_outputs_hybrid")
         n_outputs_no_guarantees = dict_.get("n_outputs_no_guarantees")
+        n_outputs_preprint = dict_.get("n_outputs_preprint")
+        n_outputs_domain = dict_.get("n_outputs_domain")
+        n_outputs_institution = dict_.get("n_outputs_institution")
+        n_outputs_public = dict_.get("n_outputs_public")
+        n_outputs_other_internet = dict_.get("n_outputs_other_internet")
 
         p_outputs_open = dict_.get("p_outputs_open")
         p_outputs_publisher_open = dict_.get("p_outputs_publisher_open")
@@ -182,6 +212,11 @@ class PublicationStats:
         p_outputs_oa_journal = dict_.get("p_outputs_oa_journal")
         p_outputs_hybrid = dict_.get("p_outputs_hybrid")
         p_outputs_no_guarantees = dict_.get("p_outputs_no_guarantees")
+        p_outputs_preprint = dict_.get("p_outputs_preprint")
+        p_outputs_domain = dict_.get("p_outputs_domain")
+        p_outputs_institution = dict_.get("p_outputs_institution")
+        p_outputs_public = dict_.get("p_outputs_public")
+        p_outputs_other_internet = dict_.get("p_outputs_other_internet")
 
         return PublicationStats(
             n_citations=n_citations,
@@ -196,6 +231,11 @@ class PublicationStats:
             n_outputs_oa_journal=n_outputs_oa_journal,
             n_outputs_hybrid=n_outputs_hybrid,
             n_outputs_no_guarantees=n_outputs_no_guarantees,
+            n_outputs_preprint=n_outputs_preprint,
+            n_outputs_domain=n_outputs_domain,
+            n_outputs_institution=n_outputs_institution,
+            n_outputs_public=n_outputs_public,
+            n_outputs_other_internet=n_outputs_other_internet,
             p_outputs_open=p_outputs_open,
             p_outputs_publisher_open=p_outputs_publisher_open,
             p_outputs_publisher_open_only=p_outputs_publisher_open_only,
@@ -206,6 +246,11 @@ class PublicationStats:
             p_outputs_oa_journal=p_outputs_oa_journal,
             p_outputs_hybrid=p_outputs_hybrid,
             p_outputs_no_guarantees=p_outputs_no_guarantees,
+            p_outputs_preprint=p_outputs_preprint,
+            p_outputs_domain=p_outputs_domain,
+            p_outputs_institution=p_outputs_institution,
+            p_outputs_public=p_outputs_public,
+            p_outputs_other_internet=p_outputs_other_internet,
         )
 
     def to_dict(self) -> Dict:
@@ -222,6 +267,11 @@ class PublicationStats:
             "n_outputs_oa_journal": self.n_outputs_oa_journal,
             "n_outputs_hybrid": self.n_outputs_hybrid,
             "n_outputs_no_guarantees": self.n_outputs_no_guarantees,
+            "n_outputs_preprint": self.n_outputs_preprint,
+            "n_outputs_domain": self.n_outputs_domain,
+            "n_outputs_institution": self.n_outputs_institution,
+            "n_outputs_public": self.n_outputs_public,
+            "n_outputs_other_internet": self.n_outputs_other_internet,
             "p_outputs_open": self.p_outputs_open,
             "p_outputs_publisher_open": self.p_outputs_publisher_open,
             "p_outputs_publisher_open_only": self.p_outputs_publisher_open_only,
@@ -232,6 +282,11 @@ class PublicationStats:
             "p_outputs_oa_journal": self.p_outputs_oa_journal,
             "p_outputs_hybrid": self.p_outputs_hybrid,
             "p_outputs_no_guarantees": self.p_outputs_no_guarantees,
+            "p_outputs_preprint": self.p_outputs_preprint,
+            "p_outputs_domain": self.p_outputs_domain,
+            "p_outputs_institution": self.p_outputs_institution,
+            "p_outputs_public": self.p_outputs_public,
+            "p_outputs_other_internet": self.p_outputs_other_internet,
         }
 
 
@@ -332,35 +387,6 @@ class Stats:
         }
 
 
-def save_json(path: str, data: Union[Dict, List]):
-    """Save data to JSON.
-
-    :param path: the output path.
-    :param data: the data to save.
-    :return: None.
-    """
-
-    with open(path, mode="w") as f:
-        json.dump(data, f, separators=(",", ":"))
-
-
-def val_empty(val):
-    if isinstance(val, list):
-        return len(val) == 0
-    else:
-        return val is None or val == ""
-
-
-def clean_ror_id(ror_id: str):
-    """Remove the https://ror.org/ prefix from a ROR id.
-
-    :param ror_id: original ROR id.
-    :return: cleaned ROR id.
-    """
-
-    return ror_id.replace("https://ror.org/", "")
-
-
 @dataclasses.dataclass
 class Description:
     text: str
@@ -380,43 +406,29 @@ class Description:
         return {"text": self.text, "license": self.license, "url": self.url}
 
 
-def trigger_repository_dispatch(*, token: str, event_type: str):
-    """Trigger a Github repository dispatch event.
+@dataclasses.dataclass
+class Repository:
+    id: str
+    total_outputs: int
+    category: str
+    home_repo: bool
 
-    :param event_type: the event type
-    :param token: the Github token.
-    :return: the response.
-    """
+    @staticmethod
+    def from_dict(dict_: Dict) -> Repository:
+        id = dict_.get("id")
+        total_outputs = dict_.get("total_outputs")
+        category = dict_.get("category")
+        home_repo = dict_.get("home_repo")
 
-    headers = {
-        "Accept": "application/vnd.github.v3+json",
-        "Authorization": f"token {token}",
-    }
-    data = {"event_type": event_type}
+        return Repository(id, total_outputs, category, home_repo)
 
-    return requests.post(
-        "https://api.github.com/repos/The-Academic-Observatory/coki-oa-web/dispatches",
-        headers=headers,
-        data=json.dumps(data),
-    )
-
-
-def select_subset(original: Dict, include_keys: Dict):
-    """Select a subset of a dictionary.
-
-    :param original: the original dictionary.
-    :param include_keys: the keys to include.
-    :return:
-    """
-    output = {}
-    for k, v in include_keys.items():
-        if k in original:
-            if isinstance(v, dict):
-                output[k] = select_subset(original[k], v)
-            else:
-                output[k] = original[k]
-
-    return output
+    def to_dict(self) -> Dict:
+        return {
+            "id": self.id,
+            "total_outputs": self.total_outputs,
+            "category": self.category,
+            "home_repo": self.home_repo,
+        }
 
 
 @dataclasses.dataclass
@@ -440,6 +452,7 @@ class Entity:
     identifiers: List[Identifier] = field(default_factory=lambda: [])
     years: List[Year] = field(default_factory=lambda: [])
     acronyms: [str] = None
+    repositories: List[Repository] = field(default_factory=lambda: [])
 
     @staticmethod
     def from_dict(dict_: Dict) -> Entity:
@@ -502,10 +515,79 @@ class Entity:
             "identifiers": [obj.to_dict() for obj in self.identifiers],
             "years": [obj.to_dict() for obj in self.years],
             "acronyms": self.acronyms,
+            "repositories": [obj.to_dict() for obj in self.repositories],
         }
         # Filter out key val pairs with empty lists and values
         dict_ = {k: v for k, v in dict_.items() if not val_empty(v)}
         return dict_
+
+
+def save_json(path: str, data: Union[Dict, List]):
+    """Save data to JSON.
+
+    :param path: the output path.
+    :param data: the data to save.
+    :return: None.
+    """
+
+    with open(path, mode="w") as f:
+        json.dump(data, f, separators=(",", ":"))
+
+
+def val_empty(val):
+    if isinstance(val, list):
+        return len(val) == 0
+    else:
+        return val is None or val == ""
+
+
+def clean_ror_id(ror_id: str):
+    """Remove the https://ror.org/ prefix from a ROR id.
+
+    :param ror_id: original ROR id.
+    :return: cleaned ROR id.
+    """
+
+    return ror_id.replace("https://ror.org/", "")
+
+
+def trigger_repository_dispatch(*, token: str, event_type: str):
+    """Trigger a Github repository dispatch event.
+
+    :param event_type: the event type
+    :param token: the Github token.
+    :return: the response.
+    """
+
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "Authorization": f"token {token}",
+    }
+    data = {"event_type": event_type}
+
+    return requests.post(
+        "https://api.github.com/repos/The-Academic-Observatory/coki-oa-web/dispatches",
+        headers=headers,
+        data=json.dumps(data),
+    )
+
+
+def select_subset(original: Dict, include_keys: Dict):
+    """Select a subset of a dictionary.
+
+    :param original: the original dictionary.
+    :param include_keys: the keys to include.
+    :return:
+    """
+    output = {}
+    for k, v in include_keys.items():
+        if k in original:
+            if isinstance(v, dict):
+                output[k] = select_subset(original[k], v)
+            else:
+                output[k] = original[k]
+
+    return output
 
 
 def get_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: str, build_path) -> Tuple[str, str]:
@@ -703,36 +785,6 @@ def make_logo_url(*, category: str, entity_id: str, size: str, fmt: str) -> str:
     return f"/logos/{category}/{size}/{entity_id}.{fmt}"
 
 
-def calc_oa_stats(
-    n_outputs: int,
-    n_outputs_open: int,
-    n_outputs_publisher_open: int,
-    n_outputs_other_platform_open: int,
-    n_outputs_other_platform_open_only: int,
-):
-    """Calculate additional open access statistics: n_outputs_publisher_open_only, n_outputs_both, n_outputs_closed.
-
-    :param n_outputs: the number of outputs.
-    :param n_outputs_open: the number of open outputs.
-    :param n_outputs_publisher_open: the number of publisher open outputs.
-    :param n_outputs_other_platform_open: the number of other platform open outputs.
-    :param n_outputs_other_platform_open_only:
-    :return: the number of publisher open only outputs, the number of both publisher open and other open outputs and the
-    number of closed outputs.
-    """
-
-    # Closed
-    n_outputs_closed = n_outputs - n_outputs_open
-
-    # Both
-    n_outputs_both = n_outputs_other_platform_open - n_outputs_other_platform_open_only
-
-    # Publisher open only
-    n_outputs_publisher_open_only = n_outputs_publisher_open - n_outputs_both
-
-    return n_outputs_publisher_open_only, n_outputs_both, n_outputs_closed
-
-
 class Zenodo:
     def __init__(self, host: str = "https://zenodo.org", access_token: str = None, timeout: int = 60):
         self.host = host
@@ -856,6 +908,77 @@ def publish_new_version(zenodo: Zenodo, draft_id: int, file_path: str):
 
 
 class OaWebRelease(SnapshotRelease):
+    def __init__(
+        self,
+        *,
+        dag_id: str,
+        release_date: pendulum.DateTime,
+        data_bucket_name: str,
+        zenodo: Zenodo = Zenodo(),
+    ):
+        """Create an OaWebRelease instance.
+
+        :param dag_id: the dag id.
+        :param release_date: the release date.
+        :param zenodo: the zenodo instance.
+        """
+
+        super().__init__(dag_id=dag_id, release_date=release_date)
+        self.zenodo = zenodo
+        self.data_bucket_name = data_bucket_name
+        self.assets_path = module_file_path("academic_observatory_workflows.workflows.data.oa_web_workflow")
+
+    @property
+    def build_path(self):
+        return os.path.join(self.transform_folder, "build")
+
+
+def make_entity_stats(entities: List[Entity]) -> EntityStats:
+    """Calculate stats for entities.
+
+    :param entities: a list of entities.
+    :return: the entity stats object.
+    """
+
+    p_outputs_open = np.array([entity.stats.p_outputs_open for entity in entities])
+    n_outputs = np.array([entity.stats.n_outputs for entity in entities])
+    n_outputs_open = np.array([entity.stats.n_outputs_open for entity in entities])
+
+    # Make median, min and max values
+    stats_median = PublicationStats(p_outputs_open=statistics.median(p_outputs_open))
+    stats_min = PublicationStats(
+        p_outputs_open=math.floor(float(np.min(p_outputs_open))),
+        n_outputs=int(np.min(n_outputs)),
+        n_outputs_open=int(np.min(n_outputs_open)),
+    )
+    stats_max = PublicationStats(
+        p_outputs_open=math.ceil(float(np.max(p_outputs_open))),
+        n_outputs=int(np.max(n_outputs)),
+        n_outputs_open=int(np.max(n_outputs_open)),
+    )
+
+    # Make histograms
+    data, bins = np.histogram(p_outputs_open, bins="auto")
+    hist_p_outputs_open = Histogram(data.tolist(), bins.tolist())
+
+    data, bins = np.histogram(np.log10(n_outputs[n_outputs != 0]), bins="auto")
+    hist_n_outputs = Histogram(data.tolist(), bins.tolist())
+
+    data, bins = np.histogram(np.log10(n_outputs_open[n_outputs_open != 0]), bins="auto")
+    hist_n_outputs_open = Histogram(data.tolist(), bins.tolist())
+
+    return EntityStats(
+        n_items=len(entities),
+        min=stats_min,
+        max=stats_max,
+        median=stats_median,
+        histograms=EntityHistograms(
+            p_outputs_open=hist_p_outputs_open, n_outputs=hist_n_outputs, n_outputs_open=hist_n_outputs_open
+        ),
+    )
+
+
+class OaWebWorkflow(Workflow):
     PERCENTAGE_FIELD_KEYS = [
         ("outputs_open", "n_outputs"),
         ("outputs_both", "n_outputs"),
@@ -867,53 +990,445 @@ class OaWebRelease(SnapshotRelease):
         ("outputs_oa_journal", "n_outputs_publisher_open"),
         ("outputs_hybrid", "n_outputs_publisher_open"),
         ("outputs_no_guarantees", "n_outputs_publisher_open"),
+        ("outputs_preprint", "n_outputs_other_platform_open"),
+        ("outputs_domain", "n_outputs_other_platform_open"),
+        ("outputs_institution", "n_outputs_other_platform_open"),
+        ("outputs_public", "n_outputs_other_platform_open"),
+        ("outputs_other_internet", "n_outputs_other_platform_open"),
     ]
+    DATA_BUCKET = "oa_web_data_bucket"
+    GITHUB_TOKEN_CONN = "oa_web_github_token"
+    ZENODO_TOKEN_CONN = "oa_web_zenodo_token"
+
+    """The OaWebWorkflow generates data files for the COKI Open Access Dashboard.
+
+    The figure below illustrates the generated data and notes about what each file is used for.
+    .
+    ├── data: data
+    │   ├── index.json: used by the Cloudflare Worker search and filtering API.
+    │   ├── autocomplete.json: used for the website search functionality. Copied into public/data folder.
+    │   ├── country: individual entity statistics files for countries. Used to build each country page.
+    │   │   ├── ALB.json
+    │   │   ├── ARE.json
+    │   │   └── ARG.json
+    │   ├── country.json: used to create the country table. First 18 countries used to build first page of country table
+    │   │                 and then this file is included in the public folder and downloaded by the client to enable the
+    │   │                 other pages of the table to be displayed. Copied into public/data folder.
+    │   ├── institution: individual entity statistics files for institutions. Used to build each institution page.
+    │   │   ├── 05ykr0121.json
+    │   │   ├── 05ym42410.json
+    │   │   └── 05ynxx418.json
+    │   ├── institution.json: used to create the institution table. First 18 institutions used to build first page of institution table
+    │   │                     and then this file is included in the public folder and downloaded by the client to enable the
+    │   │                     other pages of the table to be displayed. Copied into public/data folder.
+    │   └── stats.json: global statistics, e.g. the minimum and maximum date for the dataset, when it was last updated etc.
+    └── logos: country and institution logos. Copied into public/logos folder.
+        ├── country
+        │   ├── l: large logos displayed on country pages.
+        │   │   ├── ALB.svg
+        │   │   ├── ARE.svg
+        │   │   └── ARG.svg
+        │   └── s: small logos displayed in country table.
+        │       ├── ALB.svg
+        │       ├── ARE.svg
+        │       └── ARG.svg
+        └── institution
+            ├── l: large logos displayed on institution pages.
+            │   ├── 05ykr0121.jpg
+            │   ├── 05ym42410.jpg
+            │   └── 05ynxx418.jpg
+            └── s: small logos displayed in institution table.
+                ├── 05ykr0121.jpg
+                ├── 05ym42410.jpg
+                └── 05ynxx418.jpg
+    """
+
+    # Set the number of titles for which wiki descriptions are retrieved at once, the API can return max 20 extracts.
+    WIKI_MAX_TITLES = 20
 
     def __init__(
         self,
         *,
-        dag_id: str,
-        project_id: str,
-        release_date: pendulum.DateTime,
-        data_bucket_name: str,
-        change_chart_years: int = 10,
+        input_project_id: str = "academic-observatory",
+        output_project_id: str = "academic-observatory",
+        dag_id: str = "oa_web_workflow",
+        start_date: Optional[pendulum.DateTime] = pendulum.datetime(2021, 5, 2),
+        schedule_interval: Optional[str] = "@weekly",
+        catchup: Optional[bool] = False,
+        ext_dag_id: str = "doi",
+        table_ids: List[str] = None,
+        airflow_vars: List[str] = None,
+        airflow_conns: List[str] = None,
         agg_dataset_id: str = "observatory",
         ror_dataset_id: str = "ror",
-        zenodo: Zenodo = Zenodo(),
+        settings_dataset_id: str = "settings",
+        version: str = "v6",
+        conceptrecid: int = 6399462,
+        zenodo_host: str = "https://zenodo.org",
     ):
-        """Create an OaWebRelease instance.
+        """Create the OaWebWorkflow.
 
-        :param dag_id: the dag id.
         :param project_id: the Google Cloud project id.
-        :param release_date: the release date.
-        :param change_chart_years: the number of years to include in the change charts.
-        :param agg_dataset_id: the dataset to use for aggregation.
-        :param ror_dataset_id: the ROR dataset id.
-        :param zenodo: the zenodo instance.
+        :param dag_id: the DAG id.
+        :param start_date: the start date.
+        :param schedule_interval: the schedule interval.
+        :param catchup: whether to catchup or not.
+        :param ext_dag_id: the DAG id to wait for.
+        :param table_ids: the table ids.
+        :param airflow_vars: required Airflow Variables.
+        :param airflow_conns: required Airflow Connections.
+        :param agg_dataset_id: the id of the dataset where the Academic Observatory aggregated data lives.
+        :param ror_dataset_id: the id of the dataset containing the ROR table.
+        :param settings_dataset_id: the id of the settings dataset, which contains the country table.
+        :param version: the dataset version published by this workflow. The Github Action pulls from a specific dataset
+        version: https://github.com/The-Academic-Observatory/coki-oa-web/blob/develop/.github/workflows/build-on-data-update.yml#L68-L74.
+        This is so that when breaking changes are made to the schema, the web application won't break.
+        :param conceptrecid: the Zenodo Concept Record ID for the COKI Open Access Dataset. The Concept Record ID is
+        the last set of numbers from the Concept DOI.
+        :param zenodo_host: the Zenodo hostname, can be changed to https://sandbox.zenodo.org for testing.
         """
 
-        super().__init__(dag_id=dag_id, release_date=release_date)
-        self.project_id = project_id
-        self.zenodo = zenodo
-        self.data_bucket_name = data_bucket_name
-        self.change_chart_years = change_chart_years
+        if airflow_vars is None:
+            airflow_vars = [
+                AirflowVars.DATA_PATH,
+                AirflowVars.PROJECT_ID,
+                AirflowVars.DATA_LOCATION,
+                AirflowVars.DOWNLOAD_BUCKET,
+                AirflowVars.TRANSFORM_BUCKET,
+                self.DATA_BUCKET,
+            ]
+
+        if airflow_conns is None:
+            airflow_conns = [self.GITHUB_TOKEN_CONN, self.ZENODO_TOKEN_CONN]
+
+        super().__init__(
+            dag_id=dag_id,
+            start_date=start_date,
+            schedule_interval=schedule_interval,
+            catchup=catchup,
+            airflow_vars=airflow_vars,
+            airflow_conns=airflow_conns,
+            tags=[Tag.academic_observatory],
+        )
+        self.input_project_id = input_project_id
+        self.output_project_id = output_project_id
         self.agg_dataset_id = agg_dataset_id
         self.ror_dataset_id = ror_dataset_id
-        self.data_path = module_file_path("academic_observatory_workflows.workflows.data.oa_web_workflow")
+        self.settings_dataset_id = settings_dataset_id
+        self.table_ids = table_ids
+        self.version = version
+        self.conceptrecid = conceptrecid
+        self.zenodo_host = zenodo_host
+        if table_ids is None:
+            self.table_ids = ["country", "institution"]
 
-    @property
-    def build_path(self):
-        return os.path.join(self.transform_folder, "build")
+        self.add_operator(
+            ExternalTaskSensor(task_id=f"{ext_dag_id}_sensor", external_dag_id=ext_dag_id, mode="reschedule")
+        )
+        self.add_setup_task(self.check_dependencies)
+        self.add_task(self.query)
+        self.add_task(self.download)
+        self.add_task(self.make_draft_zenodo_version)
+        self.add_task(self.download_twitter_cards)
+        self.add_task(self.transform)
+        self.add_task(self.publish_zenodo_version)
+        self.add_task(self.upload_dataset)
+        self.add_task(self.repository_dispatch)
+        self.add_task(self.cleanup)
 
-    def load_data(self, category: str) -> pd.DataFrame:
+    ######################################
+    # Airflow tasks
+    ######################################
+
+    def make_release(self, **kwargs) -> OaWebRelease:
+        """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is
+        called in 'task_callable'.
+
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: A list of OaWebRelease instances
+        """
+
+        release_date = make_release_date(**kwargs)
+        data_bucket_name = Variable.get(self.DATA_BUCKET)
+        zenodo_token = get_airflow_connection_password(self.ZENODO_TOKEN_CONN)
+        zenodo = Zenodo(host=self.zenodo_host, access_token=zenodo_token)
+
+        return OaWebRelease(
+            dag_id=self.dag_id,
+            data_bucket_name=data_bucket_name,
+            release_date=release_date,
+            zenodo=zenodo,
+        )
+
+    def query(self, release: OaWebRelease, **kwargs):
+        """Fetch the data for each table.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+        results = []
+
+        # ROR release date
+        ror_table_id = "ror"
+        ror_release_date = select_table_shard_dates(
+            project_id=self.input_project_id,
+            dataset_id=self.ror_dataset_id,
+            table_id=ror_table_id,
+            end_date=release.release_date,
+        )[0]
+        ror_sharded_table_id = bigquery_sharded_table_id(ror_table_id, ror_release_date)
+
+        for agg_table_id in self.table_ids:
+            # Aggregate release dates
+            agg_release_date = select_table_shard_dates(
+                project_id=self.input_project_id,
+                dataset_id=self.agg_dataset_id,
+                table_id=agg_table_id,
+                end_date=release.release_date,
+            )[0]
+            agg_sharded_table_id = bigquery_sharded_table_id(agg_table_id, agg_release_date)
+
+            # Fetch data
+            destination_uri = f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{agg_table_id}.jsonl"
+            success = bq_query_to_gcs(
+                query=QUERY.format(
+                    start_year=START_YEAR,
+                    project_id=self.input_project_id,
+                    agg_dataset_id=self.agg_dataset_id,
+                    agg_table_id=agg_sharded_table_id,
+                    ror_dataset_id=self.ror_dataset_id,
+                    ror_table_id=ror_sharded_table_id,
+                    settings_dataset_id=self.settings_dataset_id,
+                    country_table_id="country",
+                ),
+                project_id=self.output_project_id,
+                destination_uri=destination_uri,
+            )
+            results.append(success)
+
+        state = all(results)
+        if not state:
+            raise AirflowException("OaWebWorkflow.query failed")
+
+    def download(self, release: OaWebRelease, **kwargs):
+        """Download the queried data.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+
+        prefix = f"{self.dag_id}/{release.release_id}"
+        state = download_blobs_from_cloud_storage(
+            bucket_name=release.download_bucket, prefix=prefix, destination_path=release.download_folder
+        )
+        if not state:
+            raise AirflowException("OaWebWorkflow.download failed")
+
+    def make_draft_zenodo_version(self, release: OaWebRelease, **kwargs):
+        """Make a draft Zenodo version of the dataset.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+
+        make_draft_version(release.zenodo, self.conceptrecid)
+
+    def download_twitter_cards(self, release: OaWebRelease, **kwargs):
+        """Download current twitter cards
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+
+        # Download twitter cards
+        blob_name = "twitter.zip"
+        file_path = os.path.join(release.transform_folder, blob_name)
+        download_blob_from_cloud_storage(bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path)
+
+        # Unzip into build
+        unzip_folder_path = os.path.join(release.build_path)
+        with ZipFile(file_path) as zip_file:
+            zip_file.extractall(unzip_folder_path)
+
+    def transform(self, release: OaWebRelease, **kwargs):
+        """Transform the queried data into the final format for the open access website.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+
+        # Get versions
+        res = release.zenodo.get_versions(self.conceptrecid, all_versions=1)
+        if res.status_code != 200:
+            raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
+        versions = res.json()
+
+        # Make required folders
+        all_entities = []
+        countries = []
+        institutions = []
+        build_data_path = os.path.join(release.build_path, "data")
+        os.makedirs(build_data_path, exist_ok=True)
+        for category in self.table_ids:
+            logging.info(f"Transforming {category} entity")
+            # Load data
+            path = os.path.join(release.download_folder, f"{category}.jsonl")
+            df = self.load_data(path)
+
+            # Pre-process data
+            df = self.preprocess_df(category, df)
+
+            # Make index table
+            df_index_table = self.make_index(category, df)
+            self.update_index_with_logos(release.build_path, release.assets_path, category, df_index_table)
+            self.update_index_with_wiki_descriptions(df_index_table)
+            entities = self.make_entities(category, df_index_table, df)
+
+            # Make search index data for this category
+            all_entities += entities
+
+            # Save index
+            index_path = os.path.join(build_data_path, f"{category}.json")
+            self.save_index(index_path, entities)
+
+            # Save entities
+            entities_path = os.path.join(build_data_path, category)
+            self.save_entities(entities_path, entities)
+            logging.info(f"Saved transformed {category} entity")
+
+            # Assign country or institution variables
+            if category == "country":
+                countries = entities
+            elif category == "institution":
+                institutions = entities
+            else:
+                raise AirflowException(f"Category type unknown: {category}")
+
+        # Save all entities as json
+        index_path = os.path.join(build_data_path, f"index.json")
+        self.save_index(index_path, all_entities)
+
+        # Save COKI Open Access Dataset
+        coki_dataset_path = os.path.join(release.transform_folder, "coki-oa-dataset")
+        self.save_coki_oa_dataset(coki_dataset_path, countries, institutions)
+
+        # Make stats
+        end_year = pendulum.now().year - 1
+        zenodo_versions = [
+            ZenodoVersion(
+                pendulum.parse(version["created"]),
+                f"https://zenodo.org/record/{version['id']}/files/coki-oa-dataset.zip?download=1",
+            )
+            for version in versions
+        ]
+        last_updated = zenodo_versions[0].release_date.format("D MMMM YYYY")
+        country_stats = make_entity_stats(countries)
+        institution_stats = make_entity_stats(institutions)
+        stats = Stats(START_YEAR, end_year, last_updated, zenodo_versions, country_stats, institution_stats)
+        stats_path = os.path.join(release.build_path, "data")
+        self.save_stats(stats_path, stats)
+        logging.info(f"Saved stats data")
+
+        # Zip data
+        dst = os.path.join(release.transform_folder, "latest")
+        shutil.copytree(release.build_path, dst)
+        shutil.make_archive(dst, "zip", dst)
+
+    def publish_zenodo_version(self, release: OaWebRelease, **kwargs):
+        """Publish the new Zenodo version of the dataset.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+
+        zenodo = release.zenodo
+        res = zenodo.get_versions(self.conceptrecid, all_versions=0)
+        if res.status_code != 200:
+            raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
+        draft = res.json()[0]
+        draft_id = draft["id"]
+        if draft["state"] != "unsubmitted":
+            raise AirflowException(f"Latest version is not a draft: {draft_id}")
+
+        file_path = os.path.join(release.transform_folder, "coki-oa-dataset.zip")
+        publish_new_version(release.zenodo, draft_id, file_path)
+
+    def upload_dataset(self, release: OaWebRelease, **kwargs):
+        """Publish the dataset produced by this workflow.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+
+        # upload_file_to_cloud_storage should always rewrite a new version of latest.zip if it exists
+        # object versioning on the bucket will keep the previous versions
+        blob_name = f"{self.version}/latest.zip"
+        file_path = os.path.join(release.transform_folder, "latest.zip")
+        upload_file_to_cloud_storage(
+            bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path, check_blob_hash=False
+        )
+
+    def repository_dispatch(self, release: OaWebRelease, **kwargs):
+        """Trigger a Github repository_dispatch to trigger new website builds.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+
+        token = get_airflow_connection_password(self.GITHUB_TOKEN_CONN)
+        event_types = ["data-update/develop", "data-update/staging", "data-update/production"]
+        for event_type in event_types:
+            trigger_repository_dispatch(token=token, event_type=event_type)
+
+    def cleanup(self, release: OaWebRelease, **kwargs):
+        """Delete all files and folders associated with this release.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+        release.cleanup()
+
+    ######################################
+    # Other Functions
+    ######################################
+
+    def load_data(self, file_path: str) -> pd.DataFrame:
         """Load the data file for a given category.
 
-        :param category: the category, i.e. country or institution.
+        :param file_path: the path to the file to load.
         :return: the Pandas Dataframe.
         """
 
-        path = os.path.join(self.download_folder, f"{category}.jsonl")
-        data = load_jsonl(path)
+        data = load_jsonl(file_path)
         return pd.DataFrame(data)
 
     def preprocess_df(self, category: str, df: pd.DataFrame) -> pd.DataFrame:
@@ -931,33 +1446,6 @@ class OaWebRelease(SnapshotRelease):
         for column in df.columns:
             if column.startswith("n_"):
                 df[column] = pd.to_numeric(df[column])
-
-        # Create missing fields
-        publisher_open_only = []
-        both = []
-        closed = []
-        for i, row in df.iterrows():
-            n_outputs = row["n_outputs"]
-            n_outputs_open = row["n_outputs_open"]
-            n_outputs_publisher_open = row["n_outputs_publisher_open"]
-            n_outputs_other_platform_open = row["n_outputs_other_platform_open"]
-            n_outputs_other_platform_open_only = row["n_outputs_other_platform_open_only"]
-            n_outputs_publisher_open_only, n_outputs_both, n_outputs_closed = calc_oa_stats(
-                n_outputs,
-                n_outputs_open,
-                n_outputs_publisher_open,
-                n_outputs_other_platform_open,
-                n_outputs_other_platform_open_only,
-            )
-
-            # Add to arrays
-            publisher_open_only.append(n_outputs_publisher_open_only)
-            both.append(n_outputs_both)
-            closed.append(n_outputs_closed)
-
-        df["n_outputs_publisher_open_only"] = publisher_open_only
-        df["n_outputs_both"] = both
-        df["n_outputs_closed"] = closed
 
         # Clean RoR ids
         if category == "institution":
@@ -1043,8 +1531,8 @@ class OaWebRelease(SnapshotRelease):
         # Add category
         df_index_table["category"] = category
 
-        # Remove date and year
-        df_index_table.drop(columns=["date", "year"], inplace=True)
+        # Remove date, year and repositories
+        df_index_table.drop(columns=["date", "year", "repositories"], inplace=True)
 
         return df_index_table
 
@@ -1063,9 +1551,11 @@ class OaWebRelease(SnapshotRelease):
             # Fill in NaN caused by denominator of zero
             df[p_key] = df[p_key].fillna(0)
 
-    def update_index_with_logos(self, category: str, df_index_table: pd.DataFrame):
+    def update_index_with_logos(self, build_path: str, assets_path: str, category: str, df_index_table: pd.DataFrame):
         """Update the index with logos, downloading logos if they don't exist.
 
+        :param build_path: the path to the build folder.
+        :param assets_path: the path to oa-web-workflow assets folder which contains country flags.
         :param category: the category, i.e. country or institution.
         :param df_index_table: the index table Pandas dataframe.
         :return: None.
@@ -1073,7 +1563,7 @@ class OaWebRelease(SnapshotRelease):
 
         sizes = ["s", "l", "xl"]
         for size in sizes:
-            base_path = os.path.join(self.build_path, "logos", category, size)
+            base_path = os.path.join(build_path, "logos", category, size)
             os.makedirs(base_path, exist_ok=True)
 
         # Make logos
@@ -1084,9 +1574,9 @@ class OaWebRelease(SnapshotRelease):
                 futures = []
                 # Copy and rename logo images from using alpha2 to alpha3 country codes
                 for size in country_sizes:
-                    base_path = os.path.join(self.build_path, "logos", category, size)
+                    base_path = os.path.join(build_path, "logos", category, size)
                     for alpha3, alpha2 in zip(df_index_table["id"], df_index_table["alpha2"]):
-                        src_path = os.path.join(self.data_path, "flags", size, f"{alpha2}.svg")
+                        src_path = os.path.join(assets_path, "flags", size, f"{alpha2}.svg")
                         dst_path = os.path.join(base_path, f"{alpha3}.svg")
                         futures.append(executor.submit(shutil.copy, src_path, dst_path))
                 [f.result() for f in as_completed(futures)]
@@ -1116,7 +1606,7 @@ class OaWebRelease(SnapshotRelease):
                         if url:
                             url = clean_url(url)
                             futures.append(
-                                executor.submit(get_institution_logo, ror_id, url, size, width, fmt, self.build_path)
+                                executor.submit(get_institution_logo, ror_id, url, size, width, fmt, build_path)
                             )
                         else:
                             logo_paths.append((ror_id, "/unknown.svg"))
@@ -1180,11 +1670,11 @@ class OaWebRelease(SnapshotRelease):
         df_index_table.loc[wikipedia_url_filter, "description"] = descriptions_sorted
         df_index_table.loc[~wikipedia_url_filter, "description"] = ""
 
-    def save_index(self, entities: List[Entity], file_name: str):
+    def save_index(self, file_path: str, entities: List[Entity]):
         """Save an index file.
 
+        :param file_path: the file path where the index should be saved.
         :param entities: a list of entities.
-        :param file_name: the file name to save.
         :return: None.
         """
 
@@ -1212,10 +1702,7 @@ class OaWebRelease(SnapshotRelease):
         data = [select_subset(entity.to_dict(), subset) for entity in entities]
 
         # Save as JSON
-        base_path = os.path.join(self.build_path, "data")
-        os.makedirs(base_path, exist_ok=True)
-        output_path = os.path.join(base_path, file_name)
-        save_json(output_path, data)
+        save_json(file_path, data)
 
     def make_entities(self, category: str, df_index_table: pd.DataFrame, df: pd.DataFrame) -> List[Entity]:
         """Make entities.
@@ -1255,6 +1742,45 @@ class OaWebRelease(SnapshotRelease):
                     years.append(Year(year=year, date=date, stats=stats))
                 entity.years = years
 
+                # Make repositories
+                def sort_key(col):
+                    if is_string_dtype(col.dtype):
+                        return col.str.lower()
+                    return col
+
+                def merge_category(cat):
+                    if cat in {"Aggregator", "Unknown"}:
+                        return "Other Internet"
+                    return cat
+
+                repositories = []
+                for row in rows:
+                    repositories += row["repositories"]
+                df_repos = pd.DataFrame(repositories, columns=["id", "total_outputs", "category", "home_repo"])
+                df_repos["total_outputs"] = pd.to_numeric(df_repos["total_outputs"])
+                df_repos["category"] = df_repos["category"].apply(merge_category)
+                df_repos = (
+                    df_repos.groupby(["id"], as_index=False)
+                    .agg(
+                        {
+                            "id": "first",
+                            "total_outputs": "sum",
+                            "category": "first",
+                            "home_repo": "first",
+                        }
+                    )
+                    .sort_values(by=["total_outputs", "id"], ascending=[False, True], inplace=False, key=sort_key)
+                )
+                repositories = df_repos.to_dict(key_records)
+                repositories = [Repository.from_dict(repo) for repo in repositories]
+
+                # Select a maximum number of repositories, however, make sure that all repositories that belong
+                # to the given institution are always present
+                entity.repositories = []
+                for repo in repositories:
+                    if len(entity.repositories) <= MAX_REPOSITORIES or repo.home_repo:
+                        entity.repositories.append(repo)
+
                 # Set min and max years for data
                 entity.start_year = years[0].year
                 entity.end_year = years[-1].year
@@ -1266,24 +1792,24 @@ class OaWebRelease(SnapshotRelease):
 
         return entities
 
-    def save_entities(self, category: str, entities: List[Entity]):
+    def save_entities(self, path: str, entities: List[Entity]):
         """Save the data for each entity as a JSON file.
 
-        :param category: the entity category.
+        :param path: the path where the entities should be saved.
         :param entities: the list of Entity objects.
         :return: None.
         """
 
-        base_path = os.path.join(self.build_path, "data", category)
-        os.makedirs(base_path, exist_ok=True)
+        os.makedirs(path, exist_ok=True)
         for entity in entities:
-            output_path = os.path.join(base_path, f"{entity.id}.json")
+            output_path = os.path.join(path, f"{entity.id}.json")
             entity_dict = entity.to_dict()
             save_json(output_path, entity_dict)
 
-    def save_coki_oa_dataset(self, countries: List[Entity], institutions: List[Entity]):
+    def save_coki_oa_dataset(self, path: str, countries: List[Entity], institutions: List[Entity]):
         """Save the COKI Open Access Dataset to a zip file.
 
+        :param path: the path to the folder where the dataset should be saved.
         :param countries: the country entities.
         :param institutions: the institution entities.
         :return: None.
@@ -1318,17 +1844,16 @@ class OaWebRelease(SnapshotRelease):
         institution = [select_subset(entity.to_dict(), subset) for entity in institutions]
 
         # Save to JSON Lines
-        base_path = os.path.join(self.transform_folder, "coki-oa-dataset")
-        os.makedirs(base_path, exist_ok=True)
+        os.makedirs(path, exist_ok=True)
 
-        file_path = os.path.join(base_path, "country.jsonl")
+        file_path = os.path.join(path, "country.jsonl")
         save_as_jsonl(file_path, country)
 
-        file_path = os.path.join(base_path, "institution.jsonl")
+        file_path = os.path.join(path, "institution.jsonl")
         save_as_jsonl(file_path, institution)
 
         # Save README
-        file_path = os.path.join(base_path, "README.md")
+        file_path = os.path.join(path, "README.md")
         template = Template(README, keep_trailing_newline=True)
         rendered = template.render(
             year=pendulum.now().year, n_countries=len(countries), n_institutions=len(institutions)
@@ -1337,471 +1862,18 @@ class OaWebRelease(SnapshotRelease):
             f.write(rendered)
 
         # Zip
-        shutil.make_archive(base_path, "zip", base_path)
+        shutil.make_archive(path, "zip", path)
 
-    def save_stats(self, stats: Stats):
+    def save_stats(self, path: str, stats: Stats):
         """Save overall stats.
 
+        :param path: the directory where the stats.json file should be saved.
         :param stats: stats object.
         :return: None.
         """
 
-        base_path = os.path.join(self.build_path, "data")
-        os.makedirs(base_path, exist_ok=True)
+        os.makedirs(path, exist_ok=True)
 
         # Save as JSON
-        output_path = os.path.join(base_path, "stats.json")
+        output_path = os.path.join(path, "stats.json")
         save_json(output_path, stats.to_dict())
-
-
-def make_entity_stats(entities: List[Entity]) -> EntityStats:
-    """Calculate stats for entities.
-
-    :param entities: a list of entities.
-    :return: the entity stats object.
-    """
-
-    p_outputs_open = np.array([entity.stats.p_outputs_open for entity in entities])
-    n_outputs = np.array([entity.stats.n_outputs for entity in entities])
-    n_outputs_open = np.array([entity.stats.n_outputs_open for entity in entities])
-
-    # Make median, min and max values
-    stats_median = PublicationStats(p_outputs_open=statistics.median(p_outputs_open))
-    stats_min = PublicationStats(
-        p_outputs_open=math.floor(float(np.min(p_outputs_open))),
-        n_outputs=int(np.min(n_outputs)),
-        n_outputs_open=int(np.min(n_outputs_open)),
-    )
-    stats_max = PublicationStats(
-        p_outputs_open=math.ceil(float(np.max(p_outputs_open))),
-        n_outputs=int(np.max(n_outputs)),
-        n_outputs_open=int(np.max(n_outputs_open)),
-    )
-
-    # Make histograms
-    data, bins = np.histogram(p_outputs_open, bins="auto")
-    hist_p_outputs_open = Histogram(data.tolist(), bins.tolist())
-
-    data, bins = np.histogram(np.log10(n_outputs), bins="auto")
-    hist_n_outputs = Histogram(data.tolist(), bins.tolist())
-
-    data, bins = np.histogram(np.log10(n_outputs_open), bins="auto")
-    hist_n_outputs_open = Histogram(data.tolist(), bins.tolist())
-
-    return EntityStats(
-        n_items=len(entities),
-        min=stats_min,
-        max=stats_max,
-        median=stats_median,
-        histograms=EntityHistograms(
-            p_outputs_open=hist_p_outputs_open, n_outputs=hist_n_outputs, n_outputs_open=hist_n_outputs_open
-        ),
-    )
-
-
-class OaWebWorkflow(Workflow):
-    DATA_BUCKET = "oa_web_data_bucket"
-    GITHUB_TOKEN_CONN = "oa_web_github_token"
-    ZENODO_TOKEN_CONN = "oa_web_zenodo_token"
-
-    """The OaWebWorkflow generates data files for the COKI Open Access Dashboard.
-
-    The figure below illustrates the generated data and notes about what each file is used for.
-    .
-    ├── data: data
-    │   ├── index.json: used by the Cloudflare Worker search and filtering API.
-    │   ├── autocomplete.json: used for the website search functionality. Copied into public/data folder.
-    │   ├── country: individual entity statistics files for countries. Used to build each country page.
-    │   │   ├── ALB.json
-    │   │   ├── ARE.json
-    │   │   └── ARG.json
-    │   ├── country.json: used to create the country table. First 18 countries used to build first page of country table
-    │   │                 and then this file is included in the public folder and downloaded by the client to enable the
-    │   │                 other pages of the table to be displayed. Copied into public/data folder.
-    │   ├── institution: individual entity statistics files for institutions. Used to build each institution page.
-    │   │   ├── 05ykr0121.json
-    │   │   ├── 05ym42410.json
-    │   │   └── 05ynxx418.json
-    │   ├── institution.json: used to create the institution table. First 18 institutions used to build first page of institution table
-    │   │                     and then this file is included in the public folder and downloaded by the client to enable the
-    │   │                     other pages of the table to be displayed. Copied into public/data folder.
-    │   └── stats.json: global statistics, e.g. the minimum and maximum date for the dataset, when it was last updated etc.
-    └── logos: country and institution logos. Copied into public/logos folder.
-        ├── country
-        │   ├── l: large logos displayed on country pages.
-        │   │   ├── ALB.svg
-        │   │   ├── ARE.svg
-        │   │   └── ARG.svg
-        │   └── s: small logos displayed in country table.
-        │       ├── ALB.svg
-        │       ├── ARE.svg
-        │       └── ARG.svg
-        └── institution
-            ├── l: large logos displayed on institution pages.
-            │   ├── 05ykr0121.jpg
-            │   ├── 05ym42410.jpg
-            │   └── 05ynxx418.jpg
-            └── s: small logos displayed in institution table.
-                ├── 05ykr0121.jpg
-                ├── 05ym42410.jpg
-                └── 05ynxx418.jpg
-    """
-
-    # Set the number of titles for which wiki descriptions are retrieved at once, the API can return max 20 extracts.
-    WIKI_MAX_TITLES = 20
-
-    def __init__(
-        self,
-        *,
-        dag_id: str = "oa_web_workflow",
-        start_date: Optional[pendulum.DateTime] = pendulum.datetime(2021, 5, 2),
-        schedule_interval: Optional[str] = "@weekly",
-        catchup: Optional[bool] = False,
-        ext_dag_id: str = "doi",
-        table_ids: List[str] = None,
-        airflow_vars: List[str] = None,
-        airflow_conns: List[str] = None,
-        agg_dataset_id: str = "observatory",
-        ror_dataset_id: str = "ror",
-        settings_dataset_id: str = "settings",
-        version: str = "v5",
-        conceptrecid: int = 6399462,
-        zenodo_host: str = "https://zenodo.org",
-    ):
-        """Create the OaWebWorkflow.
-
-        :param dag_id: the DAG id.
-        :param start_date: the start date.
-        :param schedule_interval: the schedule interval.
-        :param catchup: whether to catchup or not.
-        :param ext_dag_id: the DAG id to wait for.
-        :param table_ids: the table ids.
-        :param airflow_vars: required Airflow Variables.
-        :param airflow_conns: required Airflow Connections.
-        :param agg_dataset_id: the id of the dataset where the Academic Observatory aggregated data lives.
-        :param ror_dataset_id: the id of the dataset containing the ROR table.
-        :param settings_dataset_id: the id of the settings dataset, which contains the country table.
-        :param version: the dataset version published by this workflow. The Github Action pulls from a specific dataset
-        version: https://github.com/The-Academic-Observatory/coki-oa-web/blob/develop/.github/workflows/build-on-data-update.yml#L68-L74.
-        This is so that when breaking changes are made to the schema, the web application won't break.
-        :param conceptrecid: the Zenodo Concept Record ID for the COKI Open Access Dataset. The Concept Record ID is
-        the last set of numbers from the Concept DOI.
-        :param zenodo_host: the Zenodo hostname, can be changed to https://sandbox.zenodo.org for testing.
-        """
-
-        if airflow_vars is None:
-            airflow_vars = [
-                AirflowVars.DATA_PATH,
-                AirflowVars.PROJECT_ID,
-                AirflowVars.DATA_LOCATION,
-                AirflowVars.DOWNLOAD_BUCKET,
-                AirflowVars.TRANSFORM_BUCKET,
-                self.DATA_BUCKET,
-            ]
-
-        if airflow_conns is None:
-            airflow_conns = [self.GITHUB_TOKEN_CONN, self.ZENODO_TOKEN_CONN]
-
-        super().__init__(
-            dag_id=dag_id,
-            start_date=start_date,
-            schedule_interval=schedule_interval,
-            catchup=catchup,
-            airflow_vars=airflow_vars,
-            airflow_conns=airflow_conns,
-            tags=[Tag.academic_observatory],
-        )
-        self.agg_dataset_id = agg_dataset_id
-        self.ror_dataset_id = ror_dataset_id
-        self.settings_dataset_id = settings_dataset_id
-        self.table_ids = table_ids
-        self.version = version
-        self.conceptrecid = conceptrecid
-        self.zenodo_host = zenodo_host
-        if table_ids is None:
-            self.table_ids = ["country", "institution"]
-
-        self.add_operator(
-            ExternalTaskSensor(task_id=f"{ext_dag_id}_sensor", external_dag_id=ext_dag_id, mode="reschedule")
-        )
-        self.add_setup_task(self.check_dependencies)
-        self.add_task(self.query)
-        self.add_task(self.download)
-        self.add_task(self.make_draft_zenodo_version)
-        self.add_task(self.download_twitter_cards)
-        self.add_task(self.transform)
-        self.add_task(self.publish_zenodo_version)
-        self.add_task(self.upload_dataset)
-        self.add_task(self.repository_dispatch)
-        self.add_task(self.cleanup)
-
-    def make_release(self, **kwargs) -> OaWebRelease:
-        """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is
-        called in 'task_callable'.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: A list of OaWebRelease instances
-        """
-
-        project_id = Variable.get(AirflowVars.PROJECT_ID)
-        release_date = make_release_date(**kwargs)
-        data_bucket_name = Variable.get(self.DATA_BUCKET)
-        zenodo_token = get_airflow_connection_password(self.ZENODO_TOKEN_CONN)
-        zenodo = Zenodo(host=self.zenodo_host, access_token=zenodo_token)
-
-        return OaWebRelease(
-            dag_id=self.dag_id,
-            project_id=project_id,
-            data_bucket_name=data_bucket_name,
-            release_date=release_date,
-            ror_dataset_id=self.ror_dataset_id,
-            agg_dataset_id=self.agg_dataset_id,
-            zenodo=zenodo,
-        )
-
-    def query(self, release: OaWebRelease, **kwargs):
-        """Fetch the data for each table.
-
-        :param release: the release.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
-        results = []
-
-        # ROR release date
-        ror_table_id = "ror"
-        ror_release_date = select_table_shard_dates(
-            project_id=release.project_id,
-            dataset_id=release.ror_dataset_id,
-            table_id=ror_table_id,
-            end_date=release.release_date,
-        )[0]
-        ror_sharded_table_id = bigquery_sharded_table_id(ror_table_id, ror_release_date)
-
-        for agg_table_id in self.table_ids:
-            # Aggregate release dates
-            agg_release_date = select_table_shard_dates(
-                project_id=release.project_id,
-                dataset_id=release.agg_dataset_id,
-                table_id=agg_table_id,
-                end_date=release.release_date,
-            )[0]
-            agg_sharded_table_id = bigquery_sharded_table_id(agg_table_id, agg_release_date)
-
-            # Fetch data
-            destination_uri = f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{agg_table_id}.jsonl"
-            success = bq_query_to_gcs(
-                query=QUERY.format(
-                    start_year=START_YEAR,
-                    project_id=release.project_id,
-                    agg_dataset_id=release.agg_dataset_id,
-                    agg_table_id=agg_sharded_table_id,
-                    ror_dataset_id=release.ror_dataset_id,
-                    ror_table_id=ror_sharded_table_id,
-                    settings_dataset_id=self.settings_dataset_id,
-                    country_table_id="country",
-                ),
-                project_id=release.project_id,
-                destination_uri=destination_uri,
-            )
-            results.append(success)
-
-        state = all(results)
-        if not state:
-            raise AirflowException("OaWebWorkflow.query failed")
-
-    def download(self, release: OaWebRelease, **kwargs):
-        """Download the queried data.
-
-        :param release: the release.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
-
-        prefix = f"{self.dag_id}/{release.release_id}"
-        state = download_blobs_from_cloud_storage(
-            bucket_name=release.download_bucket, prefix=prefix, destination_path=release.download_folder
-        )
-        if not state:
-            raise AirflowException("OaWebWorkflow.download failed")
-
-    def make_draft_zenodo_version(self, release: OaWebRelease, **kwargs):
-        """Make a draft Zenodo version of the dataset.
-
-        :param release: the release.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
-
-        make_draft_version(release.zenodo, self.conceptrecid)
-
-    def download_twitter_cards(self, release: OaWebRelease, **kwargs):
-        """Download current twitter cards
-
-        :param release: the release.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
-
-        # Download twitter cards
-        blob_name = "twitter.zip"
-        file_path = os.path.join(release.transform_folder, blob_name)
-        download_blob_from_cloud_storage(bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path)
-
-        # Unzip into build
-        unzip_folder_path = os.path.join(release.build_path)
-        with ZipFile(file_path) as zip_file:
-            zip_file.extractall(unzip_folder_path)
-
-    def transform(self, release: OaWebRelease, **kwargs):
-        """Transform the queried data into the final format for the open access website.
-
-        :param release: the release.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
-
-        # Get versions
-        res = release.zenodo.get_versions(self.conceptrecid, all_versions=1)
-        if res.status_code != 200:
-            raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
-        versions = res.json()
-
-        # Make required folders
-        all_entities = []
-        countries = []
-        institutions = []
-        for category in self.table_ids:
-            logging.info(f"Transforming {category} entity")
-            # Load data
-            df = release.load_data(category)
-
-            # Pre-process data
-            df = release.preprocess_df(category, df)
-
-            # Make index table
-            df_index_table = release.make_index(category, df)
-            release.update_index_with_logos(category, df_index_table)
-            release.update_index_with_wiki_descriptions(df_index_table)
-            entities = release.make_entities(category, df_index_table, df)
-
-            # Make search index data for this category
-            all_entities += entities
-
-            # Save category data
-            release.save_index(entities, f"{category}.json")
-            release.save_entities(category, entities)
-            logging.info(f"Saved transformed {category} entity")
-
-            # Assign country or institution variables
-            if category == "country":
-                countries = entities
-            elif category == "institution":
-                institutions = entities
-            else:
-                raise AirflowException(f"Category type unknown: {category}")
-
-        # Save all entities as json
-        release.save_index(all_entities, "index.json")
-
-        # Save COKI Open Access Dataset
-        release.save_coki_oa_dataset(countries, institutions)
-
-        # Make stats
-        end_year = pendulum.now().year - 1
-        zenodo_versions = [
-            ZenodoVersion(
-                pendulum.parse(version["created"]),
-                f"https://zenodo.org/record/{version['id']}/files/coki-oa-dataset.zip?download=1",
-            )
-            for version in versions
-        ]
-        last_updated = zenodo_versions[0].release_date.format("D MMMM YYYY")
-        country_stats = make_entity_stats(countries)
-        institution_stats = make_entity_stats(institutions)
-        stats = Stats(START_YEAR, end_year, last_updated, zenodo_versions, country_stats, institution_stats)
-        release.save_stats(stats)
-        logging.info(f"Saved stats data")
-
-        # Zip data
-        dst = os.path.join(release.transform_folder, "latest")
-        shutil.copytree(release.build_path, dst)
-        shutil.make_archive(dst, "zip", dst)
-
-    def publish_zenodo_version(self, release: OaWebRelease, **kwargs):
-        """Publish the new Zenodo version of the dataset.
-
-        :param release: the release.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
-
-        zenodo = release.zenodo
-        res = zenodo.get_versions(self.conceptrecid, all_versions=0)
-        if res.status_code != 200:
-            raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
-        draft = res.json()[0]
-        draft_id = draft["id"]
-        if draft["state"] != "unsubmitted":
-            raise AirflowException(f"Latest version is not a draft: {draft_id}")
-
-        file_path = os.path.join(release.transform_folder, "coki-oa-dataset.zip")
-        publish_new_version(release.zenodo, draft_id, file_path)
-
-    def upload_dataset(self, release: OaWebRelease, **kwargs):
-        """Publish the dataset produced by this workflow.
-
-        :param release: the release.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
-
-        # upload_file_to_cloud_storage should always rewrite a new version of latest.zip if it exists
-        # object versioning on the bucket will keep the previous versions
-        blob_name = f"{self.version}/latest.zip"
-        file_path = os.path.join(release.transform_folder, "latest.zip")
-        upload_file_to_cloud_storage(
-            bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path, check_blob_hash=False
-        )
-
-    def repository_dispatch(self, release: OaWebRelease, **kwargs):
-        """Trigger a Github repository_dispatch to trigger new website builds.
-
-        :param release: the release.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
-
-        token = get_airflow_connection_password(self.GITHUB_TOKEN_CONN)
-        event_types = ["data-update/develop", "data-update/staging", "data-update/production"]
-        for event_type in event_types:
-            trigger_repository_dispatch(token=token, event_type=event_type)
-
-    def cleanup(self, release: OaWebRelease, **kwargs):
-        """Delete all files and folders associated with this release.
-
-        :param release: the release.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
-        release.cleanup()
