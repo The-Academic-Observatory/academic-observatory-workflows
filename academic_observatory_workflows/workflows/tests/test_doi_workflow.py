@@ -22,22 +22,26 @@ from typing import Dict, List
 from unittest.mock import patch
 
 import pendulum
+import vcr
 from airflow.exceptions import AirflowException
 from airflow.models import Connection
 from airflow.utils.state import State
 
+from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.model import (
     Institution,
     bq_load_observatory_dataset,
-    make_country_table,
+    make_aggregate_table,
     make_doi_table,
     make_observatory_dataset,
     sort_events,
+    Repository,
 )
 from academic_observatory_workflows.workflows.doi_workflow import (
     DoiWorkflow,
     make_dataset_transforms,
     make_elastic_tables,
+    fetch_ror_affiliations,
 )
 from observatory.api.client import ApiClient, Configuration
 from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
@@ -50,7 +54,8 @@ from observatory.api.client.model.workflow_type import WorkflowType
 from observatory.api.testing import ObservatoryApiEnvironment
 from observatory.platform.utils.airflow_utils import AirflowConns
 from observatory.platform.utils.airflow_utils import set_task_state
-from observatory.platform.utils.gc_utils import run_bigquery_query
+from observatory.platform.utils.file_utils import load_jsonl
+from observatory.platform.utils.gc_utils import run_bigquery_query, bigquery_sharded_table_id
 from observatory.platform.utils.release_utils import get_dataset_releases
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
@@ -70,8 +75,15 @@ class TestDoiWorkflow(ObservatoryTestCase):
         self.project_id: str = os.getenv("TEST_GCP_PROJECT_ID")
         self.bucket_name: str = os.getenv("TEST_GCP_BUCKET_NAME")
         self.data_location: str = os.getenv("TEST_GCP_DATA_LOCATION")
+        self.doi_fixtures = "doi"
 
         # Institutions
+        repo_curtin = Repository(
+            "Curtin University Repository",
+            category="Institution",
+            url_domain="curtin.edu.au",
+            ror_id="https://ror.org/02n415q13",
+        )
         inst_curtin = Institution(
             1,
             name="Curtin University",
@@ -84,6 +96,14 @@ class TestDoiWorkflow(ObservatoryTestCase):
             types="Education",
             country="Australia",
             coordinates="-32.005931, 115.894397",
+            repository=repo_curtin,
+        )
+        repo_anu = Repository(
+            "Australian National University DSpace Repository",
+            endpoint_id="2cb0529f001d4fe2c95",
+            category="Institution",
+            url_domain="anu.edu.au",
+            ror_id="https://ror.org/019wvm592",
         )
         inst_anu = Institution(
             2,
@@ -97,6 +117,13 @@ class TestDoiWorkflow(ObservatoryTestCase):
             types="Education",
             country="Australia",
             coordinates="-35.2778, 149.1205",
+            repository=repo_anu,
+        )
+        repo_akl = Repository(
+            "University of Auckland Repository",
+            category="Institution",
+            url_domain="auckland.ac.nz",
+            ror_id="https://ror.org/03b94tp07",
         )
         inst_akl = Institution(
             3,
@@ -110,8 +137,27 @@ class TestDoiWorkflow(ObservatoryTestCase):
             types="Education",
             country="New Zealand",
             coordinates="-36.852304, 174.767734",
+            repository=repo_akl,
         )
         self.institutions = [inst_curtin, inst_anu, inst_akl]
+
+        # fmt: off
+        self.repositories = [
+            Repository("Europe PMC", url_domain="europepmc.org", category="Domain"),
+            Repository("PubMed Central", url_domain="nih.gov", category="Domain"),
+            Repository("arXiv", url_domain="arxiv.org", category="Preprint"),
+            Repository("OSF Preprints - Arabixiv", url_domain="osf.io", category="Preprint", endpoint_id="033759a4c0076a700c4"),
+            Repository("Repo 3", url_domain="library.auckland.ac.nz", category="Institution", pmh_domain="auckland.ac.nz", ror_id="https://ror.org/03b94tp07"),
+            Repository("SciELO Preprints - SciELO", url_domain="scielo.org", category="Preprint", endpoint_id="wcmexgsfmvbrdjzx4l5m"),
+            Repository("Zenodo", url_domain="zenodo.org", category="Public"),
+            Repository("Figshare", url_domain="figshare.com", category="Public"),
+            Repository("CiteSeer X", url_domain="citeseerx.ist.psu.edu", category="Aggregator", endpoint_id="CiteSeerX.psu"),
+            Repository("Academia.edu", url_domain="academia.edu", category="Other Internet"),
+            Repository("ResearchGate", url_domain="researchgate.net", category="Other Internet"),
+            Repository("Unknown Repo 1", url_domain="unknown1.net", category="Unknown"),
+            Repository("Unknown Repo 2", url_domain="unknown2.net", category="Unknown"),
+        ]
+        # fmt: on
 
         # API environment
         self.host = "localhost"
@@ -173,6 +219,35 @@ class TestDoiWorkflow(ObservatoryTestCase):
         conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.port}")
         env.add_connection(conn)
 
+    def test_fetch_ror_affiliations(self):
+        """Test fetch_ror_affiliations"""
+
+        with vcr.use_cassette(test_fixtures_folder(self.doi_fixtures, "test_fetch_ror_affiliations.yaml")):
+            # Single match
+            repository_institution = "Augsburg University - OPUS - Augsburg University Publication Server"
+            expected = {
+                "repository_institution": repository_institution,
+                "rors": [{"id": "https://ror.org/057ewhh68", "name": "Augsburg University"}],
+            }
+            actual = fetch_ror_affiliations(repository_institution)
+            self.assertEqual(expected, actual)
+
+            # Multiple matches
+            repository_institution = '"4 institutions : Université de Strasbourg, Université de Haute Alsace, INSA Strasbourg, Bibliothèque Nationale et Universitaire de Strasbourg - univOAK"'
+            expected = {
+                "repository_institution": repository_institution,
+                "rors": [
+                    {
+                        "id": "https://ror.org/001nta019",
+                        "name": "Institut National des Sciences Appliquées de Strasbourg",
+                    },
+                    {"id": "https://ror.org/00pg6eq24", "name": "University of Strasbourg"},
+                    {"id": "https://ror.org/04k8k6n84", "name": "University of Upper Alsace"},
+                ],
+            }
+            actual = fetch_ror_affiliations(repository_institution)
+            self.assertEqual(expected, actual)
+
     def test_set_task_state(self):
         """Test
 
@@ -201,7 +276,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "orcid_sensor": ["check_dependencies"],
                 "crossref_events_sensor": ["check_dependencies"],
                 "check_dependencies": ["create_datasets"],
-                "create_datasets": [
+                "create_datasets": ["create_repo_institution_to_ror_table"],
+                "create_repo_institution_to_ror_table": [
                     "create_crossref_events",
                     "create_crossref_fundref",
                     "create_ror",
@@ -296,6 +372,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
         elastic_dataset_id = env.add_dataset(prefix="elastic")
         settings_dataset_id = env.add_dataset(prefix="settings")
         dataset_transforms = make_dataset_transforms(
+            input_project_id=self.project_id,
+            output_project_id=self.project_id,
             dataset_id_crossref_events=fake_dataset_id,
             dataset_id_crossref_metadata=fake_dataset_id,
             dataset_id_crossref_fundref=fake_dataset_id,
@@ -317,10 +395,14 @@ class TestDoiWorkflow(ObservatoryTestCase):
             # Make dag
             start_date = pendulum.datetime(year=2021, month=10, day=10)
             workflow = DoiWorkflow(
+                input_project_id=self.project_id,
+                output_project_id=self.project_id,
+                data_location=self.data_location,
                 intermediate_dataset_id=intermediate_dataset_id,
                 dashboards_dataset_id=dashboards_dataset_id,
                 observatory_dataset_id=observatory_dataset_id,
                 elastic_dataset_id=elastic_dataset_id,
+                unpaywall_dataset_id=fake_dataset_id,
                 transforms=dataset_transforms,
                 start_date=start_date,
                 workflow_id=1,
@@ -361,17 +443,19 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     self.assertEqual(expected_state, ti.state)
 
                 # Check dependencies
-                ti = env.run_task("check_dependencies")
+                ti = env.run_task(workflow.check_dependencies.__name__)
                 self.assertEqual(expected_state, ti.state)
 
                 # Create datasets
-                ti = env.run_task("create_datasets")
+                ti = env.run_task(workflow.create_datasets.__name__)
                 self.assertEqual(expected_state, ti.state)
 
                 # Generate fake dataset
-                observatory_dataset = make_observatory_dataset(self.institutions)
+                repository = load_jsonl(test_fixtures_folder(self.doi_fixtures, "repository.jsonl"))
+                observatory_dataset = make_observatory_dataset(self.institutions, self.repositories)
                 bq_load_observatory_dataset(
                     observatory_dataset,
+                    repository,
                     env.download_bucket,
                     fake_dataset_id,
                     settings_dataset_id,
@@ -379,6 +463,62 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     self.data_location,
                     project_id=self.project_id,
                 )
+
+                # Create repository institution table
+                ti = env.run_task(workflow.create_repo_institution_to_ror_table.__name__)
+                self.assertEqual(expected_state, ti.state)
+                table_id = bigquery_sharded_table_id(
+                    f"{self.project_id}.{intermediate_dataset_id}.repository_institution_to_ror", release_date
+                )
+                rors = [
+                    {"rors": [], "repository_institution": "Academia.edu"},
+                    {"rors": [], "repository_institution": "Australian National University DSpace Repository"},
+                    {"rors": [], "repository_institution": "CiteSeer X"},
+                    {"rors": [], "repository_institution": "PubMed Central"},
+                    {"rors": [], "repository_institution": "Repo 3"},
+                    {"rors": [], "repository_institution": "SciELO Preprints - SciELO"},
+                    {"rors": [], "repository_institution": "Unknown Repo 1"},
+                    {"rors": [], "repository_institution": "Unknown Repo 2"},
+                    {"rors": [], "repository_institution": "Zenodo"},
+                    {"rors": [], "repository_institution": "arXiv"},
+                    {
+                        "rors": [{"name": "ResearchGate", "id": "https://ror.org/008f3q107"}],
+                        "repository_institution": "ResearchGate",
+                    },
+                    {
+                        "rors": [{"name": "Curtin University", "id": "https://ror.org/02n415q13"}],
+                        "repository_institution": "Curtin University Repository",
+                    },
+                    {
+                        "rors": [{"name": "Pine Manor College", "id": "https://ror.org/031v6xt50"}],
+                        "repository_institution": "Europe PMC",
+                    },
+                    {
+                        "rors": [{"name": "University of Auckland", "id": "https://ror.org/03b94tp07"}],
+                        "repository_institution": "University of Auckland Repository",
+                    },
+                    {
+                        "rors": [{"name": "Open Society Foundations", "id": "https://ror.org/00qnfvz68"}],
+                        "repository_institution": "OSF Preprints - Arabixiv",
+                    },
+                    {
+                        "rors": [{"name": "Figshare (United Kingdom)", "id": "https://ror.org/041mxqs23"}],
+                        "repository_institution": "Figshare",
+                    },
+                ]
+                names = set()
+                for paper in observatory_dataset.papers:
+                    for repo in paper.repositories:
+                        for ror in rors:
+                            if repo.name in ror["repository_institution"]:
+                                names.add(repo.name)
+                                break
+                expected = []
+                for ror in rors:
+                    if ror["repository_institution"] in names:
+                        expected.append(ror)
+                self.assert_table_integrity(table_id, expected_rows=len(expected))
+                self.assert_table_content(table_id, expected)
 
                 # Test that source dataset transformations run
                 for transform in transforms:
@@ -419,10 +559,20 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     self.assert_table_integrity(expected_table_id)
 
                 # Assert country aggregation output
-                expected_output = make_country_table(observatory_dataset)
+                agg = "country"
+                expected_output = make_aggregate_table(agg, observatory_dataset)
                 with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
                     actual_output = self.query_table(
-                        observatory_dataset_id, f"country{release_suffix}", "id, time_period"
+                        observatory_dataset_id, f"{agg}{release_suffix}", "id, time_period"
+                    )
+                self.assert_aggregate(expected_output, actual_output)
+
+                # Assert institution aggregation output
+                agg = "institution"
+                expected_output = make_aggregate_table(agg, observatory_dataset)
+                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
+                    actual_output = self.query_table(
+                        observatory_dataset_id, f"{agg}{release_suffix}", "id, time_period"
                     )
                 self.assert_aggregate(expected_output, actual_output)
                 # TODO: test correctness of remaining outputs
@@ -513,8 +663,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "country_code_2",
                 "region",
                 "subregion",
-                "coordinates",
                 "total_outputs",
+                "repositories"
             ]:
                 self.assertEqual(expected_item[key], actual_item[key])
 
@@ -524,6 +674,24 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 actual_item,
                 "access_types",
                 ["oa", "green", "gold", "gold_doaj", "hybrid", "bronze", "green_only"],
+            )
+
+            # COKI Access types
+            self.assert_sub_fields(
+                expected_item,
+                actual_item,
+                "oa_coki",
+                [
+                    "open",
+                    "closed",
+                    "publisher",
+                    "other_platform",
+                    "publisher_only",
+                    "both",
+                    "other_platform_only",
+                    "publisher_categories",
+                    "other_platform_categories",
+                ],
             )
 
     def assert_sub_fields(self, expected: Dict, actual: Dict, field: str, sub_fields: List[str]):

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "endpoint_id",
+    "mode": "NULLABLE",
+    "type": "STRING"
+  },
+  {
+    "name": "url_domain",
+    "mode": "NULLABLE",
+    "type": "STRING"
+  },
+  {
+    "name": "pmh_domain",
+    "mode": "NULLABLE",
+    "type": "STRING"
+  },
+  {
+    "name": "name",
+    "mode": "NULLABLE",
+    "type": "STRING"
+  },
+  {
+    "name": "category",
+    "mode": "NULLABLE",
+    "type": "STRING"
+  },
+  {
+    "name": "ror_id",
+    "mode": "NULLABLE",
+    "type": "STRING"
+  }
+]

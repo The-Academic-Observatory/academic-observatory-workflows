@@ -30,7 +30,7 @@ WITH
     WHERE
       external_id.external_id_type = "doi" ) AS works
   FROM
-    `{{ project_id }}.{{ orcid.dataset_id }}.{{ orcid.table_id }}` AS orcid )
+    `{{ orcid.project_id }}.{{ orcid.dataset_id }}.{{ orcid.table_id }}` AS orcid )
 
 {# This is the main query, which inverts the ORCID centered data to be DOI centric, so it has a list of authors per DOI, instead of a list of DOIs per author#}
 SELECT
