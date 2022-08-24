@@ -398,12 +398,23 @@ class OpenAlexTelescope(StreamTelescope):
         datasets = get_datasets(workflow_id=self.workflow_id)
         for dataset in datasets:
             if dataset.dataset_type.type_id == self.dataset_type_id:
+                start_date = release.start_date
                 end_date = release.end_date
             else:
                 entity = dataset.dataset_type.type_id.split("openalex_")[1] + "s"
+                api_releases = get_dataset_releases(dataset_id=dataset.id)
+                
+                if len(api_releases) == 0:
+                    start_date = release.start_date
+                else:
+                    latest = get_latest_dataset_release(api_releases)
+                    start_date = latest.end_date
+
                 end_date = update_dates[entity]
+
+            logging.warning(f"add_new_dataset_releases dataset_id: {dataset.dataset_type.type_id}, start_date: {start_date}, end_date: {end_date}")
             add_dataset_release(
-                start_date=release.start_date,
+                start_date=start_date,
                 end_date=end_date,
                 dataset_id=dataset.id,
             )
