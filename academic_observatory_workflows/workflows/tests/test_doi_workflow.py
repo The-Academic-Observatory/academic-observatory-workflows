@@ -580,7 +580,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 # Test copy to dashboards
                 ti = env.run_task("copy_to_dashboards")
                 self.assertEqual(expected_state, ti.state)
-                table_ids = [agg.table_id for agg in DoiWorkflow.AGGREGATIONS] + ["doi"]
+                table_ids = [agg.table_id for agg in DoiWorkflow.AGGREGATIONS]
                 for table_id in table_ids:
                     self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{table_id}")
 
