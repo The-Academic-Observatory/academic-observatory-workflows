@@ -479,9 +479,23 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 self.assertEqual(1, len(author_dataset_releases))
                 self.assertEqual(release.end_date, openalex_dataset_releases[0].end_date)
                 self.assertEqual(
+                    pendulum.from_format("2021-12-01", "YYYY-MM-DD"), openalex_dataset_releases[0].start_date
+                )
+                self.assertEqual(
+                    pendulum.from_format("2021-12-26", "YYYY-MM-DD"), openalex_dataset_releases[0].end_date
+                )
+                self.assertEqual(
+                    pendulum.from_format("2021-12-01", "YYYY-MM-DD"), author_dataset_releases[0].start_date
+                )
+                self.assertEqual(
+                    pendulum.from_format("2021-12-17", "YYYY-MM-DD"), author_dataset_releases[0].end_date
+                )
+                self.assertEqual(
+                    pendulum.from_format("2021-12-01", "YYYY-MM-DD"), institution_dataset_releases[0].start_date
+                )
+                self.assertEqual(
                     pendulum.from_format("2021-12-17", "YYYY-MM-DD"), institution_dataset_releases[0].end_date
                 )
-
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
 
             run = self.second_run
@@ -686,6 +700,21 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 self.assertEqual(2, len(institution_dataset_releases))
                 self.assertEqual(2, len(author_dataset_releases))
                 self.assertEqual(release.end_date, openalex_dataset_releases[1].end_date)
+                self.assertEqual(
+                    pendulum.from_format("2021-12-26", "YYYY-MM-DD"), openalex_dataset_releases[1].start_date
+                )
+                self.assertEqual(
+                    pendulum.from_format("2022-01-02", "YYYY-MM-DD"), openalex_dataset_releases[1].end_date
+                )
+                self.assertEqual(
+                    pendulum.from_format("2021-12-17", "YYYY-MM-DD"), author_dataset_releases[1].start_date
+                )
+                self.assertEqual(
+                    pendulum.from_format("2022-1-17", "YYYY-MM-DD"), author_dataset_releases[1].end_date
+                )
+                self.assertEqual(
+                    pendulum.from_format("2021-12-17", "YYYY-MM-DD"), institution_dataset_releases[1].start_date
+                )
                 self.assertEqual(
                     pendulum.from_format("2022-1-17", "YYYY-MM-DD"), institution_dataset_releases[1].end_date
                 )
