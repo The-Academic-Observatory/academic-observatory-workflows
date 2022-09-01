@@ -412,7 +412,6 @@ class OpenAlexTelescope(StreamTelescope):
 
                 end_date = update_dates[entity]
 
-            logging.warning(f"add_new_dataset_releases dataset_id: {dataset.dataset_type.type_id}, start_date: {start_date}, end_date: {end_date}")
             add_dataset_release(
                 start_date=start_date,
                 end_date=end_date,

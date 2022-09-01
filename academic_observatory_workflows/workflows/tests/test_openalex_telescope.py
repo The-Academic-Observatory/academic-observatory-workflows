@@ -127,6 +127,34 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             },
         }
 
+        self.third_run = {
+            "execution_date": pendulum.datetime(year=2022, month=1, day=16),
+            "manifest_date": "2022-01-17",
+            "manifest_unchanged_hash": "50e2eff06007a32c4394df8df7f5e907",
+            "manifest_transform_hash": "f4cea919d06caa0811ad5976bf98986a",
+            "table_bytes": {
+                "Author": 7930,
+                "Concept": 7894,
+                "Institution": 6518,
+                "Venue": 4216,
+                "Work": 23608,
+            },
+        }
+
+        self.fourth_run = {
+            "execution_date": pendulum.datetime(year=2022, month=1, day=23),
+            "manifest_date": "2022-01-18",
+            "manifest_unchanged_hash": "50e2eff06007a32c4394df8df7f5e907",
+            "manifest_transform_hash": "f4cea919d06caa0811ad5976bf98986a",
+            "table_bytes": {
+                "Author": 7930,
+                "Concept": 7894,
+                "Institution": 6518,
+                "Venue": 4216,
+                "Work": 23608,
+            },
+        }
+
         # API environment
         self.host = "localhost"
         self.port = find_free_port()
@@ -181,9 +209,30 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             extra={},
             table_type=TableType(id=1),
         )
+        dataset_type4 = DatasetType(
+            type_id=DatasetTypeId.openalex_concept,
+            name="OpenAlex Concept",
+            extra={},
+            table_type=TableType(id=1),
+        )
+        dataset_type5 = DatasetType(
+            type_id=DatasetTypeId.openalex_venue,
+            name="OpenAlex Venue",
+            extra={},
+            table_type=TableType(id=1),
+        )
+        dataset_type6 = DatasetType(
+            type_id=DatasetTypeId.openalex_work,
+            name="OpenAlex Work",
+            extra={},
+            table_type=TableType(id=1),
+        )
         self.api.put_dataset_type(dataset_type1)
         self.api.put_dataset_type(dataset_type2)
         self.api.put_dataset_type(dataset_type3)
+        self.api.put_dataset_type(dataset_type4)
+        self.api.put_dataset_type(dataset_type5)
+        self.api.put_dataset_type(dataset_type6)
 
         dataset1 = Dataset(
             name="OpenAlex Dataset",
@@ -206,9 +255,33 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             workflow=Workflow(id=1),
             dataset_type=DatasetType(id=3),
         )
+        dataset4 = Dataset(
+            name="OpenAlex Concept Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            workflow=Workflow(id=1),
+            dataset_type=DatasetType(id=4),
+        )
+        dataset5 = Dataset(
+            name="OpenAlex Venue Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            workflow=Workflow(id=1),
+            dataset_type=DatasetType(id=5),
+        )
+        dataset6 = Dataset(
+            name="OpenAlex Work Dataset",
+            address="project.dataset.table",
+            service="bigquery",
+            workflow=Workflow(id=1),
+            dataset_type=DatasetType(id=6),
+        )
         self.api.put_dataset(dataset1)
         self.api.put_dataset(dataset2)
         self.api.put_dataset(dataset3)
+        self.api.put_dataset(dataset4)
+        self.api.put_dataset(dataset5)
+        self.api.put_dataset(dataset6)
 
     def setup_connections(self, env):
         # Add Observatory API connection
@@ -720,6 +793,43 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 )
 
                 self.assert_cleanup(download_folder, extract_folder, transform_folder)
+
+            run = self.third_run
+            with env.create_dag_run(dag, run["execution_date"]) as dag_run:
+                # Test that all dependencies are specified: no error should be thrown
+                env.run_task(telescope.check_dependencies.__name__)
+
+                # Mock response of get_object on last_modified file, mocking lambda file
+                side_effect = []
+                for entity in self.entities:
+                    manifest_content = render_template(
+                        self.manifest_obj_path, entity=entity, date=run["manifest_date"]
+                    ).encode()
+                    side_effect.append({"Body": StreamingBody(io.BytesIO(manifest_content), len(manifest_content))})
+                mock_client().get_object.side_effect = side_effect
+
+                # Test write transfer manifest task
+                ti = env.run_task(telescope.write_transfer_manifest.__name__)
+                self.assertEqual(ti.state, State.SKIPPED)
+
+            run = self.fourth_run
+            with env.create_dag_run(dag, run["execution_date"]) as dag_run:
+                # Test that all dependencies are specified: no error should be thrown
+                env.run_task(telescope.check_dependencies.__name__)
+
+                # Mock response of get_object on last_modified file, mocking lambda file
+                side_effect = []
+                for entity in self.entities:
+                    manifest_content = render_template(
+                        self.manifest_obj_path, entity=entity, date=run["manifest_date"]
+                    ).encode()
+                    side_effect.append({"Body": StreamingBody(io.BytesIO(manifest_content), len(manifest_content))})
+                mock_client().get_object.side_effect = side_effect
+
+                # Test write transfer manifest task
+                ti = env.run_task(telescope.write_transfer_manifest.__name__)
+                self.assertEqual(ti.state, State.SUCCESS)
+
 
     @patch("academic_observatory_workflows.workflows.openalex_telescope.get_dataset_releases")
     @patch("academic_observatory_workflows.workflows.openalex_telescope.get_datasets")
