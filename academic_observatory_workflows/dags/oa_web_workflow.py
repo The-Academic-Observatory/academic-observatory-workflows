@@ -18,7 +18,21 @@
 # https://airflow.apache.org/docs/stable/faq.html
 
 
-from academic_observatory_workflows.workflows.oa_web_workflow import OaWebWorkflow
+from airflow.models import Variable
 
+from academic_observatory_workflows.workflows.oa_web_workflow import OaWebWorkflow
+from observatory.platform.utils.airflow_utils import AirflowVars
+
+# To test locally:
+# output_project_id = Variable.get(AirflowVars.PROJECT_ID)
+# workflow = OaWebWorkflow(
+#     input_project_id="production-project-id",
+#     output_project_id=output_project_id,
+#     conceptrecid=1234567, # zenodo sandbox id
+#     zenodo_host="https://sandbox.zenodo.org",
+# )
+# globals()[workflow.dag_id] = workflow.make_dag()
+
+project_id = Variable.get(AirflowVars.PROJECT_ID)
 workflow = OaWebWorkflow()
 globals()[workflow.dag_id] = workflow.make_dag()
