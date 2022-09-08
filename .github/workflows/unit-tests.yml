@@ -33,7 +33,7 @@ jobs:
           python -m pip install --upgrade pip
 
           cd ..
-          git clone https://github.com/The-Academic-Observatory/observatory-platform.git
+          git clone --branch feature/airflow-2.3 https://github.com/The-Academic-Observatory/observatory-platform.git
           cd observatory-platform
           pip install -e observatory-api
           pip install -e observatory-platform
