@@ -358,6 +358,7 @@ class DoiWorkflow(Workflow):
         "unpaywall",
         "orcid",
         "crossref_events",
+        "openalex"
     ]
 
     AGGREGATIONS = [

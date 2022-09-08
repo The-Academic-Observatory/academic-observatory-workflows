@@ -963,6 +963,53 @@ def make_unpaywall(dataset: ObservatoryDataset) -> List[Dict]:
     return records
 
 
+
+def make_openalex_dataset(
+    dataset: ObservatoryDataset
+) -> List[dict]:
+    """Generate the OpenAlex table data from an ObservatoryDataset instance.
+
+    :param dataset: the Observatory Dataset.
+    :return: OpenAlex table data.
+    """
+
+    result = []
+    for paper in dataset.papers:
+        entry = {
+            "id": str(paper.id),
+            "doi": f"https://doi.org/{paper.doi}",
+            "cited_by_count": len(paper.cited_by),
+            "concepts": [
+                {
+                    "id": str(fos.id),
+                    "display_name": fos.name,
+                    "level": fos.level
+                }
+                for fos in paper.fields_of_study
+            ],
+            "authorships": [
+                {
+                    "author": {
+                        "id": str(author.id),
+                        "display_name": author.name,
+                    },
+                    "institutions": [
+                        {
+                            "id": str(author.institution.id),
+                            "ror": author.institution.ror_id,
+                            "display_name": author.institution.name,
+                            "country_code": author.institution.country_code,
+                            "type": author.institution.types
+                        }
+                    ]
+                }
+                for author in paper.authors
+            ]
+        }
+        result.append(entry)
+
+    return result
+
 @dataclass
 class MagDataset:
     """A container to hold the Microsoft Academic Graph tables.
@@ -1099,6 +1146,7 @@ def bq_load_observatory_dataset(
     open_citations = make_open_citations(observatory_dataset)
     crossref_events = make_crossref_events(observatory_dataset)
     mag: MagDataset = make_mag(observatory_dataset)
+    openalex: List[dict] = make_openalex_dataset(observatory_dataset)
     crossref_fundref = make_crossref_fundref(observatory_dataset)
     unpaywall = make_unpaywall(observatory_dataset)
     crossref_metadata = make_crossref_metadata(observatory_dataset)
@@ -1111,6 +1159,7 @@ def bq_load_observatory_dataset(
     mag_affiliation_override = load_jsonl(os.path.join(test_doi_path, "mag_affiliation_override.jsonl"))
 
     analysis_schema_path = schema_folder()
+    openalex_schema_path = os.path.join(analysis_schema_path, "openalex")
     with CliRunner().isolated_filesystem() as t:
         # fmt: off
         tables = [
@@ -1139,9 +1188,10 @@ def bq_load_observatory_dataset(
             Table("PaperUrls", True, dataset_id_all, [], "MagPaperUrls", analysis_schema_path),
             Table("PaperMeSH", True, dataset_id_all, [], "MagPaperMeSH", analysis_schema_path),
             Table("orcid", False, dataset_id_all, [], "orcid", analysis_schema_path),
+            Table("Work", False, dataset_id_all, openalex, "Work", openalex_schema_path),
         ]
         # fmt: on
-
+        
         bq_load_tables(
             tables=tables,
             bucket_name=bucket_name,
