@@ -35,12 +35,12 @@ jobs:
           cd ..
           git clone --branch feature/airflow-2.3 https://github.com/The-Academic-Observatory/observatory-platform.git
           cd observatory-platform
-          pip install -e observatory-api
-          pip install -e observatory-platform
+          pip install -e observatory-api --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.3.4/constraints-no-providers-${{ matrix.python-version }}.txt
+          pip install -e observatory-platform --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.3.4/constraints-no-providers-${{ matrix.python-version }}.txt
           cd ..
 
           cd academic-observatory-workflows
-          pip install -e .[tests]
+          pip install -e .[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.3.4/constraints-no-providers-${{ matrix.python-version }}.txt
 
       - name: Check licenses
         run: |
