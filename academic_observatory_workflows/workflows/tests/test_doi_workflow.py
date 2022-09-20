@@ -716,9 +716,11 @@ class TestDoiWorkflow(ObservatoryTestCase):
         :return:
         """
 
+        eps = 0.01  # Allow slight rounding errors between Python and SQL
+
         for key in sub_fields:
             if(type(expected[field][key]) == float):
-                self.assertAlmostEqual(expected[field][key], actual[field][key], 2)  # 2 decimal places
+                self.assertTrue(abs(expected[field][key] - actual[field][key]) <= eps)
             else:
                 self.assertEqual(expected[field][key], actual[field][key])
 
