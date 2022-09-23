@@ -18,7 +18,7 @@
 WITH dois_temp_table as (
 SELECT
   *,
-  (SELECT ARRAY(SELECT DISTINCT grid FROM UNNEST( IF(mag.grids IS NOT NULL, mag.grids, [])) AS grid)) as mag_grids
+  (SELECT ARRAY(SELECT DISTINCT institution.ror FROM UNNEST(IF(openalex.authorships is not null, openalex.authorships, [])) AS authors, UNNEST(IF(authors.institutions is not null, authors.institutions, [])) as institution)) as openalex_rors
 FROM
   (SELECT
     {# This SQL block links unpaywall, mag, open citations and crossref events to the DOI and the metadata found in the crossref metadata dataset #}
@@ -31,6 +31,7 @@ FROM
             is_referenced_by_count, subject, published_print, license, volume, funder, page, author, link, clinical_trial_number, alternative_id
     ) as crossref,
     (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.unpaywall{{ release_date.strftime('%Y%m%d') }}` as oa WHERE oa.doi = UPPER(TRIM(ref.doi))) as unpaywall,
+    (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.openalex{{ release_date.strftime('%Y%m%d') }}` as openalex WHERE openalex.doi = UPPER(TRIM(ref.doi))) as openalex,
     (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.mag{{ release_date.strftime('%Y%m%d') }}` as mag WHERE mag.doi = UPPER(TRIM(ref.doi))) as mag,
     (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.open_citations{{ release_date.strftime('%Y%m%d') }}` as oa WHERE oa.doi = UPPER(TRIM(ref.doi))) as open_citations,
     (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.crossref_events{{ release_date.strftime('%Y%m%d') }}` as events WHERE events.doi = UPPER(TRIM(ref.doi))) as events
@@ -38,7 +39,7 @@ FROM
   WHERE ARRAY_LENGTH(issued.date_parts) > 0)
 ),
 
-{# this query builds the .affiliation section of the final doi table. The primiary purpose of this is to allow the aggregrate_doi query #}
+{# this query builds the .affiliation section of the final doi table. The primary purpose of this is to allow the aggregrate_doi query #}
 affiliations_temp_table as (
 SELECT
   extras.doi as doi,
@@ -86,9 +87,9 @@ SELECT
   Chooses the values that are passed along in the discipline affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates.
   The values come from the fields of study in the MAG dataset
   #}
-  ARRAY(SELECT as STRUCT field.DisplayName as identifier, field.DisplayName as name, ["Discipline"] as types,
+  ARRAY(SELECT as STRUCT field.display_name as identifier, field.display_name as name, ["Discipline"] as types,
         CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region,
-        CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, CAST([] AS ARRAY<STRING>) as members FROM UNNEST(mag.fields.level_0) as field
+        CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates, CAST([] AS ARRAY<STRING>) as members FROM UNNEST(openalex.concepts) as field where field.level = 0
         ) as disciplines,
 
   -- Authors
@@ -199,14 +200,14 @@ SELECT
     ) as ror_groups,
 
   {#
-   dois_temp_table is created as the first sub-query in this script. It contains the data from crossref, unpaywall, mag, open_citations and crossref events
-   This is then LEFT JOINed against the grid dataset to take the raw GRID IDs that come from the MAG dataset, with a more detailed view of that institution and its location. The county and region information comes from here
-   This Instituional information is JOINed against a COKI created dataset, groupings, which allows for arbitary grouping of institutions (or really GRIDs).
+   dois_temp_table is created as the first sub-query in this script. It contains the data from crossref, unpaywall, openalex, mag, open_citations and crossref events
+   This is then LEFT JOINed against the ROR dataset to take the raw ROR IDs that come from the OpenAlex dataset, with a more detailed view of that institution and its location. The county and region information comes from here
+   This Instituional information is JOINed against a COKI created dataset, groupings, which allows for arbitrary grouping of institutions (or really RORs).
 
    Lastly, Fundref and ORCID are also LEFT JOINed in order to drive the Funder and Author relationships
   #}
-  FROM dois_temp_table as dois, UNNEST(mag_grids) as grid_id
-  LEFT JOIN `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.ror{{ release_date.strftime('%Y%m%d') }}` as institution on grid_id = institution.external_ids.GRID.preferred
+  FROM dois_temp_table as dois, UNNEST(openalex_rors) as ror_id
+  LEFT JOIN `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.ror{{ release_date.strftime('%Y%m%d') }}` as institution on ror_id = institution.id
   LEFT JOIN (SELECT ror, ARRAY_AGG(STRUCT(group_id, group_name, country_code)) as groupings FROM `{{ settings.project_id }}.{{ settings.dataset_id }}.groupings` CROSS JOIN UNNEST(rors) as ror GROUP BY ror) as ror_groups on institution.id = ror_groups.ror
   GROUP BY doi) as base on extras.doi = base.doi
   LEFT JOIN `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.crossref_fundref{{ release_date.strftime('%Y%m%d') }}` as fundref on fundref.doi = extras.doi
@@ -219,7 +220,7 @@ Brings together the two temporary tables above.
 - affiliations is the derived data that neatly organises all the relationships a doi has to authors, their institutions, countries and regions of those institutions, publisher, journal, funders
 #}
 SELECT
-  dois.* EXCEPT (mag_grids, unpaywall),
+  dois.* EXCEPT (openalex_rors, unpaywall),
   -- Put the unpaywall struct back how it used to be for backwards compatibility
   (SELECT as STRUCT
     dois.unpaywall.* EXCEPT(repositories, oa_color, oa_license, oa_coki),

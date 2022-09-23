@@ -97,6 +97,7 @@ def make_dataset_transforms(
     dataset_id_orcid: str = "orcid",
     dataset_id_open_citations: str = "open_citations",
     dataset_id_unpaywall: str = "our_research",
+    dataset_id_openalex: str = "openalex",
     dataset_id_settings: str = "settings",
     dataset_id_observatory: str = "observatory",
     dataset_id_observatory_intermediate: str = "observatory_intermediate",
@@ -160,6 +161,11 @@ def make_dataset_transforms(
                     ),
                 },
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "unpaywall"),
+                output_clustering_fields=["doi"],
+            ),
+            Transform(
+                inputs={"openalex": Table(input_project_id, dataset_id_openalex, "Work", sharded=False)},
+                output_table=Table(output_project_id, dataset_id_observatory_intermediate, "openalex"),
                 output_clustering_fields=["doi"],
             ),
         ],
@@ -352,6 +358,7 @@ class DoiWorkflow(Workflow):
         "unpaywall",
         "orcid",
         "crossref_events",
+        "openalex"
     ]
 
     AGGREGATIONS = [

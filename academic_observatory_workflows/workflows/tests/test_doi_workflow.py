@@ -275,6 +275,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "unpaywall_sensor": ["check_dependencies"],
                 "orcid_sensor": ["check_dependencies"],
                 "crossref_events_sensor": ["check_dependencies"],
+                "openalex_sensor": ["check_dependencies"],
                 "check_dependencies": ["create_datasets"],
                 "create_datasets": ["create_repo_institution_to_ror_table"],
                 "create_repo_institution_to_ror_table": [
@@ -285,6 +286,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     "create_orcid",
                     "create_open_citations",
                     "create_unpaywall",
+                    "create_openalex",
                 ],
                 "create_crossref_events": ["create_doi"],
                 "create_crossref_fundref": ["create_doi"],
@@ -293,6 +295,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "create_orcid": ["create_doi"],
                 "create_open_citations": ["create_doi"],
                 "create_unpaywall": ["create_doi"],
+                "create_openalex" : ["create_doi"],
                 "create_doi": [
                     "create_book",
                 ],
@@ -385,6 +388,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
             dataset_id_settings=settings_dataset_id,
             dataset_id_observatory=observatory_dataset_id,
             dataset_id_observatory_intermediate=intermediate_dataset_id,
+            dataset_id_openalex=fake_dataset_id,
         )
         transforms, transform_doi, transform_book = dataset_transforms
 
@@ -535,10 +539,18 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 expected_rows = len(observatory_dataset.papers)
                 self.assert_table_integrity(expected_table_id, expected_rows=expected_rows)
 
+                # Check openalex table created
+                expected_table_id = f"{self.project_id}.{fake_dataset_id}.Work"
+                self.assert_table_integrity(expected_table_id, expected_rows=expected_rows)
+
+                expected_table_id = f"{self.project_id}.{intermediate_dataset_id}.openalex{release_suffix}"
+                self.assert_table_integrity(expected_table_id, expected_rows=expected_rows)
+
                 # DOI assert correctness of output
                 expected_output = make_doi_table(observatory_dataset)
                 with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
                     actual_output = self.query_table(observatory_dataset_id, f"doi{release_suffix}", "doi")
+
                 self.assert_doi(expected_output, actual_output)
 
                 # Test create book
@@ -704,8 +716,13 @@ class TestDoiWorkflow(ObservatoryTestCase):
         :return:
         """
 
+        eps = 0.01  # Allow slight rounding errors between Python and SQL
+
         for key in sub_fields:
-            self.assertEqual(expected[field][key], actual[field][key])
+            if(type(expected[field][key]) == float):
+                self.assertTrue(abs(expected[field][key] - actual[field][key]) <= eps)
+            else:
+                self.assertEqual(expected[field][key], actual[field][key])
 
     def assert_doi(self, expected: List[Dict], actual: List[Dict]):
         """Assert the DOI table.
