@@ -74,13 +74,14 @@ num_hybrid_outputs	        INTEGER	NULLABLE
 num_bronze_outputs	        INTEGER	NULLABLE
 num_green_only_outputs	    INTEGER	NULLABLE
 citations	                RECORD	NULLABLE
-citations.total_mag_citations	            INTEGER	NULLABLE
+citations.total_openalex_citations	        INTEGER	NULLABLE
 citations.total_open_citations_citations	INTEGER	NULLABLE
 citations.total_crossref_citations	        INTEGER	NULLABLE
+citations.total_mag_citations	        INTEGER	NULLABLE
 #}
 CREATE TEMP FUNCTION count_single_output_type(
         output_type STRING,
-        items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>,
+        items ARRAY<STRUCT<type STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64, mag INT64>,
         oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type STRING)
   AS (
   (SELECT as STRUCT
@@ -94,9 +95,10 @@ CREATE TEMP FUNCTION count_single_output_type(
     COUNTIF(item.type = measured_type AND item.bronze ) as num_bronze_outputs,
     COUNTIF(item.type = measured_type AND item.green_only ) as num_green_only_outputs,
     STRUCT(
-      SUM(citations.mag) as total_mag_citations,
+      SUM(citations.openalex) as total_openalex_citations,
       SUM(citations.open_citations) as total_open_citations_citations,
-      SUM(citations.crossref) as total_crossref_citations
+      SUM(citations.crossref) as total_crossref_citations,
+      SUM(citations.mag) as total_mag_citations
     ) as citations
   FROM UNNEST(items) as item)
 );
@@ -114,12 +116,13 @@ num_hybrid_outputs	        INTEGER	NULLABLE
 num_bronze_outputs	        INTEGER	NULLABLE
 num_green_only_outputs	    INTEGER	NULLABLE
 citations	                RECORD	NULLABLE
-citations.total_mag_citations	            INTEGER	NULLABLE
+citations.total_openalex_citations	        INTEGER	NULLABLE
 citations.total_open_citations_citations	INTEGER	NULLABLE
 citations.total_crossref_citations	        INTEGER	NULLABLE
+citations.total_mag_citations	        INTEGER	NULLABLE
 #}
 CREATE TEMP FUNCTION count_array_output_type(
-        output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>,
+        output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64, mag INT64>,
         oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type ARRAY<STRING>)
   AS (
   (SELECT as STRUCT
@@ -133,9 +136,10 @@ CREATE TEMP FUNCTION count_array_output_type(
     COUNTIF(item.type in UNNEST(measured_type) AND item.bronze ) as num_bronze_outputs,
     COUNTIF(item.type in UNNEST(measured_type) AND item.green_only ) as num_green_only_outputs,
     STRUCT(
-      SUM(citations.mag) as total_mag_citations,
+      SUM(citations.openalex) as total_openalex_citations,
       SUM(citations.open_citations) as total_open_citations_citations,
-      SUM(citations.crossref) as total_crossref_citations
+      SUM(citations.crossref) as total_crossref_citations,
+      SUM(citations.mag) as total_mag_citations
     ) as citations
 
   FROM UNNEST(items) as item)
@@ -154,12 +158,13 @@ num_hybrid_outputs	        INTEGER	NULLABLE
 num_bronze_outputs	        INTEGER	NULLABLE
 num_green_only_outputs	    INTEGER	NULLABLE
 citations	                RECORD	NULLABLE
-citations.total_mag_citations	            INTEGER	NULLABLE
+citations.total_openalex_citations	        INTEGER	NULLABLE
 citations.total_open_citations_citations	INTEGER	NULLABLE
 citations.total_crossref_citations	        INTEGER	NULLABLE
+citations.total_mag_citations	        INTEGER	NULLABLE
 #}
 CREATE TEMP FUNCTION count_not_in_array_output_type(
-        output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>,
+        output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64, mag INT64>,
         oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type ARRAY<STRING>)
   AS (
   (SELECT as STRUCT
@@ -173,9 +178,10 @@ CREATE TEMP FUNCTION count_not_in_array_output_type(
     COUNTIF(item.type not in UNNEST(measured_type) AND item.bronze ) as num_bronze_outputs,
     COUNTIF(item.type not in UNNEST(measured_type) AND item.green_only ) as num_green_only_outputs,
     STRUCT(
-      SUM(citations.mag) as total_mag_citations,
+      SUM(citations.openalex) as total_openalex_citations,
       SUM(citations.open_citations) as total_open_citations_citations,
-      SUM(citations.crossref) as total_crossref_citations
+      SUM(citations.crossref) as total_crossref_citations,
+      SUM(citations.mag) as total_mag_citations
     ) as citations
   FROM UNNEST(items) as item)
 );
@@ -188,7 +194,7 @@ output_types	RECORD	REPEATED
 * Each record has the same schema, and is captured in the count_* methods
 #}
 CREATE TEMP FUNCTION count_output_types(
-        items ARRAY<STRUCT<type STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>,
+        items ARRAY<STRUCT<type STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64, mag INT64>,
         oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>)
     AS (
     [
@@ -213,20 +219,23 @@ total_outputs	            INTEGER	NULLABLE
 outputs_with_citations	    INTEGER	NULLABLE
 outputs_without_citations	INTEGER	NULLABLE
 citations	                RECORD	NULLABLE
-citations.mag	                    RECORD	NULLABLE
-citations.mag.total_citations	    INTEGER	NULLABLE
-citations.mag.percentiles	        RECORD	NULLABLE
+citations.openalex                  RECORD	NULLABLE
+citations.openalex.total_citations	INTEGER	NULLABLE
+citations.openalex.percentiles	    RECORD	NULLABLE
 citations.open_citations	                RECORD	NULLABLE
 citations.open_citations.total_citations	INTEGER	NULLABLE
 citations.open_citations.percentiles	    RECORD	NULLABLE
 citations.crossref                  RECORD	NULLABLE
 citations.crossref.total_citations	INTEGER	NULLABLE
 citations.crossref.percentiles	    RECORD	NULLABLE
+citations.mag                  RECORD	NULLABLE
+citations.mag.total_citations	INTEGER	NULLABLE
+citations.mag.percentiles	    RECORD	NULLABLE
 
 *percetiles schema captured above
 #}
 CREATE TEMP FUNCTION compute_conditional_citations(
-           items ARRAY<STRUCT<citations STRUCT<mag INT64, crossref INT64, open_citations INT64>, is_x BOOL>>,
+           items ARRAY<STRUCT<citations STRUCT<openalex INT64, crossref INT64, open_citations INT64, mag INT64>, is_x BOOL>>,
            access_type STRING, positive_label STRING, negative_label STRING)
   AS (
   ARRAY((
@@ -239,13 +248,13 @@ CREATE TEMP FUNCTION compute_conditional_citations(
       access_type,
       is_x as status,
       COUNT(*) as total_outputs,
-      COUNTIF(citations.mag > 0 OR citations.crossref > 0 OR citations.open_citations > 0) as outputs_with_citations,
-      COUNTIF( (citations.mag IS NULL OR citations.mag = 0) AND (citations.crossref IS NULL OR citations.crossref = 0) AND (citations.open_citations IS NULL OR citations.open_citations = 0) ) as outputs_without_citations,
+      COUNTIF(citations.crossref > 0 OR citations.open_citations > 0 OR citations.openalex > 0 OR citations.mag > 0) as outputs_with_citations,
+      COUNTIF( (citations.crossref IS NULL OR citations.crossref = 0) AND (citations.open_citations IS NULL OR citations.open_citations = 0) AND (citations.openalex IS NULL OR citations.openalex = 0) OR (citations.mag IS NULL OR citations.mag = 0) ) as outputs_without_citations,
       STRUCT(
         STRUCT(
-          SUM(citations.mag) as total_citations,
-          compute_percentiles(ARRAY_AGG(citations.mag)) as percentiles
-        ) as mag,
+          SUM(citations.openalex) as total_citations,
+          compute_percentiles(ARRAY_AGG(citations.openalex)) as percentiles
+        ) as openalex,
         STRUCT(
           SUM(citations.open_citations) as total_citations,
           compute_percentiles(ARRAY_AGG(citations.open_citations)) as percentiles
@@ -253,7 +262,11 @@ CREATE TEMP FUNCTION compute_conditional_citations(
         STRUCT(
           SUM(citations.crossref) as total_citations,
           compute_percentiles(ARRAY_AGG(citations.crossref)) as percentiles
-        ) as crossref
+        ) as crossref,
+        STRUCT(
+          SUM(citations.mag) as total_citations,
+          compute_percentiles(ARRAY_AGG(citations.mag)) as percentiles
+        ) as mag
       ) as citations,
 
     FROM UNNEST(items)
@@ -264,12 +277,12 @@ CREATE TEMP FUNCTION compute_conditional_citations(
 # Helper Function: Compute a citation analysis across the array of passed in objects
 {#
 Output Schema:
-mag	                        RECORD	NULLABLE
-mag.total_citations	            INTEGER	NULLABLE
-mag.citations_per_output	    FLOAT	NULLABLE
-mag.outputs_with_citations	    INTEGER	NULLABLE
-mag.outputs_without_citations	INTEGER	NULLABLE
-mag.citations_per_cited_output	FLOAT	NULLABLE
+openalex	                        RECORD	NULLABLE
+openalex.total_citations	            INTEGER	NULLABLE
+openalex.citations_per_output	    FLOAT	NULLABLE
+openalex.outputs_with_citations	    INTEGER	NULLABLE
+openalex.outputs_without_citations	INTEGER	NULLABLE
+openalex.citations_per_cited_output	FLOAT	NULLABLE
 crossref	                            RECORD	NULLABLE
 crossref.total_citations	            INTEGER	NULLABLE
 crossref.citations_per_output	        FLOAT	NULLABLE
@@ -279,20 +292,26 @@ crossref.citations_per_cited_output	    FLOAT	NULLABLE
 open_citations	                            RECORD	NULLABLE
 open_citations.total_citations	            INTEGER	NULLABLE
 open_citations.citations_per_output	        FLOAT	NULLABLE
-open_citations.output_with_citations	    INTEGER	NULLABLE
+open_citations.outputs_with_citations	    INTEGER	NULLABLE
 open_citations.outputs_without_citations	INTEGER	NULLABLE
 open_citations.citations_per_cited_output	FLOAT	NULLABLE
+mag	                            RECORD	NULLABLE
+mag.total_citations	            INTEGER	NULLABLE
+mag.citations_per_output	        FLOAT	NULLABLE
+mag.outputs_with_citations	    INTEGER	NULLABLE
+mag.outputs_without_citations	INTEGER	NULLABLE
+mag.citations_per_cited_output	FLOAT	NULLABLE
 #}
-CREATE TEMP FUNCTION compute_citations(items ARRAY<STRUCT<doi STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>>>) as (
+CREATE TEMP FUNCTION compute_citations(items ARRAY<STRUCT<doi STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64, mag INT64>>>) as (
   (SELECT AS STRUCT
     -- Citation counts
     STRUCT(
-      SUM(citations.mag) as total_citations,
-      ROUND(SAFE_DIVIDE( SUM(citations.mag) , COUNT(doi)), 2) as citations_per_output,
-      COUNTIF(citations.mag > 0) as outputs_with_citations,
-      COUNTIF(citations.mag is null) as outputs_without_citations,
-      ROUND(SAFE_DIVIDE(SUM(citations.mag), COUNTIF(citations.mag > 0)), 2) as citations_per_cited_output
-    ) as mag,
+      SUM(citations.openalex) as total_citations,
+      ROUND(SAFE_DIVIDE( SUM(citations.openalex) , COUNT(doi)), 2) as citations_per_output,
+      COUNTIF(citations.openalex > 0) as outputs_with_citations,
+      COUNTIF(citations.openalex is null) as outputs_without_citations,
+      ROUND(SAFE_DIVIDE(SUM(citations.openalex), COUNTIF(citations.openalex > 0)), 2) as citations_per_cited_output
+    ) as openalex,
     STRUCT(
       SUM(citations.crossref) as total_citations,
       ROUND(SAFE_DIVIDE( SUM(citations.crossref) , COUNT(doi)), 2) as citations_per_output,
@@ -303,10 +322,17 @@ CREATE TEMP FUNCTION compute_citations(items ARRAY<STRUCT<doi STRING, citations 
     STRUCT(
       SUM(citations.open_citations) as total_citations,
       ROUND(SAFE_DIVIDE( SUM(citations.open_citations) , COUNT(doi)), 2) as citations_per_output,
-      COUNTIF(citations.open_citations > 0) as output_with_citations,
+      COUNTIF(citations.open_citations > 0) as outputs_with_citations,
       COUNTIF(citations.open_citations is null) as outputs_without_citations,
       ROUND(SAFE_DIVIDE(SUM(citations.open_citations), COUNTIF(citations.open_citations > 0)), 2) as citations_per_cited_output
-    ) as open_citations
+    ) as open_citations,
+    STRUCT(
+      SUM(citations.mag) as total_citations,
+      ROUND(SAFE_DIVIDE( SUM(citations.mag) , COUNT(doi)), 2) as citations_per_output,
+      COUNTIF(citations.mag > 0) as outputs_with_citations,
+      COUNTIF(citations.mag is null) as outputs_without_citations,
+      ROUND(SAFE_DIVIDE(SUM(citations.mag), COUNTIF(citations.mag > 0)), 2) as citations_per_cited_output
+    ) as mag
   FROM UNNEST(items))
 );
 
@@ -339,7 +365,7 @@ breakdown	                RECORD	REPEATED
 * breakdown object array captured in compute_conditional_citations schema above
 #}
 CREATE TEMP FUNCTION compute_access_types(
-           items ARRAY<STRUCT<doi STRING, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>,
+           items ARRAY<STRUCT<doi STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64, mag INT64>,
            is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>)
   AS (
   (SELECT AS STRUCT
@@ -502,13 +528,16 @@ field	                        STRING	NULLABLE
 total_outputs	                INTEGER	NULLABLE
 sum_of_scores	                FLOAT	NULLABLE
 citations	                    RECORD	NULLABLE
-mag	                            RECORD	NULLABLE
+openalex	                            RECORD	NULLABLE
 total_citations	                INTEGER	NULLABLE
 percentiles	                    RECORD	NULLABLE
 open_citations	                RECORD	NULLABLE
 total_citations	                INTEGER	NULLABLE
 percentiles	                    RECORD	NULLABLE
 crossref	                    RECORD	NULLABLE
+total_citations	                INTEGER	NULLABLE
+percentiles	                    RECORD	NULLABLE
+mag	                    RECORD	NULLABLE
 total_citations	                INTEGER	NULLABLE
 percentiles	                    RECORD	NULLABLE
 num_oa_outputs	                INTEGER	NULLABLE
@@ -530,7 +559,7 @@ num_international_collaboration_outputs	            INTEGER	NULLABLE
 international_collaboration_with_funding_outputs	INTEGER	NULLABLE
 #}
 CREATE TEMP FUNCTION compute_disciplines(
-            fields ARRAY<STRUCT<DisplayName STRING, Score FLOAT64, citations STRUCT<mag INT64, crossref INT64, open_citations INT64>,
+            fields ARRAY<STRUCT<DisplayName STRING, Score FLOAT64, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64, mag INT64>,
             is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL,
             funding BOOL, international_funding BOOL, domestic_funding BOOL, government_funding BOOL, private_funding BOOL, international_colab BOOL>>)
   AS (
@@ -544,6 +573,10 @@ CREATE TEMP FUNCTION compute_disciplines(
             SUM(citations.mag) as total_citations,
             compute_percentiles(ARRAY_AGG(citations.mag)) as percentiles
           ) as mag,
+          STRUCT(
+            SUM(citations.openalex) as total_citations,
+            compute_percentiles(ARRAY_AGG(citations.openalex)) as percentiles
+          ) as openalex,
           STRUCT(
             SUM(citations.open_citations) as total_citations,
             compute_percentiles(ARRAY_AGG(citations.open_citations)) as percentiles
@@ -621,9 +654,10 @@ num_green_only_ignoring_bronze_outputs	INTEGER	NULLABLE
 num_has_license	                        INTEGER	NULLABLE
 num_is_cclicensed	                    INTEGER	NULLABLE
 citations	                            RECORD	NULLABLE
-citations.mag	                        INTEGER	NULLABLE
+citations.openalex	            INTEGER	NULLABLE
 citations.crosssref	                    INTEGER	NULLABLE
 citations.open_citations	            INTEGER	NULLABLE
+citations.mag	            INTEGER	NULLABLE
 disciplines	                            RECORD	REPEATED
 
 * Schema for disciplines captured above
@@ -642,9 +676,10 @@ CREATE TEMP FUNCTION process_relations(relationships ANY TYPE, total INT64, tota
           MAX(relation.coordinates) as coordinates,
           count_access_types(ARRAY_AGG(unpaywall)).*,
           STRUCT(
-            SUM(citations.mag) as mag,
+            SUM(citations.openalex) as openalex,
             SUM(citations.crossref) as crosssref,
-            SUM(citations.open_citations) as open_citations
+            SUM(citations.open_citations) as open_citations,
+            SUM(citations.mag) as mag
           ) as citations,
           group_disciplines(ARRAY_CONCAT_AGG(disciplines)) as disciplines
       FROM UNNEST(relationships) as relations 
@@ -725,6 +760,81 @@ CREATE TEMP FUNCTION process_repositories(
 ----
 -- Main SQL Function
 ----
+
+-- Discipline.  This will be merged with the tmp_agg_table.
+{#
+The key thing to understand about the logic below is all about building input that is passed into the compute_disciplines function
+
+This whole block of SQL lives inside the 'GROUP BY aggregrate.identifier, crossref.{{ group_by_time_field }}' so it must include an aggregation
+The ARRAY_CONCAT_AGG performs this task. The reason it is not just an ARRAY_AGG, is because it is aggregrating multiple arrays,
+These are each created from 'UNNEST(openalex.concepts) as fields where fields.level = 0'
+
+Ultimately, what is passed into the compute_disciplines function is an array of STRUCTS, with each struct keyed off an individual fieldName
+#}
+
+WITH tmp_disciplines AS
+(
+  SELECT
+    aggregrate.identifier as id,
+    dois.crossref.{{ group_by_time_field }} as time_period,
+    STRUCT(
+        compute_disciplines( ARRAY_CONCAT_AGG( ARRAY(
+          (SELECT AS STRUCT
+              fields.display_name as DisplayName, fields.Score,
+              STRUCT(
+                dois.openalex.cited_by_count as openalex,
+                dois.crossref.references_count as crossref,
+                dois.open_citations.citations_total as open_citations,
+                dois.mag.CitationCount as mag
+              ) as citations,
+              unpaywall.is_oa as is_oa, unpaywall.green as green, unpaywall.gold as gold, unpaywall.gold_just_doaj, unpaywall.hybrid, unpaywall.bronze, unpaywall.green_only,
+              -- Total Funding
+              (SELECT COUNT(funder) > 0 from UNNEST(affiliations.funders) as funder) as funding,
+              -- Domestic, international, both, none or unknown funding
+              (SELECT COUNT(funder) > 0 from UNNEST(affiliations.funders) as funder WHERE funder.country_code <> aggregrate.country_code_2) as international_funding,
+              (SELECT COUNT(funder) > 1 from UNNEST(affiliations.funders) as funder WHERE funder.country_code = aggregrate.country_code_2) as domestic_funding,
+              -- Has Industry or Government or both funding
+              (SELECT COUNT(funder) > 0 from UNNEST(affiliations.funders) as funder WHERE funder.funding_body_subtype = 'gov') as government_funding,
+              (SELECT COUNT(funder) > 0 from UNNEST(affiliations.funders) as funder WHERE funder.funding_body_subtype = 'pri') as private_funding,
+              -- Domestic collaboration only or international collaboration or single institution only
+              (SELECT COUNT(collab) > 0 FROM UNNEST(affiliations.countries) as collab WHERE collab.country <> aggregrate.country) as international_collab
+            FROM UNNEST(openalex.concepts) as fields where fields.level = 0)) )) as level0
+      ) as disciplines
+  FROM
+    `{{ project_id }}.{{ dataset_id }}.doi{{ release_date.strftime('%Y%m%d') }}` as dois,
+    UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
+  WHERE
+    aggregrate.identifier IS NOT NULL
+  GROUP BY
+    aggregrate.identifier,
+    crossref.{{ group_by_time_field }}
+),
+
+-- Access Types.  This will be merged with the tmp_agg_table.
+tmp_access_types AS (
+  SELECT
+    aggregrate.identifier as id,
+    dois.crossref.{{ group_by_time_field }} as time_period,
+    compute_access_types(
+      ARRAY_AGG(
+          STRUCT(
+              dois.doi, STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations, dois.mag.CitationCount as mag) as citations,
+              unpaywall.is_oa, unpaywall.green, unpaywall.gold, unpaywall.gold_just_doaj, unpaywall.hybrid, unpaywall.bronze, unpaywall.green_only
+          )
+      )
+    ) as access_types
+  FROM
+    `{{ project_id }}.{{ dataset_id }}.doi{{ release_date.strftime('%Y%m%d') }}` as dois,
+    UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
+  WHERE
+    aggregrate.identifier IS NOT NULL
+  GROUP BY
+    aggregrate.identifier,
+    crossref.{{ group_by_time_field }}
+),
+
+-- Base aggregations. Will be extended by other columns during final merge.
+tmp_agg_table AS (
 SELECT
   -- Common Metadata
   aggregrate.identifier as id,
@@ -740,16 +850,6 @@ SELECT
   -- Total outputs
   COUNT(dois.doi) as total_outputs,
 
-  -- Access Types
-  compute_access_types(
-     ARRAY_AGG(
-        STRUCT(
-            dois.doi, STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-            unpaywall.is_oa, unpaywall.green, unpaywall.gold, unpaywall.gold_just_doaj, unpaywall.hybrid, unpaywall.bronze, unpaywall.green_only
-        )
-     )
-  ) as access_types,
-
   -- COKI OA
   compute_coki_oa(
     ARRAY_AGG(
@@ -764,7 +864,7 @@ SELECT
   compute_citations(
      ARRAY_AGG(
         STRUCT(
-            dois.doi, STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations
+            dois.doi, STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations, dois.mag.CitationCount as mag) as citations
         )
      )
   ) as citations,
@@ -773,46 +873,13 @@ SELECT
   count_output_types(
      ARRAY_AGG(
         STRUCT(
-            unpaywall.output_type, STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
+            unpaywall.output_type, STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations, dois.mag.CItationCount as mag) as citations,
             unpaywall.is_oa, unpaywall.green, unpaywall.gold, unpaywall.gold_just_doaj, unpaywall.hybrid, unpaywall.bronze, unpaywall.green_only
         )
      )
   ) as output_types,
 
-  -- Discipline
-  {#
-  The key thing to understand about the logic below is all about building input that is passed into the compute_disciplines function
-
-  This whole block of SQL lives inside the 'GROUP BY aggregrate.identifier, crossref.{{ group_by_time_field }}' so it must include an aggregation
-  The ARRAY_CONCAT_AGG performs this task. The reason it is not just an ARRAY_AGG, is because it is aggregrating multiple arrays,
-  These are each created from the 'UNNEST(dois.mag.fields.level_0) as fields'
-
-  Ultimately, what is passed into the compute_disciplines function is an array of STRUCTS, with each struct keyed off an individual fieldName
-  #}
-  STRUCT(
-    compute_disciplines( ARRAY_CONCAT_AGG( ARRAY(
-      (SELECT AS STRUCT
-          fields.DisplayName, fields.Score,
-          STRUCT(
-            dois.mag.CitationCount as mag,
-            dois.crossref.references_count as crossref,
-            dois.open_citations.citations_total as open_citations
-          ) as citations,
-          unpaywall.is_oa as is_oa, unpaywall.green as green, unpaywall.gold as gold, unpaywall.gold_just_doaj, unpaywall.hybrid, unpaywall.bronze, unpaywall.green_only,
-          -- Total Funding
-          (SELECT COUNT(funder) > 0 from UNNEST(affiliations.funders) as funder) as funding,
-          -- Domestic, international, both, none or unknown funding
-          (SELECT COUNT(funder) > 0 from UNNEST(affiliations.funders) as funder WHERE funder.country_code <> aggregrate.country_code_2) as international_funding,
-          (SELECT COUNT(funder) > 1 from UNNEST(affiliations.funders) as funder WHERE funder.country_code = aggregrate.country_code_2) as domestic_funding,
-          -- Has Industry or Government or both funding
-          (SELECT COUNT(funder) > 0 from UNNEST(affiliations.funders) as funder WHERE funder.funding_body_subtype = 'gov') as government_funding,
-          (SELECT COUNT(funder) > 0 from UNNEST(affiliations.funders) as funder WHERE funder.funding_body_subtype = 'pri') as private_funding,
-          -- Domestic collaboration only or international collaboration or single institution only
-          (SELECT COUNT(collab) > 0 FROM UNNEST(affiliations.countries) as collab WHERE collab.country <> aggregrate.country) as international_collab
-        FROM UNNEST(dois.mag.fields.level_0) as fields)) )) as level0
-  ) as disciplines,
-
-  -- Repoistories
+  -- Repositories
   {#
   This SQL block aggregrates the repository names, remebering we are inside a larger GROUP BY statement,
   #}
@@ -839,8 +906,8 @@ SELECT
         (SELECT as STRUCT 
           relation, 
           unpaywall,
-          STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-          ARRAY( SELECT as STRUCT DisplayName, Score, unpaywall.is_oa FROM UNNEST(dois.mag.fields.level_0)) as disciplines
+          STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations, dois.mag.CitationCount as mag) as citations,
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, unpaywall.is_oa FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(affiliations.institutions) as relation
         WHERE relation.identifier <> aggregrate.identifier) 
       )
@@ -863,8 +930,8 @@ SELECT
         (SELECT as STRUCT 
           relation, 
           unpaywall,
-          STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-          ARRAY( SELECT as STRUCT DisplayName, Score, unpaywall.is_oa FROM UNNEST(dois.mag.fields.level_0)) as disciplines
+          STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations, dois.mag.CitationCount as mag) as citations,
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, unpaywall.is_oa FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(affiliations.countries) as relation
         WHERE relation.identifier <> aggregrate.country_code OR aggregrate.country_code IS NULL) 
       )
@@ -887,8 +954,8 @@ SELECT
         (SELECT as STRUCT 
           relation, 
           unpaywall,
-          STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-          ARRAY( SELECT as STRUCT DisplayName, Score, unpaywall.is_oa FROM UNNEST(dois.mag.fields.level_0)) as disciplines
+          STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations, dois.mag.CitationCount as mag) as citations,
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, unpaywall.is_oa FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(affiliations.groupings) as relation
         WHERE relation.identifier <> aggregrate.identifier) 
       )
@@ -911,8 +978,8 @@ SELECT
         (SELECT as STRUCT 
           relation, 
           unpaywall,
-          STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-          ARRAY( SELECT as STRUCT DisplayName, Score, unpaywall.is_oa FROM UNNEST(dois.mag.fields.level_0)) as disciplines
+          STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations, dois.mag.CitationCount as mag) as citations,
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, unpaywall.is_oa FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(affiliations.funders) as relation
         WHERE relation.identifier <> aggregrate.identifier) 
       )
@@ -938,9 +1005,9 @@ SELECT
           ) as relation,
           unpaywall,
           STRUCT(
-                dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations
+                dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations, dois.mag.CitationCount as mag
           ) as citations,
-          ARRAY( SELECT as STRUCT DisplayName, Score, unpaywall.is_oa FROM UNNEST(dois.mag.fields.level_0)) as disciplines
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, unpaywall.is_oa FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(aggregrate.members) as relation) 
       )
     ), COUNT(dois.doi), COUNTIF(unpaywall.is_oa = True)
@@ -962,8 +1029,8 @@ SELECT
         (SELECT as STRUCT 
           relation, 
           unpaywall,
-          STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-          ARRAY( SELECT as STRUCT DisplayName, Score, unpaywall.is_oa FROM UNNEST(dois.mag.fields.level_0)) as disciplines
+          STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations, dois.mag.CitationCount as mag) as citations,
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, unpaywall.is_oa FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(affiliations.publishers) as relation
         WHERE relation.identifier <> aggregrate.identifier) 
       )
@@ -986,8 +1053,8 @@ SELECT
         (SELECT as STRUCT 
           relation, 
           unpaywall,
-          STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-          ARRAY( SELECT as STRUCT DisplayName, Score, unpaywall.is_oa FROM UNNEST(dois.mag.fields.level_0)) as disciplines
+          STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations, dois.mag.CitationCount as mag) as citations,
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, unpaywall.is_oa FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(affiliations.journals) as relation
         WHERE relation.identifier <> aggregrate.identifier) 
       )
@@ -1007,7 +1074,7 @@ SELECT
         SELECT AS STRUCT 
           event.source, 
           event.count, 
-          STRUCT(dois.mag.CitationCount as mag, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations, 
+          STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations, dois.mag.CitationCount as mag) as citations, 
           unpaywall.is_oa as is_oa, unpaywall.green as green, unpaywall.gold as gold, unpaywall.gold_just_doaj, unpaywall.hybrid, unpaywall.bronze, unpaywall.green_only 
         FROM UNNEST(dois.events.events) as event)))
   ) as events,
@@ -1015,3 +1082,24 @@ SELECT
 FROM `{{ project_id }}.{{ dataset_id }}.doi{{ release_date.strftime('%Y%m%d') }}` as dois, UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
 WHERE aggregrate.identifier IS NOT NULL
 GROUP BY aggregrate.identifier, crossref.{{ group_by_time_field }}
+)
+
+-- Putting it all together
+SELECT
+  tmp_agg_table.*,
+  disciplines,
+  access_types,
+FROM
+  tmp_agg_table
+INNER JOIN
+  tmp_disciplines
+ON
+  tmp_agg_table.id = tmp_disciplines.id
+  AND
+  tmp_agg_table.time_period = tmp_disciplines.time_period
+INNER JOIN
+  tmp_access_types
+ON
+  tmp_agg_table.id = tmp_access_types.id
+  AND
+  tmp_agg_table.time_period = tmp_access_types.time_period

@@ -31,11 +31,11 @@ SELECT
   access_types.gold_doaj.percent as metrics_percent_gold_doaj,
   access_types.hybrid.percent as metrics_percent_hybrid,
   access_types.bronze.percent as metrics_percent_bronze,
-  citations.mag.total_citations as metrics_total_citations,
-  citations.mag.citations_per_output as metrics_citations_per_output,
-  citations.mag.outputs_with_citations as metrics_outputs_with_citations,
-  citations.mag.outputs_without_citations as metrics_outputs_without_citations,
-  citations.mag.citations_per_cited_output as metrics_citations_per_cited_output
+  citations.openalex.total_citations as metrics_total_citations,
+  citations.openalex.citations_per_output as metrics_citations_per_output,
+  citations.openalex.outputs_with_citations as metrics_outputs_with_citations,
+  citations.openalex.outputs_without_citations as metrics_outputs_without_citations,
+  citations.openalex.citations_per_cited_output as metrics_citations_per_cited_output
 FROM
   `{{ project_id }}.{{ dataset_id }}.{{ table_id }}{{ release_date.strftime('%Y%m%d') }}`
 ORDER BY id, published_year ASC
