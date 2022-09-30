@@ -295,10 +295,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "create_orcid": ["create_doi"],
                 "create_open_citations": ["create_doi"],
                 "create_unpaywall": ["create_doi"],
-                "create_openalex" : ["create_doi"],
-                "create_doi": [
-                    "create_book",
-                ],
+                "create_openalex": ["create_doi"],
+                "create_doi": ["create_book"],
                 "create_book": [
                     "create_country",
                     "create_funder",
@@ -325,7 +323,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     "export_funder",
                     "export_group",
                     "export_institution",
-                    "export_author",
                     "export_journal",
                     "export_publisher",
                     "export_region",
@@ -335,7 +332,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "export_funder": ["add_new_dataset_releases"],
                 "export_group": ["add_new_dataset_releases"],
                 "export_institution": ["add_new_dataset_releases"],
-                "export_author": ["add_new_dataset_releases"],
                 "export_journal": ["add_new_dataset_releases"],
                 "export_publisher": ["add_new_dataset_releases"],
                 "export_region": ["add_new_dataset_releases"],
@@ -676,7 +672,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "region",
                 "subregion",
                 "total_outputs",
-                "repositories"
+                "repositories",
             ]:
                 self.assertEqual(expected_item[key], actual_item[key])
 
@@ -719,7 +715,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
         eps = 0.01  # Allow slight rounding errors between Python and SQL
 
         for key in sub_fields:
-            if(type(expected[field][key]) == float):
+            if type(expected[field][key]) == float:
                 self.assertTrue(abs(expected[field][key] - actual[field][key]) <= eps)
             else:
                 self.assertEqual(expected[field][key], actual[field][key])

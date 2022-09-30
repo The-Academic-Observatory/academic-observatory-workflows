@@ -33,7 +33,6 @@ Each release is saved to the following BigQuery tables:
 
 Every week the following tables are overwritten for visualisation in the Data Studio dashboards:
     <project_id>.coki_dashboards.country
-    <project_id>.coki_dashboards.doi
     <project_id>.coki_dashboards.funder
     <project_id>.coki_dashboards.group
     <project_id>.coki_dashboards.institution
