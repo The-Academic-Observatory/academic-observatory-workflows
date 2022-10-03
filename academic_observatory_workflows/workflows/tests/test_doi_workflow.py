@@ -599,7 +599,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{table_id}_comparison")
 
                 # Test create exported tables for Elasticsearch
-                for agg in DoiWorkflow.AGGREGATIONS:
+                # Remove author from AGGREGATIONS list to save space on Elastic.
+                for agg in DoiWorkflow.remove_aggregations(DoiWorkflow, DoiWorkflow.AGGREGATIONS, ["author"]):
                     table_id = agg.table_id
                     task_id = f"export_{table_id}"
                     ti = env.run_task(task_id)
