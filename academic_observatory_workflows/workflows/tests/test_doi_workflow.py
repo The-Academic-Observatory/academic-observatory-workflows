@@ -490,7 +490,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                         "repository_institution": "Curtin University Repository",
                     },
                     {
-                        "rors": [{"name": "Pine Manor College", "id": "https://ror.org/031v6xt50"}],
+                        "rors": [{"name": "Pakistan Muslim Centre", "id": "https://ror.org/02sc13d13"}],
                         "repository_institution": "Europe PMC",
                     },
                     {
@@ -600,7 +600,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
                 # Test create exported tables for Elasticsearch
                 # Remove author from AGGREGATIONS list to save space on Elastic.
-                for agg in DoiWorkflow.remove_aggregations(DoiWorkflow, DoiWorkflow.AGGREGATIONS, ["author"]):
+                for agg in DoiWorkflow.remove_aggregations(DoiWorkflow, DoiWorkflow.AGGREGATIONS, {"author"}):
                     table_id = agg.table_id
                     task_id = f"export_{table_id}"
                     ti = env.run_task(task_id)

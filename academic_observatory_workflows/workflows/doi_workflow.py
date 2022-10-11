@@ -23,7 +23,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Set, Optional, Tuple
 
 import jsonlines
 import pendulum
@@ -571,7 +571,7 @@ class DoiWorkflow(Workflow):
         # Export for Elastic
         with self.parallel_tasks():
             # Remove the author aggregation from the list of aggregations to reduce cluster size on Elastic
-            for agg in self.remove_aggregations(self.AGGREGATIONS, ["author"]):
+            for agg in self.remove_aggregations(self.AGGREGATIONS, {"author"}):
                 task_id = f"export_{agg.table_id}"
                 self.add_task(
                     self.export_for_elastic, op_kwargs={"aggregation": agg, "task_id": task_id}, task_id=task_id
@@ -871,21 +871,21 @@ class DoiWorkflow(Workflow):
         set_task_state(success, kwargs["task_id"])
 
     def remove_aggregations(
-        self, input_aggregations: List[Aggregation], aggregations_to_remove: List[str]
+        self, input_aggregations: List[Aggregation], aggregations_to_remove: Set[str]
     ) -> List[Aggregation]:
 
-        """Remove a list of aggregations from a given list. Removal is based on mathcing the table_id
+        """Remove a set of aggregations from a given list. Removal is based on mathcing the table_id
         string in the Aggregation object.
 
         When removing items from the Aggregation list, you will need to reflect the same changes in
         unit test for the DOI Workflow DAG structure.
 
         This function actually works in reverse and builds a list of aggregations if it does not match to the
-        table_id in the "aggregations_to_remove" list. This is to get around a strange memory bug that refuses
+        table_id in the "aggregations_to_remove" set. This is to get around a strange memory bug that refuses
         to modify the AGGREGATIONS list with .remove()
 
         :param input_aggregations: List of Aggregations to have elements removed.
-        :param aggregations_to_remove: List of aggregations to remove, matching on "table_id" in the Aggregation class.
+        :param aggregations_to_remove: Set of aggregations to remove, matching on "table_id" in the Aggregation class.
         :return aggregations_removed: Return a list of Aggregations with the desired items removed.
         """
 
