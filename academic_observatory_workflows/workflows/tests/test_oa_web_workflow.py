@@ -57,6 +57,9 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     EntityStats,
     EntityHistograms,
     Histogram,
+    ror_to_tree,
+    make_institution_df,
+    aggregate_institutions,
 )
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import upload_file_to_cloud_storage
@@ -570,6 +573,144 @@ class TestFunctions(TestCase):
             ),
         )
         self.assertEqual(expected_stats, stats)
+
+
+class TestInstitutionAggregation(TestCase):
+    def setUp(self) -> None:
+        self.ror_path = test_fixtures_folder("oa_web_workflow", "aggregate", "ror.jsonl")
+
+    def test_ror_to_tree(self):
+        # Test that the following tree is produced
+        #
+        # Root
+        # ├── Samsung (South Korea)
+        # │   ├── Samsung (Brazil)
+        # │   ├── Samsung (China)
+        # │   ├── Samsung (Germany)
+        # │   ├── Samsung (India)
+        # │   ├── Samsung (Israel)
+        # │   ├── Samsung (Japan)
+        # │   ├── Samsung (Poland)
+        # │   ├── Samsung (Switzerland)
+        # │   ├── Samsung (United Kingdom)
+        # │   └── Samsung (United States)
+        # │       └── Harman (United States)
+        # │           ├── Harman (China)
+        # │           ├── Harman (Germany)
+        # │           └── Harman (United Kingdom)
+
+        ror = load_jsonl(self.ror_path)
+        tree = ror_to_tree(ror)
+
+        expected = {
+            "Root": {
+                "children": [
+                    {
+                        "Samsung (South Korea)": {
+                            "children": [
+                                "Samsung (Brazil)",
+                                "Samsung (China)",
+                                "Samsung (Germany)",
+                                "Samsung (India)",
+                                "Samsung (Israel)",
+                                "Samsung (Japan)",
+                                "Samsung (Poland)",
+                                "Samsung (Switzerland)",
+                                "Samsung (United Kingdom)",
+                                {
+                                    "Samsung (United States)": {
+                                        "children": [
+                                            {
+                                                "Harman (United States)": {
+                                                    "children": [
+                                                        "Harman (China)",
+                                                        "Harman (Germany)",
+                                                        "Harman (United Kingdom)",
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    }
+                                },
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+        actual = tree.to_dict()
+        self.assertEqual(expected, actual)
+
+    def test_aggregation(self):
+        # Test that institution aggregation functions work
+
+        # Load ROR
+        ror = load_jsonl(self.ror_path)
+        tree = ror_to_tree(ror)
+
+        # Make raw data
+        data = [
+            # ├── Samsung (South Korea)
+            ["04w3jy968", 2020, 240],
+            #   Children
+            ["052a20h63", 2020, 20],
+            ["04yt00889", 2020, 22],
+            ["04s4k6s39", 2020, 10],
+            ["04cpx2569", 2020, 12],
+            ["03k1ymh78", 2020, 14],
+            ["01x29j481", 2020, 99],
+            ["0381acm07", 2020, 56],
+            ["04prhfn63", 2020, 42],
+            ["01w6gjq94", 2020, 1],
+            # │   └── Samsung (United States)
+            ["01bfbvm65", 2020, 90],
+            # │       └── Harman (United States)
+            ["03yfbaq97", 2020, 17],
+            # Children
+            ["01k2z4866", 2020, 15],
+            ["02hnr5x72", 2020, 10],
+            ["05fzcfb55", 2020, 5],
+        ]
+
+        # Create dataframe
+        df_data = pd.DataFrame(data, columns=["id", "year", "n_outputs"])
+        df_data.set_index(["id", "year"], inplace=True, verify_integrity=True)
+        df_data.sort_index(inplace=True)
+
+        df_inst = make_institution_df(ror, start_year=2020, end_year=2020, column_names=["n_outputs"])
+        df_inst.update(df_data)
+
+        # Aggregate data
+        aggregate_institutions(tree, df_inst)
+
+        # Check if matches expected data
+        expected = [
+            # ├── Samsung (South Korea)
+            ["04w3jy968", 2020, 653],
+            # Children
+            ["052a20h63", 2020, 20],
+            ["04yt00889", 2020, 22],
+            ["04s4k6s39", 2020, 10],
+            ["04cpx2569", 2020, 12],
+            ["03k1ymh78", 2020, 14],
+            ["01x29j481", 2020, 99],
+            ["0381acm07", 2020, 56],
+            ["04prhfn63", 2020, 42],
+            ["01w6gjq94", 2020, 1],
+            # │   └── Samsung (United States)
+            ["01bfbvm65", 2020, 137],
+            # │       └── Harman (United States)
+            ["03yfbaq97", 2020, 47],
+            # Children
+            ["01k2z4866", 2020, 15],
+            ["02hnr5x72", 2020, 10],
+            ["05fzcfb55", 2020, 5],
+        ]
+        expected.sort(key=lambda x: x[0])
+
+        df_inst = df_inst.reset_index()
+        actual = df_inst.values.tolist()
+        self.assertEqual(expected, actual)
 
 
 class TestOaWebWorkflow(ObservatoryTestCase):

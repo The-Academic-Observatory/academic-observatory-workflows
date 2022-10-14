@@ -28,7 +28,8 @@ import statistics
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import field
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Dict, Set
+from typing import Optional, Tuple, Union
 from urllib.parse import urlparse
 from zipfile import ZipFile
 
@@ -39,6 +40,7 @@ import numpy as np
 import pandas as pd
 import pendulum
 import requests
+import treelib
 from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
 from airflow.sensors.external_task import ExternalTaskSensor
@@ -905,6 +907,281 @@ def publish_new_version(zenodo: Zenodo, draft_id: int, file_path: str):
     res = zenodo.publish(draft_id)
     if res.status_code != 202:
         raise AirflowException(f"zenodo.publish status_code {res.status_code}")
+
+
+def load_data(file_path: str) -> pd.DataFrame:
+    """Load the data file for a given category.
+
+    :param file_path: the path to the file to load.
+    :return: the Pandas Dataframe.
+    """
+
+    data = load_jsonl(file_path)
+    return pd.DataFrame(data)
+
+#
+# def preprocess_df(category: str, df: pd.DataFrame):
+#     """Pre-process the data frame.
+#
+#     :param category: the category.
+#     :param df: the dataframe.
+#     :return: the Pandas Dataframe.
+#     """
+#
+#     # Convert data types
+#     df["date"] = pd.to_datetime(df["date"])
+#     df.fillna("", inplace=True)
+#     for column in df.columns:
+#         if column.startswith("n_"):
+#             df[column] = pd.to_numeric(df[column])
+#
+#     # Clean RoR ids
+#     if category == "institution":
+#         # Remove columns not used for institutions
+#         df.drop(columns=["alpha2"], inplace=True, errors="ignore")
+#
+#         # Clean RoR ids
+#         df["id"] = df["id"].apply(lambda i: clean_ror_id(i))
+#
+#         # Parse identifiers
+#         preferred_key = "preferred"
+#         identifiers = []
+#         for i, row in df.iterrows():
+#             # Parse identifier for each entry
+#             ent_ids = []
+#             ids_dict = row["identifiers"]
+#
+#             # Add ROR id
+#             ror_id = row["id"]
+#             ent_ids.append({"id": ror_id, "type": "ROR", "url": f"https://ror.org/{ror_id}"})
+#
+#             # Parse other ids
+#             for k, v in ids_dict.items():
+#                 url = None
+#                 id_type = k
+#                 if id_type != "OrgRef":
+#                     if preferred_key in v:
+#                         id_value = v[preferred_key]
+#                     else:
+#                         id_value = v["all"][0]
+#
+#                     # Create URLs
+#                     if id_type == "ISNI":
+#                         url = f"https://isni.org/isni/{id_value}"
+#                     elif id_type == "Wikidata":
+#                         url = f"https://www.wikidata.org/wiki/{id_value}"
+#                     elif id_type == "GRID":
+#                         url = f"https://grid.ac/institutes/{id_value}"
+#                     elif id_type == "FundRef":
+#                         url = f"https://api.crossref.org/funders/{id_value}"
+#
+#                     ent_ids.append({"id": id_value, "type": id_type, "url": url})
+#             identifiers.append(ent_ids)
+#         df["identifiers"] = identifiers
+#
+#     if category == "country":
+#         # Remove columns not used for countries
+#         df.drop(columns=["url", "institution_types", "country", "identifiers"], inplace=True, errors="ignore")
+
+
+def preprocess_df(category: str, df: pd.DataFrame):
+    """Pre-process the data frame.
+
+    :param category: the category.
+    :param df: the dataframe.
+    :return: the Pandas Dataframe.
+    """
+
+    # Convert data types
+    # df["date"] = pd.to_datetime(df["date"])
+    df["year"] = pd.to_numeric(df["year"])
+    df.fillna("", inplace=True)
+    for column in df.columns:
+        if column.startswith("n_"):
+            df[column] = pd.to_numeric(df[column])
+
+    # Clean RoR ids
+    if category == "institution":
+        # Remove columns not used for institutions
+        # df.drop(columns=["alpha2"], inplace=True, errors="ignore")
+
+        # Clean RoR ids
+        df["id"] = df["id"].apply(lambda i: clean_ror_id(i))
+
+    df.drop(columns=["repositories"], inplace=True, errors="ignore")
+    df.set_index(["id", "year"], inplace=True, verify_integrity=True)
+    df.sort_index(inplace=True)
+
+
+def ror_to_tree(ror: List[Dict]) -> treelib.Tree:
+    tree = treelib.Tree()
+    root_id = "root"
+    tree.create_node(identifier=root_id, tag="Root")
+    for row in ror:
+        # Get node. If it doesn't exist then create it.
+        node_id = clean_ror_id(row["id"])
+        node_label = row["name"]
+        node = tree.get_node(node_id)
+        if node is None:
+            node = tree.create_node(identifier=node_id, tag=node_label, parent=root_id)
+
+        for rel in row["relationships"]:
+            rel_id = clean_ror_id(rel["id"])
+            rel_type = rel["type"]
+            rel_label = rel["label"]
+
+            if rel_type == "Parent":
+                if not tree.contains(rel_id):
+                    # Create rel parent node if doesn't exist
+                    tree.create_node(identifier=rel_id, tag=rel_label, parent=root_id)
+
+                # If rel node already exists, move node to parent (rel)
+                tree.move_node(node_id, rel_id)
+            elif rel_type == "Child":
+                # Get rel node
+                child = tree.get_node(rel_id)
+                if child is None:
+                    # If rel node doesn't exist then create it, setting parent to row node_id
+                    tree.create_node(identifier=rel_id, tag=rel_label, parent=node_id)
+                else:
+                    # Set parent of child to row node_id
+                    child.set_predecessor(node_id, tree.identifier)
+
+    return tree
+
+
+def aggregate_up(node_id: str, tree: treelib.Tree, df: pd.DataFrame, seen: Set):
+    # Get parent
+    parent = tree.parent(node_id)
+    if parent.identifier == "root":
+        return
+
+    # For each child of the parent, traverse its children. Except node_id, because it is either a leaf or a parent that
+    # was previously traversed.
+    # Add node_id as a child
+    children = [node_id]
+    for child in tree.children(parent.identifier):
+        if node_id == child.identifier:
+            continue
+        traverse_children(child.identifier, tree, df, seen)
+        children.append(child.identifier)
+        seen.add(child.identifier)
+
+    # Aggregate parent and children
+    aggregate_children(parent.identifier, children, df)
+
+    # When finished aggregating parent and it's children, keep aggregating up the tree
+    aggregate_up(parent.identifier, tree, df, seen)
+
+
+def aggregate_children(pid: str, child_ids: List, df: pd.DataFrame):
+    # Get a group with all records including parent and children
+    group_ids = [pid] + child_ids
+    df_group = df.loc[pd.IndexSlice[group_ids, :], :]
+
+    # Aggregate all fields starting with "n_"
+    agg = {}
+    for column in df_group.columns:
+        if column.startswith("n_"):
+            agg[column] = "sum"
+    df_agg = (
+        df_group.groupby(["year"])
+        .agg(
+            agg,
+            index=False,
+        )
+        .reset_index()
+    )
+
+    # TODO: aggregate repositories
+
+    # Add id and make have same index structure as df
+    df_agg["id"] = pid
+    df_agg.set_index(["id", "year"], inplace=True, verify_integrity=True)
+
+    # Update df with values from df_agg
+    df.update(df_agg)
+
+
+def traverse_children(parent_id: str, tree: treelib.Tree, df: pd.DataFrame, seen: Set):
+    # Get children
+    children = []
+    for child in tree.children(parent_id):
+        traverse_children(child.identifier, tree, df, seen)
+        children.append(child.identifier)
+        seen.add(child.identifier)
+
+    # Aggregate parent and children
+    if len(children):
+        aggregate_children(parent_id, children, df)
+
+
+def aggregate_institutions(tree: treelib.Tree, df: pd.DataFrame):
+    seen = set()
+    root_id = "root"
+    leaves = tree.leaves(root_id)
+    n_nodes = len(tree.nodes)
+
+    for leaf in leaves:
+        # If leaf already processed then continue
+        leaf_id = leaf.identifier
+        if leaf_id in seen:
+            continue
+
+        # Mark that leaf has been seen
+        seen.add(leaf_id)
+
+        # If leaf of root, no aggregation needed
+        p = tree.parent(leaf_id)
+        if p.identifier == root_id:
+            continue
+
+        # Get aggregated stats for leaf
+        aggregate_up(leaf_id, tree, df, seen)
+
+        # Print progress
+        n_processed = len(seen) + 1
+        p_processed = n_processed / n_nodes * 100
+        print(f"Progress \r{n_processed} / {n_nodes}: {p_processed:.2f}%")
+
+
+def make_institution_df(ror, start_year: int = 2000, end_year: int = 2021, column_names: List = None):
+    data = []
+    for r in ror:
+        ror_id = clean_ror_id(r["id"])
+        for year in range(start_year, end_year + 1):
+            data.append([ror_id, year])
+
+    df = pd.DataFrame(data, columns=["id", "year"])
+
+    if column_names is None:
+        column_names = [
+            "n_citations",
+            "n_outputs",
+            "n_outputs_open",
+            "n_outputs_publisher_open",
+            "n_outputs_publisher_open_only",
+            "n_outputs_both",
+            "n_outputs_other_platform_open",
+            "n_outputs_other_platform_open_only",
+            "n_outputs_closed",
+            "n_outputs_oa_journal",
+            "n_outputs_hybrid",
+            "n_outputs_no_guarantees",
+            "n_outputs_preprint",
+            "n_outputs_domain",
+            "n_outputs_institution",
+            "n_outputs_public",
+            "n_outputs_other_internet",
+        ]
+
+    for name in column_names:
+        df[name] = np.nan
+
+    df.set_index(["id", "year"], inplace=True, verify_integrity=True)
+    df.sort_index(inplace=True)
+
+    return df
 
 
 class OaWebRelease(SnapshotRelease):
