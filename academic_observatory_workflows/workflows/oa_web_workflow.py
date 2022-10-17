@@ -910,7 +910,7 @@ def publish_new_version(zenodo: Zenodo, draft_id: int, file_path: str):
 
 
 def load_data(file_path: str) -> pd.DataFrame:
-    """Load the data file for a given category.
+    """Load a country or institution data file into a Pandas DataFrame.
 
     :param file_path: the path to the file to load.
     :return: the Pandas Dataframe.
@@ -918,6 +918,7 @@ def load_data(file_path: str) -> pd.DataFrame:
 
     data = load_jsonl(file_path)
     return pd.DataFrame(data)
+
 
 #
 # def preprocess_df(category: str, df: pd.DataFrame):
@@ -1008,12 +1009,18 @@ def preprocess_df(category: str, df: pd.DataFrame):
         # Clean RoR ids
         df["id"] = df["id"].apply(lambda i: clean_ror_id(i))
 
-    df.drop(columns=["repositories"], inplace=True, errors="ignore")
+    # df.drop(columns=["repositories"], inplace=True, errors="ignore")
     df.set_index(["id", "year"], inplace=True, verify_integrity=True)
     df.sort_index(inplace=True)
 
 
 def ror_to_tree(ror: List[Dict]) -> treelib.Tree:
+    """Convert the ROR dataset into a treelib Tree.
+
+    :param ror: the ROR dataset as a list of dicts.
+    :return: the ROR dataset as a treelib Tree.
+    """
+
     tree = treelib.Tree()
     root_id = "root"
     tree.create_node(identifier=root_id, tag="Root")
@@ -1021,9 +1028,8 @@ def ror_to_tree(ror: List[Dict]) -> treelib.Tree:
         # Get node. If it doesn't exist then create it.
         node_id = clean_ror_id(row["id"])
         node_label = row["name"]
-        node = tree.get_node(node_id)
-        if node is None:
-            node = tree.create_node(identifier=node_id, tag=node_label, parent=root_id)
+        if tree.get_node(node_id) is None:
+            tree.create_node(identifier=node_id, tag=node_label, parent=root_id)
 
         for rel in row["relationships"]:
             rel_id = clean_ror_id(rel["id"])
@@ -1050,15 +1056,23 @@ def ror_to_tree(ror: List[Dict]) -> treelib.Tree:
     return tree
 
 
-def aggregate_up(node_id: str, tree: treelib.Tree, df: pd.DataFrame, seen: Set):
+def aggregate_bottom_up(node_id: str, tree: treelib.Tree, df: pd.DataFrame, seen: Set) -> None:
+    """Aggregate from the leaves to the root of a subtree, starting at the parent of node_id.
+
+    :param node_id: the node to start aggregating from.
+    :param tree: the ROR tree.
+    :param df: the Pandas DataFrame containing the data to aggregate. It is aggregated in place.
+    :param seen: a set of seen nodes.
+    :return: None.
+    """
+
     # Get parent
     parent = tree.parent(node_id)
     if parent.identifier == "root":
         return
 
     # For each child of the parent, traverse its children. Except node_id, because it is either a leaf or a parent that
-    # was previously traversed.
-    # Add node_id as a child
+    # was previously traversed. Add node_id as a child
     children = [node_id]
     for child in tree.children(parent.identifier):
         if node_id == child.identifier:
@@ -1068,13 +1082,33 @@ def aggregate_up(node_id: str, tree: treelib.Tree, df: pd.DataFrame, seen: Set):
         seen.add(child.identifier)
 
     # Aggregate parent and children
-    aggregate_children(parent.identifier, children, df)
+    aggregate_parent_and_children(parent.identifier, children, df)
 
     # When finished aggregating parent and it's children, keep aggregating up the tree
-    aggregate_up(parent.identifier, tree, df, seen)
+    aggregate_bottom_up(parent.identifier, tree, df, seen)
 
 
-def aggregate_children(pid: str, child_ids: List, df: pd.DataFrame):
+def repositories_sort_key(col):
+    if is_string_dtype(col.dtype):
+        return col.str.lower()
+    return col
+
+
+def repositories_merge_category(cat):
+    if cat in {"Aggregator", "Unknown"}:
+        return "Other Internet"
+    return cat
+
+
+def aggregate_parent_and_children(pid: str, child_ids: List, df: pd.DataFrame) -> None:
+    """Aggregate data for the parent and child nodes. The data in df is updated in place.
+
+    :param pid: the parent node id.
+    :param child_ids: the child node ids.
+    :param df: the Pandas dataframe where the data is stored.
+    :return: None.
+    """
+
     # Get a group with all records including parent and children
     group_ids = [pid] + child_ids
     df_group = df.loc[pd.IndexSlice[group_ids, :], :]
@@ -1093,17 +1127,75 @@ def aggregate_children(pid: str, child_ids: List, df: pd.DataFrame):
         .reset_index()
     )
 
-    # TODO: aggregate repositories
-
-    # Add id and make have same index structure as df
+    # Add id, repositories and make same index structure as df
     df_agg["id"] = pid
+    df_agg["repositories"] = [[]] * len(df_agg)
     df_agg.set_index(["id", "year"], inplace=True, verify_integrity=True)
+    df_agg.sort_index(inplace=True)
+
+    # Aggregate repositories
+    df_repos = aggregate_repositories(pid, df_group)
+
+    # Join data and repositories
+    df_agg.update(df_repos)
 
     # Update df with values from df_agg
     df.update(df_agg)
 
 
-def traverse_children(parent_id: str, tree: treelib.Tree, df: pd.DataFrame, seen: Set):
+def aggregate_repositories(ror_id: str, df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate repositories.
+
+    :return: pandas DataFrame.
+    """
+
+    key_records = "records"
+    rows: List[Dict] = df.reset_index().to_dict(key_records)
+    repos = []
+    for row in rows:
+        for repo in row["repositories"]:
+            repos.append({"year": row["year"], **repo})
+    df_repos = pd.DataFrame(repos, columns=["year", "id", "total_outputs", "category", "home_repo"])
+    df_repos["year"] = pd.to_numeric(df_repos["year"])
+    df_repos["total_outputs"] = pd.to_numeric(df_repos["total_outputs"])
+    df_repos = (
+        df_repos.groupby(["year", "id"], as_index=False)
+        .agg(
+            {
+                "total_outputs": "sum",
+                "category": "first",
+                "home_repo": "any",
+            }
+        )
+        .sort_values(by=["year", "id"], ascending=[False, True], inplace=False, key=repositories_sort_key)
+    )
+
+    data = []
+    for year, group in df_repos.groupby(["year"], as_index=False):
+        repositories: List[Dict] = group.to_dict(key_records)
+        for repo in repositories:
+            del repo["year"]
+
+        data.append({"id": ror_id, "year": year, "repositories": repositories})
+
+    df = pd.DataFrame(data, columns=["id", "year", "repositories"])
+    df.set_index(["id", "year"], inplace=True, verify_integrity=True)
+    df.sort_index(inplace=True)
+
+    return df
+
+
+def traverse_children(parent_id: str, tree: treelib.Tree, df: pd.DataFrame, seen: Set) -> None:
+    """Recursively traverse the children of parent_id aggregating the parent and child nodes from the bottom of the
+    tree, to the top.
+
+    :param parent_id: the parent node id.
+    :param tree: the ROR tree.
+    :param df: the Pandas Dataframe with the data.
+    :param seen: a list of node ids that have been seen.
+    :return: None.
+    """
+
     # Get children
     children = []
     for child in tree.children(parent_id):
@@ -1113,10 +1205,17 @@ def traverse_children(parent_id: str, tree: treelib.Tree, df: pd.DataFrame, seen
 
     # Aggregate parent and children
     if len(children):
-        aggregate_children(parent_id, children, df)
+        aggregate_parent_and_children(parent_id, children, df)
 
 
-def aggregate_institutions(tree: treelib.Tree, df: pd.DataFrame):
+def aggregate_institutions(tree: treelib.Tree, df: pd.DataFrame) -> None:
+    """Aggregate institutional data in a hierarchical fashion. Data is aggregated in place.
+
+    :param tree: the ROR tree.
+    :param df: the data to aggregate in a Pandas DataFrame.
+    :return: None.
+    """
+
     seen = set()
     root_id = "root"
     leaves = tree.leaves(root_id)
@@ -1137,7 +1236,7 @@ def aggregate_institutions(tree: treelib.Tree, df: pd.DataFrame):
             continue
 
         # Get aggregated stats for leaf
-        aggregate_up(leaf_id, tree, df, seen)
+        aggregate_bottom_up(leaf_id, tree, df, seen)
 
         # Print progress
         n_processed = len(seen) + 1
@@ -1145,7 +1244,18 @@ def aggregate_institutions(tree: treelib.Tree, df: pd.DataFrame):
         print(f"Progress \r{n_processed} / {n_nodes}: {p_processed:.2f}%")
 
 
-def make_institution_df(ror, start_year: int = 2000, end_year: int = 2021, column_names: List = None):
+def make_institution_df(
+    ror: List[Dict], start_year: int = 2000, end_year: int = 2021, column_names: List = None
+) -> pd.DataFrame:
+    """Make an empty institution data frame.
+
+    :param ror: the ROR dataset.
+    :param start_year: the start year.
+    :param end_year: the end year.
+    :param column_names: the column names to create with nan values.
+    :return: the dataframe.
+    """
+
     data = []
     for r in ror:
         ror_id = clean_ror_id(r["id"])
@@ -1178,6 +1288,7 @@ def make_institution_df(ror, start_year: int = 2000, end_year: int = 2021, colum
     for name in column_names:
         df[name] = np.nan
 
+    df["repositories"] = [[]] * len(df)
     df.set_index(["id", "year"], inplace=True, verify_integrity=True)
     df.sort_index(inplace=True)
 

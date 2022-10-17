@@ -641,71 +641,121 @@ class TestInstitutionAggregation(TestCase):
         actual = tree.to_dict()
         self.assertEqual(expected, actual)
 
-    def test_aggregation(self):
+    def test_aggregate_institutions(self):
         # Test that institution aggregation functions work
 
         # Load ROR
         ror = load_jsonl(self.ror_path)
         tree = ror_to_tree(ror)
 
-        # Make raw data
-        data = [
-            # ├── Samsung (South Korea)
-            ["04w3jy968", 2020, 240],
-            #   Children
-            ["052a20h63", 2020, 20],
-            ["04yt00889", 2020, 22],
-            ["04s4k6s39", 2020, 10],
-            ["04cpx2569", 2020, 12],
-            ["03k1ymh78", 2020, 14],
-            ["01x29j481", 2020, 99],
-            ["0381acm07", 2020, 56],
-            ["04prhfn63", 2020, 42],
-            ["01w6gjq94", 2020, 1],
-            # │   └── Samsung (United States)
-            ["01bfbvm65", 2020, 90],
-            # │       └── Harman (United States)
-            ["03yfbaq97", 2020, 17],
-            # Children
-            ["01k2z4866", 2020, 15],
-            ["02hnr5x72", 2020, 10],
-            ["05fzcfb55", 2020, 5],
+        repos = [
+            {"id": "arXiv", "total_outputs": 2, "category": "Preprint", "home_repo": False},
+            {"id": "PubMed Central", "total_outputs": 5, "category": "Domain", "home_repo": False},
         ]
 
+        # Make raw data
+        # fmt: off
+        data = [
+            ["04w3jy968", 2020, 240, repos],  # Samsung (South Korea)
+                ["052a20h63", 2020, 20, repos],
+                ["04yt00889", 2020, 22, repos],
+                ["04s4k6s39", 2020, 10, repos],
+                ["04cpx2569", 2020, 12, repos],
+                ["03k1ymh78", 2020, 14, repos],
+                ["01x29j481", 2020, 99, repos],
+                ["0381acm07", 2020, 56, repos],
+                ["04prhfn63", 2020, 42, repos],
+                ["01w6gjq94", 2020, 1, repos],
+                ["01bfbvm65", 2020, 90, repos],  # Samsung (United States)
+                    ["03yfbaq97", 2020, 17, []],  # Harman (United States)
+                        ["01k2z4866", 2020, 15, [{"id": "Harman Repository (China)", "total_outputs": 15, "category": "Institution", "home_repo": True}]],
+                        ["02hnr5x72", 2020, 10, []],
+                        ["05fzcfb55", 2020, 5, [{"id": "Harman Repository (China)", "total_outputs": 2, "category": "Institution", "home_repo": False}]],
+            ["04w3jy968", 2019, 240, repos],  # Samsung (South Korea)
+                ["052a20h63", 2019, 20, repos],
+                ["04yt00889", 2019, 22, repos],
+                ["04s4k6s39", 2019, 10, repos],
+                ["04cpx2569", 2019, 12, repos],
+                ["03k1ymh78", 2019, 14, repos],
+                ["01x29j481", 2019, 99, repos],
+                ["0381acm07", 2019, 56, repos],
+                ["04prhfn63", 2019, 42, repos],
+                ["01w6gjq94", 2019, 1, repos],
+                ["01bfbvm65", 2019, 90, repos],  # Samsung (United States)
+                    ["03yfbaq97", 2019, 17, []],  # Harman (United States)
+                        ["01k2z4866", 2019, 15, [{"id": "Harman Repository (China)", "total_outputs": 15, "category": "Institution", "home_repo": True}]],
+                        ["02hnr5x72", 2019, 10, []],
+                        ["05fzcfb55", 2019, 5, [{"id": "Harman Repository (China)", "total_outputs": 2, "category": "Institution", "home_repo": False}]],
+        ]
+        # fmt: on
+
         # Create dataframe
-        df_data = pd.DataFrame(data, columns=["id", "year", "n_outputs"])
+        df_data = pd.DataFrame(data, columns=["id", "year", "n_outputs", "repositories"])
         df_data.set_index(["id", "year"], inplace=True, verify_integrity=True)
         df_data.sort_index(inplace=True)
 
-        df_inst = make_institution_df(ror, start_year=2020, end_year=2020, column_names=["n_outputs"])
+        df_inst = make_institution_df(ror, start_year=2019, end_year=2020, column_names=["n_outputs"])
         df_inst.update(df_data)
 
         # Aggregate data
         aggregate_institutions(tree, df_inst)
 
         # Check if matches expected data
-        expected = [
-            # ├── Samsung (South Korea)
-            ["04w3jy968", 2020, 653],
-            # Children
-            ["052a20h63", 2020, 20],
-            ["04yt00889", 2020, 22],
-            ["04s4k6s39", 2020, 10],
-            ["04cpx2569", 2020, 12],
-            ["03k1ymh78", 2020, 14],
-            ["01x29j481", 2020, 99],
-            ["0381acm07", 2020, 56],
-            ["04prhfn63", 2020, 42],
-            ["01w6gjq94", 2020, 1],
-            # │   └── Samsung (United States)
-            ["01bfbvm65", 2020, 137],
-            # │       └── Harman (United States)
-            ["03yfbaq97", 2020, 47],
-            # Children
-            ["01k2z4866", 2020, 15],
-            ["02hnr5x72", 2020, 10],
-            ["05fzcfb55", 2020, 5],
+        # fmt: on
+        repos = [
+            {"id": "arXiv", "total_outputs": 2, "category": "Preprint", "home_repo": False},
+            {"id": "PubMed Central", "total_outputs": 5, "category": "Domain", "home_repo": False},
         ]
+        expected = [
+            ["04w3jy968", 2019, 653, [
+                {"id": "arXiv", "total_outputs": 2 * 11, "category": "Preprint", "home_repo": False},
+                {"id": "Harman Repository (China)", "total_outputs": 17, "category": "Institution", "home_repo": True},
+                {"id": "PubMed Central", "total_outputs": 5 * 11, "category": "Domain", "home_repo": False},
+            ]],  # Samsung (South Korea)
+            ["052a20h63", 2019, 20, repos],
+            ["04yt00889", 2019, 22, repos],
+            ["04s4k6s39", 2019, 10, repos],
+            ["04cpx2569", 2019, 12, repos],
+            ["03k1ymh78", 2019, 14, repos],
+            ["01x29j481", 2019, 99, repos],
+            ["0381acm07", 2019, 56, repos],
+            ["04prhfn63", 2019, 42, repos],
+            ["01w6gjq94", 2019, 1, repos],
+            ["01bfbvm65", 2019, 137, [
+                {"id": "arXiv", "total_outputs": 2, "category": "Preprint", "home_repo": False},
+                {"id": "Harman Repository (China)", "total_outputs": 17, "category": "Institution", "home_repo": True},
+                {"id": "PubMed Central", "total_outputs": 5, "category": "Domain", "home_repo": False},
+            ]],  # Samsung (United States)
+                    ["03yfbaq97", 2019, 47, [{"id": "Harman Repository (China)", "total_outputs": 17, "category": "Institution", "home_repo": True}]],  # Harman (United States)
+                        ["01k2z4866", 2019, 15, [{"id": "Harman Repository (China)", "total_outputs": 15, "category": "Institution", "home_repo": True}]],
+                        ["02hnr5x72", 2019, 10, []],
+                        ["05fzcfb55", 2019, 5, [{"id": "Harman Repository (China)", "total_outputs": 2, "category": "Institution", "home_repo": False}]],
+
+            ["04w3jy968", 2020, 653, [
+                {"id": "arXiv", "total_outputs": 2 * 11, "category": "Preprint", "home_repo": False},
+                {"id": "Harman Repository (China)", "total_outputs": 17, "category": "Institution", "home_repo": True},
+                {"id": "PubMed Central", "total_outputs": 5 * 11, "category": "Domain", "home_repo": False},
+            ]],  # Samsung (South Korea)
+                ["052a20h63", 2020, 20, repos],
+                ["04yt00889", 2020, 22, repos],
+                ["04s4k6s39", 2020, 10, repos],
+                ["04cpx2569", 2020, 12, repos],
+                ["03k1ymh78", 2020, 14, repos],
+                ["01x29j481", 2020, 99, repos],
+                ["0381acm07", 2020, 56, repos],
+                ["04prhfn63", 2020, 42, repos],
+                ["01w6gjq94", 2020, 1, repos],
+                ["01bfbvm65", 2020, 137, [
+                    {"id": "arXiv", "total_outputs": 2, "category": "Preprint", "home_repo": False},
+                    {"id": "Harman Repository (China)", "total_outputs": 17, "category": "Institution", "home_repo": True},
+                    {"id": "PubMed Central", "total_outputs": 5, "category": "Domain", "home_repo": False},
+                ]],  # Samsung (United States)
+                    ["03yfbaq97", 2020, 47, [{"id": "Harman Repository (China)", "total_outputs": 17, "category": "Institution", "home_repo": True}]], # Harman (United States)
+                        ["01k2z4866", 2020, 15, [{"id": "Harman Repository (China)", "total_outputs": 15, "category": "Institution", "home_repo": True}]],
+                        ["02hnr5x72", 2020, 10, []],
+                        ["05fzcfb55", 2020, 5, [{"id": "Harman Repository (China)", "total_outputs": 2, "category": "Institution", "home_repo": False}]],
+        ]
+        # fmt: on
         expected.sort(key=lambda x: x[0])
 
         df_inst = df_inst.reset_index()
