@@ -15,7 +15,7 @@
 # Author: James Diprose, Aniek Roelofs
 
 import os
-from typing import List
+from typing import List, Dict
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -30,6 +30,7 @@ from click.testing import CliRunner
 
 import academic_observatory_workflows.workflows.oa_web_workflow
 from academic_observatory_workflows.config import schema_folder, test_fixtures_folder
+from academic_observatory_workflows.tests.test_zenodo import MockZenodo
 from academic_observatory_workflows.workflows.oa_web_workflow import (
     Description,
     OaWebRelease,
@@ -56,8 +57,8 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     save_entities,
     update_index_with_logos,
     update_df_with_percentages,
+    save_index,
 )
-from academic_observatory_workflows.tests.test_zenodo import MockZenodo
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import upload_file_to_cloud_storage
 from observatory.platform.utils.test_utils import (
@@ -309,7 +310,7 @@ class TestInstitutionAggregation(TestCase):
         aggregate_institutions(tree, df_inst)
 
         # Check if matches expected data
-        # fmt: on
+        # fmt: off
         repos = [
             {"id": "arXiv", "total_outputs": 2, "category": "Preprint", "home_repo": False},
             {"id": "PubMed Central", "total_outputs": 5, "category": "Domain", "home_repo": False},
@@ -371,6 +372,18 @@ class TestInstitutionAggregation(TestCase):
         self.assertEqual(expected, actual)
 
 
+def load_index_and_data(category: str, index: List[Dict], data: List[Dict]):
+    df_index = pd.DataFrame(index)
+    preprocess_index_df(category, df_index)
+
+    df_data = pd.DataFrame(data)
+    preprocess_data_df(category, df_data)
+
+    df_index = make_index(category, df_index, df_data)
+
+    return df_index, df_data
+
+
 class TestOaWebWorkflow(ObservatoryTestCase):
     maxDiff = None
     dt_fmt = "YYYY-MM-DD"
@@ -398,52 +411,54 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 "name": "New Zealand",
                 "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
                 "subregion": "Australia and New Zealand",
-                "region": "Oceania"
+                "region": "Oceania",
+                "alpha2": "NZ",
             },
         ]
+        # The n_ fields are strings because BigQuery exports integers as strings in JSON Lines exports
         self.country_data = [
             {
                 "id": "NZL",
-                "year": 2020,
-                "n_citations": 121,
-                "n_outputs": 100,
-                "n_outputs_open": 48,
-                "n_outputs_publisher_open": 37,
-                "n_outputs_publisher_open_only": 11,
-                "n_outputs_both": 26,
-                "n_outputs_other_platform_open": 37,
-                "n_outputs_other_platform_open_only": 11,
-                "n_outputs_closed": 52,
-                "n_outputs_oa_journal": 19,
-                "n_outputs_hybrid": 10,
-                "n_outputs_no_guarantees": 8,
-                "n_outputs_preprint": 10,
-                "n_outputs_domain": 27,
-                "n_outputs_institution": 0,
-                "n_outputs_public": 0,
-                "n_outputs_other_internet": 0,
+                "year": "2020",
+                "n_citations": "121",
+                "n_outputs": "100",
+                "n_outputs_open": "48",
+                "n_outputs_publisher_open": "37",
+                "n_outputs_publisher_open_only": "11",
+                "n_outputs_both": "26",
+                "n_outputs_other_platform_open": "37",
+                "n_outputs_other_platform_open_only": "11",
+                "n_outputs_closed": "52",
+                "n_outputs_oa_journal": "19",
+                "n_outputs_hybrid": "10",
+                "n_outputs_no_guarantees": "8",
+                "n_outputs_preprint": "10",
+                "n_outputs_domain": "27",
+                "n_outputs_institution": "0",
+                "n_outputs_public": "0",
+                "n_outputs_other_internet": "0",
                 "repositories": repositories,
             },
             {
                 "id": "NZL",
                 "year": 2021,
-                "n_citations": 233,
-                "n_outputs": 100,
-                "n_outputs_open": 45,
-                "n_outputs_publisher_open": 37,
-                "n_outputs_publisher_open_only": 14,
-                "n_outputs_both": 23,
-                "n_outputs_other_platform_open": 31,
-                "n_outputs_other_platform_open_only": 8,
-                "n_outputs_closed": 55,
-                "n_outputs_oa_journal": 20,
-                "n_outputs_hybrid": 9,
-                "n_outputs_no_guarantees": 8,
-                "n_outputs_preprint": 10,
-                "n_outputs_domain": 27,
-                "n_outputs_institution": 0,
-                "n_outputs_public": 0,
-                "n_outputs_other_internet": 0,
+                "n_citations": "233",
+                "n_outputs": "100",
+                "n_outputs_open": "45",
+                "n_outputs_publisher_open": "37",
+                "n_outputs_publisher_open_only": "14",
+                "n_outputs_both": "23",
+                "n_outputs_other_platform_open": "31",
+                "n_outputs_other_platform_open_only": "8",
+                "n_outputs_closed": "55",
+                "n_outputs_oa_journal": "20",
+                "n_outputs_hybrid": "9",
+                "n_outputs_no_guarantees": "8",
+                "n_outputs_preprint": "10",
+                "n_outputs_domain": "27",
+                "n_outputs_institution": "0",
+                "n_outputs_public": "0",
+                "n_outputs_other_internet": "0",
                 "repositories": repositories,
             },
         ]
@@ -464,52 +479,52 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "GRID": {"preferred": "grid.1032.0"},
                     "FundRef": {"all": ["501100001797"]},
                 },
-                "acronyms": []
+                "acronyms": [],
             },
         ]
         self.institution_data = [
             {
                 "id": "https://ror.org/02n415q13",
                 "year": 2020,
-                "n_citations": 121,
-                "n_outputs": 100,
-                "n_outputs_open": 48,
-                "n_outputs_publisher_open": 37,
-                "n_outputs_publisher_open_only": 11,
-                "n_outputs_both": 26,
-                "n_outputs_other_platform_open": 37,
-                "n_outputs_other_platform_open_only": 11,
-                "n_outputs_closed": 52,
-                "n_outputs_oa_journal": 19,
-                "n_outputs_hybrid": 10,
-                "n_outputs_no_guarantees": 8,
-                "n_outputs_preprint": 10,
-                "n_outputs_domain": 27,
-                "n_outputs_institution": 0,
-                "n_outputs_public": 0,
-                "n_outputs_other_internet": 0,
+                "n_citations": "121",
+                "n_outputs": "100",
+                "n_outputs_open": "48",
+                "n_outputs_publisher_open": "37",
+                "n_outputs_publisher_open_only": "11",
+                "n_outputs_both": "26",
+                "n_outputs_other_platform_open": "37",
+                "n_outputs_other_platform_open_only": "11",
+                "n_outputs_closed": "52",
+                "n_outputs_oa_journal": "19",
+                "n_outputs_hybrid": "10",
+                "n_outputs_no_guarantees": "8",
+                "n_outputs_preprint": "10",
+                "n_outputs_domain": "27",
+                "n_outputs_institution": "0",
+                "n_outputs_public": "0",
+                "n_outputs_other_internet": "0",
                 "repositories": repositories,
             },
             {
                 "id": "https://ror.org/02n415q13",
                 "year": 2021,
-                "n_citations": 233,
-                "n_outputs": 100,
-                "n_outputs_open": 45,
-                "n_outputs_publisher_open": 37,
-                "n_outputs_publisher_open_only": 14,
-                "n_outputs_both": 23,
-                "n_outputs_other_platform_open": 31,
-                "n_outputs_other_platform_open_only": 8,
-                "n_outputs_closed": 55,
-                "n_outputs_oa_journal": 20,
-                "n_outputs_hybrid": 9,
-                "n_outputs_no_guarantees": 8,
-                "n_outputs_preprint": 10,
-                "n_outputs_domain": 27,
-                "n_outputs_institution": 0,
-                "n_outputs_public": 0,
-                "n_outputs_other_internet": 0,
+                "n_citations": "233",
+                "n_outputs": "100",
+                "n_outputs_open": "45",
+                "n_outputs_publisher_open": "37",
+                "n_outputs_publisher_open_only": "14",
+                "n_outputs_both": "23",
+                "n_outputs_other_platform_open": "31",
+                "n_outputs_other_platform_open_only": "8",
+                "n_outputs_closed": "55",
+                "n_outputs_oa_journal": "20",
+                "n_outputs_hybrid": "9",
+                "n_outputs_no_guarantees": "8",
+                "n_outputs_preprint": "10",
+                "n_outputs_domain": "27",
+                "n_outputs_institution": "0",
+                "n_outputs_public": "0",
+                "n_outputs_other_internet": "0",
                 "repositories": repositories,
             },
         ]
@@ -747,8 +762,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             mock_var_get.return_value = t
 
             # Save CSV
-            path = os.path.join(self.release.download_folder, f"{category}.jsonl")
-            df = self.save_mock_data(path, self.countries)
+            path = os.path.join(self.release.download_folder, f"{category}-index.jsonl")
+            df = self.save_mock_data(path, self.country_index)
 
             # Load csv
             actual_df = load_data(path)
@@ -773,11 +788,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
             # Country
             category = "country"
-            df_index = pd.DataFrame(self.country_index)
-            df_data = pd.DataFrame(self.country_data)
+            df_index, df_data = load_index_and_data(category, self.country_index, self.country_data)
 
-            preprocess_index_df(category, df_index)
-            df_country_index = make_index(category, df_index, df_data)
             expected = [
                 {
                     "alpha2": "NZ",
@@ -822,15 +834,13 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 }
             ]
             print("Checking country records:")
-            actual = df_country_index.to_dict("records")
+            actual = df_index.to_dict("records")
             for e, a in zip(expected, actual):
                 self.assertDictEqual(e, a)
 
             # Institution
             category = "institution"
-            df = pd.DataFrame(self.institution_index)
-            df = preprocess_index_df(category, df)
-            df_institution_index = make_index(category, df)
+            df_index, df_data = load_index_and_data(category, self.institution_index, self.institution_data)
             expected = [
                 {
                     "category": "institution",
@@ -889,11 +899,12 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                             "url": "https://api.crossref.org/funders/501100001797",
                         },
                     ],
+                    "acronyms": [],
                 }
             ]
 
             print("Checking institution records:")
-            actual = df_institution_index.to_dict("records")
+            actual = df_index.to_dict("records")
             for e, a in zip(expected, actual):
                 self.assertDictEqual(e, a)
 
@@ -905,13 +916,10 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
             # Country table
             category = "country"
-            df = pd.DataFrame(self.countries)
-            df = preprocess_df(category, df)
-            df_index_table = make_index(category, df)
-            update_index_with_logos(
-                self.release.build_path, self.release.assets_path, category, df_index_table
-            )
-            for i, row in df_index_table.iterrows():
+            df_index, _ = load_index_and_data(category, self.country_index, self.country_data)
+            update_index_with_logos(self.release.build_path, self.release.assets_path, category, df_index)
+
+            for i, row in df_index.iterrows():
                 for size in sizes:
                     # Check that logo key created
                     key = f"logo_{size}"
@@ -925,31 +933,16 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
             # Institution table
             category = "institution"
-            institutions = self.institutions + [
+            institution_index = self.institution_index + [
                 {
-                    "alpha2": None,
                     "id": "https://ror.org/12345",
                     "name": "Foo University",
-                    "year": 2020,
-                    "date": pendulum.date(2020, 12, 31).format(self.dt_fmt),
-                    "url": None,
-                    "wikipedia_url": None,
                     "country": "Australia",
                     "subregion": "Australia and New Zealand",
                     "region": "Oceania",
+                    "url": None,
+                    "wikipedia_url": None,
                     "institution_types": ["Education"],
-                    "n_citations": 121,
-                    "n_outputs": 100,
-                    "n_outputs_open": 48,
-                    "n_outputs_publisher_open": 37,
-                    "n_outputs_publisher_open_only": 11,
-                    "n_outputs_both": 26,
-                    "n_outputs_other_platform_open": 37,
-                    "n_outputs_other_platform_open_only": 11,
-                    "n_outputs_closed": 52,
-                    "n_outputs_oa_journal": 19,
-                    "n_outputs_hybrid": 10,
-                    "n_outputs_no_guarantees": 8,
                     "identifiers": {
                         "ISNI": {"all": ["0000 0004 0375 4078"]},
                         "OrgRef": {"all": ["370725"]},
@@ -957,18 +950,34 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                         "GRID": {"preferred": "grid.1032.0"},
                         "FundRef": {"all": ["501100001797"]},
                     },
+                }
+            ]
+            institution_data = self.institution_data + [
+                {
+                    "id": "https://ror.org/12345",
+                    "year": 2020,
+                    "n_citations": "121",
+                    "n_outputs": "100",
+                    "n_outputs_open": "48",
+                    "n_outputs_publisher_open": "37",
+                    "n_outputs_publisher_open_only": "11",
+                    "n_outputs_both": "26",
+                    "n_outputs_other_platform_open": "37",
+                    "n_outputs_other_platform_open_only": "11",
+                    "n_outputs_closed": "52",
+                    "n_outputs_oa_journal": "19",
+                    "n_outputs_hybrid": "10",
+                    "n_outputs_no_guarantees": "8",
                 },
             ]
-            df = pd.DataFrame(institutions)
-            df = preprocess_df(category, df)
-            df_index_table = make_index(category, df)
+
+            # Create index
+            df_index, _ = load_index_and_data(category, institution_index, institution_data)
             sizes = ["l", "s", "xl"]
             with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "test_make_logos.yaml")):
-                update_index_with_logos(
-                    self.release.build_path, self.release.assets_path, category, df_index_table
-                )
-                curtin_row = df_index_table.loc["02n415q13"]
-                foo_row = df_index_table.loc["12345"]
+                update_index_with_logos(self.release.build_path, self.release.assets_path, category, df_index)
+                curtin_row = df_index[df_index["id"] == "02n415q13"].iloc[0]
+                foo_row = df_index[df_index["id"] == "12345"].iloc[0]
                 for size in sizes:
                     # Check that logo was added to dataframe
                     key = f"logo_{size}"
@@ -994,14 +1003,23 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         with CliRunner().isolated_filesystem() as t:
             mock_var_get.return_value = t
 
-            for category, data, entity_ids in self.entities:
-                df = pd.DataFrame(data)
-                df = preprocess_df(category, df)
-                df_index_table = make_index(category, df)
-                update_index_with_logos(
-                    self.release.build_path, self.release.assets_path, category, df_index_table
-                )
-                entities = make_entities(category, df_index_table, df)
+            for category, index, data, entity_ids in self.entities:
+                # Load index
+                df_index = pd.DataFrame(index)
+                preprocess_index_df(category, df_index)
+
+                # Load data
+                df_data = pd.DataFrame(data)
+                preprocess_data_df(category, df_data)
+
+                # Make index
+                df_index = make_index(category, df_index, df_data)
+                update_index_with_logos(self.release.build_path, self.release.assets_path, category, df_index)
+
+                # Make entities
+                entities = make_entities(category, df_index, df_data)
+
+                # Save index from entities
                 data_path = os.path.join(self.release.build_path, "data")
                 os.makedirs(data_path, exist_ok=True)
                 file_path = os.path.join(data_path, f"{category}.json")
@@ -1015,10 +1033,19 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
             # Country
             category = "country"
-            df = pd.DataFrame(self.countries)
-            df = preprocess_df(category, df)
-            df_index_table = make_index(category, df)
-            entities = make_entities(category, df_index_table, df)
+
+            # Load index
+            df_index = pd.DataFrame(self.country_index)
+            preprocess_index_df(category, df_index)
+
+            # Load data
+            df_data = pd.DataFrame(self.country_data)
+            preprocess_data_df(category, df_data)
+
+            # Make index and entities
+            df_index = make_index(category, df_index, df_data)
+            entities = make_entities(category, df_index, df_data)
+
             repositories = [
                 {"id": "PubMed Central", "total_outputs": 30, "category": "Domain", "home_repo": False},
                 {"id": "Europe PMC", "total_outputs": 24, "category": "Domain", "home_repo": False},
@@ -1161,10 +1188,18 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
         # Institution
         category = "institution"
-        df = pd.DataFrame(self.institutions)
-        df = preprocess_df(category, df)
-        df_index_table = make_index(category, df)
-        entities = make_entities(category, df_index_table, df)
+
+        # Load index
+        df_index = pd.DataFrame(self.institution_index)
+        preprocess_index_df(category, df_index)
+
+        # Load data
+        df_data = pd.DataFrame(self.institution_data)
+        preprocess_data_df(category, df_data)
+
+        # Make index and entities
+        df_index = make_index(category, df_index, df_data)
+        entities = make_entities(category, df_index, df_data)
 
         expected = [
             {
@@ -1316,14 +1351,17 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         with CliRunner().isolated_filesystem() as t:
             mock_var_get.return_value = t
 
-            for category, data, entity_ids in self.entities:
+            for category, index, data, entity_ids in self.entities:
                 # Read data
-                df = pd.DataFrame(data)
-                df = preprocess_df(category, df)
+                df_index = pd.DataFrame(index)
+                preprocess_index_df(category, df_index)
+
+                df_data = pd.DataFrame(data)
+                preprocess_data_df(category, df_data)
 
                 # Save entities
-                df_index_table = make_index(category, df)
-                entities = make_entities(category, df_index_table, df)
+                df_index = make_index(category, df_index, df_data)
+                entities = make_entities(category, df_index, df_data)
                 path = os.path.join(self.release.build_path, "data", category)
                 save_entities(path, entities)
 

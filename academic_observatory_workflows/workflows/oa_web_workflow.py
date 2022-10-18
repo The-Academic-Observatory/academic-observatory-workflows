@@ -114,6 +114,7 @@ SELECT
   country.wikipedia_url,
   country.subregion as subregion,
   country.region as region,
+  country.alpha2 as alpha2, -- used for country flags
 FROM
   `{project_id}.{settings_dataset_id}.{country_table_id}` as country
 ORDER BY name ASC
@@ -576,8 +577,6 @@ class OaWebWorkflow(Workflow):
         data_path = os.path.join(release.download_folder, self.INSTITUTION_DATA_FILE)
         df_data = load_data(data_path)
         preprocess_data_df("institution", df_data)
-        df_data.set_index(["id", "year"], inplace=True, verify_integrity=True)
-        df_data.sort_index(inplace=True)
 
         df_inst = make_institution_df(ror, start_year=START_YEAR, end_year=END_YEAR)
         df_inst.update(df_data)
@@ -614,7 +613,7 @@ class OaWebWorkflow(Workflow):
             df_data = load_data(data_path)
 
             # Aggregate data file
-            df_index = make_index(category, df_data)
+            df_index = make_index(category, df_index, df_data)
 
             # Save index to intermediate
             index_path = os.path.join(release.intermediate_path, index_name)
@@ -1533,6 +1532,7 @@ def preprocess_data_df(category: str, df: pd.DataFrame):
 
     # Convert data types
     df["year"] = pd.to_numeric(df["year"])
+    df["date"] = pd.to_datetime(df["year"].apply(lambda year: f"{year}-12-31"))
     df.fillna("", inplace=True)
     for column in df.columns:
         if column.startswith("n_"):
@@ -1694,10 +1694,13 @@ def make_index(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame):
     # Add category
     df_agg["category"] = category
 
-    # Remove date, year and repositories
-    df_agg.drop(columns=["year", "repositories"], inplace=True)
+    # Remove date and repositories
+    df_agg.drop(columns=["date", "repositories"], inplace=True)
 
-    return df_index_table
+    # Merge
+    df_merged = pd.merge(df_index, df_agg, on="id")
+
+    return df_merged
 
 
 def update_df_with_percentages(df: pd.DataFrame, keys: List[Tuple[str, str]]):
@@ -1799,7 +1802,7 @@ def make_entities(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame) 
 
             # Make timeseries data
             years = []
-            rows: List[Dict] = df_group.to_dict(key_records)
+            rows: List[Dict] = df_group.reset_index().to_dict(key_records)
             for row in rows:
                 year = int(row.get(key_year))
                 date = row.get(key_date)
@@ -1948,13 +1951,13 @@ def clean_url(url: str) -> str:
     return f"{p.scheme}://{p.netloc}/"
 
 
-def update_index_with_logos(build_path: str, assets_path: str, category: str, df_index_table: pd.DataFrame):
+def update_index_with_logos(build_path: str, assets_path: str, category: str, df_index: pd.DataFrame):
     """Update the index with logos, downloading logos if they don't exist.
 
     :param build_path: the path to the build folder.
     :param assets_path: the path to oa-web-workflow assets folder which contains country flags.
     :param category: the category, i.e. country or institution.
-    :param df_index_table: the index table Pandas dataframe.
+    :param df_index: the index table Pandas dataframe.
     :return: None.
     """
 
@@ -1972,7 +1975,7 @@ def update_index_with_logos(build_path: str, assets_path: str, category: str, df
             # Copy and rename logo images from using alpha2 to alpha3 country codes
             for size in country_sizes:
                 base_path = os.path.join(build_path, "logos", category, size)
-                for alpha3, alpha2 in zip(df_index_table["id"], df_index_table["alpha2"]):
+                for alpha3, alpha2 in zip(df_index["id"], df_index["alpha2"]):
                     src_path = os.path.join(assets_path, "flags", size, f"{alpha2}.svg")
                     dst_path = os.path.join(base_path, f"{alpha3}.svg")
                     futures.append(executor.submit(shutil.copy, src_path, dst_path))
@@ -1985,7 +1988,7 @@ def update_index_with_logos(build_path: str, assets_path: str, category: str, df
             make_logo_url_size = size
             if size == "xl":
                 make_logo_url_size = "l"
-            df_index_table[f"logo_{size}"] = df_index_table["id"].apply(
+            df_index[f"logo_{size}"] = df_index["id"].apply(
                 lambda country_code: make_logo_url(
                     category=category, entity_id=country_code, size=make_logo_url_size, fmt="svg"
                 )
@@ -1999,7 +2002,7 @@ def update_index_with_logos(build_path: str, assets_path: str, category: str, df
             with ThreadPoolExecutor() as executor:
                 futures = []
                 logo_paths = []
-                for ror_id, url in zip(df_index_table["id"], df_index_table["url"]):
+                for ror_id, url in zip(df_index["id"], df_index["url"]):
                     if url:
                         url = clean_url(url)
                         futures.append(executor.submit(get_institution_logo, ror_id, url, size, width, fmt, build_path))
@@ -2009,11 +2012,11 @@ def update_index_with_logos(build_path: str, assets_path: str, category: str, df
             logging.info("Finished downloading logos")
 
             # Sort table and results by id
-            df_index_table.sort_index(inplace=True)
+            df_index.sort_index(inplace=True)
             logo_paths_sorted = [tup[1] for tup in sorted(logo_paths, key=lambda tup: tup[0])]
 
             # Add logo paths to table
-            df_index_table[f"logo_{size}"] = logo_paths_sorted
+            df_index[f"logo_{size}"] = logo_paths_sorted
 
 
 #########################
