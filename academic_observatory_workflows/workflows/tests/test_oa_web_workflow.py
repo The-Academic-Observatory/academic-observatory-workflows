@@ -48,7 +48,16 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     ror_to_tree,
     make_institution_df,
     aggregate_institutions,
+    load_data,
+    preprocess_index_df,
+    preprocess_data_df,
+    make_index,
+    make_entities,
+    save_entities,
+    update_index_with_logos,
+    update_df_with_percentages,
 )
+from academic_observatory_workflows.tests.test_zenodo import MockZenodo
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import upload_file_to_cloud_storage
 from observatory.platform.utils.test_utils import (
@@ -383,19 +392,19 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             {"id": "Europe PMC", "total_outputs": 12, "category": "Domain", "home_repo": False},
             {"id": "arXiv", "total_outputs": 10, "category": "Preprint", "home_repo": False},
         ]
-        self.countries = [
+        self.country_index = [
             {
-                "alpha2": "NZ",
                 "id": "NZL",
                 "name": "New Zealand",
-                "year": 2020,
-                "date": pendulum.date(2020, 12, 31).format(self.dt_fmt),
-                "url": None,
                 "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
-                "country": None,
                 "subregion": "Australia and New Zealand",
-                "region": "Oceania",
-                "institution_types": None,
+                "region": "Oceania"
+            },
+        ]
+        self.country_data = [
+            {
+                "id": "NZL",
+                "year": 2020,
                 "n_citations": 121,
                 "n_outputs": 100,
                 "n_outputs_open": 48,
@@ -413,27 +422,17 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 "n_outputs_institution": 0,
                 "n_outputs_public": 0,
                 "n_outputs_other_internet": 0,
-                "identifiers": None,
                 "repositories": repositories,
             },
             {
-                "alpha2": "NZ",
                 "id": "NZL",
-                "name": "New Zealand",
                 "year": 2021,
-                "date": pendulum.date(2021, 12, 31).format(self.dt_fmt),
-                "url": None,
-                "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
-                "country": None,
-                "subregion": "Australia and New Zealand",
-                "region": "Oceania",
-                "institution_types": None,
                 "n_citations": 233,
                 "n_outputs": 100,
                 "n_outputs_open": 45,
                 "n_outputs_publisher_open": 37,
                 "n_outputs_publisher_open_only": 14,
-                "n_outputs_both": 23,  # 23?
+                "n_outputs_both": 23,
                 "n_outputs_other_platform_open": 31,
                 "n_outputs_other_platform_open_only": 8,
                 "n_outputs_closed": 55,
@@ -445,23 +444,33 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 "n_outputs_institution": 0,
                 "n_outputs_public": 0,
                 "n_outputs_other_internet": 0,
-                "identifiers": None,
                 "repositories": repositories,
             },
         ]
-        self.institutions = [
+        self.institution_index = [
             {
-                "alpha2": None,
                 "id": "https://ror.org/02n415q13",
                 "name": "Curtin University",
-                "year": 2020,
-                "date": pendulum.date(2020, 12, 31).format(self.dt_fmt),
                 "url": "https://curtin.edu.au/",
                 "wikipedia_url": "https://en.wikipedia.org/wiki/Curtin_University",
                 "country": "Australia",
                 "subregion": "Australia and New Zealand",
                 "region": "Oceania",
                 "institution_types": ["Education"],
+                "identifiers": {
+                    "ISNI": {"all": ["0000 0004 0375 4078"]},
+                    "OrgRef": {"all": ["370725"]},
+                    "Wikidata": {"all": ["Q1145497"]},
+                    "GRID": {"preferred": "grid.1032.0"},
+                    "FundRef": {"all": ["501100001797"]},
+                },
+                "acronyms": []
+            },
+        ]
+        self.institution_data = [
+            {
+                "id": "https://ror.org/02n415q13",
+                "year": 2020,
                 "n_citations": 121,
                 "n_outputs": 100,
                 "n_outputs_open": 48,
@@ -479,33 +488,17 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 "n_outputs_institution": 0,
                 "n_outputs_public": 0,
                 "n_outputs_other_internet": 0,
-                "identifiers": {
-                    "ISNI": {"all": ["0000 0004 0375 4078"]},
-                    "OrgRef": {"all": ["370725"]},
-                    "Wikidata": {"all": ["Q1145497"]},
-                    "GRID": {"preferred": "grid.1032.0"},
-                    "FundRef": {"all": ["501100001797"]},
-                },
                 "repositories": repositories,
             },
             {
-                "alpha2": None,
                 "id": "https://ror.org/02n415q13",
-                "name": "Curtin University",
                 "year": 2021,
-                "date": pendulum.date(2021, 12, 31).format(self.dt_fmt),
-                "url": "https://curtin.edu.au/",
-                "wikipedia_url": "https://en.wikipedia.org/wiki/Curtin_University",
-                "country": "Australia",
-                "subregion": "Australia and New Zealand",
-                "region": "Oceania",
-                "institution_types": ["Education"],
                 "n_citations": 233,
                 "n_outputs": 100,
                 "n_outputs_open": 45,
                 "n_outputs_publisher_open": 37,
                 "n_outputs_publisher_open_only": 14,
-                "n_outputs_both": 23,  # 23?
+                "n_outputs_both": 23,
                 "n_outputs_other_platform_open": 31,
                 "n_outputs_other_platform_open_only": 8,
                 "n_outputs_closed": 55,
@@ -517,19 +510,12 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 "n_outputs_institution": 0,
                 "n_outputs_public": 0,
                 "n_outputs_other_internet": 0,
-                "identifiers": {
-                    "ISNI": {"all": ["0000 0004 0375 4078"]},
-                    "OrgRef": {"all": ["370725"]},
-                    "Wikidata": {"all": ["Q1145497"]},
-                    "GRID": {"preferred": "grid.1032.0"},
-                    "FundRef": {"all": ["501100001797"]},
-                },
                 "repositories": repositories,
             },
         ]
         self.entities = [
-            ("country", self.countries, ["NZL"]),
-            ("institution", self.institutions, ["02n415q13"]),
+            ("country", self.country_index, self.country_data, ["NZL"]),
+            ("institution", self.institution_index, self.institution_data, ["02n415q13"]),
         ]
 
     ####################################
@@ -696,6 +682,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 ti = env.run_task(workflow.download_twitter_cards.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
 
+                # TODO: add new steps
+
                 # Transform data
                 ti = env.run_task(workflow.transform.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
@@ -763,7 +751,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             df = self.save_mock_data(path, self.countries)
 
             # Load csv
-            actual_df = self.workflow.load_data(path)
+            actual_df = load_data(path)
 
             # Compare
             expected_countries = df.to_dict("records")
@@ -773,7 +761,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
     def test_update_df_with_percentages(self):
         keys = [("hello", "n_outputs"), ("world", "n_outputs")]
         df = pd.DataFrame([{"n_hello": 20, "n_world": 50, "n_outputs": 100}])
-        self.workflow.update_df_with_percentages(df, keys)
+        update_df_with_percentages(df, keys)
         expected = {"n_hello": 20, "n_world": 50, "n_outputs": 100, "p_hello": 20, "p_world": 50}
         actual = df.to_dict(orient="records")[0]
         self.assertEqual(expected, actual)
@@ -785,9 +773,11 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
             # Country
             category = "country"
-            df = pd.DataFrame(self.countries)
-            df = self.workflow.preprocess_df(category, df)
-            df_country_index = self.workflow.make_index(category, df)
+            df_index = pd.DataFrame(self.country_index)
+            df_data = pd.DataFrame(self.country_data)
+
+            preprocess_index_df(category, df_index)
+            df_country_index = make_index(category, df_index, df_data)
             expected = [
                 {
                     "alpha2": "NZ",
@@ -838,9 +828,9 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
             # Institution
             category = "institution"
-            df = pd.DataFrame(self.institutions)
-            df = self.workflow.preprocess_df(category, df)
-            df_institution_index = self.workflow.make_index(category, df)
+            df = pd.DataFrame(self.institution_index)
+            df = preprocess_index_df(category, df)
+            df_institution_index = make_index(category, df)
             expected = [
                 {
                     "category": "institution",
@@ -916,9 +906,9 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             # Country table
             category = "country"
             df = pd.DataFrame(self.countries)
-            df = self.workflow.preprocess_df(category, df)
-            df_index_table = self.workflow.make_index(category, df)
-            self.workflow.update_index_with_logos(
+            df = preprocess_df(category, df)
+            df_index_table = make_index(category, df)
+            update_index_with_logos(
                 self.release.build_path, self.release.assets_path, category, df_index_table
             )
             for i, row in df_index_table.iterrows():
@@ -970,11 +960,11 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 },
             ]
             df = pd.DataFrame(institutions)
-            df = self.workflow.preprocess_df(category, df)
-            df_index_table = self.workflow.make_index(category, df)
+            df = preprocess_df(category, df)
+            df_index_table = make_index(category, df)
             sizes = ["l", "s", "xl"]
             with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "test_make_logos.yaml")):
-                self.workflow.update_index_with_logos(
+                update_index_with_logos(
                     self.release.build_path, self.release.assets_path, category, df_index_table
                 )
                 curtin_row = df_index_table.loc["02n415q13"]
@@ -1006,16 +996,16 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
             for category, data, entity_ids in self.entities:
                 df = pd.DataFrame(data)
-                df = self.workflow.preprocess_df(category, df)
-                df_index_table = self.workflow.make_index(category, df)
-                self.workflow.update_index_with_logos(
+                df = preprocess_df(category, df)
+                df_index_table = make_index(category, df)
+                update_index_with_logos(
                     self.release.build_path, self.release.assets_path, category, df_index_table
                 )
-                entities = self.workflow.make_entities(category, df_index_table, df)
+                entities = make_entities(category, df_index_table, df)
                 data_path = os.path.join(self.release.build_path, "data")
                 os.makedirs(data_path, exist_ok=True)
                 file_path = os.path.join(data_path, f"{category}.json")
-                self.workflow.save_index(file_path, entities)
+                save_index(file_path, entities)
                 self.assertTrue(os.path.isfile(file_path))
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
@@ -1026,9 +1016,9 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             # Country
             category = "country"
             df = pd.DataFrame(self.countries)
-            df = self.workflow.preprocess_df(category, df)
-            df_index_table = self.workflow.make_index(category, df)
-            entities = self.workflow.make_entities(category, df_index_table, df)
+            df = preprocess_df(category, df)
+            df_index_table = make_index(category, df)
+            entities = make_entities(category, df_index_table, df)
             repositories = [
                 {"id": "PubMed Central", "total_outputs": 30, "category": "Domain", "home_repo": False},
                 {"id": "Europe PMC", "total_outputs": 24, "category": "Domain", "home_repo": False},
@@ -1172,9 +1162,9 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         # Institution
         category = "institution"
         df = pd.DataFrame(self.institutions)
-        df = self.workflow.preprocess_df(category, df)
-        df_index_table = self.workflow.make_index(category, df)
-        entities = self.workflow.make_entities(category, df_index_table, df)
+        df = preprocess_df(category, df)
+        df_index_table = make_index(category, df)
+        entities = make_entities(category, df_index_table, df)
 
         expected = [
             {
@@ -1329,13 +1319,13 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             for category, data, entity_ids in self.entities:
                 # Read data
                 df = pd.DataFrame(data)
-                df = self.workflow.preprocess_df(category, df)
+                df = preprocess_df(category, df)
 
                 # Save entities
-                df_index_table = self.workflow.make_index(category, df)
-                entities = self.workflow.make_entities(category, df_index_table, df)
+                df_index_table = make_index(category, df)
+                entities = make_entities(category, df_index_table, df)
                 path = os.path.join(self.release.build_path, "data", category)
-                self.workflow.save_entities(path, entities)
+                save_entities(path, entities)
 
                 # Check that entity json files are saved
                 for entity_id in entity_ids:

@@ -109,7 +109,7 @@ ORDER BY name ASC
 
 COUNTRY_INDEX_QUERY = """
 SELECT
-  country.wikipedia_name as id,
+  country.alpha3 as id,
   country.wikipedia_name as name,
   country.wikipedia_url,
   country.subregion as subregion,
@@ -1655,11 +1655,12 @@ def make_institution_df(
     return df
 
 
-def make_index(category: str, df_data: pd.DataFrame):
+def make_index(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame):
     """Make the data for the index tables.
 
     :param category: the category, i.e. country or institution.
-    :param df_data: Pandas dataframe with all data points.
+    :param df_index: index dataframe.
+    :param df_data: data dataframe.
     :return:
     """
 
@@ -1672,7 +1673,7 @@ def make_index(category: str, df_data: pd.DataFrame):
             agg[column] = "first"
 
     # Create aggregate
-    df_index_table = (
+    df_agg = (
         df_data.reset_index()
         .groupby(["id"])
         .agg(
@@ -1682,19 +1683,19 @@ def make_index(category: str, df_data: pd.DataFrame):
     )
 
     # Exclude countries with small samples
-    df_index_table = df_index_table[df_index_table["n_outputs"] >= INCLUSION_THRESHOLD[category]]
+    df_agg = df_agg[df_agg["n_outputs"] >= INCLUSION_THRESHOLD[category]]
 
     # Add percentages to dataframe
-    update_df_with_percentages(df_index_table, PERCENTAGE_FIELD_KEYS)
+    update_df_with_percentages(df_agg, PERCENTAGE_FIELD_KEYS)
 
     # Sort from highest oa percentage to lowest
-    df_index_table.sort_values(by=["n_outputs_open"], ascending=False, inplace=True)
+    df_agg.sort_values(by=["n_outputs_open"], ascending=False, inplace=True)
 
     # Add category
-    df_index_table["category"] = category
+    df_agg["category"] = category
 
     # Remove date, year and repositories
-    df_index_table.drop(columns=["year", "repositories"], inplace=True)
+    df_agg.drop(columns=["year", "repositories"], inplace=True)
 
     return df_index_table
 
