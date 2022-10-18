@@ -14,20 +14,15 @@
 
 # Author: James Diprose, Aniek Roelofs
 
-import io
-import json
 import os
-from typing import List, Dict
+from typing import List
 from unittest import TestCase
-from unittest.mock import patch, ANY, MagicMock
+from unittest.mock import patch
 
-import httpretty
 import jsonlines
-import nltk
 import pandas as pd
 import pendulum
 import vcr
-from airflow.exceptions import AirflowException
 from airflow.models.connection import Connection
 from airflow.models.variable import Variable
 from airflow.utils.state import State
@@ -42,15 +37,8 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     clean_ror_id,
     clean_url,
     get_institution_logo,
-    get_wiki_descriptions,
     make_logo_url,
-    remove_text_between_brackets,
-    shorten_text_full_sentences,
-    trigger_repository_dispatch,
     val_empty,
-    Zenodo,
-    make_draft_version,
-    publish_new_version,
     make_entity_stats,
     Entity,
     PublicationStats,
@@ -73,310 +61,6 @@ from observatory.platform.utils.test_utils import (
 )
 
 academic_observatory_workflows.workflows.oa_web_workflow.INCLUSION_THRESHOLD = {"country": 0, "institution": 0}
-
-
-class MockResponse:
-    def __init__(self):
-        self.data = None
-        self.status_code = None
-
-    def json(self):
-        return self.data
-
-
-class MockZenodo(Zenodo):
-    """Mock Zenodo class for running tests."""
-
-    def get_versions(self, conceptrecid: int, all_versions: int = 0, size: int = 10, sort: str = "mostrecent"):
-        res = MockResponse()
-        res.status_code = 200
-
-        if all_versions == 0:
-            res.data = [
-                {
-                    "conceptrecid": 1044668,
-                    "id": 3,
-                    "state": "unsubmitted",
-                    "created": "2022-04-25T22:16:16.145039+00:00",
-                }
-            ]
-        else:
-            res.data = [
-                {
-                    "conceptrecid": 1044668,
-                    "id": 3,
-                    "state": "unsubmitted",
-                    "created": "2022-04-25T22:16:16.145039+00:00",
-                },
-                {"conceptrecid": 1044668, "id": 2, "state": "done", "created": "2022-03-25T22:16:16.145039+00:00"},
-                {"conceptrecid": 1044668, "id": 1, "state": "done", "created": "2022-02-25T22:16:16.145039+00:00"},
-            ]
-
-        return res
-
-    def create_new_version(self, id: str):
-        res = MockResponse()
-        res.status_code = 201
-        return res
-
-    def get_deposition(self, id: str):
-        res = MockResponse()
-        res.status_code = 200
-        res.data = {
-            "conceptrecid": 1044668,
-            "id": 3,
-            "state": "unsubmitted",
-            "created": "2022-04-25T22:16:16.145039+00:00",
-            "files": [{"id": "596c128f-d240-4008-87b6-cecf143e9d48"}],
-            "metadata": {},
-        }
-        return res
-
-    def delete_file(self, id: str, file_id: str):
-        res = MockResponse()
-        res.status_code = 204
-        return res
-
-    def upload_file(self, id: str, file_path: str):
-        res = MockResponse()
-        res.status_code = 201
-        return res
-
-    def update(self, id: str, data: Dict):
-        res = MockResponse()
-        res.status_code = 200
-        return res
-
-    def publish(self, id: str):
-        res = MockResponse()
-        res.status_code = 202
-        return res
-
-
-class TestZenodo(TestCase):
-    def setUp(self) -> None:
-        self.host = "https://localhost"
-        self.access_token = "abcdef"
-        self.zenodo = Zenodo(host=self.host, access_token=self.access_token)
-
-    def test_make_url(self):
-        host = "https://localhost"
-        zenodo = Zenodo(host=host)
-        url = zenodo.make_url("/api/deposit")
-        self.assertEqual("https://localhost/api/deposit", url)
-
-        host = "https://localhost/"
-        zenodo = Zenodo(host=host)
-        url = zenodo.make_url("api/deposit")
-        self.assertEqual("https://localhost/api/deposit", url)
-
-        host = "https://localhost/"
-        zenodo = Zenodo(host=host)
-        url = zenodo.make_url("/api/deposit")
-        self.assertEqual("https://localhost/api/deposit", url)
-
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.get")
-    def test_get_versions(self, mock_get):
-        conceptrecid = 1
-        all_versions = 0
-        size = 10
-        sort = "mostrecent"
-        self.zenodo.get_versions(conceptrecid, all_versions=all_versions, size=size, sort=sort)
-        mock_get.assert_called_once_with(
-            f"{self.host}/api/deposit/depositions",
-            params={
-                "q": f"conceptrecid:{conceptrecid}",
-                "all_versions": all_versions,
-                "access_token": self.access_token,
-                "sort": sort,
-                "size": size,
-            },
-            timeout=self.zenodo.timeout,
-        )
-
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.post")
-    def test_create_new_version(self, mock_post):
-        id = 1
-        self.zenodo.create_new_version(id)
-        mock_post.assert_called_once_with(
-            f"{self.host}/api/deposit/depositions/{id}/actions/newversion", params={"access_token": self.access_token}
-        )
-
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.get")
-    def test_get_deposition(self, mock_get):
-        id = 1
-        self.zenodo.get_deposition(id)
-        mock_get.assert_called_once_with(
-            f"{self.host}/api/deposit/depositions/{id}", params={"access_token": self.access_token}
-        )
-
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.delete")
-    def test_delete_file(self, mock_delete):
-        id = 1
-        file_id = "596c128f-d240-4008-87b6-cecf143e9d48"
-        self.zenodo.delete_file(id, file_id)
-        mock_delete.assert_called_once_with(
-            f"{self.host}/api/deposit/depositions/{id}/files/{file_id}", params={"access_token": self.access_token}
-        )
-
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.post")
-    def test_upload_file(self, mock_post: MagicMock):
-        with CliRunner().isolated_filesystem() as t:
-            # Make file
-            file_name = "file.txt"
-            file_path = os.path.join(t, file_name)
-            with open(file_path, mode="w") as f:
-                f.write("Hello World")
-
-            id = 1
-            data = {"name": file_name}
-            self.zenodo.upload_file(id, file_path)
-            mock_post.assert_called_once_with(
-                f"{self.host}/api/deposit/depositions/{id}/files",
-                data=data,
-                files=ANY,
-                params={"access_token": self.access_token},
-            )
-
-            # Check that correct file was set to be uploaded
-            actual_buffered_reader = mock_post.call_args.kwargs["files"]["file"]
-            self.assertIsInstance(actual_buffered_reader, io.BufferedReader)
-            self.assertEqual(file_path, actual_buffered_reader.name)
-
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.put")
-    def test_update(self, mock_put: MagicMock):
-        id = 1
-        data = {"title": "hello"}
-        self.zenodo.update(id, data)
-        mock_put.assert_called_once_with(
-            f"{self.host}/api/deposit/depositions/{id}",
-            data=json.dumps(data),
-            headers={"Content-Type": "application/json"},
-            params={"access_token": self.access_token},
-        )
-
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.post")
-    def test_publish(self, mock_post):
-        id = 1
-        self.zenodo.publish(id)
-        mock_post.assert_called_once_with(
-            f"{self.host}/api/deposit/depositions/{id}/actions/publish", params={"access_token": self.access_token}
-        )
-
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.update")
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.get_deposition")
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.get_versions")
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.create_new_version")
-    def test_make_draft_version(self, mock_create_new_version, mock_get_versions, mock_get_deposition, mock_update):
-        # An error
-        res = MockResponse()
-        res.status_code = 500
-        mock_get_versions.return_value = res
-        with self.assertRaises(AirflowException):
-            make_draft_version(self.zenodo, 1)
-
-        # No versions found
-        res = MockResponse()
-        res.data = []
-        res.status_code = 200
-        mock_get_versions.return_value = res
-        with self.assertRaises(AirflowException):
-            make_draft_version(self.zenodo, 1)
-
-        # Could not create a new version
-        res_get_versions = MockResponse()
-        res_get_versions.status_code = 200
-        res_get_versions.data = [{"id": 1, "state": "done"}]
-        mock_get_versions.return_value = res_get_versions
-        res_create_new_version = MockResponse()
-        res_create_new_version.status_code = 500
-        res_create_new_version.data = {"id": 2, "state": "unsubmitted", "links": {"latest_draft": "/2"}}
-        mock_create_new_version.return_value = res_create_new_version
-        with self.assertRaises(AirflowException):
-            make_draft_version(self.zenodo, 1)
-
-        # Could not get deposition
-        res_create_new_version.status_code = 201
-        res_get_deposition = MockResponse()
-        res_get_deposition.status_code = 500
-        res_get_deposition.data = {"id": 2, "state": "done", "metadata": {}}
-        mock_get_deposition.return_value = res_get_deposition
-        with self.assertRaises(AirflowException):
-            make_draft_version(self.zenodo, 2)
-
-        # Could not update
-        res_get_deposition.status_code = 200
-        res_update = MockResponse()
-        res_update.status_code = 500
-        mock_update.return_value = res_update
-        with self.assertRaises(AirflowException):
-            make_draft_version(self.zenodo, 2)
-
-        # Success
-        res_update.status_code = 200
-        make_draft_version(self.zenodo, 1)
-
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.get_deposition")
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.delete_file")
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.upload_file")
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo.publish")
-    def test_publish_new_version(self, mock_publish, mock_upload_file, mock_delete_file, mock_get_deposition):
-        draft_id = 3
-        file_path = "/path/to/file"
-
-        # Error getting deposition
-        res_get_deposition = MockResponse()
-        res_get_deposition.status_code = 500
-        mock_get_deposition.return_value = res_get_deposition
-        with self.assertRaises(AirflowException):
-            publish_new_version(self.zenodo, draft_id, file_path)
-
-        # Error deleting files
-        res_get_deposition = MockResponse()
-        res_get_deposition.status_code = 200
-        res_get_deposition.data = {
-            "conceptrecid": 1044668,
-            "id": draft_id,
-            "state": "unsubmitted",
-            "created": "2022-04-25T22:16:16.145039+00:00",
-            "files": [{"id": "596c128f-d240-4008-87b6-cecf143e9d48"}],
-        }
-        mock_get_deposition.return_value = res_get_deposition
-
-        res_delete_file = MockResponse()
-        res_delete_file.status_code = 500
-        mock_delete_file.return_value = res_delete_file
-        with self.assertRaises(AirflowException):
-            publish_new_version(self.zenodo, draft_id, file_path)
-
-        # Error uploading new file
-        res_delete_file = MockResponse()
-        res_delete_file.status_code = 204
-        mock_delete_file.return_value = res_delete_file
-
-        res_upload_file = MockResponse()
-        res_upload_file.status_code = 500
-        mock_upload_file.return_value = res_upload_file
-        with self.assertRaises(AirflowException):
-            publish_new_version(self.zenodo, draft_id, file_path)
-
-        # Error publish
-        res_upload_file = MockResponse()
-        res_upload_file.status_code = 201
-        mock_upload_file.return_value = res_upload_file
-
-        res_publish = MockResponse()
-        res_publish.status_code = 500
-        mock_publish.return_value = res_publish
-
-        with self.assertRaises(AirflowException):
-            publish_new_version(self.zenodo, draft_id, file_path)
-
-        # Success
-        res_publish = MockResponse()
-        res_publish.status_code = 202
-        mock_publish.return_value = res_publish
-        publish_new_version(self.zenodo, draft_id, file_path)
 
 
 class TestFunctions(TestCase):
@@ -411,11 +95,6 @@ class TestFunctions(TestCase):
         expected = "/logos/country/s/1234.jpg"
         actual = make_logo_url(category="country", entity_id="1234", size="s", fmt="jpg")
         self.assertEqual(expected, actual)
-
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.requests.post")
-    def test_trigger_repository_dispatch(self, mock_requests_post):
-        trigger_repository_dispatch(token="my-token", event_type="my-event-type")
-        mock_requests_post.called_once()
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.make_logo_url")
     def test_get_institution_logo(self, mock_make_url):
@@ -461,86 +140,6 @@ class TestFunctions(TestCase):
                 self.assertEqual("logo_path", actual_logo_path)
                 mock_clearbit_download.assert_not_called()
                 mock_make_url.assert_called_once_with(category="institution", entity_id=ror_id, size=size, fmt=fmt)
-
-    def test_remove_text_between_brackets(self):
-        text_input = (
-            "Sem Gordius (Nobis: Gestarum) at ea debile quantum si dis subordinatas Civiuni Magna. Ut "
-            "oratione ut est enim subsolanea—aut Quasi Nemine (Ac (Hac)-y-Enim) hac dis Facer Eventu (Se Necessaria)—mus quod 400 srripta firmare, annuebat p illum quas te 068,721 verbum displicere (803,200 ea in). Cum Memento si lorem 9,200 dispositae (7,200 ut) eget te Ridiculus magnae leo Arduas Nec sed 4,800 rationibus (900 ut) louor in vel integer te Nec Evidenter, Illa, eum Porro. Sem euismod'a crimen praevenire nec neque diabolum saepe, iniunctum vel Cadentes Modi, quo modo si intendis licuit sem vindices laesionem. Quo Quantum'v hitmari sint id Malrimonii, rem sit odio nascetur iste at Sociosqu."
-        )
-        text_output = remove_text_between_brackets(text_input)
-        text_expected = "Sem Gordius at ea debile quantum si dis subordinatas Civiuni Magna. Ut oratione ut est enim subsolanea—aut Quasi Nemine hac dis Facer Eventu—mus quod 400 srripta firmare, annuebat p illum quas te 068,721 verbum displicere. Cum Memento si lorem 9,200 dispositae eget te Ridiculus magnae leo Arduas Nec sed 4,800 rationibus louor in vel integer te Nec Evidenter, Illa, eum Porro. Sem euismod'a crimen praevenire nec neque diabolum saepe, iniunctum vel Cadentes Modi, quo modo si intendis licuit sem vindices laesionem. Quo Quantum'v hitmari sint id Malrimonii, rem sit odio nascetur iste at Sociosqu."
-        self.assertEqual(text_expected, text_output)
-
-    def test_shorten_text_full_sentences(self):
-        nltk.download("punkt")
-
-        text_input = "Sem Gordius at ea debile quantum si dis subordinatas Civiuni Magna. Ut oratione ut est enim subsolanea—aut Quasi Nemine hac dis Facer Eventu—mus quod 400 srripta firmare, annuebat p illum quas te 068,721 verbum displicere. Cum Memento si lorem 9,200 dispositae eget te Ridiculus magnae leo Arduas Nec sed 4,800 rationibus louor in vel integer te Nec Evidenter, Illa, eum Porro. Sem euismod'a crimen praevenire nec neque diabolum saepe, iniunctum vel Cadentes Modi, quo modo si intendis licuit sem vindices laesionem. Quo Quantum'v hitmari sint id Malrimonii, rem sit odio nascetur iste at Sociosqu."
-        text_output = shorten_text_full_sentences(text_input, char_limit=300)
-        text_expected = "Sem Gordius at ea debile quantum si dis subordinatas Civiuni Magna. Ut oratione ut est enim subsolanea—aut Quasi Nemine hac dis Facer Eventu—mus quod 400 srripta firmare, annuebat p illum quas te 068,721 verbum displicere."
-        self.assertEqual(text_expected, text_output)
-
-        text_input = 'Non Divini te Litigiorum sem Cruciatus Potentiores ut v equestrem mi dui Totius in Modeste futuri hic M.V. Centimanos mi Sensus. Sed Poenam Coepit Leo EA 009–08, Minimum 582, dantis dis leo consultationis si EROS: "Sem Subiungam, hominem est Nobili in Dignitatis non Habitasse Abdicatione, animi fortiaue nisi dui Necessitas privatis scientiam perditionis si vigilantia mus dignissim frefquentia veritatem eius secundam, caesarianis, promotionibus, rem laboriosam ulterioribus alliciebat discursus ex dui Imperiosus."'
-        text_output = shorten_text_full_sentences(text_input, char_limit=300)
-        text_expected = "Non Divini te Litigiorum sem Cruciatus Potentiores ut v equestrem mi dui Totius in Modeste futuri hic M.V. Centimanos mi Sensus."
-        self.assertEqual(text_expected, text_output)
-
-    def test_get_wiki_description(self):
-        country = {
-            "uri": "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&"
-            "titles=Panama%7CZambia%7CMalta%7CMali%7CAzerbaijan%7CSenegal%7CBotswana%7CEl_Salvador%7C"
-            "North_Macedonia%7CGuatemala%7CUzbekistan%7CMontenegro%7CSaint_Kitts_and_Nevis%7CBahrain%7C"
-            "Syria%7CYemen%7CMongolia%7CGrenada%7CAlbania%7CR%C3%A9union&redirects=1&exintro=1&explaintext=1",
-            "response_file_path": test_fixtures_folder("oa_web_workflow", "country_wiki_response.json"),
-            "descriptions_file_path": test_fixtures_folder("oa_web_workflow", "country_wiki_descriptions.json"),
-        }
-        institution = {
-            "uri": "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&"
-            "titles=Pontifical_Catholic_University_of_Peru%7CSt._John%27s_University_%28New_York_City%29%7C"
-            "St_George%27s_Hospital%7CCalifornia_Polytechnic_State_University%7CUniversity_of_Bath%7C"
-            "Indian_Institute_of_Technology_Gandhinagar%7CMichigan_Technological_University%7C"
-            "University_of_Guam%7CUniversity_of_Maragheh%7CUniversity_of_Detroit_Mercy%7C"
-            "Bath_Spa_University%7CCollege_of_Charleston%7CUniversidade_Federal_de_Goi%C3%A1s%7C"
-            "University_of_Almer%C3%ADa%7CNational_University_of_Computer_and_Emerging_Sciences%7C"
-            "Sefako_Makgatho_Health_Sciences_University%7CKuwait_Institute_for_Scientific_Research%7C"
-            "Chinese_Academy_of_Tropical_Agricultural_Sciences%7CUniversidade_Federal_do_Pampa%7C"
-            "Nationwide_Children%27s_Hospital&redirects=1&exintro=1&explaintext=1",
-            "response_file_path": test_fixtures_folder("oa_web_workflow", "institution_wiki_response.json"),
-            "descriptions_file_path": test_fixtures_folder("oa_web_workflow", "institution_wiki_descriptions.json"),
-        }
-
-        for entity in [country, institution]:
-            # Download required nltk resource
-            nltk.download("punkt")
-
-            # Set up titles arg and expected descriptions
-            with open(entity["descriptions_file_path"], "r") as f:
-                descriptions_info = json.load(f)
-            titles = {}
-            descriptions = []
-            for item in descriptions_info:
-                id, title, description = item
-                titles[title] = id
-                descriptions.append((id, description))
-
-            with httpretty.enabled():
-                # Set up mocked successful response
-                with open(entity["response_file_path"], "rb") as f:
-                    body = f.read()
-                httpretty.register_uri(httpretty.GET, entity["uri"], body=body)
-
-                # Get wiki descriptions
-                actual_descriptions = get_wiki_descriptions(titles)
-
-            actual_descriptions.sort(key=lambda x: x[0])
-            self.assertListEqual(descriptions, actual_descriptions)
-
-            with httpretty.enabled():
-                # Set up mocked  failed response
-                httpretty.register_uri(httpretty.GET, entity["uri"], status=400)
-
-                with self.assertRaises(AirflowException):
-                    # Get wiki descriptions
-                    get_wiki_descriptions(titles)
 
     def test_make_entity_stats(self):
         """Test make_entity_stats"""
@@ -953,8 +552,12 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "query": ["download"],
                     "download": ["make_draft_zenodo_version"],
                     "make_draft_zenodo_version": ["download_twitter_cards"],
-                    "download_twitter_cards": ["transform"],
-                    "transform": ["publish_zenodo_version"],
+                    "download_twitter_cards": ["preprocess_data"],
+                    "preprocess_data": ["build_indexes"],
+                    "build_indexes": ["download_logos"],
+                    "download_logos": ["download_wiki_descriptions"],
+                    "download_wiki_descriptions": ["build_datasets"],
+                    "build_datasets": ["publish_zenodo_version"],
                     "publish_zenodo_version": ["upload_dataset"],
                     "upload_dataset": ["repository_dispatch"],
                     "repository_dispatch": ["cleanup"],
