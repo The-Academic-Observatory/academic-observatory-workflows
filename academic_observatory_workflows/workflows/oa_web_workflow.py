@@ -553,7 +553,7 @@ class OaWebWorkflow(Workflow):
         logging.info(f"preprocess_data: country")
 
         # Load and preprocess data
-        data_path = os.path.join(release.intermediate_path, self.COUNTRY_DATA_FILE)
+        data_path = os.path.join(release.download_folder, self.COUNTRY_DATA_FILE)
         df_data = load_data(data_path)
         preprocess_data_df("country", df_data)
 
@@ -717,7 +717,7 @@ class OaWebWorkflow(Workflow):
         all_entities = countries + institutions
 
         # Save all entities as json
-        index_path = os.path.join(build_data_path, f"index.json")
+        index_path = os.path.join(build_data_path, "index.json")
         save_index(index_path, all_entities)
 
         # Save COKI Open Access Dataset
@@ -1532,7 +1532,7 @@ def preprocess_data_df(category: str, df: pd.DataFrame):
 
     # Convert data types
     df["year"] = pd.to_numeric(df["year"])
-    df["date"] = pd.to_datetime(df["year"].apply(lambda year: f"{year}-12-31"))
+    df["date"] = df["year"].apply(lambda year: f"{year}-12-31")
     df.fillna("", inplace=True)
     for column in df.columns:
         if column.startswith("n_"):
@@ -1805,7 +1805,7 @@ def make_entities(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame) 
             rows: List[Dict] = df_group.reset_index().to_dict(key_records)
             for row in rows:
                 year = int(row.get(key_year))
-                date = row.get(key_date)
+                date = pendulum.parse(row.get(key_date))
                 stats = PublicationStats.from_dict(row)
                 years.append(Year(year=year, date=date, stats=stats))
             entity.years = years

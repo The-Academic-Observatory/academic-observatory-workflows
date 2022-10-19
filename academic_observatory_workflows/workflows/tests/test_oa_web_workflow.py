@@ -582,8 +582,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         self, dataset_id_all: str, dataset_id_settings: str, bucket_name: str, release_date: pendulum.DateTime
     ):
         ror = load_jsonl(test_fixtures_folder("doi", "ror.jsonl"))
-        country = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "country.jsonl"))
-        institution = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "institution.jsonl"))
+        country = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "country.jsonl.gz"))
+        institution = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "institution.jsonl.gz"))
         settings_country = load_jsonl(test_fixtures_folder("doi", "country.jsonl"))
 
         analysis_schema_path = schema_folder()
@@ -684,7 +684,13 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 base_folder = os.path.join(
                     t, "data", "telescopes", "download", "oa_web_workflow", "oa_web_workflow_2021_11_13"
                 )
-                expected_file_names = ["country.jsonl", "institution.jsonl"]
+                expected_file_names = [
+                    "ror.jsonl.gz",
+                    "country-index.jsonl.gz",
+                    "institution-index.jsonl.gz",
+                    "country-data.jsonl.gz",
+                    "institution-data.jsonl.gz",
+                ]
                 for file_name in expected_file_names:
                     path = os.path.join(base_folder, file_name)
                     self.assertTrue(os.path.isfile(path))
@@ -697,10 +703,47 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 ti = env.run_task(workflow.download_twitter_cards.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
 
-                # TODO: add new steps
+                # Preprocess data
+                ti = env.run_task(workflow.preprocess_data.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                expected_file_names = [
+                    "country-data.jsonl.gz",
+                    "institution-data.jsonl.gz",
+                ]
+                base_folder = os.path.join(
+                    t,
+                    "data",
+                    "telescopes",
+                    "transform",
+                    "oa_web_workflow",
+                    "oa_web_workflow_2021_11_13",
+                    "intermediate",
+                )
+                for file_name in expected_file_names:
+                    path = os.path.join(base_folder, file_name)
+                    self.assertTrue(os.path.isfile(path))
 
-                # Transform data
-                ti = env.run_task(workflow.transform.__name__)
+                # Build indexes
+                ti = env.run_task(workflow.build_indexes.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                expected_file_names = [
+                    "country-index.jsonl.gz",
+                    "institution-index.jsonl.gz",
+                ]
+                for file_name in expected_file_names:
+                    path = os.path.join(base_folder, file_name)
+                    self.assertTrue(os.path.isfile(path))
+
+                # Download logos
+                ti = env.run_task(workflow.download_logos.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # Download wiki descriptions
+                ti = env.run_task(workflow.download_wiki_descriptions.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # Build datasets
+                ti = env.run_task(workflow.build_datasets.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
                 base_folder = os.path.join(
                     t, "data", "telescopes", "transform", "oa_web_workflow", "oa_web_workflow_2021_11_13"
