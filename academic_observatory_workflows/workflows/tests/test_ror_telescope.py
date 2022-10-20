@@ -31,6 +31,8 @@ from academic_observatory_workflows.workflows.ror_telescope import (
     RorRelease,
     RorTelescope,
     list_ror_records,
+    transform_ror,
+    is_lat_lng_valid,
 )
 from observatory.api.client import ApiClient, Configuration
 from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
@@ -332,6 +334,62 @@ class TestRorTelescope(ObservatoryTestCase):
         continue_dag = telescope.list_releases(execution_date=execution_date, next_execution_date=next_execution_date)
         self.assertFalse(continue_dag)
 
+    def test_transform_ror(self):
+        """Test that ROR transforms, i.e. invalid data is removed"""
+
+        records = [
+            {
+                "id": "a",
+                "addresses": [
+                    {
+                        "lat": 48.854692,
+                        "lng": 2.33781,
+                    }
+                ],
+            },
+            {
+                "id": "b",
+                "addresses": [
+                    {
+                        "lat": 48.854692,
+                        "lng": 233781,
+                    }
+                ],
+            },
+        ]
+        records = transform_ror(records)
+        self.assertEqual(
+            records,
+            [
+                {
+                    "id": "a",
+                    "addresses": [
+                        {
+                            "lat": 48.854692,
+                            "lng": 2.33781,
+                        }
+                    ],
+                },
+                {
+                    "id": "b",
+                    "addresses": [
+                        {
+                            "lat": None,
+                            "lng": None,
+                        }
+                    ],
+                },
+            ],
+        )
+
+    def test_is_lat_lng_valid(self):
+        """Test that lat lng valid"""
+
+        self.assertTrue(is_lat_lng_valid(-90, -180))
+        self.assertTrue(is_lat_lng_valid(90, 180))
+        self.assertFalse(is_lat_lng_valid(90.1, 180.1))
+        self.assertFalse(is_lat_lng_valid(-90.1, -180.1))
+
     @patch("airflow.models.variable.Variable.get")
     def test_release_extract(self, mock_variable_get):
         """Test exceptions are raised for the extract method of the ROR release
@@ -339,6 +397,7 @@ class TestRorTelescope(ObservatoryTestCase):
         :return: None
         """
         mock_variable_get.return_value = "data_path"
+        telescope = RorTelescope()
         with CliRunner().isolated_filesystem():
             # Create file at download path that is not a zip file
             with open(self.release.download_path, "w") as f:
@@ -346,7 +405,7 @@ class TestRorTelescope(ObservatoryTestCase):
 
             # Test that exception is raised
             with self.assertRaises(AirflowException):
-                self.release.extract()
+                telescope.extract([self.release])
 
     @patch("airflow.models.variable.Variable.get")
     def test_release_transform(self, mock_variable_get):
@@ -355,6 +414,7 @@ class TestRorTelescope(ObservatoryTestCase):
         :return: None
         """
         mock_variable_get.return_value = "data_path"
+        telescope = RorTelescope()
         with CliRunner().isolated_filesystem():
             # Test exception is raised when there is more than one file
             file_path1 = os.path.join(self.release.extract_folder, "2020-01-01-ror-data.json")
@@ -363,7 +423,7 @@ class TestRorTelescope(ObservatoryTestCase):
                 with open(file, "w") as f:
                     f.write("test")
             with self.assertRaises(AirflowException):
-                self.release.transform()
+                telescope.transform([self.release])
 
         with CliRunner().isolated_filesystem():
             # Test exception is raised when there is no file (does not match regex pattern)
@@ -371,7 +431,7 @@ class TestRorTelescope(ObservatoryTestCase):
             with open(file_path1, "w") as f:
                 f.write("test")
             with self.assertRaises(AirflowException):
-                self.release.transform()
+                telescope.transform([self.release])
 
     def test_list_ror_records(self):
         """Test the list_ror_records function
