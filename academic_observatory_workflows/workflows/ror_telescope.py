@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import shutil
-from typing import List, Dict
+from typing import List, Dict, Any
 from zipfile import BadZipFile, ZipFile
 
 import pendulum
@@ -30,6 +31,7 @@ from airflow.models.taskinstance import TaskInstance
 from google.cloud.bigquery import SourceFormat
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
+from academic_observatory_workflows.dag_tag import Tag
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.file_utils import list_to_jsonl_gz
 from observatory.platform.utils.url_utils import (
@@ -39,7 +41,6 @@ from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
 )
-from academic_observatory_workflows.dag_tag import Tag
 
 
 class RorRelease(SnapshotRelease):
@@ -72,49 +73,6 @@ class RorRelease(SnapshotRelease):
         :return: the file path.
         """
         return os.path.join(self.transform_folder, f"{self.dag_id}.jsonl.gz")
-
-    def download(self):
-        """Downloads an individual ROR release from Zenodo.
-
-        :return: None.
-        """
-        with requests.get(self.url, stream=True) as r:
-            with open(self.download_path, "wb") as f:
-                shutil.copyfileobj(r.raw, f)
-        logging.info(f"Downloaded file from {self.url} to: {self.download_path}")
-
-    def extract(self):
-        """Extract a single ROR release to a given extraction path.
-
-        :return: None.
-        """
-
-        logging.info(f"Extracting file: {self.download_path}")
-        try:
-            with ZipFile(self.download_path) as zip_file:
-                zip_file.extractall(self.extract_folder)
-        except BadZipFile:
-            raise AirflowException("Not a zip file")
-        logging.info(f"File extracted to: {self.extract_folder}")
-
-    def transform(self):
-        """Transform an extracted ROR release.
-        The .json file is turned into json lines format and gzipped.
-
-        :return: None.
-        """
-        extract_files = self.extract_files
-
-        # Check there is only one JSON file
-        if len(extract_files) == 1:
-            release_json_file = extract_files[0]
-            logging.info(f"Transforming file: {release_json_file}")
-        else:
-            raise AirflowException(f"{len(extract_files)} extracted files found: {extract_files}")
-
-        with open(release_json_file, "r") as f:
-            results = [record for record in json.load(f)]
-        list_to_jsonl_gz(self.transform_path, results)
 
 
 class RorTelescope(SnapshotTelescope):
@@ -251,7 +209,10 @@ class RorTelescope(SnapshotTelescope):
         :return: None.
         """
         for release in releases:
-            release.download()
+            with requests.get(release.url, stream=True) as r:
+                with open(release.download_path, "wb") as f:
+                    shutil.copyfileobj(r.raw, f)
+            logging.info(f"Downloaded file from {release.url} to: {release.download_path}")
 
     def extract(self, releases: List[RorRelease], **kwargs):
         """Task to extract the ROR releases for a given month.
@@ -260,7 +221,13 @@ class RorTelescope(SnapshotTelescope):
         :return: None.
         """
         for release in releases:
-            release.extract()
+            logging.info(f"Extracting file: {release.download_path}")
+            try:
+                with ZipFile(release.download_path) as zip_file:
+                    zip_file.extractall(release.extract_folder)
+            except BadZipFile:
+                raise AirflowException("Not a zip file")
+            logging.info(f"File extracted to: {release.extract_folder}")
 
     def transform(self, releases: List[RorRelease], **kwargs):
         """Task to transform the ROR releases for a given month.
@@ -269,7 +236,19 @@ class RorTelescope(SnapshotTelescope):
         :return: None.
         """
         for release in releases:
-            release.transform()
+            extract_files = release.extract_files
+
+            # Check there is only one JSON file
+            if len(extract_files) == 1:
+                release_json_file = extract_files[0]
+                logging.info(f"Transforming file: {release_json_file}")
+            else:
+                raise AirflowException(f"{len(extract_files)} extracted files found: {extract_files}")
+
+            with open(release_json_file, "r") as f:
+                records = json.load(f)
+                records = transform_ror(records)
+            list_to_jsonl_gz(release.transform_path, records)
 
 
 def list_ror_records(start_date: pendulum.DateTime, end_date: pendulum.DateTime, timeout: float = 30.0) -> List[dict]:
@@ -303,4 +282,37 @@ def list_ror_records(start_date: pendulum.DateTime, end_date: pendulum.DateTime,
         if release_date < start_date:
             break
 
+    return records
+
+
+def is_lat_lng_valid(lat: Any, lng: Any) -> bool:
+    """Validate whether a lat and lng are valid.
+
+    :param lat: the latitude.
+    :param lng: the longitude.
+    :return:
+    """
+
+    return math.fabs(lat) <= 90 and math.fabs(lng) <= 180
+
+
+def transform_ror(ror: List[Dict]) -> List[Dict]:
+    """Transform a ROR release.
+
+    :param ror: the ROR records.
+    :return: the transfromed records.
+    """
+
+    records = []
+    for record in ror:
+        ror_id = record["id"]
+        # Check that address coordinates are correct
+        for address in record["addresses"]:
+            lat = address["lat"]
+            lng = address["lng"]
+            if lat is not None and lng is not None and not is_lat_lng_valid(lat, lng):
+                logging.warning(f"{ror_id} has invalid lat or lng: {lat}, {lng}. Setting both to None.")
+                address["lat"] = None
+                address["lng"] = None
+        records.append(record)
     return records
