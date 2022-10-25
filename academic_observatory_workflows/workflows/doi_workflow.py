@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import copy
 import gzip
 import io
 import logging
@@ -334,6 +335,99 @@ def get_release_date(project_id: str, dataset_id: str, table_id: str, release_da
     return shard_date
 
 
+def traverse_ancestors(index: Dict, child_ids: Set):
+    """Traverse all of the ancestors of a set of child ROR ids.
+
+    :param index: the index.
+    :param child_ids: the child ids.
+    :return: all of the ancestors of all child ids.
+    """
+
+    ancestors = child_ids.copy()
+    for child_id in child_ids:
+        parents = index[child_id]
+
+        if not len(parents):
+            continue
+
+        child_ancestors = traverse_ancestors(index, parents)
+        ancestors = ancestors.union(child_ancestors)
+
+    return ancestors
+
+
+def ror_to_ror_hierarchy_index(ror: List[Dict]) -> Dict:
+    """Make an index of child to ancestor relationships.
+
+    :param ror: the ROR dataset as a list of dicts.
+    :return: the index.
+    """
+
+    index = {}
+    names = {}
+    # Add all items to index
+    for row in ror:
+        ror_id = row["id"]
+        index[ror_id] = set()
+        names[ror_id] = row["name"]
+
+    # Add all child -> parent relationships to index
+    for row in ror:
+        ror_id = row["id"]
+
+        for rel in row["relationships"]:
+            rel_id = rel["id"]
+            rel_type = rel["type"]
+
+            if rel_type == "Parent":
+                index[ror_id].add(rel_id)
+            elif rel_type == "Child":
+                index[rel_id].add(ror_id)
+
+    # Convert parent sets to ancestor sets
+    ancestor_index = copy.deepcopy(index)
+    for ror_id in index.keys():
+        parents = index[ror_id]
+        ancestors = traverse_ancestors(index, parents)
+        ancestor_index[ror_id] = ancestors
+
+    return ancestor_index
+
+
+def bq_load_from_memory(table_id: str, records: List[Dict]) -> bool:
+    """Load data into BigQuery from memory.
+
+    :param table_id: the full table_id, including project id, dataset id and table name.
+    :param records: the records to load.
+    :return: whether the table loaded or not.
+    """
+
+    # Save as JSON Lines in memory
+    with io.BytesIO() as bytes_io:
+        with gzip.GzipFile(fileobj=bytes_io, mode="w") as gzip_file:
+            with jsonlines.Writer(gzip_file) as writer:
+                writer.write_all(records)
+
+        # Load into BigQuery
+        client = bigquery.Client()
+        job_config = LoadJobConfig(
+            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+            autodetect=True,
+        )
+
+        try:
+            load_job: LoadJob = client.load_table_from_file(bytes_io, table_id, job_config=job_config, rewind=True)
+            success = load_job.result().state == "DONE"
+        except BadRequest as e:
+            logging.error(f"Load bigquery table {table_id} failed: {e}.")
+            if load_job:
+                logging.error(f"Errors:\n{load_job.errors}")
+            success = False
+
+    return success
+
+
 class ObservatoryRelease:
     def __init__(
         self,
@@ -442,6 +536,7 @@ class DoiWorkflow(Workflow):
         observatory_dataset_id: str = "observatory",
         elastic_dataset_id: str = "data_export",
         unpaywall_dataset_id: str = "our_research",
+        ror_dataset_id: str = "ror",
         transforms: Tuple = None,
         dag_id: Optional[str] = DAG_ID,
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 8, 30),
@@ -496,6 +591,7 @@ class DoiWorkflow(Workflow):
         self.observatory_dataset_id = observatory_dataset_id
         self.elastic_dataset_id = elastic_dataset_id
         self.unpaywall_dataset_id = unpaywall_dataset_id
+        self.ror_dataset_id = ror_dataset_id
         self.max_fetch_threads = max_fetch_threads
 
         if transforms is None:
@@ -529,6 +625,7 @@ class DoiWorkflow(Workflow):
 
         # Create repository institution to ror table
         self.add_task(self.create_repo_institution_to_ror_table)
+        self.add_task(self.create_ror_hierarchy_table)
 
         # Create tasks for processing intermediate tables
         with self.parallel_tasks():
@@ -647,33 +744,52 @@ class DoiWorkflow(Workflow):
                 results.append(data)
         results.sort(key=lambda r: r[key])
 
-        # Save as JSON Lines in memory
-        with io.BytesIO() as bytes_io:
-            with gzip.GzipFile(fileobj=bytes_io, mode="w") as gzip_file:
-                with jsonlines.Writer(gzip_file) as writer:
-                    writer.write_all(results)
+        # Load the BigQuery table
+        table_id = bigquery_sharded_table_id(
+            f"{self.output_project_id}.{self.intermediate_dataset_id}.repository_institution_to_ror",
+            release.release_date,
+        )
+        success = bq_load_from_memory(table_id, results)
+        set_task_state(success, self.create_repo_institution_to_ror_table.__name__)
 
-            # Load into BigQuery
-            client = bigquery.Client()
-            job_config = LoadJobConfig(
-                source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-                write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-                autodetect=True,
-            )
-            table_id = bigquery_sharded_table_id(
-                f"{self.output_project_id}.{self.intermediate_dataset_id}.repository_institution_to_ror",
-                release.release_date,
-            )
-            try:
-                load_job: LoadJob = client.load_table_from_file(bytes_io, table_id, job_config=job_config, rewind=True)
-                success = load_job.result().state == "DONE"
-            except BadRequest as e:
-                logging.error(f"Load bigquery table {table_id} failed: {e}.")
-                if load_job:
-                    logging.error(f"Errors:\n{load_job.errors}")
-                success = False
+    def create_ror_hierarchy_table(self, release: ObservatoryRelease, **kwargs):
+        """Create the ROR hierarchy table.
 
-            set_task_state(success, self.create_repo_institution_to_ror_table.__name__)
+        :param release: the ObservatoryRelease.
+        :param kwargs: the context passed from the Airflow Operator.
+        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
+        to this argument.
+        :return: None.
+        """
+
+        # Fetch latest ROR table
+        ror_table_id = "ror"
+        ror_release_date = select_table_shard_dates(
+            project_id=self.input_project_id,
+            dataset_id=self.ror_dataset_id,
+            table_id=ror_table_id,
+            end_date=release.release_date,
+        )[0]
+        table_id = bigquery_sharded_table_id(ror_table_id, ror_release_date)
+        ror = run_bigquery_query(
+            f"SELECT * FROM {table_id}"
+        )
+
+        # Create ROR hierarchy table
+        index = ror_to_ror_hierarchy_index(ror)
+
+        # Convert to list of dictionaries
+        records = []
+        for child_id, ancestor_ids in index.items():
+            records.append({"child_id": child_id, "ror_ids": [child_id] + list(ancestor_ids)})
+
+        # Upload to intermediate table
+        table_id = bigquery_sharded_table_id(
+            f"{self.output_project_id}.{self.intermediate_dataset_id}.ror_hierarchy",
+            release.release_date,
+        )
+        success = bq_load_from_memory(table_id, records)
+        set_task_state(success, self.create_ror_hierarchy_table.__name__)
 
     def create_intermediate_table(self, release: ObservatoryRelease, **kwargs):
         """Create an intermediate table.
