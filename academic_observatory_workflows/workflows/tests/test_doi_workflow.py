@@ -42,6 +42,7 @@ from academic_observatory_workflows.workflows.doi_workflow import (
     make_dataset_transforms,
     make_elastic_tables,
     fetch_ror_affiliations,
+    ror_to_ror_hierarchy_index,
 )
 from observatory.api.client import ApiClient, Configuration
 from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
@@ -95,7 +96,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
             subregion="Australia and New Zealand",
             types="Education",
             country="Australia",
-            coordinates="-32.005931, 115.894397",
+            coordinates="-31.95224, 115.8614",
             repository=repo_curtin,
         )
         repo_anu = Repository(
@@ -136,7 +137,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
             subregion="Australia and New Zealand",
             types="Education",
             country="New Zealand",
-            coordinates="-36.852304, 174.767734",
+            coordinates="-36.84853, 174.76349",
             repository=repo_akl,
         )
         self.institutions = [inst_curtin, inst_anu, inst_akl]
@@ -278,7 +279,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "openalex_sensor": ["check_dependencies"],
                 "check_dependencies": ["create_datasets"],
                 "create_datasets": ["create_repo_institution_to_ror_table"],
-                "create_repo_institution_to_ror_table": [
+                "create_repo_institution_to_ror_table": ["create_ror_hierarchy_table"],
+                "create_ror_hierarchy_table": [
                     "create_crossref_events",
                     "create_crossref_fundref",
                     "create_ror",
@@ -354,6 +356,22 @@ class TestDoiWorkflow(ObservatoryTestCase):
             dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "doi_workflow.py")
             self.assert_dag_load("doi", dag_file)
 
+    def test_ror_to_ror_hierarchy_index(self):
+        """Test ror_to_ror_hierarchy_index. Check that correct ancestor relationships created."""
+
+        ror = load_jsonl(test_fixtures_folder(self.doi_fixtures, "ror.jsonl"))
+        index = ror_to_ror_hierarchy_index(ror)
+        self.assertEqual(247, len(index))
+
+        # Auckland
+        self.assertEqual(0, len(index["https://ror.org/03b94tp07"]))
+
+        # Curtin
+        self.assertEqual(0, len(index["https://ror.org/02n415q13"]))
+
+        # International Centre for Radio Astronomy Research
+        self.assertEqual({"https://ror.org/02n415q13", "https://ror.org/047272k79"}, index["https://ror.org/05sd1pp77"])
+
     def test_telescope(self):
         """Test the DOI telescope end to end.
 
@@ -403,9 +421,11 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 observatory_dataset_id=observatory_dataset_id,
                 elastic_dataset_id=elastic_dataset_id,
                 unpaywall_dataset_id=fake_dataset_id,
+                ror_dataset_id=fake_dataset_id,
                 transforms=dataset_transforms,
                 start_date=start_date,
-                workflow_id=1,
+                workflow_id=1,  # Set to 1 during tests so that vcrpy captures them correctly
+                max_fetch_threads=1,
             )
 
             # Disable dag check on dag run sensor
@@ -465,7 +485,12 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 )
 
                 # Create repository institution table
-                ti = env.run_task(workflow.create_repo_institution_to_ror_table.__name__)
+                with vcr.use_cassette(
+                    test_fixtures_folder("doi", "create_repo_institution_to_ror_table.yaml"),
+                    ignore_hosts=["oauth2.googleapis.com", "bigquery.googleapis.com"],
+                    ignore_localhost=True,
+                ):
+                    ti = env.run_task(workflow.create_repo_institution_to_ror_table.__name__)
                 self.assertEqual(expected_state, ti.state)
                 table_id = bigquery_sharded_table_id(
                     f"{self.project_id}.{intermediate_dataset_id}.repository_institution_to_ror", release_date
@@ -474,6 +499,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     {"rors": [], "repository_institution": "Academia.edu"},
                     {"rors": [], "repository_institution": "Australian National University DSpace Repository"},
                     {"rors": [], "repository_institution": "CiteSeer X"},
+                    {"rors": [], "repository_institution": "Europe PMC"},
+                    {"rors": [], "repository_institution": "OSF Preprints - Arabixiv"},
                     {"rors": [], "repository_institution": "PubMed Central"},
                     {"rors": [], "repository_institution": "Repo 3"},
                     {"rors": [], "repository_institution": "SciELO Preprints - SciELO"},
@@ -490,16 +517,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                         "repository_institution": "Curtin University Repository",
                     },
                     {
-                        "rors": [{"name": "Pakistan Muslim Centre", "id": "https://ror.org/02sc13d13"}],
-                        "repository_institution": "Europe PMC",
-                    },
-                    {
                         "rors": [{"name": "University of Auckland", "id": "https://ror.org/03b94tp07"}],
                         "repository_institution": "University of Auckland Repository",
-                    },
-                    {
-                        "rors": [{"name": "Open Society Foundations", "id": "https://ror.org/00qnfvz68"}],
-                        "repository_institution": "OSF Preprints - Arabixiv",
                     },
                     {
                         "rors": [{"name": "Figshare (United Kingdom)", "id": "https://ror.org/041mxqs23"}],
@@ -519,6 +538,10 @@ class TestDoiWorkflow(ObservatoryTestCase):
                         expected.append(ror)
                 self.assert_table_integrity(table_id, expected_rows=len(expected))
                 self.assert_table_content(table_id, expected)
+
+                # Create ROR hierarchy table
+                ti = env.run_task(workflow.create_ror_hierarchy_table.__name__)
+                self.assertEqual(expected_state, ti.state)
 
                 # Test that source dataset transformations run
                 for transform in transforms:

@@ -763,17 +763,17 @@ class DoiWorkflow(Workflow):
         """
 
         # Fetch latest ROR table
-        ror_table_id = "ror"
+        ror_table_name = "ror"
         ror_release_date = select_table_shard_dates(
             project_id=self.input_project_id,
             dataset_id=self.ror_dataset_id,
-            table_id=ror_table_id,
+            table_id=ror_table_name,
             end_date=release.release_date,
         )[0]
-        table_id = bigquery_sharded_table_id(ror_table_id, ror_release_date)
-        ror = run_bigquery_query(
-            f"SELECT * FROM {table_id}"
+        table_id = bigquery_sharded_table_id(
+            f"{self.input_project_id}.{self.ror_dataset_id}.{ror_table_name}", ror_release_date
         )
+        ror = [dict(row) for row in run_bigquery_query(f"SELECT * FROM {table_id}")]
 
         # Create ROR hierarchy table
         index = ror_to_ror_hierarchy_index(ror)
