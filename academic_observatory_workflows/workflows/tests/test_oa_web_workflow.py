@@ -494,7 +494,6 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     t, "data", "telescopes", "download", "oa_web_workflow", "oa_web_workflow_2021_11_13"
                 )
                 expected_file_names = [
-                    "ror.jsonl.gz",
                     "country-index.jsonl.gz",
                     "institution-index.jsonl.gz",
                     "country-data.jsonl.gz",

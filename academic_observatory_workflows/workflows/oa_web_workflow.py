@@ -123,7 +123,7 @@ DATA_QUERY = """
 SELECT
   agg.id,
   agg.time_period as year,
-  agg.citations.mag.total_citations as n_citations,  
+  agg.citations.openalex.total_citations as n_citations,  
   agg.total_outputs as n_outputs,
   
   -- COKI OA Categories
@@ -551,7 +551,7 @@ class OaWebWorkflow(Workflow):
             file_name = f"{category}-data.jsonl.gz"
             data_path = os.path.join(release.download_folder, file_name)
             df_data = load_data(data_path)
-            preprocess_data_df("country", df_data)
+            preprocess_data_df(category, df_data)
 
             # Save to intermediate path
             data_path = os.path.join(release.intermediate_path, file_name)
@@ -1289,10 +1289,6 @@ def preprocess_data_df(category: str, df: pd.DataFrame):
         # Clean RoR ids
         df["id"] = df["id"].apply(lambda i: clean_ror_id(i))
 
-    # Make multi index based on id and year
-    df.set_index(["id", "year"], inplace=True, verify_integrity=True)
-    df.sort_index(inplace=True)
-
 
 def preprocess_index_df(category: str, df: pd.DataFrame):
     """Pre-process the index data frame.
@@ -1369,7 +1365,7 @@ def make_index(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame):
 
     # Create aggregate
     df_agg = (
-        df_data.reset_index()
+        df_data
         .groupby(["id"])
         .agg(
             agg,
@@ -1390,10 +1386,11 @@ def make_index(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame):
     df_agg["category"] = category
 
     # Remove date and repositories
-    df_agg.drop(columns=["date", "repositories"], inplace=True)
+    df_agg.drop(columns=["year", "date", "repositories"], inplace=True)
+    df_agg.reset_index(drop=True, inplace=True)
 
     # Merge
-    df_merged = pd.merge(df_index, df_agg, on="id")
+    df_merged = pd.merge(df_index, df_agg, how="inner", on="id")
 
     return df_merged
 
@@ -1497,7 +1494,7 @@ def make_entities(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame) 
 
             # Make timeseries data
             years = []
-            rows: List[Dict] = df_group.reset_index().to_dict(key_records)
+            rows: List[Dict] = df_group.to_dict(key_records)
             for row in rows:
                 year = int(row.get(key_year))
                 date = pendulum.parse(row.get(key_date))
