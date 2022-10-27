@@ -27,7 +27,7 @@ import shutil
 import statistics
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import field
-from typing import List, Dict, Set
+from typing import List, Dict
 from typing import Optional, Tuple, Union
 from urllib.parse import urlparse
 from zipfile import ZipFile
@@ -38,7 +38,6 @@ import nltk
 import numpy as np
 import pandas as pd
 import pendulum
-import treelib
 from airflow.exceptions import AirflowException
 from airflow.models.variable import Variable
 from airflow.sensors.external_task import ExternalTaskSensor
@@ -226,8 +225,6 @@ class OaWebWorkflow(Workflow):
     ROR_FILE = "ror.jsonl.gz"
     COUNTRY_INDEX_FILE = "country-index.jsonl.gz"
     INSTITUTION_INDEX_FILE = "institution-index.jsonl.gz"
-    COUNTRY_DATA_FILE = "country-data.jsonl.gz"
-    INSTITUTION_DATA_FILE = "institution-data.jsonl.gz"
 
     """The OaWebWorkflow generates data files for the COKI Open Access Dashboard.
 
@@ -440,9 +437,6 @@ class OaWebWorkflow(Workflow):
             end_date=release.release_date,
         )[0]
         ror_sharded_table_id = bigquery_sharded_table_id(ror_table_id, ror_release_date)
-        query = f"SELECT * FROM {self.input_project_id}.{self.ror_dataset_id}.{ror_sharded_table_id}"
-        destination_uri = f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{self.ROR_FILE}"
-        queries.append((query, destination_uri))
 
         # Query institution index table
         destination_uri = (
@@ -550,44 +544,19 @@ class OaWebWorkflow(Workflow):
         # Country
         #################
 
-        logging.info(f"preprocess_data: country")
+        for category in self.table_ids:
+            logging.info(f"preprocess_data: {category}")
 
-        # Load and preprocess data
-        data_path = os.path.join(release.download_folder, self.COUNTRY_DATA_FILE)
-        df_data = load_data(data_path)
-        preprocess_data_df("country", df_data)
+            # Load and preprocess data
+            file_name = f"{category}-data.jsonl.gz"
+            data_path = os.path.join(release.download_folder, file_name)
+            df_data = load_data(data_path)
+            preprocess_data_df("country", df_data)
 
-        # Save to intermediate path
-        data_path = os.path.join(release.intermediate_path, self.COUNTRY_DATA_FILE)
-        records = df_data.to_dict("records")
-        list_to_jsonl_gz(data_path, records)
-
-        #################
-        # Institution
-        #################
-
-        logging.info(f"preprocess_data: institution")
-
-        # Load ROR
-        ror_path = os.path.join(release.download_folder, self.ROR_FILE)
-        ror = load_jsonl(ror_path)
-        tree = ror_to_tree(ror)
-
-        # Load institution data
-        data_path = os.path.join(release.download_folder, self.INSTITUTION_DATA_FILE)
-        df_data = load_data(data_path)
-        preprocess_data_df("institution", df_data)
-
-        df_inst = make_institution_df(ror, start_year=START_YEAR, end_year=END_YEAR)
-        df_inst.update(df_data)
-
-        # Aggregate data
-        aggregate_institutions(tree, df_inst)
-
-        # Save aggregated data
-        data_path = os.path.join(release.intermediate_path, self.INSTITUTION_DATA_FILE)
-        records = df_inst.to_dict("records")
-        list_to_jsonl_gz(data_path, records)
+            # Save to intermediate path
+            data_path = os.path.join(release.intermediate_path, file_name)
+            records = df_data.to_dict("records")
+            list_to_jsonl_gz(data_path, records)
 
     def build_indexes(self, release: OaWebRelease, **kwargs):
         """Build unique country and institution indexes.
@@ -1261,11 +1230,6 @@ def save_as_jsonl(output_path: str, iterable: List[Dict]):
             writer.write_all(iterable)
 
 
-#######################################
-# Institution Hierarchical Aggregation
-#######################################
-
-
 def clean_ror_id(ror_id: str):
     """Remove the https://ror.org/ prefix from a ROR id.
 
@@ -1274,224 +1238,6 @@ def clean_ror_id(ror_id: str):
     """
 
     return ror_id.replace("https://ror.org/", "")
-
-
-def ror_to_tree(ror: List[Dict]) -> treelib.Tree:
-    """Convert the ROR dataset into a treelib Tree.
-
-    :param ror: the ROR dataset as a list of dicts.
-    :return: the ROR dataset as a treelib Tree.
-    """
-
-    tree = treelib.Tree()
-    root_id = "root"
-    tree.create_node(identifier=root_id, tag="Root")
-    for row in ror:
-        # Get node. If it doesn't exist then create it.
-        node_id = clean_ror_id(row["id"])
-        node_label = row["name"]
-        if tree.get_node(node_id) is None:
-            tree.create_node(identifier=node_id, tag=node_label, parent=root_id)
-
-        for rel in row["relationships"]:
-            rel_id = clean_ror_id(rel["id"])
-            rel_type = rel["type"]
-            rel_label = rel["label"]
-
-            if rel_type == "Parent":
-                if not tree.contains(rel_id):
-                    # Create rel parent node if doesn't exist
-                    tree.create_node(identifier=rel_id, tag=rel_label, parent=root_id)
-
-                # If rel node already exists, move node to parent (rel)
-                tree.move_node(node_id, rel_id)
-            elif rel_type == "Child":
-                # Get rel node
-                child = tree.get_node(rel_id)
-                if child is None:
-                    # If rel node doesn't exist then create it, setting parent to row node_id
-                    tree.create_node(identifier=rel_id, tag=rel_label, parent=node_id)
-                else:
-                    # Set parent of child to row node_id
-                    child.set_predecessor(node_id, tree.identifier)
-
-    return tree
-
-
-def aggregate_institutions(tree: treelib.Tree, df: pd.DataFrame) -> None:
-    """Aggregate institutional data in a hierarchical fashion. Data is aggregated in place.
-
-    :param tree: the ROR tree.
-    :param df: the data to aggregate in a Pandas DataFrame.
-    :return: None.
-    """
-
-    seen = set()
-    root_id = "root"
-    leaves = tree.leaves(root_id)
-    n_nodes = len(tree.nodes)
-
-    for leaf in leaves:
-        # If leaf already processed then continue
-        leaf_id = leaf.identifier
-        if leaf_id in seen:
-            continue
-
-        # Mark that leaf has been seen
-        seen.add(leaf_id)
-
-        # If leaf of root, no aggregation needed
-        p = tree.parent(leaf_id)
-        if p.identifier == root_id:
-            continue
-
-        # Get aggregated stats for leaf
-        aggregate_bottom_up(leaf_id, tree, df, seen)
-
-        # Print progress
-        n_processed = len(seen) + 1
-        p_processed = n_processed / n_nodes * 100
-        print(f"Progress \r{n_processed} / {n_nodes}: {p_processed:.2f}%")
-
-
-def aggregate_bottom_up(node_id: str, tree: treelib.Tree, df: pd.DataFrame, seen: Set) -> None:
-    """Aggregate from the leaves to the root of a subtree, starting at the parent of node_id.
-
-    :param node_id: the node to start aggregating from.
-    :param tree: the ROR tree.
-    :param df: the Pandas DataFrame containing the data to aggregate. It is aggregated in place.
-    :param seen: a set of seen nodes.
-    :return: None.
-    """
-
-    # Get parent
-    parent = tree.parent(node_id)
-    if parent.identifier == "root":
-        return
-
-    # For each child of the parent, traverse its children. Except node_id, because it is either a leaf or a parent that
-    # was previously traversed. Add node_id as a child
-    children = [node_id]
-    for child in tree.children(parent.identifier):
-        if node_id == child.identifier:
-            continue
-        traverse_children(child.identifier, tree, df, seen)
-        children.append(child.identifier)
-        seen.add(child.identifier)
-
-    # Aggregate parent and children
-    aggregate_parent_and_children(parent.identifier, children, df)
-
-    # When finished aggregating parent and it's children, keep aggregating up the tree
-    aggregate_bottom_up(parent.identifier, tree, df, seen)
-
-
-def traverse_children(parent_id: str, tree: treelib.Tree, df: pd.DataFrame, seen: Set) -> None:
-    """Recursively traverse the children of parent_id aggregating the parent and child nodes from the bottom of the
-    tree, to the top.
-
-    :param parent_id: the parent node id.
-    :param tree: the ROR tree.
-    :param df: the Pandas Dataframe with the data.
-    :param seen: a list of node ids that have been seen.
-    :return: None.
-    """
-
-    # Get children
-    children = []
-    for child in tree.children(parent_id):
-        traverse_children(child.identifier, tree, df, seen)
-        children.append(child.identifier)
-        seen.add(child.identifier)
-
-    # Aggregate parent and children
-    if len(children):
-        aggregate_parent_and_children(parent_id, children, df)
-
-
-def aggregate_parent_and_children(pid: str, child_ids: List, df: pd.DataFrame) -> None:
-    """Aggregate data for the parent and child nodes. The data in df is updated in place.
-
-    :param pid: the parent node id.
-    :param child_ids: the child node ids.
-    :param df: the Pandas dataframe where the data is stored.
-    :return: None.
-    """
-
-    # Get a group with all records including parent and children
-    group_ids = [pid] + child_ids
-    df_group = df.loc[pd.IndexSlice[group_ids, :], :]
-
-    # Aggregate all fields starting with "n_"
-    agg = {}
-    for column in df_group.columns:
-        if column.startswith("n_"):
-            agg[column] = "sum"
-    df_agg = (
-        df_group.groupby(["year"])
-        .agg(
-            agg,
-            index=False,
-        )
-        .reset_index()
-    )
-
-    # Add id, repositories and make same index structure as df
-    df_agg["id"] = pid
-    df_agg["repositories"] = [[]] * len(df_agg)
-    df_agg.set_index(["id", "year"], inplace=True, verify_integrity=True)
-    df_agg.sort_index(inplace=True)
-
-    # Aggregate repositories
-    df_repos = aggregate_repositories(pid, df_group)
-
-    # Join data and repositories
-    df_agg.update(df_repos)
-
-    # Update df with values from df_agg
-    df.update(df_agg)
-
-
-def aggregate_repositories(ror_id: str, df: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate repositories.
-
-    :return: pandas DataFrame.
-    """
-
-    key_records = "records"
-    rows: List[Dict] = df.reset_index().to_dict(key_records)
-    repos = []
-    for row in rows:
-        for repo in row["repositories"]:
-            repos.append({"year": row["year"], **repo})
-    df_repos = pd.DataFrame(repos, columns=["year", "id", "total_outputs", "category", "home_repo"])
-    df_repos["year"] = pd.to_numeric(df_repos["year"])
-    df_repos["total_outputs"] = pd.to_numeric(df_repos["total_outputs"])
-    df_repos = (
-        df_repos.groupby(["year", "id"], as_index=False)
-        .agg(
-            {
-                "total_outputs": "sum",
-                "category": "first",
-                "home_repo": "any",
-            }
-        )
-        .sort_values(by=["year", "id"], ascending=[False, True], inplace=False, key=repositories_sort_key)
-    )
-
-    data = []
-    for year, group in df_repos.groupby(["year"], as_index=False):
-        repositories: List[Dict] = group.to_dict(key_records)
-        for repo in repositories:
-            del repo["year"]
-
-        data.append({"id": ror_id, "year": year, "repositories": repositories})
-
-    df = pd.DataFrame(data, columns=["id", "year", "repositories"])
-    df.set_index(["id", "year"], inplace=True, verify_integrity=True)
-    df.sort_index(inplace=True)
-
-    return df
 
 
 def repositories_sort_key(col):
@@ -1602,57 +1348,6 @@ def preprocess_index_df(category: str, df: pd.DataFrame):
                     ent_ids.append({"id": id_value, "type": id_type, "url": url})
             identifiers.append(ent_ids)
         df["identifiers"] = identifiers
-
-
-def make_institution_df(
-    ror: List[Dict], start_year: int = 2000, end_year: int = 2021, column_names: List = None
-) -> pd.DataFrame:
-    """Make an empty institution data frame.
-
-    :param ror: the ROR dataset.
-    :param start_year: the start year.
-    :param end_year: the end year.
-    :param column_names: the column names to create with nan values.
-    :return: the dataframe.
-    """
-
-    data = []
-    for r in ror:
-        ror_id = clean_ror_id(r["id"])
-        for year in range(start_year, end_year + 1):
-            data.append([ror_id, year])
-
-    df = pd.DataFrame(data, columns=["id", "year"])
-
-    if column_names is None:
-        column_names = [
-            "n_citations",
-            "n_outputs",
-            "n_outputs_open",
-            "n_outputs_publisher_open",
-            "n_outputs_publisher_open_only",
-            "n_outputs_both",
-            "n_outputs_other_platform_open",
-            "n_outputs_other_platform_open_only",
-            "n_outputs_closed",
-            "n_outputs_oa_journal",
-            "n_outputs_hybrid",
-            "n_outputs_no_guarantees",
-            "n_outputs_preprint",
-            "n_outputs_domain",
-            "n_outputs_institution",
-            "n_outputs_public",
-            "n_outputs_other_internet",
-        ]
-
-    for name in column_names:
-        df[name] = np.nan
-
-    df["repositories"] = [[]] * len(df)
-    df.set_index(["id", "year"], inplace=True, verify_integrity=True)
-    df.sort_index(inplace=True)
-
-    return df
 
 
 def make_index(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame):
