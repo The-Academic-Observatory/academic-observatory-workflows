@@ -28,6 +28,7 @@ from typing import Dict, List, Set, Optional, Tuple
 
 import jsonlines
 import pendulum
+import requests
 from airflow.exceptions import AirflowException
 from google.api_core.exceptions import BadRequest
 from google.cloud import bigquery
@@ -305,19 +306,18 @@ def fetch_ror_affiliations(repository_institution: str, num_retries: int = 3) ->
 
     print(f"fetch_ror_affiliations: {repository_institution}")
     rors = []
-    response = retry_session(num_retries=num_retries).get(
-        "https://api.ror.org/organizations", params={"affiliation": repository_institution}
-    )
-    if response.status_code != 200:
-        raise Exception(
-            f"fetch_ror_affiliations error fetching: {response.url}, {response.status_code}, {response.reason}"
+    try:
+        response = retry_session(num_retries=num_retries).get(
+            "https://api.ror.org/organizations", params={"affiliation": repository_institution}
         )
+        items = response.json()["items"]
+        for item in items:
+            if item["chosen"]:
+                org = item["organization"]
+                rors.append({"id": org["id"], "name": org["name"]})
+    except requests.exceptions.RetryError as e:
+        logging.error(f"requests.exceptions.RetryError fetch_ror_affiliations error fetching: {e}")
 
-    items = response.json()["items"]
-    for item in items:
-        if item["chosen"]:
-            org = item["organization"]
-            rors.append({"id": org["id"], "name": org["name"]})
     return {"repository_institution": repository_institution, "rors": rors}
 
 
