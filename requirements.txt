@@ -8,4 +8,3 @@ boto3>=1.15.0,<2
 pyarrow>=6,<7
 nltk==3.*
 Deprecated>1,<2
-treelib>=1.6.1,<2
