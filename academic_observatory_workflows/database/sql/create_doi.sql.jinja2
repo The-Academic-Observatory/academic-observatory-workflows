@@ -14,12 +14,28 @@
 
 # Author: Richard Hosking, James Diprose #}
 
+-- Create a table of DOI to ROR affiliations, including direct affiliations (author_rors) and indirect affiliations through the ROR parent relationships (hierarchy_rors)
+WITH coki_affiliations_temp as (
+  SELECT
+  coki_affiliations.doi,
+  author_institutions,
+  ARRAY(SELECT DISTINCT * FROM coki_affiliations.genealogical_institutions) as genealogical_institutions
+  FROM
+    (SELECT
+      openalex.doi,
+      ARRAY_AGG(DISTINCT ror_hierarchy.child_id IGNORE NULLS) as author_institutions,
+      ARRAY_CONCAT_AGG(ror_hierarchy.ror_ids) as genealogical_institutions
+    FROM `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.openalex{{ release_date.strftime('%Y%m%d') }}` as openalex, UNNEST(IF(openalex.authorships is not null, openalex.authorships, [])) AS authors, UNNEST(IF(authors.institutions is not null, authors.institutions, [])) as institution
+    LEFT JOIN `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.ror_hierarchy{{ release_date.strftime('%Y%m%d') }}` as ror_hierarchy ON ror_hierarchy.child_id = institution.ror
+    GROUP BY openalex.doi) as coki_affiliations
+),
+
+
 {# This query, using crossref metadata as the reference, links together all the other tables that expose objects with doi as the primairy key #}
-WITH dois_temp_table as (
+dois_temp_table as (
 SELECT
   *,
-  (SELECT ARRAY(SELECT DISTINCT institution.ror FROM UNNEST(IF(openalex.authorships is not null, openalex.authorships, [])) AS authors, UNNEST(IF(authors.institutions is not null, authors.institutions, [])) as institution)) as openalex_rors
-FROM
+ FROM
   (SELECT
     {# This SQL block links unpaywall, mag, open citations and crossref events to the DOI and the metadata found in the crossref metadata dataset #}
     UPPER(TRIM(ref.doi)) as doi,
@@ -34,7 +50,8 @@ FROM
     (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.openalex{{ release_date.strftime('%Y%m%d') }}` as openalex WHERE openalex.doi = UPPER(TRIM(ref.doi))) as openalex,
     (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.mag{{ release_date.strftime('%Y%m%d') }}` as mag WHERE mag.doi = UPPER(TRIM(ref.doi))) as mag,
     (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.open_citations{{ release_date.strftime('%Y%m%d') }}` as oa WHERE oa.doi = UPPER(TRIM(ref.doi))) as open_citations,
-    (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.crossref_events{{ release_date.strftime('%Y%m%d') }}` as events WHERE events.doi = UPPER(TRIM(ref.doi))) as events
+    (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.crossref_events{{ release_date.strftime('%Y%m%d') }}` as events WHERE events.doi = UPPER(TRIM(ref.doi))) as events,
+    (SELECT as STRUCT * from coki_affiliations_temp as coki_affiliations WHERE coki_affiliations.doi = UPPER(TRIM(ref.doi))) as coki_affiliations,
   FROM `{{ crossref_metadata.project_id }}.{{ crossref_metadata.dataset_id }}.crossref_metadata{{ crossref_metadata.release_date.strftime('%Y%m%d') }}` as ref
   WHERE ARRAY_LENGTH(issued.date_parts) > 0)
 ),
@@ -43,7 +60,6 @@ FROM
 affiliations_temp_table as (
 SELECT
   extras.doi as doi,
-
   institutions,
 
   {#
@@ -206,7 +222,7 @@ SELECT
 
    Lastly, Fundref and ORCID are also LEFT JOINed in order to drive the Funder and Author relationships
   #}
-  FROM dois_temp_table as dois, UNNEST(openalex_rors) as ror_id
+  FROM dois_temp_table as dois, UNNEST(coki_affiliations.genealogical_institutions) as ror_id
   LEFT JOIN `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.ror{{ release_date.strftime('%Y%m%d') }}` as institution on ror_id = institution.id
   LEFT JOIN (SELECT ror, ARRAY_AGG(STRUCT(group_id, group_name, country_code)) as groupings FROM `{{ settings.project_id }}.{{ settings.dataset_id }}.groupings` CROSS JOIN UNNEST(rors) as ror GROUP BY ror) as ror_groups on institution.id = ror_groups.ror
   GROUP BY doi) as base on extras.doi = base.doi
@@ -220,7 +236,7 @@ Brings together the two temporary tables above.
 - affiliations is the derived data that neatly organises all the relationships a doi has to authors, their institutions, countries and regions of those institutions, publisher, journal, funders
 #}
 SELECT
-  dois.* EXCEPT (openalex_rors, unpaywall),
+  dois.* EXCEPT (coki_affiliations, unpaywall),
   -- Put the unpaywall struct back how it used to be for backwards compatibility
   (SELECT as STRUCT
     dois.unpaywall.* EXCEPT(repositories, oa_color, oa_license, oa_coki),
@@ -232,7 +248,11 @@ SELECT
     dois.unpaywall.oa_color as oa_color,
     dois.unpaywall.oa_license as oa_license,
     dois.unpaywall.oa_coki as oa_coki,
-    dois.unpaywall.repositories as repositories
+    dois.unpaywall.repositories as repositories,
+    STRUCT(
+       dois.coki_affiliations.author_institutions as author_institutions,
+       dois.coki_affiliations.genealogical_institutions as genealogical_institutions
+    ) as affiliation
   ) as coki,
   affiliations
 FROM dois_temp_table as dois
