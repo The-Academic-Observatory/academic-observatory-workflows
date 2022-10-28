@@ -98,7 +98,6 @@ SELECT
   country.subregion as subregion,
   country.region as region,
   ror.types AS institution_types,
-  ror.external_ids AS identifiers,
   ror.acronyms
 FROM
   `{project_id}.{ror_dataset_id}.{ror_table_id}` as ror
@@ -352,16 +351,16 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.query)
         self.add_task(self.download)
         self.add_task(self.make_draft_zenodo_version)
-        self.add_task(self.download_twitter_cards)
+        # self.add_task(self.download_twitter_cards)
         self.add_task(self.preprocess_data)
         self.add_task(self.build_indexes)
         self.add_task(self.download_logos)
         self.add_task(self.download_wiki_descriptions)
         self.add_task(self.build_datasets)
-        self.add_task(self.publish_zenodo_version)
-        self.add_task(self.upload_dataset)
-        self.add_task(self.repository_dispatch)
-        self.add_task(self.cleanup)
+        # self.add_task(self.publish_zenodo_version)
+        # self.add_task(self.upload_dataset)
+        # self.add_task(self.repository_dispatch)
+        # self.add_task(self.cleanup)
 
     ######################################
     # Airflow tasks
@@ -607,7 +606,7 @@ class OaWebWorkflow(Workflow):
             df_index = load_data(index_path)
 
             # Update logos
-            update_index_with_logos(release.build_path, release.assets_path, category, df_index)
+            df_index = update_index_with_logos(release.build_path, release.assets_path, category, df_index)
 
             # Save updated index
             rows: List[Dict] = df_index.to_dict("records")
@@ -631,7 +630,7 @@ class OaWebWorkflow(Workflow):
             df_index = load_data(index_path)
 
             # Update logos
-            update_index_with_wiki_descriptions(df_index)
+            df_index = update_index_with_wiki_descriptions(df_index)
 
             # Save updated index
             rows: List[Dict] = df_index.to_dict("records")
@@ -1091,7 +1090,6 @@ class Entity:
     end_year: int = None
     institution_types: Optional[str] = field(default_factory=lambda: [])
     stats: PublicationStats = None
-    identifiers: List[Identifier] = field(default_factory=lambda: [])
     years: List[Year] = field(default_factory=lambda: [])
     acronyms: [str] = None
     repositories: List[Repository] = field(default_factory=lambda: [])
@@ -1113,7 +1111,6 @@ class Entity:
         start_year = dict_.get("start_year")
         end_year = dict_.get("end_year")
         institution_types = dict_.get("institution_types", [])
-        identifiers = [Identifier.from_dict(obj) for obj in dict_.get("identifiers", [])]
         acronyms = dict_.get("acronyms", [])
 
         return Entity(
@@ -1132,7 +1129,6 @@ class Entity:
             start_year=start_year,
             end_year=end_year,
             institution_types=institution_types,
-            identifiers=identifiers,
             acronyms=acronyms,
         )
 
@@ -1154,7 +1150,6 @@ class Entity:
             "start_year": self.start_year,
             "end_year": self.end_year,
             "stats": self.stats.to_dict(),
-            "identifiers": [obj.to_dict() for obj in self.identifiers],
             "years": [obj.to_dict() for obj in self.years],
             "acronyms": self.acronyms,
             "repositories": [obj.to_dict() for obj in self.repositories],
@@ -1309,42 +1304,6 @@ def preprocess_index_df(category: str, df: pd.DataFrame):
         # Clean RoR ids
         df["id"] = df["id"].apply(lambda i: clean_ror_id(i))
 
-        # Parse identifiers
-        preferred_key = "preferred"
-        identifiers = []
-        for i, row in df.iterrows():
-            # Parse identifier for each entry
-            ent_ids = []
-            ids_dict = row["identifiers"]
-
-            # Add ROR id
-            ror_id = row["id"]
-            ent_ids.append({"id": ror_id, "type": "ROR", "url": f"https://ror.org/{ror_id}"})
-
-            # Parse other ids
-            for k, v in ids_dict.items():
-                url = None
-                id_type = k
-                if id_type != "OrgRef":
-                    if preferred_key in v:
-                        id_value = v[preferred_key]
-                    else:
-                        id_value = v["all"][0]
-
-                    # Create URLs
-                    if id_type == "ISNI":
-                        url = f"https://isni.org/isni/{id_value}"
-                    elif id_type == "Wikidata":
-                        url = f"https://www.wikidata.org/wiki/{id_value}"
-                    elif id_type == "GRID":
-                        url = f"https://grid.ac/institutes/{id_value}"
-                    elif id_type == "FundRef":
-                        url = f"https://api.crossref.org/funders/{id_value}"
-
-                    ent_ids.append({"id": id_value, "type": id_type, "url": url})
-            identifiers.append(ent_ids)
-        df["identifiers"] = identifiers
-
 
 def make_index(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame):
     """Make the data for the index tables.
@@ -1364,13 +1323,9 @@ def make_index(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame):
             agg[column] = "first"
 
     # Create aggregate
-    df_agg = (
-        df_data
-        .groupby(["id"])
-        .agg(
-            agg,
-            index=False,
-        )
+    df_agg = df_data.groupby(["id"]).agg(
+        agg,
+        index=False,
     )
 
     # Exclude countries with small samples
@@ -1478,7 +1433,11 @@ def make_entities(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame) 
     key_year = "year"
     key_date = "date"
     key_records = "records"
+    total = len(df_index)
+
+    logging.info(f"Making entities: {category}")
     ts_groups = df_data.groupby([key_id])
+
     for entity_id, df_group in ts_groups:
         # Exclude countries and institutions with small num outputs
         total_outputs = df_group["n_outputs"].sum()
@@ -1538,6 +1497,12 @@ def make_entities(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame) 
             entity.end_year = years[-1].year
 
             entities.append(entity)
+
+            # Print progress
+            n_progress = len(entities)
+            p_progress = n_progress / total * 100
+            if n_progress % 100 == 0:
+                logging.info(f"Making entities {n_progress}/{total}: {p_progress:.2f}%")
 
     # Ensure that entities are sorted based on p_outputs_open
     entities = sorted(entities, key=lambda e: e.stats.p_outputs_open, reverse=True)
@@ -1608,7 +1573,7 @@ def make_logo_url(*, category: str, entity_id: str, size: str, fmt: str) -> str:
     return f"/logos/{category}/{size}/{entity_id}.{fmt}"
 
 
-def get_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: str, build_path) -> Tuple[str, str]:
+def fetch_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: str, build_path) -> Tuple[str, str]:
     """Get the path to the logo for an institution.
     If the logo does not exist in the build path yet, download from the Clearbit Logo API tool.
     If the logo does not exist and failed to download, the path will default to "/unknown.svg".
@@ -1643,7 +1608,7 @@ def clean_url(url: str) -> str:
     return f"{p.scheme}://{p.netloc}/"
 
 
-def update_index_with_logos(build_path: str, assets_path: str, category: str, df_index: pd.DataFrame):
+def update_index_with_logos(build_path: str, assets_path: str, category: str, df_index: pd.DataFrame) -> pd.DataFrame:
     """Update the index with logos, downloading logos if they don't exist.
 
     :param build_path: the path to the build folder.
@@ -1660,19 +1625,17 @@ def update_index_with_logos(build_path: str, assets_path: str, category: str, df
 
     # Make logos
     if category == "country":
-        logging.info("Copying local logos")
-        country_sizes = sizes[:2]
-        with ThreadPoolExecutor() as executor:
-            futures = []
-            # Copy and rename logo images from using alpha2 to alpha3 country codes
-            for size in country_sizes:
-                base_path = os.path.join(build_path, "logos", category, size)
-                for alpha3, alpha2 in zip(df_index["id"], df_index["alpha2"]):
-                    src_path = os.path.join(assets_path, "flags", size, f"{alpha2}.svg")
-                    dst_path = os.path.join(base_path, f"{alpha3}.svg")
-                    futures.append(executor.submit(shutil.copy, src_path, dst_path))
-            [f.result() for f in as_completed(futures)]
-        logging.info("Finished copying local logos")
+        logging.info("Copying country logos")
+        country_sizes = sizes[:2]  # Don't need extra large for country logos
+
+        # Copy and rename logo images from using alpha2 to alpha3 country codes
+        for size in country_sizes:
+            for alpha3, alpha2 in zip(df_index["id"], df_index["alpha2"]):
+                src_path = os.path.join(assets_path, "flags", size, f"{alpha2}.svg")
+                dst_path = os.path.join(build_path, "logos", category, size, f"{alpha3}.svg")
+                shutil.copy(src_path, dst_path)
+
+        logging.info("Finished copying country logos")
 
         # Add logo urls to index
         for size in sizes:
@@ -1690,25 +1653,42 @@ def update_index_with_logos(build_path: str, assets_path: str, category: str, df
         # Get the institution logo and the path to the logo image
         logging.info("Downloading logos using Clearbit")
         institution_sizes = [("s", 32, "jpg"), ("l", 128, "jpg"), ("xl", 532, "png")]
+        total = len(df_index)
+
         for size, width, fmt in institution_sizes:
+            logging.info(f"Downloading logos: size={size}, width={width}, fmt={fmt}")
+
             with ThreadPoolExecutor() as executor:
-                futures = []
-                logo_paths = []
+                # Create jobs
+                futures, results = [], []
                 for ror_id, url in zip(df_index["id"], df_index["url"]):
                     if url:
                         url = clean_url(url)
-                        futures.append(executor.submit(get_institution_logo, ror_id, url, size, width, fmt, build_path))
+                        futures.append(
+                            executor.submit(fetch_institution_logo, ror_id, url, size, width, fmt, build_path)
+                        )
                     else:
-                        logo_paths.append((ror_id, "/unknown.svg"))
-                logo_paths += [f.result() for f in as_completed(futures)]
+                        results.append((ror_id, "/unknown.svg"))
+
+                # Wait for results
+                for completed in as_completed(futures):
+                    result = completed.result()
+                    results.append(result)
+
+                    # Print progress
+                    n_progress = len(results)
+                    p_progress = n_progress / total * 100
+                    if n_progress % 100 == 0:
+                        logging.info(f"Downloading logos {n_progress}/{total}: {p_progress:.2f}%")
+
             logging.info("Finished downloading logos")
 
-            # Sort table and results by id
-            df_index.sort_index(inplace=True)
-            logo_paths_sorted = [tup[1] for tup in sorted(logo_paths, key=lambda tup: tup[0])]
+            # Merge results
+            col_name = f"logo_{size}"
+            df_logos = pd.DataFrame(results, columns=["id", col_name])
+            df_index = pd.merge(df_index.drop(columns=[col_name]), df_logos, how="left", on="id")
 
-            # Add logo paths to table
-            df_index[f"logo_{size}"] = logo_paths_sorted
+    return df_index
 
 
 #########################
@@ -1716,52 +1696,57 @@ def update_index_with_logos(build_path: str, assets_path: str, category: str, df
 #########################
 
 
-def update_index_with_wiki_descriptions(df_index_table: pd.DataFrame):
+def update_index_with_wiki_descriptions(df_index: pd.DataFrame) -> pd.DataFrame:
     """Get the wikipedia descriptions for each entity (institution or country) and add them to the index table.
 
-    :param df_index_table: the index table Pandas dataframe.
+    :param df_index: the index table Pandas dataframe.
     :return: None.
     """
-    # Filter to select rows where url is not empty
-    wikipedia_url_filter = df_index_table["wikipedia_url"] != ""
 
-    # The wikipedia 'title' is the last part of the wikipedia url, without segments specified with '#'
-    titles_all = list(
-        zip(
-            df_index_table.loc[wikipedia_url_filter, "wikipedia_url"]
-            .str.split("wikipedia.org/wiki/")
-            .str[-1]
-            .str.split("#")
-            .str[0],
-            df_index_table.loc[wikipedia_url_filter, "id"],
-        )
-    )
-    # Create list with dictionaries of max 20 ids + titles (this is wiki api max)
-    titles_chunks = [dict(titles_all[i : i + WIKI_MAX_TITLES]) for i in range(0, len(titles_all), WIKI_MAX_TITLES)]
-
-    logging.info(
-        f"Downloading wikipedia descriptions for all {len(titles_all)} entities in {len(titles_chunks)} chunks."
-    )
     # Download 'punkt' resource, required when shortening wiki descriptions
     nltk.download("punkt")
 
+    # Get all unique Wikipedia URLs as entities can share Wikipedia URLs
+    wikipedia_url_key = "wikipedia_url"
+    wikipedia_urls = list(set(df_index[wikipedia_url_key]))
+    total = len(wikipedia_urls)
+
+    # Create list with dictionaries of max 20 ids + titles (this is wiki api max)
+    chunks = [wikipedia_urls[i : i + WIKI_MAX_TITLES] for i in range(0, len(wikipedia_urls), WIKI_MAX_TITLES)]
+    logging.info(
+        f"Downloading {total} wikipedia descriptions in {len(chunks)} chunks."
+    )
+
     # Process each dictionary in separate thread to get wiki descriptions
     with ThreadPoolExecutor() as executor:
-        futures = []
-        for titles in titles_chunks:
-            futures.append(executor.submit(fetch_wiki_descriptions, titles))
-        descriptions = []
-        for f in as_completed(futures):
-            descriptions += f.result()
+        # Queue tasks
+        futures, results = [], []
+        for chunk in chunks:
+            futures.append(executor.submit(fetch_wiki_descriptions, chunk))
+
+        # Wait for results
+        for completed in as_completed(futures):
+            results += completed.result()
+
+            # Print progress
+            n_progress = len(results)
+            p_progress = n_progress / total * 100
+            if n_progress % 100 == 0:
+                logging.info(f"Downloading descriptions {n_progress}/{total}: {p_progress:.2f}%")
+
     logging.info(f"Finished downloading wikipedia descriptions")
+    logging.info(f"Expected results: {total}, actual num descriptions returned: {len(wikipedia_urls)}")
+    if total != len(results):
+        raise Exception(f"Number of Wikipedia descriptions returned does not match the number of Wikipedia URLs sent")
 
-    # Sort table and results by id
-    df_index_table.sort_index(inplace=True)
-    descriptions_sorted = [tup[1] for tup in sorted(descriptions, key=lambda tup: tup[0])]
+    # Apply descriptions to index, where Wikipedia URL matches
+    # as Wikipedia URLs can be shared with multiple institutions
+    description_key = "description"
+    df_index[description_key] = ""
+    for wikipedia_url, description in results:
+        df_index.loc[df_index[wikipedia_url_key] == wikipedia_url, description_key] = description
 
-    # Add wiki descriptions to table
-    df_index_table.loc[wikipedia_url_filter, "description"] = descriptions_sorted
-    df_index_table.loc[~wikipedia_url_filter, "description"] = ""
+    return df_index
 
 
 #############

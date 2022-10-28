@@ -31,7 +31,7 @@ class TestClearbitUtils(unittest.TestCase):
         """Test clearbit_download_logo"""
 
         with CliRunner().isolated_filesystem() as t:
-            with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "clearbit_download_logo.yaml")):
+            with vcr.use_cassette(test_fixtures_folder("clearbit", "clearbit_download_logo.yaml")):
                 # Company that exists
                 file_path = os.path.join(t, "blueorigin.jpg")
                 success = clearbit_download_logo(company_url="blueorigin.com", file_path=file_path)

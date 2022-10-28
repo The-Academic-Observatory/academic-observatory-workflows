@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Author: James Diprose
-
+import logging
 import shutil
 
 import requests
@@ -35,4 +35,6 @@ def clearbit_download_logo(*, company_url: str, file_path: str, size: int = 24, 
             shutil.copyfileobj(response.raw, f)
         del response
         return True
+    elif response.status_code != 404:
+        logging.warning(f"{response.url}: status_code={response.status_code}, reason={response.reason}")
     return False

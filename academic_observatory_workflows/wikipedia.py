@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import logging
 import urllib.parse
 from typing import Dict, List, Tuple
 
@@ -24,26 +25,32 @@ import requests
 from airflow.exceptions import AirflowException
 
 
-def fetch_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
-    """Fetch the wikipedia descriptions for the given titles.
+def fetch_wiki_descriptions(wikipedia_urls: List) -> List[Tuple[str, str]]:
+    """Fetch the wikipedia descriptions for a set of Wikipedia URLs
 
-    :param titles: Dict with titles as keys and id's (either ror_id or alpha3 country code) as values
+    :param wikipedia_urls: a list of Wikipedia URLs.
     :return: List with tuples (id, wiki description)
     """
-    titles_arg = []
-    for title, entity_id in titles.items():
+
+    titles = []
+    title_url_index = {}
+    for url in wikipedia_urls:
+        # Extract title from URL
+        title = url.split("wikipedia.org/wiki/")[-1].split("#")[0]
+        title_url_index[urllib.parse.unquote(title)] = url
+
         # URL encode title if it is not encoded yet
         if title == urllib.parse.unquote(title):
-            titles_arg.append(urllib.parse.quote(title))
+            titles.append(urllib.parse.quote(title))
         # Append title directly if it is already encoded and not empty
         else:
-            titles_arg.append(title)
+            titles.append(title)
 
     # Confirm that there is a max of 20 titles, the limit for the wikipedia API
-    assert len(titles_arg) <= 20
+    assert len(titles) <= 20
 
     # Extract descriptions using the Wikipedia API
-    url = f"https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&titles={'%7C'.join(titles_arg)}&redirects=1&exintro=1&explaintext=1"
+    url = f"https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&titles={'%7C'.join(titles)}&redirects=1&exintro=1&explaintext=1"
     response = requests.get(url)
     if response.status_code != 200:
         raise AirflowException(f"Unsuccessful retrieving wikipedia extracts, url: {url}")
@@ -63,9 +70,8 @@ def fetch_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
         if value in redirects:
             redirects[key] = redirects.pop(value)
 
-    # Create mapping between entity_id and decoded page title.
-    decoded_titles = {urllib.parse.unquote(k): v for k, v in titles.items()}
-    descriptions = []
+    # Create mapping between Wikipedia URL and decoded page title.
+    results = []
     for page_id, page in pages.items():
         page_title = page["title"]
 
@@ -73,8 +79,8 @@ def fetch_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
         page_title = redirects.get(page_title, page_title)
         page_title = normalized.get(page_title, page_title)
 
-        # Link original title to description
-        entity_id = decoded_titles[urllib.parse.unquote(page_title)]
+        # Link original url to description
+        wikipedia_url = title_url_index[urllib.parse.unquote(page_title)]
 
         # Get description and clean up
         description = page.get("extract", "")
@@ -82,8 +88,9 @@ def fetch_wiki_descriptions(titles: Dict[str, str]) -> List[Tuple[str, str]]:
             description = remove_text_between_brackets(description)
             description = shorten_text_full_sentences(description)
 
-        descriptions.append((entity_id, description))
-    return descriptions
+        results.append((wikipedia_url, description))
+
+    return results
 
 
 def remove_text_between_brackets(text: str) -> str:
