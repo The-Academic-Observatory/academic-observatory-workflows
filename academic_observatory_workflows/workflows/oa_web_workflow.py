@@ -351,16 +351,16 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.query)
         self.add_task(self.download)
         self.add_task(self.make_draft_zenodo_version)
-        # self.add_task(self.download_twitter_cards)
+        self.add_task(self.download_twitter_cards)  # TODO: make more general, download cache including logos
         self.add_task(self.preprocess_data)
         self.add_task(self.build_indexes)
         self.add_task(self.download_logos)
         self.add_task(self.download_wiki_descriptions)
         self.add_task(self.build_datasets)
-        # self.add_task(self.publish_zenodo_version)
-        # self.add_task(self.upload_dataset)
-        # self.add_task(self.repository_dispatch)
-        # self.add_task(self.cleanup)
+        self.add_task(self.publish_zenodo_version)
+        self.add_task(self.upload_dataset)
+        self.add_task(self.repository_dispatch)
+        self.add_task(self.cleanup)
 
     ######################################
     # Airflow tasks
