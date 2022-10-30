@@ -37,7 +37,7 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     OaWebWorkflow,
     clean_ror_id,
     clean_url,
-    get_institution_logo,
+    fetch_institution_logo,
     make_logo_url,
     val_empty,
     make_entity_stats,
@@ -118,7 +118,7 @@ class TestFunctions(TestCase):
         with CliRunner().isolated_filesystem():
             # Test when logo file does not exist yet and logo download fails
             with patch(mock_clearbit_ref) as mock_clearbit_download:
-                actual_ror_id, actual_logo_path = get_institution_logo(ror_id, url, size, width, fmt, build_path)
+                actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path)
                 self.assertEqual(ror_id, actual_ror_id)
                 self.assertEqual("/unknown.svg", actual_logo_path)
                 mock_clearbit_download.assert_called_once_with(
@@ -130,7 +130,7 @@ class TestFunctions(TestCase):
 
             # Test when logo file does not exist yet and logo is downloaded successfully
             with patch(mock_clearbit_ref, wraps=download_logo) as mock_clearbit_download:
-                actual_ror_id, actual_logo_path = get_institution_logo(ror_id, url, size, width, fmt, build_path)
+                actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path)
                 self.assertEqual(ror_id, actual_ror_id)
                 self.assertEqual("logo_path", actual_logo_path)
                 mock_clearbit_download.assert_called_once_with(
@@ -142,7 +142,7 @@ class TestFunctions(TestCase):
 
             # Test when logo file already exists
             with patch(mock_clearbit_ref, wraps=download_logo) as mock_clearbit_download:
-                actual_ror_id, actual_logo_path = get_institution_logo(ror_id, url, size, width, fmt, build_path)
+                actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path)
                 self.assertEqual(ror_id, actual_ror_id)
                 self.assertEqual("logo_path", actual_logo_path)
                 mock_clearbit_download.assert_not_called()
@@ -281,13 +281,6 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 "subregion": "Australia and New Zealand",
                 "region": "Oceania",
                 "institution_types": ["Education"],
-                "identifiers": {
-                    "ISNI": {"all": ["0000 0004 0375 4078"]},
-                    "OrgRef": {"all": ["370725"]},
-                    "Wikidata": {"all": ["Q1145497"]},
-                    "GRID": {"preferred": "grid.1032.0"},
-                    "FundRef": {"all": ["501100001797"]},
-                },
                 "acronyms": [],
             },
         ]
@@ -735,21 +728,6 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "p_outputs_institution": 0.0,
                     "p_outputs_public": 0.0,
                     "p_outputs_other_internet": 0.0,
-                    "identifiers": [
-                        {"type": "ROR", "id": "02n415q13", "url": "https://ror.org/02n415q13"},
-                        {
-                            "type": "ISNI",
-                            "id": "0000 0004 0375 4078",
-                            "url": "https://isni.org/isni/0000 0004 0375 4078",
-                        },
-                        {"type": "Wikidata", "id": "Q1145497", "url": "https://www.wikidata.org/wiki/Q1145497"},
-                        {"type": "GRID", "id": "grid.1032.0", "url": "https://grid.ac/institutes/grid.1032.0"},
-                        {
-                            "type": "FundRef",
-                            "id": "501100001797",
-                            "url": "https://api.crossref.org/funders/501100001797",
-                        },
-                    ],
                     "acronyms": [],
                 }
             ]
@@ -794,13 +772,6 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "url": None,
                     "wikipedia_url": None,
                     "institution_types": ["Education"],
-                    "identifiers": {
-                        "ISNI": {"all": ["0000 0004 0375 4078"]},
-                        "OrgRef": {"all": ["370725"]},
-                        "Wikidata": {"all": ["Q1145497"]},
-                        "GRID": {"preferred": "grid.1032.0"},
-                        "FundRef": {"all": ["501100001797"]},
-                    },
                 }
             ]
             institution_data = self.institution_data + [
@@ -826,7 +797,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             df_index, _ = load_index_and_data(category, institution_index, institution_data)
             sizes = ["l", "s", "xl"]
             with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "test_make_logos.yaml")):
-                update_index_with_logos(self.release.build_path, self.release.assets_path, category, df_index)
+                df_index = update_index_with_logos(self.release.build_path, self.release.assets_path, category, df_index)
                 curtin_row = df_index[df_index["id"] == "02n415q13"].iloc[0]
                 foo_row = df_index[df_index["id"] == "12345"].iloc[0]
                 for size in sizes:
@@ -1070,13 +1041,6 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 "institution_types": ["Education"],
                 "end_year": 2021,
                 "start_year": 2020,
-                "identifiers": [
-                    {"type": "ROR", "id": "02n415q13", "url": "https://ror.org/02n415q13"},
-                    {"type": "ISNI", "id": "0000 0004 0375 4078", "url": "https://isni.org/isni/0000 0004 0375 4078"},
-                    {"type": "Wikidata", "id": "Q1145497", "url": "https://www.wikidata.org/wiki/Q1145497"},
-                    {"type": "GRID", "id": "grid.1032.0", "url": "https://grid.ac/institutes/grid.1032.0"},
-                    {"type": "FundRef", "id": "501100001797", "url": "https://api.crossref.org/funders/501100001797"},
-                ],
                 "stats": {
                     "n_citations": 354,
                     "n_outputs": 200,

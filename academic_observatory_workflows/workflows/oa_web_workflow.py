@@ -1686,7 +1686,7 @@ def update_index_with_logos(build_path: str, assets_path: str, category: str, df
             # Merge results
             col_name = f"logo_{size}"
             df_logos = pd.DataFrame(results, columns=["id", col_name])
-            df_index = pd.merge(df_index.drop(columns=[col_name]), df_logos, how="left", on="id")
+            df_index = pd.merge(df_index.drop(columns=[col_name], errors="ignore"), df_logos, how="left", on="id")
 
     return df_index
 
