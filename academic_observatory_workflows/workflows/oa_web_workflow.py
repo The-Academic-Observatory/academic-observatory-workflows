@@ -94,7 +94,8 @@ SELECT
   ror.name,
   (SELECT * from ror.links LIMIT 1) AS url,
   ror.wikipedia_url,
-  country.wikipedia_name as country,
+  country.alpha3 as country_code,
+  country.wikipedia_name as country_name,
   country.subregion as subregion,
   country.region as region,
   ror.types AS institution_types,
@@ -112,7 +113,7 @@ SELECT
   country.wikipedia_url,
   country.subregion as subregion,
   country.region as region,
-  country.alpha2 as alpha2, -- used for country flags
+  country.alpha2 as alpha2 -- used for country flags
 FROM
   `{project_id}.{settings_dataset_id}.{country_table_id}` as country
 ORDER BY name ASC
@@ -146,7 +147,7 @@ SELECT
   agg.oa_coki.other_platform_categories.public.total AS n_outputs_public,
   agg.oa_coki.other_platform_categories.aggregator.total + agg.oa_coki.other_platform_categories.other_internet.total + agg.oa_coki.other_platform_categories.unknown.total AS n_outputs_other_internet, 
 
-  agg.repositories,
+  agg.repositories
 FROM
   `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg
 WHERE agg.time_period >= 2000 AND agg.time_period <= {end_year}
@@ -351,7 +352,7 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.query)
         self.add_task(self.download)
         self.add_task(self.make_draft_zenodo_version)
-        self.add_task(self.download_twitter_cards)  # TODO: make more general, download cache including logos
+        self.add_task(self.download_cached_assets)
         self.add_task(self.preprocess_data)
         self.add_task(self.build_indexes)
         self.add_task(self.download_logos)
@@ -509,8 +510,8 @@ class OaWebWorkflow(Workflow):
 
         make_draft_version(release.zenodo, self.conceptrecid)
 
-    def download_twitter_cards(self, release: OaWebRelease, **kwargs):
-        """Download current twitter cards
+    def download_cached_assets(self, release: OaWebRelease, **kwargs):
+        """Download cached assets.
 
         :param release: the release.
         :param kwargs: the context passed from the PythonOperator. See
@@ -519,15 +520,19 @@ class OaWebWorkflow(Workflow):
         :return: None.
         """
 
-        # Download twitter cards
-        blob_name = "twitter.zip"
-        file_path = os.path.join(release.transform_folder, blob_name)
-        download_blob_from_cloud_storage(bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path)
+        # Download cached assets
+        blob_names = ["twitter.zip", "logos.zip"]
+        for blob_name in blob_names:
+            # Download asset zip
+            file_path = os.path.join(release.transform_folder, blob_name)
+            download_blob_from_cloud_storage(
+                bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path
+            )
 
-        # Unzip into build
-        unzip_folder_path = os.path.join(release.build_path)
-        with ZipFile(file_path) as zip_file:
-            zip_file.extractall(unzip_folder_path)
+            # Unzip into build
+            unzip_folder_path = os.path.join(release.build_path)
+            with ZipFile(file_path) as zip_file:
+                zip_file.extractall(unzip_folder_path)
 
     def preprocess_data(self, release: OaWebRelease, **kwargs):
         """Preprocess data.
@@ -672,7 +677,7 @@ class OaWebWorkflow(Workflow):
 
             # Save index
             index_path = os.path.join(build_data_path, f"{category}.json")
-            save_index(index_path, entities)
+            save_index(category, index_path, entities)
 
             # Save entities
             entities_path = os.path.join(build_data_path, category)
@@ -682,11 +687,6 @@ class OaWebWorkflow(Workflow):
         # Unwrap lists
         countries = entity_index["country"]
         institutions = entity_index["institution"]
-        all_entities = countries + institutions
-
-        # Save all entities as json
-        index_path = os.path.join(build_data_path, "index.json")
-        save_index(index_path, all_entities)
 
         # Save COKI Open Access Dataset
         coki_dataset_path = os.path.join(release.transform_folder, "coki-oa-dataset")
@@ -1083,7 +1083,8 @@ class Entity:
     logo_xl: str = None
     url: str = None
     wikipedia_url: str = None
-    country: Optional[str] = None
+    country_code: Optional[str] = None
+    country_name: Optional[str] = None
     subregion: str = None
     region: str = None
     start_year: int = None
@@ -1105,7 +1106,8 @@ class Entity:
         logo_l = dict_.get("logo_l")
         logo_xl = dict_.get("logo_xl")
         url = dict_.get("url")
-        country = dict_.get("country")
+        country_code = dict_.get("country_code")
+        country_name = dict_.get("country_name")
         subregion = dict_.get("subregion")
         region = dict_.get("region")
         start_year = dict_.get("start_year")
@@ -1123,7 +1125,8 @@ class Entity:
             logo_xl=logo_xl,
             url=url,
             wikipedia_url=wikipedia_url,
-            country=country,
+            country_code=country_code,
+            country_name=country_name,
             subregion=subregion,
             region=region,
             start_year=start_year,
@@ -1145,7 +1148,8 @@ class Entity:
             "wikipedia_url": self.wikipedia_url,
             "region": self.region,
             "subregion": self.subregion,
-            "country": self.country,
+            "country_code": self.country_code,
+            "country_name": self.country_name,
             "institution_types": self.institution_types,
             "start_year": self.start_year,
             "end_year": self.end_year,
@@ -1384,9 +1388,10 @@ def select_subset(original: Dict, include_keys: Dict):
     return output
 
 
-def save_index(file_path: str, entities: List[Entity]):
+def save_index(category: str, file_path: str, entities: List[Entity]):
     """Save an index file.
 
+    :param category: the entity category.
     :param file_path: the file path where the index should be saved.
     :param entities: a list of entities.
     :return: None.
@@ -1398,7 +1403,8 @@ def save_index(file_path: str, entities: List[Entity]):
         "name": None,
         "logo_s": None,
         "category": None,
-        "country": None,
+        "country_code": None,
+        "country_name": None,
         "subregion": None,
         "region": None,
         "institution_types": None,
@@ -1413,7 +1419,20 @@ def save_index(file_path: str, entities: List[Entity]):
             "p_outputs_closed": None,
         },
     }
-    data = [select_subset(entity.to_dict(), subset) for entity in entities]
+    data = []
+    for entity in entities:
+        # Select subset
+        item = select_subset(entity.to_dict(), subset)
+
+        # If country delete unused fields
+        if category == "country":
+            for key in ["country_code", "country_name", "institution_types", "acronyms"]:
+                try:
+                    del item[key]
+                except KeyError:
+                    pass
+
+        data.append(item)
 
     # Save as JSON
     save_json(file_path, data)
@@ -1713,9 +1732,7 @@ def update_index_with_wiki_descriptions(df_index: pd.DataFrame) -> pd.DataFrame:
 
     # Create list with dictionaries of max 20 ids + titles (this is wiki api max)
     chunks = [wikipedia_urls[i : i + WIKI_MAX_TITLES] for i in range(0, len(wikipedia_urls), WIKI_MAX_TITLES)]
-    logging.info(
-        f"Downloading {total} wikipedia descriptions in {len(chunks)} chunks."
-    )
+    logging.info(f"Downloading {total} wikipedia descriptions in {len(chunks)} chunks.")
 
     # Process each dictionary in separate thread to get wiki descriptions
     with ThreadPoolExecutor() as executor:

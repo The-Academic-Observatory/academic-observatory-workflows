@@ -277,7 +277,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 "name": "Curtin University",
                 "url": "https://curtin.edu.au/",
                 "wikipedia_url": "https://en.wikipedia.org/wiki/Curtin_University",
-                "country": "Australia",
+                "country_code": "AUS",
+                "country_name": "Australia",
                 "subregion": "Australia and New Zealand",
                 "region": "Oceania",
                 "institution_types": ["Education"],
@@ -354,8 +355,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "check_dependencies": ["query"],
                     "query": ["download"],
                     "download": ["make_draft_zenodo_version"],
-                    "make_draft_zenodo_version": ["download_twitter_cards"],
-                    "download_twitter_cards": ["preprocess_data"],
+                    "make_draft_zenodo_version": ["download_cached_assets"],
+                    "download_cached_assets": ["preprocess_data"],
                     "preprocess_data": ["build_indexes"],
                     "build_indexes": ["download_logos"],
                     "download_logos": ["download_wiki_descriptions"],
@@ -451,11 +452,10 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 release_date=execution_date,
             )
 
-            # Upload fake twitter.zip file to bucket
-            file_path = os.path.join(
-                module_file_path("academic_observatory_workflows.workflows.data.oa_web_workflow"), "twitter.zip"
-            )
-            upload_file_to_cloud_storage(data_bucket, "twitter.zip", file_path)
+            # Upload fake cached zip files file to bucket
+            for file_name in ["twitter.zip", "logos.zip"]:
+                file_path = test_fixtures_folder("oa_web_workflow", file_name)
+                upload_file_to_cloud_storage(data_bucket, file_name, file_path)
 
             # Run workflow
             workflow = OaWebWorkflow(
@@ -500,8 +500,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 ti = env.run_task(workflow.make_draft_zenodo_version.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
 
-                # Download twitter cards
-                ti = env.run_task(workflow.download_twitter_cards.__name__)
+                # Download cached assets
+                ti = env.run_task(workflow.download_cached_assets.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Preprocess data
@@ -692,7 +692,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "name": "Curtin University",
                     "url": "https://curtin.edu.au/",
                     "wikipedia_url": "https://en.wikipedia.org/wiki/Curtin_University",
-                    "country": "Australia",
+                    "country_code": "AUS",
+                    "country_name": "Australia",
                     "subregion": "Australia and New Zealand",
                     "region": "Oceania",
                     "institution_types": ["Education"],
@@ -766,7 +767,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 {
                     "id": "https://ror.org/12345",
                     "name": "Foo University",
-                    "country": "Australia",
+                    "country_name": "Australia",
+                    "country_code": "AUS",
                     "subregion": "Australia and New Zealand",
                     "region": "Oceania",
                     "url": None,
@@ -797,7 +799,9 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             df_index, _ = load_index_and_data(category, institution_index, institution_data)
             sizes = ["l", "s", "xl"]
             with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "test_make_logos.yaml")):
-                df_index = update_index_with_logos(self.release.build_path, self.release.assets_path, category, df_index)
+                df_index = update_index_with_logos(
+                    self.release.build_path, self.release.assets_path, category, df_index
+                )
                 curtin_row = df_index[df_index["id"] == "02n415q13"].iloc[0]
                 foo_row = df_index[df_index["id"] == "12345"].iloc[0]
                 for size in sizes:
@@ -845,7 +849,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 data_path = os.path.join(self.release.build_path, "data")
                 os.makedirs(data_path, exist_ok=True)
                 file_path = os.path.join(data_path, f"{category}.json")
-                save_index(file_path, entities)
+                save_index(category, file_path, entities)
                 self.assertTrue(os.path.isfile(file_path))
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
@@ -1027,7 +1031,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             {
                 "id": "02n415q13",
                 "name": "Curtin University",
-                "country": "Australia",
+                "country_code": "AUS",
+                "country_name": "Australia",
                 "description": {
                     "license": Description.license,
                     "text": None,
@@ -1196,7 +1201,7 @@ def make_expected_build_files(base_path: str) -> List[str]:
 
     # Add base data files
     data_path = os.path.join(base_path, "data")
-    file_names = ["stats.json", "country.json", "institution.json", "index.json"]
+    file_names = ["stats.json", "country.json", "institution.json"]
     for file_name in file_names:
         expected.append(os.path.join(data_path, file_name))
 
@@ -1207,11 +1212,17 @@ def make_expected_build_files(base_path: str) -> List[str]:
 
     # Add logos
     for category, entity_id in zip(categories, entity_ids):
-        file_name = f"{entity_id}.svg"
-        if category == "institution":
-            file_name = f"{entity_id}.jpg"
-        for size in ["l", "s"]:
-            path = os.path.join(base_path, "logos", category, size, file_name)
+        for size in ["l", "s", "xl"]:
+            if category == "country" and size == "xl":
+                continue
+
+            file_type = "svg"
+            if category == "institution":
+                file_type = "jpg"
+                if size == "xl":
+                    file_type = "png"
+
+            path = os.path.join(base_path, "logos", category, size, f"{entity_id}.{file_type}")
             expected.append(path)
 
     return expected
