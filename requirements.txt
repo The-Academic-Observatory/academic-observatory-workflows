@@ -8,3 +8,7 @@ boto3>=1.15.0,<2
 pyarrow>=6,<7
 nltk==3.*
 Deprecated>1,<2
+
+# Verify images
+image==1.5.33
+CairoSVG==2.5.2
