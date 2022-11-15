@@ -384,7 +384,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
             self.setup_api()
 
             telescope = UnpaywallTelescope(airflow_vars=[], workflow_id=1)
-            self.assertEqual(telescope.airflow_vars, ["transform_bucket"])
+            self.assertEqual(set(telescope.airflow_vars), set(["transform_bucket", "project_id", "data_location"]))
 
     @patch("observatory.platform.utils.release_utils.make_observatory_api")
     def test_dag_structure(self, m_makeapi):
