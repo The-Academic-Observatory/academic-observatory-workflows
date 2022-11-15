@@ -48,6 +48,8 @@ from academic_observatory_workflows.clearbit import clearbit_download_logo
 from academic_observatory_workflows.dag_tag import Tag
 from academic_observatory_workflows.github import trigger_repository_dispatch
 from academic_observatory_workflows.wikipedia import fetch_wiki_descriptions
+from academic_observatory_workflows.image import check_image_integrity
+
 from academic_observatory_workflows.zenodo import Zenodo, make_draft_version, publish_new_version
 from observatory.platform.utils.airflow_utils import AirflowVars, get_airflow_connection_password
 from observatory.platform.utils.config_utils import module_file_path
@@ -343,7 +345,8 @@ class OaWebWorkflow(Workflow):
         self.conceptrecid = conceptrecid
         self.zenodo_host = zenodo_host
         if table_ids is None:
-            self.table_ids = ["country", "institution"]
+            #self.table_ids = ["country", "institution"]
+            self.table_ids = ["country"]
 
         self.add_operator(
             ExternalTaskSensor(task_id=f"{ext_dag_id}_sensor", external_dag_id=ext_dag_id, mode="reschedule")
@@ -612,6 +615,9 @@ class OaWebWorkflow(Workflow):
 
             # Update logos
             df_index = update_index_with_logos(release.build_path, release.assets_path, category, df_index)
+
+            # Validate logos - make sure they were downloaded correctly and are not corrupt
+            validate_logos(release.build_path, df_index) 
 
             # Save updated index
             rows: List[Dict] = df_index.to_dict("records")
@@ -1708,6 +1714,25 @@ def update_index_with_logos(build_path: str, assets_path: str, category: str, df
             df_index = pd.merge(df_index.drop(columns=[col_name], errors="ignore"), df_logos, how="left", on="id")
 
     return df_index
+
+def validate_logos( build_path: str, df_index: pd.DataFrame ): 
+
+    """ Validate if logos exist and are valid. """
+
+    sizes = ["s", "l", "xl"]
+    for size in sizes:
+
+        for logo in df_index[f"logo_{size}"]: 
+
+            logo_path = os.join( build_path,  logo[1:] ) 
+            image_fmt = logo_path.split('.')[-1]
+            
+            success = check_image_integrity( logo_path, image_fmt )
+
+            if not success:
+                raise AirflowException(f"Unable the check integrity of {logo_path}")
+    
+    logging.info(f'All {len(df_index)} logos are OK!')
 
 
 #########################
