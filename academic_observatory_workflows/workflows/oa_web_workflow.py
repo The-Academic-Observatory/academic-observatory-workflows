@@ -20,7 +20,6 @@ import dataclasses
 import datetime
 import json
 import logging
-import math
 import os
 import os.path
 import shutil
@@ -34,6 +33,7 @@ from zipfile import ZipFile
 
 import google.cloud.bigquery as bigquery
 import jsonlines
+import math
 import nltk
 import numpy as np
 import pandas as pd
@@ -47,10 +47,10 @@ from pandas.api.types import is_string_dtype
 from academic_observatory_workflows.clearbit import clearbit_download_logo
 from academic_observatory_workflows.dag_tag import Tag
 from academic_observatory_workflows.github import trigger_repository_dispatch
+from academic_observatory_workflows.institutions import INSTITUTION_IDS
 from academic_observatory_workflows.wikipedia import fetch_wiki_descriptions
 from academic_observatory_workflows.zenodo import Zenodo, make_draft_version, publish_new_version
 from observatory.platform.utils.airflow_utils import AirflowVars, get_airflow_connection_password
-from observatory.platform.utils.config_utils import module_file_path
 from observatory.platform.utils.file_utils import load_jsonl, list_to_jsonl_gz
 from observatory.platform.utils.gc_utils import (
     bigquery_sharded_table_id,
@@ -81,7 +81,7 @@ PERCENTAGE_FIELD_KEYS = [
     ("outputs_public", "n_outputs_other_platform_open"),
     ("outputs_other_internet", "n_outputs_other_platform_open"),
 ]
-INCLUSION_THRESHOLD = {"country": 1, "institution": 1}
+INCLUSION_THRESHOLD = {"country": 1, "institution": 700}
 MAX_REPOSITORIES = 200
 START_YEAR = 2000
 END_YEAR = pendulum.now().year - 1
@@ -98,7 +98,7 @@ SELECT
   country.wikipedia_name as country_name,
   country.subregion as subregion,
   country.region as region,
-  ror.types AS institution_types,
+  (SELECT * from ror.types LIMIT 1) AS institution_type,
   ror.acronyms
 FROM
   `{project_id}.{ror_dataset_id}.{ror_table_id}` as ror
@@ -165,7 +165,7 @@ is licenced under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 ## Citing
 If you use the website or website code, please cite it as below:
 
-> James P. Diprose, Richard Hosking, Richard Rigoni, Aniek Roelofs, Kathryn R. Napier, Tuan-Yow Chien, Katie S. Wilson, Lucy Montgomery, & Cameron Neylon. (2022). COKI Open Access Website. Zenodo. https://doi.org/10.5281/zenodo.6374486
+> James P. Diprose, Richard Hosking, Richard Rigoni, Aniek Roelofs, Kathryn R. Napier, Tuan-Yow Chien, Alex Massen-Hane, Katie S. Wilson, Lucy Montgomery, & Cameron Neylon. (2022). COKI Open Access Website. Zenodo. https://doi.org/10.5281/zenodo.6374486
 
 If you use this dataset, please cite it as below:
 
@@ -173,11 +173,13 @@ If you use this dataset, please cite it as below:
 
 ## Attributions
 The COKI Open Access Dataset contains information from:
+* [Open Alex](https://openalex.org/) which is made available under a [CC0 licence](https://creativecommons.org/publicdomain/zero/1.0/).
 * [Microsoft Academic Graph](https://www.microsoft.com/en-us/research/project/microsoft-academic-graph/) which is made available under the [ODC Attribution License](https://opendatacommons.org/licenses/by/1-0/).
 * [Crossref Metadata](https://www.crossref.org/documentation/metadata-plus/) via the Metadata Plus program. Bibliographic metadata is made available without copyright restriction and Crossref generated data with a [CC0 licence](https://creativecommons.org/share-your-work/public-domain/cc0/). See [metadata licence information](https://www.crossref.org/documentation/retrieve-metadata/rest-api/rest-api-metadata-license-information/) for more details.
 * [Unpaywall](https://unpaywall.org/). The [Unpaywall Data Feed](https://unpaywall.org/products/data-feed) is used under license. Data is freely available from Unpaywall via the API, data dumps and as a data feed.
 * [Research Organization Registry](https://ror.org/) which is made available under a [CC0 licence](https://creativecommons.org/share-your-work/public-domain/cc0/).
 """
+
 
 ###################
 # Airflow Workflow
@@ -203,7 +205,6 @@ class OaWebRelease(SnapshotRelease):
         super().__init__(dag_id=dag_id, release_date=release_date)
         self.zenodo = zenodo
         self.data_bucket_name = data_bucket_name
-        self.assets_path = module_file_path("academic_observatory_workflows.workflows.data.oa_web_workflow")
 
     @property
     def build_path(self):
@@ -214,6 +215,12 @@ class OaWebRelease(SnapshotRelease):
     @property
     def intermediate_path(self):
         path = os.path.join(self.transform_folder, "intermediate")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    @property
+    def out_path(self):
+        path = os.path.join(self.transform_folder, "out")
         os.makedirs(path, exist_ok=True)
         return path
 
@@ -232,7 +239,6 @@ class OaWebWorkflow(Workflow):
     .
     ├── data: data
     │   ├── index.json: used by the Cloudflare Worker search and filtering API.
-    │   ├── autocomplete.json: used for the website search functionality. Copied into public/data folder.
     │   ├── country: individual entity statistics files for countries. Used to build each country page.
     │   │   ├── ALB.json
     │   │   ├── ARE.json
@@ -248,25 +254,30 @@ class OaWebWorkflow(Workflow):
     │   │                     and then this file is included in the public folder and downloaded by the client to enable the
     │   │                     other pages of the table to be displayed. Copied into public/data folder.
     │   └── stats.json: global statistics, e.g. the minimum and maximum date for the dataset, when it was last updated etc.
-    └── logos: country and institution logos. Copied into public/logos folder.
-        ├── country
-        │   ├── l: large logos displayed on country pages.
-        │   │   ├── ALB.svg
-        │   │   ├── ARE.svg
-        │   │   └── ARG.svg
-        │   └── s: small logos displayed in country table.
-        │       ├── ALB.svg
-        │       ├── ARE.svg
-        │       └── ARG.svg
-        └── institution
-            ├── l: large logos displayed on institution pages.
-            │   ├── 05ykr0121.jpg
-            │   ├── 05ym42410.jpg
-            │   └── 05ynxx418.jpg
-            └── s: small logos displayed in institution table.
-                ├── 05ykr0121.jpg
-                ├── 05ym42410.jpg
-                └── 05ynxx418.jpg
+    └── images:
+        └── logos: country and institution logos.
+            ├── country
+            │   ├── md: medium logos displayed on country pages.
+            │   │   ├── ALB.svg
+            │   │   ├── ARE.svg
+            │   │   └── ARG.svg
+            │   └── sm: small logos displayed in country table.
+            │       ├── ALB.svg
+            │       ├── ARE.svg
+            │       └── ARG.svg
+            └── institution
+                ├── lg: large logos used for social media cards.
+                │   ├── 05ykr0121.png
+                │   ├── 05ym42410.png
+                │   └── 05ynxx418.png
+                ├── md: medium logos displayed on institution pages.
+                │   ├── 05ykr0121.jpg
+                │   ├── 05ym42410.jpg
+                │   └── 05ynxx418.jpg
+                └── sm: small logos displayed in institution table.
+                    ├── 05ykr0121.jpg
+                    ├── 05ym42410.jpg
+                    └── 05ynxx418.jpg
     """
 
     def __init__(
@@ -285,7 +296,7 @@ class OaWebWorkflow(Workflow):
         agg_dataset_id: str = "observatory",
         ror_dataset_id: str = "ror",
         settings_dataset_id: str = "settings",
-        version: str = "v6",
+        version: str = "v9",
         conceptrecid: int = 6399462,
         zenodo_host: str = "https://zenodo.org",
     ):
@@ -352,7 +363,7 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.query)
         self.add_task(self.download)
         self.add_task(self.make_draft_zenodo_version)
-        self.add_task(self.download_cached_assets)
+        self.add_task(self.download_assets)
         self.add_task(self.preprocess_data)
         self.add_task(self.build_indexes)
         self.add_task(self.download_logos)
@@ -510,8 +521,8 @@ class OaWebWorkflow(Workflow):
 
         make_draft_version(release.zenodo, self.conceptrecid)
 
-    def download_cached_assets(self, release: OaWebRelease, **kwargs):
-        """Download cached assets.
+    def download_assets(self, release: OaWebRelease, **kwargs):
+        """Download assets.
 
         :param release: the release.
         :param kwargs: the context passed from the PythonOperator. See
@@ -520,19 +531,20 @@ class OaWebWorkflow(Workflow):
         :return: None.
         """
 
-        # Download cached assets
-        blob_names = ["twitter.zip", "logos.zip"]
+        # Download assets
+        # They are unzipped in this particular order so that images-base overwrites any files in images
+        blob_names = ["images.zip", "images-base.zip"]
         for blob_name in blob_names:
             # Download asset zip
-            file_path = os.path.join(release.transform_folder, blob_name)
+            file_path = os.path.join(release.download_folder, blob_name)
             download_blob_from_cloud_storage(
                 bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path
             )
 
             # Unzip into build
-            unzip_folder_path = os.path.join(release.build_path)
+            unzip_folder_path = os.path.join(release.build_path, "images")
             with ZipFile(file_path) as zip_file:
-                zip_file.extractall(unzip_folder_path)
+                zip_file.extractall(unzip_folder_path)  # Overwrites by default
 
     def preprocess_data(self, release: OaWebRelease, **kwargs):
         """Preprocess data.
@@ -586,7 +598,7 @@ class OaWebWorkflow(Workflow):
             df_data = load_data(data_path)
 
             # Aggregate data file
-            df_index = make_index(category, df_index, df_data)
+            df_index = make_index_df(category, df_index, df_data)
 
             # Save index to intermediate
             index_path = os.path.join(release.intermediate_path, index_name)
@@ -611,7 +623,7 @@ class OaWebWorkflow(Workflow):
             df_index = load_data(index_path)
 
             # Update logos
-            df_index = update_index_with_logos(release.build_path, release.assets_path, category, df_index)
+            df_index = update_index_with_logos(release.build_path, category, df_index)
 
             # Save updated index
             rows: List[Dict] = df_index.to_dict("records")
@@ -677,7 +689,8 @@ class OaWebWorkflow(Workflow):
 
             # Save index
             index_path = os.path.join(build_data_path, f"{category}.json")
-            save_index(category, index_path, entities)
+            data = make_index(category, entities)
+            save_json(index_path, data)
 
             # Save entities
             entities_path = os.path.join(build_data_path, category)
@@ -688,9 +701,15 @@ class OaWebWorkflow(Workflow):
         countries = entity_index["country"]
         institutions = entity_index["institution"]
 
+        # Save full index
+        index_path = os.path.join(build_data_path, f"index.json")
+        data = make_index("country", countries) + make_index("institution", institutions)
+        save_json(index_path, data)
+
         # Save COKI Open Access Dataset
         coki_dataset_path = os.path.join(release.transform_folder, "coki-oa-dataset")
         save_coki_oa_dataset(coki_dataset_path, countries, institutions)
+        shutil.make_archive(os.path.join(release.out_path, "coki-oa-dataset"), "zip", coki_dataset_path)
 
         # Make stats
         zenodo_versions = [
@@ -708,10 +727,12 @@ class OaWebWorkflow(Workflow):
         save_stats(stats_path, stats)
         logging.info(f"Saved stats data")
 
-        # Zip data
-        dst = os.path.join(release.transform_folder, "latest")
-        shutil.copytree(release.build_path, dst)
-        shutil.make_archive(dst, "zip", dst)
+        # Zip data and images
+        folders = ["data", "images"]
+        for folder_name in folders:
+            shutil.make_archive(
+                os.path.join(release.out_path, folder_name), "zip", os.path.join(release.build_path, folder_name)
+            )
 
     def publish_zenodo_version(self, release: OaWebRelease, **kwargs):
         """Publish the new Zenodo version of the dataset.
@@ -732,7 +753,7 @@ class OaWebWorkflow(Workflow):
         if draft["state"] != "unsubmitted":
             raise AirflowException(f"Latest version is not a draft: {draft_id}")
 
-        file_path = os.path.join(release.transform_folder, "coki-oa-dataset.zip")
+        file_path = os.path.join(release.out_path, "coki-oa-dataset.zip")
         publish_new_version(release.zenodo, draft_id, file_path)
 
     def upload_dataset(self, release: OaWebRelease, **kwargs):
@@ -747,11 +768,12 @@ class OaWebWorkflow(Workflow):
 
         # upload_file_to_cloud_storage should always rewrite a new version of latest.zip if it exists
         # object versioning on the bucket will keep the previous versions
-        blob_name = f"{self.version}/latest.zip"
-        file_path = os.path.join(release.transform_folder, "latest.zip")
-        upload_file_to_cloud_storage(
-            bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path, check_blob_hash=False
-        )
+        for file_name in ["data.zip", "images.zip"]:
+            blob_name = f"{self.version}/{file_name}"
+            file_path = os.path.join(release.out_path, file_name)
+            upload_file_to_cloud_storage(
+                bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path, check_blob_hash=False
+            )
 
     def repository_dispatch(self, release: OaWebRelease, **kwargs):
         """Trigger a Github repository_dispatch to trigger new website builds.
@@ -1077,10 +1099,10 @@ class Entity:
     id: str
     name: str
     description: Description
-    category: str = None
-    logo_s: str = None
-    logo_l: str = None
-    logo_xl: str = None
+    entity_type: str = None
+    logo_sm: str = None
+    logo_md: str = None
+    logo_lg: str = None
     url: str = None
     wikipedia_url: str = None
     country_code: Optional[str] = None
@@ -1089,7 +1111,7 @@ class Entity:
     region: str = None
     start_year: int = None
     end_year: int = None
-    institution_types: Optional[str] = field(default_factory=lambda: [])
+    institution_type: str = None
     stats: PublicationStats = None
     years: List[Year] = field(default_factory=lambda: [])
     acronyms: [str] = None
@@ -1101,10 +1123,10 @@ class Entity:
         name = dict_.get("name")
         wikipedia_url = dict_.get("wikipedia_url")
         description = Description.from_dict(dict_)
-        category = dict_.get("category")
-        logo_s = dict_.get("logo_s")
-        logo_l = dict_.get("logo_l")
-        logo_xl = dict_.get("logo_xl")
+        entity_type = dict_.get("entity_type")
+        logo_sm = dict_.get("logo_sm")
+        logo_md = dict_.get("logo_md")
+        logo_lg = dict_.get("logo_lg")
         url = dict_.get("url")
         country_code = dict_.get("country_code")
         country_name = dict_.get("country_name")
@@ -1112,17 +1134,17 @@ class Entity:
         region = dict_.get("region")
         start_year = dict_.get("start_year")
         end_year = dict_.get("end_year")
-        institution_types = dict_.get("institution_types", [])
+        institution_type = dict_.get("institution_type")
         acronyms = dict_.get("acronyms", [])
 
         return Entity(
             id,
             name,
             description=description,
-            category=category,
-            logo_s=logo_s,
-            logo_l=logo_l,
-            logo_xl=logo_xl,
+            entity_type=entity_type,
+            logo_sm=logo_sm,
+            logo_md=logo_md,
+            logo_lg=logo_lg,
             url=url,
             wikipedia_url=wikipedia_url,
             country_code=country_code,
@@ -1131,7 +1153,7 @@ class Entity:
             region=region,
             start_year=start_year,
             end_year=end_year,
-            institution_types=institution_types,
+            institution_type=institution_type,
             acronyms=acronyms,
         )
 
@@ -1140,17 +1162,17 @@ class Entity:
             "id": self.id,
             "name": self.name,
             "description": self.description.to_dict(),
-            "category": self.category,
-            "logo_s": self.logo_s,
-            "logo_l": self.logo_l,
-            "logo_xl": self.logo_xl,
+            "entity_type": self.entity_type,
+            "logo_sm": self.logo_sm,
+            "logo_md": self.logo_md,
+            "logo_lg": self.logo_lg,
             "url": self.url,
             "wikipedia_url": self.wikipedia_url,
             "region": self.region,
             "subregion": self.subregion,
             "country_code": self.country_code,
             "country_name": self.country_name,
-            "institution_types": self.institution_types,
+            "institution_type": self.institution_type,
             "start_year": self.start_year,
             "end_year": self.end_year,
             "stats": self.stats.to_dict(),
@@ -1267,10 +1289,10 @@ def load_data(file_path: str) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 
-def preprocess_data_df(category: str, df: pd.DataFrame):
+def preprocess_data_df(entity_type: str, df: pd.DataFrame):
     """Pre-process the data frame.
 
-    :param category: the category.
+    :param entity_type: the entity_type.
     :param df: the dataframe.
     :return: the Pandas Dataframe.
     """
@@ -1283,16 +1305,16 @@ def preprocess_data_df(category: str, df: pd.DataFrame):
         if column.startswith("n_"):
             df[column] = pd.to_numeric(df[column])
 
-    # Category specific processing
-    if category == "institution":
+    # entity_type specific processing
+    if entity_type == "institution":
         # Clean RoR ids
         df["id"] = df["id"].apply(lambda i: clean_ror_id(i))
 
 
-def preprocess_index_df(category: str, df: pd.DataFrame):
+def preprocess_index_df(entity_type: str, df: pd.DataFrame):
     """Pre-process the index data frame.
 
-    :param category: the category.
+    :param entity_type: the entity_type.
     :param df: the dataframe.
     :return: the Pandas Dataframe.
     """
@@ -1301,7 +1323,7 @@ def preprocess_index_df(category: str, df: pd.DataFrame):
     df.fillna("", inplace=True)
 
     # Clean RoR ids
-    if category == "institution":
+    if entity_type == "institution":
         # Remove columns not used for institutions
         df.drop(columns=["alpha2"], inplace=True, errors="ignore")
 
@@ -1309,10 +1331,10 @@ def preprocess_index_df(category: str, df: pd.DataFrame):
         df["id"] = df["id"].apply(lambda i: clean_ror_id(i))
 
 
-def make_index(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame):
+def make_index_df(entity_type: str, df_index: pd.DataFrame, df_data: pd.DataFrame):
     """Make the data for the index tables.
 
-    :param category: the category, i.e. country or institution.
+    :param entity_type: the entity_type, i.e. country or institution.
     :param df_index: index dataframe.
     :param df_data: data dataframe.
     :return:
@@ -1332,8 +1354,9 @@ def make_index(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame):
         index=False,
     )
 
-    # Exclude countries with small samples
-    df_agg = df_agg[df_agg["n_outputs"] >= INCLUSION_THRESHOLD[category]]
+    # Include entities that meet a criteria
+    mask = df_agg.apply(lambda row: include_entity(entity_type, row["n_outputs"], row["id"]), axis=1)
+    df_agg = df_agg[mask]
 
     # Add percentages to dataframe
     update_df_with_percentages(df_agg, PERCENTAGE_FIELD_KEYS)
@@ -1341,8 +1364,8 @@ def make_index(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame):
     # Sort from highest oa percentage to lowest
     df_agg.sort_values(by=["n_outputs_open"], ascending=False, inplace=True)
 
-    # Add category
-    df_agg["category"] = category
+    # Add entity_type
+    df_agg["entity_type"] = entity_type
 
     # Remove date and repositories
     df_agg.drop(columns=["year", "date", "repositories"], inplace=True)
@@ -1388,11 +1411,10 @@ def select_subset(original: Dict, include_keys: Dict):
     return output
 
 
-def save_index(category: str, file_path: str, entities: List[Entity]):
-    """Save an index file.
+def make_index(entity_type: str, entities: List[Entity]):
+    """Make an index file.
 
-    :param category: the entity category.
-    :param file_path: the file path where the index should be saved.
+    :param entity_type: the entity entity_type.
     :param entities: a list of entities.
     :return: None.
     """
@@ -1401,13 +1423,13 @@ def save_index(category: str, file_path: str, entities: List[Entity]):
     subset = {
         "id": None,
         "name": None,
-        "logo_s": None,
-        "category": None,
+        "logo_sm": None,
+        "entity_type": None,
         "country_code": None,
         "country_name": None,
         "subregion": None,
         "region": None,
-        "institution_types": None,
+        "institution_type": None,
         "acronyms": None,
         "stats": {
             "n_outputs": None,
@@ -1425,8 +1447,8 @@ def save_index(category: str, file_path: str, entities: List[Entity]):
         item = select_subset(entity.to_dict(), subset)
 
         # If country delete unused fields
-        if category == "country":
-            for key in ["country_code", "country_name", "institution_types", "acronyms"]:
+        if entity_type == "country":
+            for key in ["country_code", "country_name", "institution_type", "acronyms"]:
                 try:
                     del item[key]
                 except KeyError:
@@ -1434,14 +1456,29 @@ def save_index(category: str, file_path: str, entities: List[Entity]):
 
         data.append(item)
 
-    # Save as JSON
-    save_json(file_path, data)
+    return data
 
 
-def make_entities(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame) -> List[Entity]:
+def include_entity(entity_type: str, n_outputs: int, entity_id: str = None) -> bool:
+    """Whether to include an entity or not
+
+    :param entity_type: the entity type.
+    :param n_outputs: the total number of outputs for the entity.
+    :param entity_id: the entity id, which is used for including institutions.
+    :return:
+    """
+
+    if entity_type == "country":
+        return n_outputs >= INCLUSION_THRESHOLD[entity_type]
+    elif entity_type == "institution":
+        return entity_id in INSTITUTION_IDS or n_outputs >= INCLUSION_THRESHOLD[entity_type]
+    return False
+
+
+def make_entities(entity_type: str, df_index: pd.DataFrame, df_data: pd.DataFrame) -> List[Entity]:
     """Make entities.
 
-    :param category: the entity category.
+    :param entity_type: the entity entity_type.
     :param df_index: the index dataframe.
     :param df_data: the data dataframe.
     :return: the Entity objects.
@@ -1454,13 +1491,13 @@ def make_entities(category: str, df_index: pd.DataFrame, df_data: pd.DataFrame) 
     key_records = "records"
     total = len(df_index)
 
-    logging.info(f"Making entities: {category}")
+    logging.info(f"Making entities: {entity_type}")
     ts_groups = df_data.groupby([key_id])
 
     for entity_id, df_group in ts_groups:
         # Exclude countries and institutions with small num outputs
         total_outputs = df_group["n_outputs"].sum()
-        if total_outputs >= INCLUSION_THRESHOLD[category]:
+        if include_entity(entity_type, total_outputs, entity_id):
             update_df_with_percentages(df_group, PERCENTAGE_FIELD_KEYS)
             df_group = df_group.sort_values(by=[key_year])
             df_group = df_group.loc[:, ~df_group.columns.str.contains("^Unnamed")]
@@ -1579,23 +1616,23 @@ def make_entity_stats(entities: List[Entity]) -> EntityStats:
 #################
 
 
-def make_logo_url(*, category: str, entity_id: str, size: str, fmt: str) -> str:
+def make_logo_url(*, entity_type: str, entity_id: str, size: str, fmt: str) -> str:
     """Make a logo url.
 
-    :param category: the entity category: country or institution.
+    :param entity_type: the entity entity_type: country or institution.
     :param entity_id: the entity id.
     :param size: the size of the logo: s or l.
     :param fmt: the format of the logo.
     :return: the logo url.
     """
 
-    return f"/logos/{category}/{size}/{entity_id}.{fmt}"
+    return f"logos/{entity_type}/{size}/{entity_id}.{fmt}"
 
 
-def fetch_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: str, build_path) -> Tuple[str, str]:
+def fetch_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: str, build_path: str) -> Tuple[str, str]:
     """Get the path to the logo for an institution.
     If the logo does not exist in the build path yet, download from the Clearbit Logo API tool.
-    If the logo does not exist and failed to download, the path will default to "/unknown.svg".
+    If the logo does not exist and failed to download, the path will default to "unknown.svg".
 
     :param ror_id: the institution's ROR id
     :param url: the URL of the company domain + suffix e.g. spotify.com
@@ -1605,13 +1642,14 @@ def fetch_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: st
     :param build_path: the build path for files of this workflow
     :return: The ROR id and relative path (from build path) to the logo
     """
-    logo_path = f"/unknown.svg"
-
-    file_path = os.path.join(build_path, "logos", "institution", size, f"{ror_id}.{fmt}")
+    logo_path = "unknown.svg"
+    size_folder = os.path.join(build_path, "images", "logos", "institution", size)
+    os.makedirs(size_folder, exist_ok=True)
+    file_path = os.path.join(size_folder, f"{ror_id}.{fmt}")
     if not os.path.isfile(file_path):
         clearbit_download_logo(company_url=url, file_path=file_path, size=width, fmt=fmt)
     if os.path.isfile(file_path):
-        logo_path = make_logo_url(category="institution", entity_id=ror_id, size=size, fmt=fmt)
+        logo_path = make_logo_url(entity_type="institution", entity_id=ror_id, size=size, fmt=fmt)
 
     return ror_id, logo_path
 
@@ -1627,51 +1665,36 @@ def clean_url(url: str) -> str:
     return f"{p.scheme}://{p.netloc}/"
 
 
-def update_index_with_logos(build_path: str, assets_path: str, category: str, df_index: pd.DataFrame) -> pd.DataFrame:
+def update_index_with_logos(build_path: str, entity_type: str, df_index: pd.DataFrame) -> pd.DataFrame:
     """Update the index with logos, downloading logos if they don't exist.
 
     :param build_path: the path to the build folder.
-    :param assets_path: the path to oa-web-workflow assets folder which contains country flags.
-    :param category: the category, i.e. country or institution.
+    :param entity_type: the entity_type, i.e. country or institution.
     :param df_index: the index table Pandas dataframe.
     :return: None.
     """
 
-    sizes = ["s", "l", "xl"]
-    for size in sizes:
-        base_path = os.path.join(build_path, "logos", category, size)
-        os.makedirs(base_path, exist_ok=True)
-
     # Make logos
-    if category == "country":
-        logging.info("Copying country logos")
-        country_sizes = sizes[:2]  # Don't need extra large for country logos
-
-        # Copy and rename logo images from using alpha2 to alpha3 country codes
-        for size in country_sizes:
-            for alpha3, alpha2 in zip(df_index["id"], df_index["alpha2"]):
-                src_path = os.path.join(assets_path, "flags", size, f"{alpha2}.svg")
-                dst_path = os.path.join(build_path, "logos", category, size, f"{alpha3}.svg")
-                shutil.copy(src_path, dst_path)
-
-        logging.info("Finished copying country logos")
+    sizes = ["sm", "md", "lg"]
+    if entity_type == "country":
+        logging.info("Adding country logos to index")
 
         # Add logo urls to index
         for size in sizes:
-            # For xl size point to l svg
+            # For lg size point to md svg
             make_logo_url_size = size
-            if size == "xl":
-                make_logo_url_size = "l"
+            if size == "lg":
+                make_logo_url_size = "md"
             df_index[f"logo_{size}"] = df_index["id"].apply(
                 lambda country_code: make_logo_url(
-                    category=category, entity_id=country_code, size=make_logo_url_size, fmt="svg"
+                    entity_type=entity_type, entity_id=country_code, size=make_logo_url_size, fmt="svg"
                 )
             )
 
-    elif category == "institution":
+    elif entity_type == "institution":
         # Get the institution logo and the path to the logo image
         logging.info("Downloading logos using Clearbit")
-        institution_sizes = [("s", 32, "jpg"), ("l", 128, "jpg"), ("xl", 532, "png")]
+        institution_sizes = [("sm", 32, "jpg"), ("md", 128, "jpg"), ("lg", 532, "png")]
         total = len(df_index)
 
         for size, width, fmt in institution_sizes:
@@ -1687,7 +1710,7 @@ def update_index_with_logos(build_path: str, assets_path: str, category: str, df
                             executor.submit(fetch_institution_logo, ror_id, url, size, width, fmt, build_path)
                         )
                     else:
-                        results.append((ror_id, "/unknown.svg"))
+                        results.append((ror_id, "unknown.svg"))
 
                 # Wait for results
                 for completed in as_completed(futures):
@@ -1830,7 +1853,7 @@ def save_coki_oa_dataset(path: str, countries: List[Entity], institutions: List[
         "country": None,
         "subregion": None,
         "region": None,
-        "institution_types": None,
+        "institution_type": None,
         "start_year": None,
         "end_year": None,
         "stats": None,
@@ -1853,6 +1876,3 @@ def save_coki_oa_dataset(path: str, countries: List[Entity], institutions: List[
     rendered = template.render(year=pendulum.now().year, n_countries=len(countries), n_institutions=len(institutions))
     with open(file_path, mode="w") as f:
         f.write(rendered)
-
-    # Zip
-    shutil.make_archive(path, "zip", path)

@@ -49,16 +49,17 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     load_data,
     preprocess_index_df,
     preprocess_data_df,
-    make_index,
+    make_index_df,
     make_entities,
     save_entities,
     update_index_with_logos,
     update_df_with_percentages,
-    save_index,
+    make_index,
+    save_json,
 )
+from observatory.platform.utils.config_utils import find_schema
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import upload_file_to_cloud_storage
-from observatory.platform.utils.config_utils import find_schema
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
@@ -100,8 +101,8 @@ class TestFunctions(TestCase):
         self.assertEqual(expected, actual)
 
     def test_make_logo_url(self):
-        expected = "/logos/country/s/1234.jpg"
-        actual = make_logo_url(category="country", entity_id="1234", size="s", fmt="jpg")
+        expected = "logos/country/s/1234.jpg"
+        actual = make_logo_url(entity_type="country", entity_id="1234", size="s", fmt="jpg")
         self.assertEqual(expected, actual)
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.make_logo_url")
@@ -121,9 +122,12 @@ class TestFunctions(TestCase):
             with patch(mock_clearbit_ref) as mock_clearbit_download:
                 actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path)
                 self.assertEqual(ror_id, actual_ror_id)
-                self.assertEqual("/unknown.svg", actual_logo_path)
+                self.assertEqual("unknown.svg", actual_logo_path)
                 mock_clearbit_download.assert_called_once_with(
-                    company_url=url, file_path="build_path/logos/institution/size/ror_id.fmt", size=width, fmt=fmt
+                    company_url=url,
+                    file_path="build_path/images/logos/institution/size/ror_id.fmt",
+                    size=width,
+                    fmt=fmt,
                 )
                 mock_make_url.assert_not_called()
 
@@ -135,9 +139,12 @@ class TestFunctions(TestCase):
                 self.assertEqual(ror_id, actual_ror_id)
                 self.assertEqual("logo_path", actual_logo_path)
                 mock_clearbit_download.assert_called_once_with(
-                    company_url=url, file_path="build_path/logos/institution/size/ror_id.fmt", size=width, fmt=fmt
+                    company_url=url,
+                    file_path="build_path/images/logos/institution/size/ror_id.fmt",
+                    size=width,
+                    fmt=fmt,
                 )
-                mock_make_url.assert_called_once_with(category="institution", entity_id=ror_id, size=size, fmt=fmt)
+                mock_make_url.assert_called_once_with(entity_type="institution", entity_id=ror_id, size=size, fmt=fmt)
 
             mock_make_url.reset_mock()
 
@@ -147,7 +154,7 @@ class TestFunctions(TestCase):
                 self.assertEqual(ror_id, actual_ror_id)
                 self.assertEqual("logo_path", actual_logo_path)
                 mock_clearbit_download.assert_not_called()
-                mock_make_url.assert_called_once_with(category="institution", entity_id=ror_id, size=size, fmt=fmt)
+                mock_make_url.assert_called_once_with(entity_type="institution", entity_id=ror_id, size=size, fmt=fmt)
 
     def test_make_entity_stats(self):
         """Test make_entity_stats"""
@@ -182,14 +189,14 @@ class TestFunctions(TestCase):
         self.assertEqual(expected_stats, stats)
 
 
-def load_index_and_data(category: str, index: List[Dict], data: List[Dict]):
+def load_index_and_data(entity_type: str, index: List[Dict], data: List[Dict]):
     df_index = pd.DataFrame(index)
-    preprocess_index_df(category, df_index)
+    preprocess_index_df(entity_type, df_index)
 
     df_data = pd.DataFrame(data)
-    preprocess_data_df(category, df_data)
+    preprocess_data_df(entity_type, df_data)
 
-    df_index = make_index(category, df_index, df_data)
+    df_index = make_index_df(entity_type, df_index, df_data)
 
     return df_index, df_data
 
@@ -282,7 +289,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 "country_name": "Australia",
                 "subregion": "Australia and New Zealand",
                 "region": "Oceania",
-                "institution_types": ["Education"],
+                "institution_type": "Education",
                 "acronyms": [],
             },
         ]
@@ -356,8 +363,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "check_dependencies": ["query"],
                     "query": ["download"],
                     "download": ["make_draft_zenodo_version"],
-                    "make_draft_zenodo_version": ["download_cached_assets"],
-                    "download_cached_assets": ["preprocess_data"],
+                    "make_draft_zenodo_version": ["download_assets"],
+                    "download_assets": ["preprocess_data"],
                     "preprocess_data": ["build_indexes"],
                     "build_indexes": ["download_logos"],
                     "download_logos": ["download_wiki_descriptions"],
@@ -471,7 +478,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             )
 
             # Upload fake cached zip files file to bucket
-            for file_name in ["twitter.zip", "logos.zip"]:
+            for file_name in ["images-base.zip", "images.zip"]:
                 file_path = test_fixtures_folder("oa_web_workflow", file_name)
                 upload_file_to_cloud_storage(data_bucket, file_name, file_path)
 
@@ -519,8 +526,15 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Download cached assets
-                ti = env.run_task(workflow.download_cached_assets.__name__)
+                ti = env.run_task(workflow.download_assets.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
+                expected_file_names = [
+                    "images.zip",
+                    "images-base.zip",
+                ]
+                for file_name in expected_file_names:
+                    path = os.path.join(base_folder, file_name)
+                    self.assertTrue(os.path.isfile(path))
 
                 # Preprocess data
                 ti = env.run_task(workflow.preprocess_data.__name__)
@@ -529,7 +543,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "country-data.jsonl.gz",
                     "institution-data.jsonl.gz",
                 ]
-                base_folder = os.path.join(
+                intermediate_folder = os.path.join(
                     t,
                     "data",
                     "telescopes",
@@ -539,7 +553,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "intermediate",
                 )
                 for file_name in expected_file_names:
-                    path = os.path.join(base_folder, file_name)
+                    path = os.path.join(intermediate_folder, file_name)
                     self.assertTrue(os.path.isfile(path))
 
                 # Build indexes
@@ -550,7 +564,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "institution-index.jsonl.gz",
                 ]
                 for file_name in expected_file_names:
-                    path = os.path.join(base_folder, file_name)
+                    path = os.path.join(intermediate_folder, file_name)
                     self.assertTrue(os.path.isfile(path))
 
                 # Download logos
@@ -575,9 +589,9 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     self.assertTrue(os.path.isfile(file))
 
                 # Check that full dataset zip file exists
-                archives = ["latest.zip", "coki-oa-dataset.zip"]
+                archives = ["data.zip", "images.zip", "coki-oa-dataset.zip"]
                 for file_name in archives:
-                    latest_file = os.path.join(base_folder, file_name)
+                    latest_file = os.path.join(base_folder, "out", file_name)
                     print(f"\t{latest_file}")
                     self.assertTrue(os.path.isfile(latest_file))
 
@@ -588,7 +602,9 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 # Upload data to bucket
                 ti = env.run_task(workflow.upload_dataset.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
-                blob_name = f"{workflow.version}/latest.zip"
+                blob_name = f"{workflow.version}/data.zip"
+                self.assert_blob_exists(data_bucket, blob_name)
+                blob_name = f"{workflow.version}/images.zip"
                 self.assert_blob_exists(data_bucket, blob_name)
 
                 # Trigger repository dispatch
@@ -619,12 +635,12 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
     def test_load_data(self, mock_var_get):
-        category = "country"
+        entity_type = "country"
         with CliRunner().isolated_filesystem() as t:
             mock_var_get.return_value = t
 
             # Save CSV
-            path = os.path.join(self.release.download_folder, f"{category}-index.jsonl")
+            path = os.path.join(self.release.download_folder, f"{entity_type}-index.jsonl")
             df = self.save_mock_data(path, self.country_index)
 
             # Load csv
@@ -644,18 +660,18 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         self.assertEqual(expected, actual)
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_make_index(self, mock_var_get):
+    def test_make_index_df(self, mock_var_get):
         with CliRunner().isolated_filesystem() as t:
             mock_var_get.return_value = t
 
             # Country
-            category = "country"
-            df_index, df_data = load_index_and_data(category, self.country_index, self.country_data)
+            entity_type = "country"
+            df_index, df_data = load_index_and_data(entity_type, self.country_index, self.country_data)
 
             expected = [
                 {
                     "alpha2": "NZ",
-                    "category": "country",
+                    "entity_type": "country",
                     "id": "NZL",
                     "name": "New Zealand",
                     "wikipedia_url": "https://en.wikipedia.org/wiki/New_Zealand",
@@ -701,11 +717,11 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 self.assertDictEqual(e, a)
 
             # Institution
-            category = "institution"
-            df_index, df_data = load_index_and_data(category, self.institution_index, self.institution_data)
+            entity_type = "institution"
+            df_index, df_data = load_index_and_data(entity_type, self.institution_index, self.institution_data)
             expected = [
                 {
-                    "category": "institution",
+                    "entity_type": "institution",
                     "id": "02n415q13",
                     "name": "Curtin University",
                     "url": "https://curtin.edu.au/",
@@ -714,7 +730,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "country_name": "Australia",
                     "subregion": "Australia and New Zealand",
                     "region": "Oceania",
-                    "institution_types": ["Education"],
+                    "institution_type": "Education",
                     "n_citations": 354,
                     "n_outputs": 200,
                     "n_outputs_open": 93,
@@ -760,12 +776,12 @@ class TestOaWebWorkflow(ObservatoryTestCase):
     def test_update_index_with_logos(self, mock_var_get):
         with CliRunner().isolated_filesystem() as t:
             mock_var_get.return_value = t
-            sizes = ["l", "s"]
+            sizes = ["sm", "md", "lg"]
 
             # Country table
-            category = "country"
-            df_index, _ = load_index_and_data(category, self.country_index, self.country_data)
-            update_index_with_logos(self.release.build_path, self.release.assets_path, category, df_index)
+            entity_type = "country"
+            df_index, _ = load_index_and_data(entity_type, self.country_index, self.country_data)
+            update_index_with_logos(self.release.build_path, entity_type, df_index)
 
             for i, row in df_index.iterrows():
                 for size in sizes:
@@ -773,14 +789,18 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     key = f"logo_{size}"
                     self.assertTrue(key in row)
 
+                    # Redirect to md size
+                    if size == "lg":
+                        size = "md"
+
                     # Check that correct logo path exists
                     item_id = row["id"]
-                    expected_path = f"/logos/{category}/{size}/{item_id}.svg"
+                    expected_path = f"logos/{entity_type}/{size}/{item_id}.svg"
                     actual_path = row[key]
                     self.assertEqual(expected_path, actual_path)
 
             # Institution table
-            category = "institution"
+            entity_type = "institution"
             institution_index = self.institution_index + [
                 {
                     "id": "https://ror.org/12345",
@@ -791,7 +811,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "region": "Oceania",
                     "url": None,
                     "wikipedia_url": None,
-                    "institution_types": ["Education"],
+                    "institution_type": "Education",
                 }
             ]
             institution_data = self.institution_data + [
@@ -814,12 +834,10 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             ]
 
             # Create index
-            df_index, _ = load_index_and_data(category, institution_index, institution_data)
-            sizes = ["l", "s", "xl"]
+            df_index, _ = load_index_and_data(entity_type, institution_index, institution_data)
+            sizes = ["sm", "md", "lg"]
             with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "test_make_logos.yaml")):
-                df_index = update_index_with_logos(
-                    self.release.build_path, self.release.assets_path, category, df_index
-                )
+                df_index = update_index_with_logos(self.release.build_path, entity_type, df_index)
                 curtin_row = df_index[df_index["id"] == "02n415q13"].iloc[0]
                 foo_row = df_index[df_index["id"] == "12345"].iloc[0]
                 for size in sizes:
@@ -831,43 +849,44 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     # Check that correct path created
                     item_id = curtin_row["id"]
                     fmt = "jpg"
-                    if size == "xl":
+                    if size == "lg":
                         fmt = "png"
-                    expected_curtin_path = f"/logos/{category}/{size}/{item_id}.{fmt}"
-                    expected_foo_path = f"/unknown.svg"
+                    expected_curtin_path = f"logos/{entity_type}/{size}/{item_id}.{fmt}"
+                    expected_foo_path = f"unknown.svg"
                     self.assertEqual(expected_curtin_path, curtin_row[key])
                     self.assertEqual(expected_foo_path, foo_row[key])
 
                     # Check that downloaded logo exists
-                    full_path = os.path.join(self.release.build_path, expected_curtin_path[1:])
+                    full_path = os.path.join(self.release.build_path, "images", expected_curtin_path)
                     self.assertTrue(os.path.isfile(full_path))
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_save_index(self, mock_var_get):
+    def test_save_index_df(self, mock_var_get):
         with CliRunner().isolated_filesystem() as t:
             mock_var_get.return_value = t
 
-            for category, index, data, entity_ids in self.entities:
+            for entity_type, index, data, entity_ids in self.entities:
                 # Load index
                 df_index = pd.DataFrame(index)
-                preprocess_index_df(category, df_index)
+                preprocess_index_df(entity_type, df_index)
 
                 # Load data
                 df_data = pd.DataFrame(data)
-                preprocess_data_df(category, df_data)
+                preprocess_data_df(entity_type, df_data)
 
                 # Make index
-                df_index = make_index(category, df_index, df_data)
-                update_index_with_logos(self.release.build_path, self.release.assets_path, category, df_index)
+                df_index = make_index_df(entity_type, df_index, df_data)
+                update_index_with_logos(self.release.build_path, entity_type, df_index)
 
                 # Make entities
-                entities = make_entities(category, df_index, df_data)
+                entities = make_entities(entity_type, df_index, df_data)
 
                 # Save index from entities
                 data_path = os.path.join(self.release.build_path, "data")
                 os.makedirs(data_path, exist_ok=True)
-                file_path = os.path.join(data_path, f"{category}.json")
-                save_index(category, file_path, entities)
+                file_path = os.path.join(data_path, f"{entity_type}.json")
+                data = make_index(entity_type, entities)
+                save_json(file_path, data)
                 self.assertTrue(os.path.isfile(file_path))
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
@@ -876,19 +895,19 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             mock_var_get.return_value = t
 
             # Country
-            category = "country"
+            entity_type = "country"
 
             # Load index
             df_index = pd.DataFrame(self.country_index)
-            preprocess_index_df(category, df_index)
+            preprocess_index_df(entity_type, df_index)
 
             # Load data
             df_data = pd.DataFrame(self.country_data)
-            preprocess_data_df(category, df_data)
+            preprocess_data_df(entity_type, df_data)
 
             # Make index and entities
-            df_index = make_index(category, df_index, df_data)
-            entities = make_entities(category, df_index, df_data)
+            df_index = make_index_df(entity_type, df_index, df_data)
+            entities = make_entities(entity_type, df_index, df_data)
 
             repositories = [
                 {"id": "PubMed Central", "total_outputs": 30, "category": "Domain", "home_repo": False},
@@ -899,7 +918,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 {
                     "id": "NZL",
                     "name": "New Zealand",
-                    "category": category,
+                    "entity_type": entity_type,
                     "description": {
                         "license": Description.license,
                         "text": None,
@@ -1031,19 +1050,19 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 self.assertDictEqual(e_dict, a_dict)
 
         # Institution
-        category = "institution"
+        entity_type = "institution"
 
         # Load index
         df_index = pd.DataFrame(self.institution_index)
-        preprocess_index_df(category, df_index)
+        preprocess_index_df(entity_type, df_index)
 
         # Load data
         df_data = pd.DataFrame(self.institution_data)
-        preprocess_data_df(category, df_data)
+        preprocess_data_df(entity_type, df_data)
 
         # Make index and entities
-        df_index = make_index(category, df_index, df_data)
-        entities = make_entities(category, df_index, df_data)
+        df_index = make_index_df(entity_type, df_index, df_data)
+        entities = make_entities(entity_type, df_index, df_data)
 
         expected = [
             {
@@ -1056,12 +1075,12 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "text": None,
                     "url": "https://en.wikipedia.org/wiki/Curtin_University",
                 },
-                "category": category,
+                "entity_type": entity_type,
                 "url": "https://curtin.edu.au/",
                 "wikipedia_url": "https://en.wikipedia.org/wiki/Curtin_University",
                 "subregion": "Australia and New Zealand",
                 "region": "Oceania",
-                "institution_types": ["Education"],
+                "institution_type": "Education",
                 "end_year": 2021,
                 "start_year": 2020,
                 "stats": {
@@ -1189,18 +1208,18 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         with CliRunner().isolated_filesystem() as t:
             mock_var_get.return_value = t
 
-            for category, index, data, entity_ids in self.entities:
+            for entity_type, index, data, entity_ids in self.entities:
                 # Read data
                 df_index = pd.DataFrame(index)
-                preprocess_index_df(category, df_index)
+                preprocess_index_df(entity_type, df_index)
 
                 df_data = pd.DataFrame(data)
-                preprocess_data_df(category, df_data)
+                preprocess_data_df(entity_type, df_data)
 
                 # Save entities
-                df_index = make_index(category, df_index, df_data)
-                entities = make_entities(category, df_index, df_data)
-                path = os.path.join(self.release.build_path, "data", category)
+                df_index = make_index_df(entity_type, df_index, df_data)
+                entities = make_entities(entity_type, df_index, df_data)
+                path = os.path.join(self.release.build_path, "data", entity_type)
                 save_entities(path, entities)
 
                 # Check that entity json files are saved
@@ -1219,28 +1238,28 @@ def make_expected_build_files(base_path: str) -> List[str]:
 
     # Add base data files
     data_path = os.path.join(base_path, "data")
-    file_names = ["stats.json", "country.json", "institution.json"]
+    file_names = ["stats.json", "country.json", "institution.json", "index.json"]
     for file_name in file_names:
         expected.append(os.path.join(data_path, file_name))
 
     # Add country and institution specific data files
-    for category, entity_id in zip(categories, entity_ids):
-        path = os.path.join(data_path, category, f"{entity_id}.json")
+    for entity_type, entity_id in zip(categories, entity_ids):
+        path = os.path.join(data_path, entity_type, f"{entity_id}.json")
         expected.append(path)
 
     # Add logos
-    for category, entity_id in zip(categories, entity_ids):
-        for size in ["l", "s", "xl"]:
-            if category == "country" and size == "xl":
+    for entity_type, entity_id in zip(categories, entity_ids):
+        for size in ["sm", "md", "lg"]:
+            if entity_type == "country" and size == "lg":
                 continue
 
             file_type = "svg"
-            if category == "institution":
+            if entity_type == "institution":
                 file_type = "jpg"
-                if size == "xl":
+                if size == "lg":
                     file_type = "png"
 
-            path = os.path.join(base_path, "logos", category, size, f"{entity_id}.{file_type}")
+            path = os.path.join(base_path, "images", "logos", entity_type, size, f"{entity_id}.{file_type}")
             expected.append(path)
 
     return expected
