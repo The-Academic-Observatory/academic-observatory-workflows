@@ -49,6 +49,7 @@ from academic_observatory_workflows.dag_tag import Tag
 from academic_observatory_workflows.github import trigger_repository_dispatch
 from academic_observatory_workflows.wikipedia import fetch_wiki_descriptions
 from academic_observatory_workflows.zenodo import Zenodo, make_draft_version, publish_new_version
+from academic_observatory_workflows.image import check_image_integrity
 from observatory.platform.utils.airflow_utils import AirflowVars, get_airflow_connection_password
 from observatory.platform.utils.config_utils import module_file_path
 from observatory.platform.utils.file_utils import load_jsonl, list_to_jsonl_gz
@@ -529,10 +530,14 @@ class OaWebWorkflow(Workflow):
                 bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path
             )
 
+            logging.info(f'Finished downloading: {blob_name}')
+
             # Unzip into build
             unzip_folder_path = os.path.join(release.build_path)
             with ZipFile(file_path) as zip_file:
                 zip_file.extractall(unzip_folder_path)
+
+            logging.info(f'Finished unpacking: {blob_name}')
 
     def preprocess_data(self, release: OaWebRelease, **kwargs):
         """Preprocess data.
@@ -557,10 +562,14 @@ class OaWebWorkflow(Workflow):
             df_data = load_data(data_path)
             preprocess_data_df(category, df_data)
 
+            logging.info(f'Finished precoessesing_data_df for category: {category}' )
+
             # Save to intermediate path
             data_path = os.path.join(release.intermediate_path, file_name)
             records = df_data.to_dict("records")
             list_to_jsonl_gz(data_path, records)
+
+            logging.info(f'Finished list_to_jsonl_gz for category: {category}' )
 
     def build_indexes(self, release: OaWebRelease, **kwargs):
         """Build unique country and institution indexes.
@@ -616,6 +625,10 @@ class OaWebWorkflow(Workflow):
             # Save updated index
             rows: List[Dict] = df_index.to_dict("records")
             list_to_jsonl_gz(index_path, rows)
+
+        # Validate logos - make sure they were downloaded correctly and are not corrupt  
+        logging.info("Validating logos")                                                                                                                                                                  
+        validate_logos(release.build_path, df_index)
 
     def download_wiki_descriptions(self, release: OaWebRelease, **kwargs):
         """Download wiki descriptions and update indexes.
@@ -1708,6 +1721,30 @@ def update_index_with_logos(build_path: str, assets_path: str, category: str, df
             df_index = pd.merge(df_index.drop(columns=[col_name], errors="ignore"), df_logos, how="left", on="id")
 
     return df_index
+
+def validate_logos(build_path: str, df_index: pd.DataFrame ):
+
+    """ Ensure that logos exist and are valid, raise an Airflow exception if not.
+    
+    :param build_path: Build path of Airflow workflow instance.
+    :param df_index: Dataframe that holds all of the paths to the logos. 
+    """
+
+    logo_count = 0
+    sizes = ["s", "l", "xl"]
+    for size in sizes:
+        for logo_path in df_index[f"logo_{size}"]:
+
+            # Build full path to the image
+            full_path = os.path.join( build_path,  logo_path[1:] )
+
+            success = check_image_integrity(image_path=full_path)
+            logo_count += 1
+
+            if not success:
+                raise AirflowException(f"Unable the check integrity of logo: {logo_path}")
+
+    logging.info(f'All {logo_count} logos are OK!')
 
 
 #########################
