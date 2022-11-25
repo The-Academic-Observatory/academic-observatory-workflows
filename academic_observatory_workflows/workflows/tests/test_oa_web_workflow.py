@@ -406,7 +406,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     True,
                     dataset_id_all,
                     country,
-                    find_schema(oa_web_schema_path, "country", release_date=release_date),
+                    find_schema(oa_web_schema_path, "country"),
                 ),
                 Table(
                     "institution",
@@ -420,7 +420,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     False,
                     dataset_id_settings,
                     settings_country,
-                    find_schema(analysis_schema_path, "country", release_date=release_date),
+                    find_schema(analysis_schema_path, "country"),
                 ),
             ]
 

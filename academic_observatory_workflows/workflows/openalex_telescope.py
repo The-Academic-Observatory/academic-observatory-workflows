@@ -460,11 +460,7 @@ class OpenAlexTelescope(StreamTelescope):
         for transform_blob, table_id, _ in bq_load_info:
             table_description = self.table_descriptions.get(table_id, "")
             # Get the schema file path
-            schema_file_path = find_schema(
-                self.schema_folder, table_id, release_date=release.end_date, prefix=self.schema_prefix
-            )
-            if not schema_file_path:  # No table with date exists
-                schema_file_path = find_schema(self.schema_folder, table_id, prefix=self.schema_prefix)
+            schema_file_path = find_schema(self.schema_folder, table_id, prefix=self.schema_prefix)
             bq_append_from_file(
                 schema_file_path=schema_file_path,
                 project_id=Variable.get(AirflowVars.PROJECT_ID),

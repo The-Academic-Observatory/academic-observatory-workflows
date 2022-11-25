@@ -110,7 +110,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 "Concept": 3947,
                 "Institution": 3259,
                 "Venue": 2108,
-                "Work": 11804,
+                "Work": 12657,
             },
         }
         self.second_run = {
@@ -123,7 +123,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 "Concept": 7894,
                 "Institution": 6518,
                 "Venue": 4216,
-                "Work": 23608,
+                "Work": 25314,
             },
         }
 
@@ -137,7 +137,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 "Concept": 7894,
                 "Institution": 6518,
                 "Venue": 4216,
-                "Work": 23608,
+                "Work": 25314,
             },
         }
 
@@ -151,7 +151,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 "Concept": 7894,
                 "Institution": 6518,
                 "Venue": 4216,
-                "Work": 23608,
+                "Work": 25314,
             },
         }
 
@@ -560,9 +560,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 self.assertEqual(
                     pendulum.from_format("2021-12-01", "YYYY-MM-DD"), author_dataset_releases[0].start_date
                 )
-                self.assertEqual(
-                    pendulum.from_format("2021-12-17", "YYYY-MM-DD"), author_dataset_releases[0].end_date
-                )
+                self.assertEqual(pendulum.from_format("2021-12-17", "YYYY-MM-DD"), author_dataset_releases[0].end_date)
                 self.assertEqual(
                     pendulum.from_format("2021-12-01", "YYYY-MM-DD"), institution_dataset_releases[0].start_date
                 )
@@ -782,9 +780,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 self.assertEqual(
                     pendulum.from_format("2021-12-17", "YYYY-MM-DD"), author_dataset_releases[1].start_date
                 )
-                self.assertEqual(
-                    pendulum.from_format("2022-1-17", "YYYY-MM-DD"), author_dataset_releases[1].end_date
-                )
+                self.assertEqual(pendulum.from_format("2022-1-17", "YYYY-MM-DD"), author_dataset_releases[1].end_date)
                 self.assertEqual(
                     pendulum.from_format("2021-12-17", "YYYY-MM-DD"), institution_dataset_releases[1].start_date
                 )
@@ -829,7 +825,6 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 # Test write transfer manifest task
                 ti = env.run_task(telescope.write_transfer_manifest.__name__)
                 self.assertEqual(ti.state, State.SUCCESS)
-
 
     @patch("academic_observatory_workflows.workflows.openalex_telescope.get_dataset_releases")
     @patch("academic_observatory_workflows.workflows.openalex_telescope.get_datasets")
