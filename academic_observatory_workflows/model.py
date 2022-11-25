@@ -1233,7 +1233,7 @@ def bq_load_observatory_dataset(
                 False,
                 dataset_id_all,
                 unpaywall,
-                find_schema(path=analysis_schema_path, table_name="unpaywall", release_date=release_date),
+                find_schema(path=analysis_schema_path, table_name="unpaywall"),
             ),
             Table(
                 "ror",
@@ -1247,14 +1247,14 @@ def bq_load_observatory_dataset(
                 False,
                 dataset_id_settings,
                 country,
-                find_schema(path=analysis_schema_path, table_name="country", release_date=release_date),
+                find_schema(path=analysis_schema_path, table_name="country"),
             ),
             Table(
                 "groupings",
                 False,
                 dataset_id_settings,
                 groupings,
-                find_schema(path=analysis_schema_path, table_name="groupings", release_date=release_date),
+                find_schema(path=analysis_schema_path, table_name="groupings"),
             ),
             Table(
                 "mag_affiliation_override",
@@ -1262,7 +1262,7 @@ def bq_load_observatory_dataset(
                 dataset_id_settings,
                 mag_affiliation_override,
                 find_schema(
-                    path=analysis_schema_path, table_name="mag_affiliation_override", release_date=release_date
+                    path=analysis_schema_path, table_name="mag_affiliation_override"
                 ),
             ),
             Table(
@@ -1346,7 +1346,7 @@ def bq_load_observatory_dataset(
                 False,
                 dataset_id_all,
                 openalex,
-                find_schema(path=openalex_schema_path, table_name="Work", release_date=release_date),
+                find_schema(path=openalex_schema_path, table_name="Work"),
             ),
         ]
 
