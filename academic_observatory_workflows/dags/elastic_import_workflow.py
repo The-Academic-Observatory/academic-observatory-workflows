@@ -19,9 +19,10 @@
 
 import json
 import os
-from typing import Callable, Dict, List
+from typing import List
 
 from academic_observatory_workflows.config import elastic_mappings_folder
+from academic_observatory_workflows.dag_tag import Tag
 from observatory.platform.elastic.elastic import KeepInfo, KeepOrder
 from observatory.platform.elastic.kibana import TimeField
 from observatory.platform.utils.jinja2_utils import render_template
@@ -31,7 +32,6 @@ from observatory.platform.workflows.elastic_import_workflow import (
     ElasticImportWorkflow,
     load_elastic_mappings_simple,
 )
-from academic_observatory_workflows.dag_tag import Tag
 
 DATASET_ID = "data_export"
 DATA_LOCATION = "us"
@@ -85,7 +85,15 @@ configs = [
         data_location=DATA_LOCATION,
         file_type=FILE_TYPE_JSONL,
         sensor_dag_ids=["doi"],
-        kibana_spaces=["coki-scratch-space", "coki-dashboards", "dev-coki-dashboards", "dev-coki-btaa", "coki-btaa"],
+        kibana_spaces=[
+            "coki-scratch-space",
+            "coki-dashboards",
+            "dev-coki-dashboards",
+            "dev-coki-btaa",
+            "coki-btaa",
+            "dev-coki-curtin",
+            "coki-curtin-dashboard",
+        ],
         elastic_mappings_path=ELASTIC_MAPPINGS_PATH,
         elastic_mappings_func=load_elastic_mappings_ao,
         kibana_time_fields=AO_KIBANA_TIME_FIELDS,
