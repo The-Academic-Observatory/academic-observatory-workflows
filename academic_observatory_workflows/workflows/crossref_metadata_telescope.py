@@ -33,11 +33,13 @@ import pendulum
 import requests
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
+from airflow.models import Variable
 from bs4 import BeautifulSoup
 from natsort import natsorted
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
+from observatory.platform.utils.config_utils import find_schema
 from observatory.platform.utils.proc_utils import wait_for_process
 from observatory.platform.utils.url_utils import retry_session
 from observatory.platform.utils.workflow_utils import blob_name, bq_load_shard, get_chunks
@@ -348,20 +350,21 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         :param releases: a list of releases.
         :return: None.
         """
-
         # Load each transformed release
         for release in releases:
             transform_blob = f"{blob_name(release.transform_folder)}/*"
             table_description = self.table_descriptions.get(self.dag_id, "")
+            schema_file_path = find_schema(self.schema_folder, self.dag_id, release_date=release.release_date)
             bq_load_shard(
-                self.schema_folder,
-                release.release_date,
-                transform_blob,
-                self.dataset_id,
-                self.dag_id,
-                self.source_format,
-                prefix=self.schema_prefix,
-                schema_version=self.schema_version,
+                schema_file_path=schema_file_path,
+                project_id=Variable.get(AirflowVars.PROJECT_ID),
+                data_location=Variable.get(AirflowVars.DATA_LOCATION),
+                transform_bucket=Variable.get(AirflowVars.TRANSFORM_BUCKET),
+                transform_blob=transform_blob,
+                dataset_id=self.dataset_id,
+                table_id=self.dag_id,
+                source_format=self.source_format,
+                release_date=release.release_date,
                 dataset_description=self.dataset_description,
                 table_description=table_description,
                 **self.load_bigquery_table_kwargs,

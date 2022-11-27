@@ -58,6 +58,7 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
 )
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.gc_utils import upload_file_to_cloud_storage
+from observatory.platform.utils.config_utils import find_schema
 from observatory.platform.utils.test_utils import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
@@ -393,16 +394,33 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         oa_web_schema_path = test_fixtures_folder(self.oa_web_fixtures, "schema")
         with CliRunner().isolated_filesystem() as t:
             tables = [
-                Table("ror", True, dataset_id_all, ror, "ror", analysis_schema_path),
-                Table("country", True, dataset_id_all, country, "country", oa_web_schema_path),
-                Table("institution", True, dataset_id_all, institution, "institution", oa_web_schema_path),
+                Table(
+                    "ror",
+                    True,
+                    dataset_id_all,
+                    ror,
+                    find_schema(analysis_schema_path, "ror", release_date=release_date),
+                ),
+                Table(
+                    "country",
+                    True,
+                    dataset_id_all,
+                    country,
+                    find_schema(oa_web_schema_path, "country"),
+                ),
+                Table(
+                    "institution",
+                    True,
+                    dataset_id_all,
+                    institution,
+                    find_schema(oa_web_schema_path, "institution", release_date=release_date),
+                ),
                 Table(
                     "country",
                     False,
                     dataset_id_settings,
                     settings_country,
-                    "country",
-                    analysis_schema_path,
+                    find_schema(analysis_schema_path, "country"),
                 ),
             ]
 

@@ -30,10 +30,12 @@ from urllib.parse import quote_plus
 import jsonlines
 import pendulum
 from airflow import AirflowException
+from airflow.models import Variable
 from google.cloud.bigquery import WriteDisposition
 from ratelimit import limits, sleep_and_retry
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
+from observatory.platform.utils.config_utils import find_schema
 from observatory.platform.utils.airflow_utils import (
     AirflowConns,
     AirflowVars,
@@ -285,15 +287,19 @@ class ScopusTelescope(SnapshotTelescope):
         for release in releases:
             transform_blob = f"{blob_name(release.transform_folder)}/*"
             table_description = self.table_descriptions.get(self.dag_id, "")
+            schema_file_path = find_schema(
+                self.schema_folder, ScopusTelescope.DAG_ID, release_date=release.release_date
+            )
             bq_load_shard(
-                self.schema_folder,
-                release.release_date,
-                transform_blob,
-                self.dataset_id,
-                ScopusTelescope.DAG_ID,
-                self.source_format,
-                prefix=self.schema_prefix,
-                schema_version=self.schema_version,
+                schema_file_path=schema_file_path,
+                project_id=Variable.get(AirflowVars.PROJECT_ID),
+                data_location=Variable.get(AirflowVars.DATA_LOCATION),
+                transform_bucket=Variable.get(AirflowVars.TRANSFORM_BUCKET),
+                release_date=release.release_date,
+                transform_blob=transform_blob,
+                dataset_id=self.dataset_id,
+                table_id=ScopusTelescope.DAG_ID,
+                source_format=self.source_format,
                 dataset_description=self.dataset_description,
                 table_description=table_description,
                 **self.load_bigquery_table_kwargs,

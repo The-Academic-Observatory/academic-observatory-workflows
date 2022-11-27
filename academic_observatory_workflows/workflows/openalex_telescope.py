@@ -49,9 +49,9 @@ from observatory.platform.utils.release_utils import (
     get_dataset_releases,
     get_datasets,
     get_latest_dataset_release,
-    is_first_release,
 )
 from observatory.platform.utils.workflow_utils import blob_name, bq_append_from_file
+from observatory.platform.utils.config_utils import find_schema
 from observatory.platform.workflows.stream_telescope import (
     StreamRelease,
     StreamTelescope,
@@ -403,7 +403,7 @@ class OpenAlexTelescope(StreamTelescope):
             else:
                 entity = dataset.dataset_type.type_id.split("openalex_")[1] + "s"
                 api_releases = get_dataset_releases(dataset_id=dataset.id)
-                
+
                 if len(api_releases) == 0:
                     start_date = release.start_date
                 else:
@@ -459,16 +459,18 @@ class OpenAlexTelescope(StreamTelescope):
         logging.info(f"Appending data to main table from transformed file {release.end_date}")
         for transform_blob, table_id, _ in bq_load_info:
             table_description = self.table_descriptions.get(table_id, "")
+            # Get the schema file path
+            schema_file_path = find_schema(self.schema_folder, table_id, prefix=self.schema_prefix)
             bq_append_from_file(
-                self.schema_folder,
-                release.end_date,
-                transform_blob,
-                self.dataset_id,
-                table_id,
-                self.source_format,
-                self.schema_prefix,
-                self.schema_version,
-                self.dataset_description,
+                schema_file_path=schema_file_path,
+                project_id=Variable.get(AirflowVars.PROJECT_ID),
+                bucket_name=Variable.get(AirflowVars.TRANSFORM_BUCKET),
+                data_location=Variable.get(AirflowVars.DATA_LOCATION),
+                transform_blob=transform_blob,
+                dataset_id=self.dataset_id,
+                main_table_id=table_id,
+                source_format=self.source_format,
+                dataset_description=self.dataset_description,
                 table_description=table_description,
                 partition=True,
                 partition_type=bigquery.TimePartitioningType.DAY,

@@ -34,6 +34,7 @@ from pendulum import DateTime
 from academic_observatory_workflows.config import schema_folder, test_fixtures_folder
 from observatory.platform.utils.file_utils import load_jsonl
 from observatory.platform.utils.test_utils import Table, bq_load_tables
+from observatory.platform.utils.config_utils import find_schema
 
 LICENSES = ["cc-by", None]
 
@@ -963,10 +964,7 @@ def make_unpaywall(dataset: ObservatoryDataset) -> List[Dict]:
     return records
 
 
-
-def make_openalex_dataset(
-    dataset: ObservatoryDataset
-) -> List[dict]:
+def make_openalex_dataset(dataset: ObservatoryDataset) -> List[dict]:
     """Generate the OpenAlex table data from an ObservatoryDataset instance.
 
     :param dataset: the Observatory Dataset.
@@ -980,12 +978,7 @@ def make_openalex_dataset(
             "doi": f"https://doi.org/{paper.doi}",
             "cited_by_count": len(paper.cited_by),
             "concepts": [
-                {
-                    "id": str(fos.id),
-                    "display_name": fos.name,
-                    "level": fos.level
-                }
-                for fos in paper.fields_of_study
+                {"id": str(fos.id), "display_name": fos.name, "level": fos.level} for fos in paper.fields_of_study
             ],
             "authorships": [
                 {
@@ -999,16 +992,17 @@ def make_openalex_dataset(
                             "ror": author.institution.ror_id,
                             "display_name": author.institution.name,
                             "country_code": author.institution.country_code,
-                            "type": author.institution.types
+                            "type": author.institution.types,
                         }
-                    ]
+                    ],
                 }
                 for author in paper.authors
-            ]
+            ],
         }
         result.append(entry)
 
     return result
+
 
 @dataclass
 class MagDataset:
@@ -1161,37 +1155,201 @@ def bq_load_observatory_dataset(
     analysis_schema_path = schema_folder()
     openalex_schema_path = os.path.join(analysis_schema_path, "openalex")
     with CliRunner().isolated_filesystem() as t:
-        # fmt: off
         tables = [
-            Table("repository", False, dataset_id_settings, repository, "repository", analysis_schema_path),
-            Table("crossref_events", False, dataset_id_all, crossref_events, "crossref_events", analysis_schema_path),
-            Table("crossref_metadata", True, dataset_id_all, crossref_metadata, "crossref_metadata", analysis_schema_path),
-            Table("crossref_fundref", True, dataset_id_all, crossref_fundref, "crossref_fundref", analysis_schema_path),
-            Table("Affiliations", True, dataset_id_all, mag.affiliations, "MagAffiliations", analysis_schema_path),
-            Table("FieldsOfStudy", True, dataset_id_all, mag.fields_of_study, "MagFieldsOfStudy", analysis_schema_path),
-            Table("PaperAuthorAffiliations", True, dataset_id_all, mag.paper_author_affiliations, "MagPaperAuthorAffiliations", analysis_schema_path),
-            Table("PaperFieldsOfStudy", True, dataset_id_all, mag.paper_fields_of_study, "MagPaperFieldsOfStudy", analysis_schema_path),
-            Table("Papers", True, dataset_id_all, mag.papers, "MagPapers", analysis_schema_path),
-            Table("open_citations", True, dataset_id_all, open_citations, "open_citations", analysis_schema_path),
-            Table("unpaywall", False, dataset_id_all, unpaywall, "unpaywall", analysis_schema_path),
-            Table("ror", True, dataset_id_all, ror, "ror", analysis_schema_path),
-            Table("country", False, dataset_id_settings, country, "country", analysis_schema_path),
-            Table("groupings", False, dataset_id_settings, groupings, "groupings", analysis_schema_path),
-            Table("mag_affiliation_override", False, dataset_id_settings, mag_affiliation_override, "mag_affiliation_override", analysis_schema_path),
-            Table("PaperAbstractsInvertedIndex", True, dataset_id_all, [], "MagPaperAbstractsInvertedIndex", analysis_schema_path),
-            Table("Journals", True, dataset_id_all, [], "MagJournals", analysis_schema_path),
-            Table("ConferenceInstances", True, dataset_id_all, [], "MagConferenceInstances", analysis_schema_path),
-            Table("ConferenceSeries", True, dataset_id_all, [], "MagConferenceSeries", analysis_schema_path),
-            Table("FieldOfStudyExtendedAttributes", True, dataset_id_all, [], "MagFieldOfStudyExtendedAttributes", analysis_schema_path),
-            Table("PaperExtendedAttributes", True, dataset_id_all, [], "MagPaperExtendedAttributes", analysis_schema_path),
-            Table("PaperResources", True, dataset_id_all, [], "MagPaperResources", analysis_schema_path),
-            Table("PaperUrls", True, dataset_id_all, [], "MagPaperUrls", analysis_schema_path),
-            Table("PaperMeSH", True, dataset_id_all, [], "MagPaperMeSH", analysis_schema_path),
-            Table("orcid", False, dataset_id_all, [], "orcid", analysis_schema_path),
-            Table("Work", False, dataset_id_all, openalex, "Work", openalex_schema_path),
+            Table(
+                "repository",
+                False,
+                dataset_id_settings,
+                repository,
+                find_schema(path=analysis_schema_path, table_name="repository"),
+            ),
+            Table(
+                "crossref_events",
+                False,
+                dataset_id_all,
+                crossref_events,
+                find_schema(path=analysis_schema_path, table_name="crossref_events", release_date=release_date),
+            ),
+            Table(
+                "crossref_metadata",
+                True,
+                dataset_id_all,
+                crossref_metadata,
+                find_schema(path=analysis_schema_path, table_name="crossref_metadata", release_date=release_date),
+            ),
+            Table(
+                "crossref_fundref",
+                True,
+                dataset_id_all,
+                crossref_fundref,
+                find_schema(path=analysis_schema_path, table_name="crossref_fundref", release_date=release_date),
+            ),
+            Table(
+                "Affiliations",
+                True,
+                dataset_id_all,
+                mag.affiliations,
+                find_schema(path=analysis_schema_path, table_name="MagAffiliations", release_date=release_date),
+            ),
+            Table(
+                "FieldsOfStudy",
+                True,
+                dataset_id_all,
+                mag.fields_of_study,
+                find_schema(path=analysis_schema_path, table_name="MagFieldsOfStudy", release_date=release_date),
+            ),
+            Table(
+                "PaperAuthorAffiliations",
+                True,
+                dataset_id_all,
+                mag.paper_author_affiliations,
+                find_schema(
+                    path=analysis_schema_path, table_name="MagPaperAuthorAffiliations", release_date=release_date
+                ),
+            ),
+            Table(
+                "PaperFieldsOfStudy",
+                True,
+                dataset_id_all,
+                mag.paper_fields_of_study,
+                find_schema(path=analysis_schema_path, table_name="MagPaperFieldsOfStudy", release_date=release_date),
+            ),
+            Table(
+                "Papers",
+                True,
+                dataset_id_all,
+                mag.papers,
+                find_schema(path=analysis_schema_path, table_name="MagPapers", release_date=release_date),
+            ),
+            Table(
+                "open_citations",
+                True,
+                dataset_id_all,
+                open_citations,
+                find_schema(path=analysis_schema_path, table_name="open_citations", release_date=release_date),
+            ),
+            Table(
+                "unpaywall",
+                False,
+                dataset_id_all,
+                unpaywall,
+                find_schema(path=analysis_schema_path, table_name="unpaywall"),
+            ),
+            Table(
+                "ror",
+                True,
+                dataset_id_all,
+                ror,
+                find_schema(path=analysis_schema_path, table_name="ror", release_date=release_date),
+            ),
+            Table(
+                "country",
+                False,
+                dataset_id_settings,
+                country,
+                find_schema(path=analysis_schema_path, table_name="country"),
+            ),
+            Table(
+                "groupings",
+                False,
+                dataset_id_settings,
+                groupings,
+                find_schema(path=analysis_schema_path, table_name="groupings"),
+            ),
+            Table(
+                "mag_affiliation_override",
+                False,
+                dataset_id_settings,
+                mag_affiliation_override,
+                find_schema(
+                    path=analysis_schema_path, table_name="mag_affiliation_override"
+                ),
+            ),
+            Table(
+                "PaperAbstractsInvertedIndex",
+                True,
+                dataset_id_all,
+                [],
+                find_schema(
+                    path=analysis_schema_path, table_name="MagPaperAbstractsInvertedIndex", release_date=release_date
+                ),
+            ),
+            Table(
+                "Journals",
+                True,
+                dataset_id_all,
+                [],
+                find_schema(path=analysis_schema_path, table_name="MagJournals", release_date=release_date),
+            ),
+            Table(
+                "ConferenceInstances",
+                True,
+                dataset_id_all,
+                [],
+                find_schema(path=analysis_schema_path, table_name="MagConferenceInstances", release_date=release_date),
+            ),
+            Table(
+                "ConferenceSeries",
+                True,
+                dataset_id_all,
+                [],
+                find_schema(path=analysis_schema_path, table_name="MagConferenceSeries", release_date=release_date),
+            ),
+            Table(
+                "FieldOfStudyExtendedAttributes",
+                True,
+                dataset_id_all,
+                [],
+                find_schema(
+                    path=analysis_schema_path, table_name="MagFieldOfStudyExtendedAttributes", release_date=release_date
+                ),
+            ),
+            Table(
+                "PaperExtendedAttributes",
+                True,
+                dataset_id_all,
+                [],
+                find_schema(
+                    path=analysis_schema_path, table_name="MagPaperExtendedAttributes", release_date=release_date
+                ),
+            ),
+            Table(
+                "PaperResources",
+                True,
+                dataset_id_all,
+                [],
+                find_schema(path=analysis_schema_path, table_name="MagPaperResources", release_date=release_date),
+            ),
+            Table(
+                "PaperUrls",
+                True,
+                dataset_id_all,
+                [],
+                find_schema(path=analysis_schema_path, table_name="MagPaperUrls", release_date=release_date),
+            ),
+            Table(
+                "PaperMeSH",
+                True,
+                dataset_id_all,
+                [],
+                find_schema(path=analysis_schema_path, table_name="MagPaperMeSH", release_date=release_date),
+            ),
+            Table(
+                "orcid",
+                False,
+                dataset_id_all,
+                [],
+                find_schema(path=analysis_schema_path, table_name="orcid", release_date=release_date),
+            ),
+            Table(
+                "Work",
+                False,
+                dataset_id_all,
+                openalex,
+                find_schema(path=openalex_schema_path, table_name="Work"),
+            ),
         ]
-        # fmt: on
-        
+
         bq_load_tables(
             tables=tables,
             bucket_name=bucket_name,
