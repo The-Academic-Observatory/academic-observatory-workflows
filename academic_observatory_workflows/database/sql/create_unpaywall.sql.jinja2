@@ -1,121 +1,125 @@
-{# Copyright 2020-22 Curtin University and Contributors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+{#
+  # Copyright 2020-22 Curtin University and Contributors
+  #
+  # Licensed under the Apache License, Version 2.0 (the "License");
+  # you may not use this file except in compliance with the License.
+  # You may obtain a copy of the License at
+  #
+  #   http://www.apache.org/licenses/LICENSE-2.0
+  #
+  # Unless required by applicable law or agreed to in writing, software
+  # distributed under the License is distributed on an "AS IS" BASIS,
+  # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  # See the License for the specific language governing permissions and
+  # limitations under the License.
 
-# Author: Richard Hosking, James Diprose, Contributors
+  # Author: Richard Hosking, James Diprose, Contributors
 
-## AGGREGATE UNPAYWALL QUERY TEMPLATE
+  ## AGGREGATE UNPAYWALL QUERY TEMPLATE
 
-This template query contains the SQL that directly interprets Unpaywall
-data to determine OA categories at the output level. This is therefore
-the canonical location for the precise definitions used for OA categories.
-Ideally this file should contain both the queries themselves and
-a description clear enough for a non-expert in SQL to understand how each
-category is defined.
+  This template query contains the SQL that directly interprets Unpaywall
+  data to determine OA categories at the output level. This is therefore
+  the canonical location for the precise definitions used for OA categories.
+  Ideally this file should contain both the queries themselves and
+  a description clear enough for a non-expert in SQL to understand how each
+  category is defined.
 
-The color categories of Open Access described in this file are:
+  The color categories of Open Access described in this file are:
 
-* is_oa: derived directly from Unpaywall
-* hybrid: accessible at the publisher with a recognised license
-* bronze: accessible at the publisher with no recognised license
-* gold_just_doaj: an article in a journal that is in DOAJ
-* gold: an article that is in a DOAJ journal OR is accessible at the publisher site with a recognised license (hybrid)
-* green: accessible at any site recognised as a repository (including preprints)
-* green_only: accessible at a repository and not (in a DOAJ journal OR hybrid OR bronze)
-* green_only_ignoring_bronze: accessible at a repository and not (in a DOAJ journal or hybrid)
+  * is_oa: derived directly from Unpaywall
+  * hybrid: accessible at the publisher with a recognised license
+  * bronze: accessible at the publisher with no recognised license
+  * gold_just_doaj: an article in a journal that is in DOAJ
+  * gold: an article that is in a DOAJ journal OR is accessible at the publisher site with a recognised license (hybrid)
+  * green: accessible at any site recognised as a repository (including preprints)
+  * green_only: accessible at a repository and not (in a DOAJ journal OR hybrid OR bronze)
+  * green_only_ignoring_bronze: accessible at a repository and not (in a DOAJ journal or hybrid)
 
-The COKI Open Access categories described in this file are:
-* open: open access.
-* closed: not open access.
-* publisher: an article published in an Open Access Journal or made accessible in a Subscription Journal.
-* other_platform: the publication was shared online; on a preprint server, a university library repository, domain repository or an academic staff page.
-* publisher_only: an article that is publisher open and not other platform open.
-* both: an article that is both publisher and other platform open.
-* other_platform_only: an article that is other platform open and not publisher open.
+  The COKI Open Access categories described in this file are:
+  * open: open access.
+  * closed: not open access.
+  * publisher: an article published in an Open Access Journal or made accessible in a Subscription Journal.
+  * other_platform: the publication was shared online; on a preprint server, a university library repository, domain repository or an academic staff page.
+  * publisher_only: an article that is publisher open and not other platform open.
+  * both: an article that is both publisher and other platform open.
+  * other_platform_only: an article that is other platform open and not publisher open.
 
-Publisher Open categories:
-* oa_journal: published in an Open Access Journal.
-* hybrid: made accessible in a Subscription Journal with an open license.
-* no_guarantees: made accessible in a Subscription Publisher with no reuse rights.
+  Publisher Open categories:
+  * oa_journal: published in an Open Access Journal.
+  * hybrid: made accessible in a Subscription Journal with an open license.
+  * no_guarantees: made accessible in a Subscription Publisher with no reuse rights.
 
-Other Platform Open categories:
-* preprint: an article found on a preprint server.
-* domain: an article found on a domain repository.
-* institution: an article found on an institutional repository.
-* public: an article found on a public repository.
-* aggregator: an article found on an aggregator.
-* other_internet: an article found on the internet.
+  Other Platform Open categories:
+  * preprint: an article found on a preprint server.
+  * domain: an article found on a domain repository.
+  * institution: an article found on an institutional repository.
+  * public: an article found on a public repository.
+  * aggregator: an article found on an aggregator.
+  * other_internet: an article found on the internet.
 
-### DEVELOPER NOTES and DOCUMENTATION GUIDANCE
+  ### DEVELOPER NOTES and DOCUMENTATION GUIDANCE
 
-All changes to OA categories should be made in this file and no changes should be
-made elsewhere. Each category defined in the SELECT statement should be
-in the form of a CASE-WHEN statement that returns TRUE or FALSE (this
-may be changed in the future to 1 or 0).
+  All changes to OA categories should be made in this file and no changes should be
+  made elsewhere. Each category defined in the SELECT statement should be
+  in the form of a CASE-WHEN statement that returns TRUE or FALSE (this
+  may be changed in the future to 1 or 0).
 
-Documentation should seek to provide a clear explanation of the category
-including any differences from common usage to a non-expert user. It is
-intended that this documentation will provide the public-facing
-version of the categories and should always be edited in close proximity
-to the queries themselves. Strive for clarity and precision over
-brevity where necessary
+  Documentation should seek to provide a clear explanation of the category
+  including any differences from common usage to a non-expert user. It is
+  intended that this documentation will provide the public-facing
+  version of the categories and should always be edited in close proximity
+  to the queries themselves. Strive for clarity and precision over
+  brevity where necessary
 #}
-
 -- Converts an OAI-PMH document ID into a hostname
 CREATE TEMP FUNCTION PMH_ID_TO_DOMAIN(pmh_id STRING)
   RETURNS STRING AS (NET.REG_DOMAIN(REGEXP_REPLACE(REGEXP_REPLACE(LOWER(pmh_id), "^.*oai:", ""), ":.*$", "")));
 
 -- Creates a set of temporary tables
 WITH
-
 -- Creates a list of ISSN-L to Normalised Journal Names. The name chosen for each ISSN-L is the most common occurance
-name as (
+name AS (
   SELECT
     identifier,
-    ARRAY_AGG(name IGNORE NULLS ORDER BY count DESC LIMIT 1)[SAFE_OFFSET(0)] as name
-  FROM(
+    ARRAY_AGG(name IGNORE NULLS ORDER BY count DESC LIMIT 1)[SAFE_OFFSET(0)] AS name
+  FROM (
     SELECT
-      journal_issn_l as identifier,
-      journal_name as name,
-      COUNT(*) as count
+      journal_issn_l AS identifier,
+      journal_name   AS name,
+      COUNT(*)       AS count
     FROM `{{ unpaywall.project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}`
-    WHERE journal_issn_l is not null
+    WHERE journal_issn_l IS NOT NULL
     GROUP BY journal_issn_l, journal_name
-    ORDER BY journal_issn_l, count DESC)
+    ORDER BY journal_issn_l, count DESC
+  )
   GROUP BY identifier
 ),
 
 -- Converts ROR links into hostnames and then makes an index of ROR hostnames to ROR ids
-ror_domain_index as (
-  SELECT NET.REG_DOMAIN(link) as domain, ARRAY_AGG(STRUCT(ror.id as id, ror.name as name)) as rors,
-  FROM `{{ ror.project_id }}.{{ ror.dataset_id }}.{{ ror.table_id }}{{ ror.release_date.strftime('%Y%m%d') }}` as ror, UNNEST(ror.links) as link
+ror_domain_index AS (
+  SELECT
+    NET.REG_DOMAIN(link)                              AS domain,
+    ARRAY_AGG(STRUCT(ror.id AS id, ror.name AS name)) AS rors,
+  FROM `{{ ror.project_id }}.{{ ror.dataset_id }}.{{ ror.table_id }}{{ ror.release_date.strftime('%Y%m%d') }}` AS ror,
+  UNNEST(ror.links) AS link
   WHERE link IS NOT NULL
   GROUP BY domain
 ),
 
 -- Makes a list of unique OAI PMH hostnames
-unpaywall_oai as (
-  SELECT DISTINCT PMH_ID_TO_DOMAIN(oa_location.pmh_id) as pmh_domain,
-  FROM `{{ unpaywall.project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}` as unpaywall, UNNEST(unpaywall.oa_locations) as oa_location
+unpaywall_oai AS (
+  SELECT DISTINCT PMH_ID_TO_DOMAIN(oa_location.pmh_id) AS pmh_domain,
+  FROM `{{ unpaywall.project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}` AS unpaywall,
+  UNNEST(unpaywall.oa_locations) AS oa_location
   WHERE PMH_ID_TO_DOMAIN(oa_location.pmh_id) IS NOT NULL
   ORDER BY pmh_domain ASC
 ),
 
 -- Makes an index of OAI PMH hosts to ROR ids
-oai_to_ror as (
+oai_to_ror AS (
   SELECT
     pmh_domain,
-    ARRAY_CONCAT_AGG(ror_domain_index.rors) as rors
+    ARRAY_CONCAT_AGG(ror_domain_index.rors) AS rors
   FROM unpaywall_oai
   LEFT JOIN ror_domain_index ON ror_domain_index.domain = unpaywall_oai.pmh_domain
   WHERE pmh_domain IS NOT NULL
@@ -123,83 +127,115 @@ oai_to_ror as (
 ),
 
 -- Adds the rors array with ROR id and name to the repository table, our ground truth table of repository info.
-repository as (
-  SELECT endpoint_id, url_domain, pmh_domain, repo.name, category, ARRAY_AGG(STRUCT(ror.id as id, ror.name as name)) as rors
-  FROM `{{ repository.project_id }}.{{ repository.dataset_id }}.repository` as repo
-  LEFT JOIN `{{ ror.project_id }}.{{ ror.dataset_id }}.{{ ror.table_id }}{{ ror.release_date.strftime('%Y%m%d') }}` as ror ON ror.id = repo.ror_id
+repository AS (
+  SELECT
+    endpoint_id,
+    url_domain,
+    pmh_domain,
+    repo.name,
+    category,
+    ARRAY_AGG(STRUCT(ror.id AS id, ror.name AS name)) AS rors
+  FROM `{{ repository.project_id }}.{{ repository.dataset_id }}.repository` AS repo
+  LEFT JOIN `{{ ror.project_id }}.{{ ror.dataset_id }}.{{ ror.table_id }}{{ ror.release_date.strftime('%Y%m%d') }}` AS ror ON ror.id = repo.ror_id
   GROUP BY endpoint_id, url_domain, pmh_domain, name, category
 ),
 
 -- Makes sure that the ROR id and name in the rors array are in the correct order
 repo_inst_to_ror as (
-  SELECT repository_institution, ARRAY(SELECT STRUCT(ror.id as id, ror.name as name) from UNNEST(rtr.rors) as ror) as rors
-  FROM `{{ repository_institution_to_ror.project_id }}.{{ repository_institution_to_ror.dataset_id }}.{{ repository_institution_to_ror.table_id  }}{{ repository_institution_to_ror.release_date.strftime('%Y%m%d') }}` as rtr
+  SELECT
+    repository_institution,
+    ARRAY(SELECT STRUCT(ror.id AS id, ror.name AS name) FROM UNNEST(rtr.rors) AS ror) AS rors
+  FROM `{{ repository_institution_to_ror.project_id }}.{{ repository_institution_to_ror.dataset_id }}.{{ repository_institution_to_ror.table_id  }}{{ repository_institution_to_ror.release_date.strftime('%Y%m%d') }}` AS rtr
 ),
 
 -- Adds coki_repository_name, pmh_domain, category and rors to the Unpaywall repositories lists
-repositories as (
+repositories AS (
   SELECT
     doi,
-    ARRAY_AGG(
-      STRUCT(
-        coki_repository_name,
-        endpoint_id,
-        repository_institution,
-        pmh_domain,
-        pmh_id,
-        url,
-        category,
-        rors
-      )
-    ) as repositories
-  FROM (
-  SELECT
-    doi,
-    CASE
-      WHEN repo_endpoint.category IS NOT NULL THEN repo_endpoint.name -- Custom name from repository table
-      WHEN repo_url.category IS NOT NULL THEN repo_url.name -- Custom name from repository table
-      WHEN ARRAY_LENGTH(repo_inst_to_ror.rors) > 0 THEN repo_inst_to_ror.repository_institution -- Should always have a name as it was used by the ROR affiliation matcher to find the ROR ids
-      WHEN ARRAY_LENGTH(oai_to_ror.rors) > 0 AND oa_location.repository_institution IS NOT NULL THEN oa_location.repository_institution -- For oai matches, when oa_location.repository_institution is not null use Unpaywall repository name
-      WHEN ARRAY_LENGTH(oai_to_ror.rors) > 0 AND oa_location.repository_institution IS NULL THEN CONCAT(PMH_ID_TO_DOMAIN(oa_location.pmh_id), " OAI-PMH Repository") -- For oai matches, when oa_location.repository_institution is null, construct a name from pmh domain
-      WHEN oa_location.repository_institution IS NOT NULL THEN oa_location.repository_institution -- Fallback
-      ELSE "Unknown Repository" -- Fallback
-    END as coki_repository_name,
-    oa_location.endpoint_id,
-    oa_location.repository_institution,
-    PMH_ID_TO_DOMAIN(oa_location.pmh_id) as pmh_domain,
-    oa_location.pmh_id as pmh_id,
-    url,
-    CASE
-      WHEN repo_endpoint.category IS NOT NULL THEN repo_endpoint.category
-      WHEN repo_url.category IS NOT NULL THEN repo_url.category
-      WHEN ARRAY_LENGTH(repo_inst_to_ror.rors) > 0  OR ARRAY_LENGTH(oai_to_ror.rors) > 0 THEN "Institution"
-      ELSE "Unknown"
-    END as category,
-    CASE
-      WHEN repo_endpoint.category IS NOT NULL THEN repo_endpoint.rors
-      WHEN repo_url.category IS NOT NULL THEN repo_url.rors
-      WHEN ARRAY_LENGTH(repo_inst_to_ror.rors) > 0 THEN repo_inst_to_ror.rors
-      WHEN ARRAY_LENGTH(oai_to_ror.rors) > 0 THEN oai_to_ror.rors
-      ELSE ARRAY(SELECT STRUCT(CAST(null as STRING) as id, CAST(null as STRING) as name))
-    END as rors
-  FROM `{{ unpaywall.project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}`, UNNEST(oa_locations) as oa_location
-  LEFT JOIN repository as repo_endpoint on oa_location.endpoint_id = repo_endpoint.endpoint_id -- Matches on endpoint_id
-  LEFT JOIN repository as repo_url on NET.REG_DOMAIN(oa_location.url) = repo_url.url_domain -- Matches on domain
-  LEFT JOIN repo_inst_to_ror on oa_location.repository_institution = repo_inst_to_ror.repository_institution -- Matches on repository_institution
-  LEFT JOIN oai_to_ror on oai_to_ror.pmh_domain = PMH_ID_TO_DOMAIN(oa_location.pmh_id) -- Matches on domain
-  WHERE oa_location.host_type = "repository")
+    ARRAY_AGG(STRUCT(
+      CASE
+        -- Custom name from repository table
+        WHEN repo_endpoint.category IS NOT NULL
+        THEN repo_endpoint.name
+        
+        -- Custom name from repository table
+        WHEN repo_url.category IS NOT NULL
+        THEN repo_url.name
+        
+        -- Should always have a name as it was used by the ROR affiliation matcher to find the ROR ids
+        WHEN ARRAY_LENGTH(repo_inst_to_ror.rors) > 0
+        THEN repo_inst_to_ror.repository_institution
+        
+        -- For oai matches, when oa_location.repository_institution is not null use Unpaywall repository name
+        WHEN ARRAY_LENGTH(oai_to_ror.rors) > 0 AND oa_location.repository_institution IS NOT NULL
+        THEN oa_location.repository_institution
+        
+        -- For oai matches, when oa_location.repository_institution is null, construct a name from pmh domain
+        WHEN ARRAY_LENGTH(oai_to_ror.rors) > 0 AND oa_location.repository_institution IS NULL
+        THEN CONCAT(PMH_ID_TO_DOMAIN(oa_location.pmh_id), " OAI-PMH Repository")
+        
+        -- Fallback
+        WHEN oa_location.repository_institution IS NOT NULL
+        THEN oa_location.repository_institution
+        
+        -- Fallback
+        ELSE "Unknown Repository"
+      END                                   AS coki_repository_name,
+      oa_location.endpoint_id               AS endpoint_id,
+      oa_location.repository_institution    AS repository_institution,
+      PMH_ID_TO_DOMAIN(oa_location.pmh_id)  AS pmh_domain,
+      oa_location.pmh_id                    AS pmh_id,
+      `url`                                 AS `url`,
+      CASE
+        WHEN repo_endpoint.category IS NOT NULL
+        THEN repo_endpoint.category
+        
+        WHEN repo_url.category IS NOT NULL
+        THEN repo_url.category
+        
+        WHEN ARRAY_LENGTH(repo_inst_to_ror.rors) > 0 OR ARRAY_LENGTH(oai_to_ror.rors) > 0
+        THEN "Institution"
+        
+        ELSE "Unknown"
+      END                                   AS category,
+      CASE
+        WHEN repo_endpoint.category IS NOT NULL
+        THEN repo_endpoint.rors
+        
+        WHEN repo_url.category IS NOT NULL
+        THEN repo_url.rors
+        
+        WHEN ARRAY_LENGTH(repo_inst_to_ror.rors) > 0
+        THEN repo_inst_to_ror.rors
+        
+        WHEN ARRAY_LENGTH(oai_to_ror.rors) > 0
+        THEN oai_to_ror.rors
+        
+        ELSE ARRAY(SELECT STRUCT(
+          CAST(NULL AS STRING) AS id,
+          CAST(NULL AS STRING) AS name
+        ))
+      END                                   AS rors
+    )) AS repositories
+  FROM `{{ unpaywall.project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}`,
+  UNNEST(oa_locations) AS oa_location
+  LEFT JOIN repository AS repo_endpoint ON oa_location.endpoint_id            = repo_endpoint.endpoint_id               -- Matches on endpoint_id
+  LEFT JOIN repository AS repo_url      ON NET.REG_DOMAIN(oa_location.url)    = repo_url.url_domain                     -- Matches on domain
+  LEFT JOIN repo_inst_to_ror            ON oa_location.repository_institution = repo_inst_to_ror.repository_institution -- Matches on repository_institution
+  LEFT JOIN oai_to_ror                  ON oai_to_ror.pmh_domain              = PMH_ID_TO_DOMAIN(oa_location.pmh_id)    -- Matches on domain
+  WHERE oa_location.host_type = "repository"
   GROUP BY doi
 ),
 
 -- The OA colour and license calculations
-base_oa_calcs as (
+base_oa_calcs AS (
   SELECT
-    UPPER(TRIM(unpaywall.doi)) as doi,
+    UPPER(TRIM(unpaywall.doi)) AS doi,
     year,
-    genre as output_type,
+    genre                      AS output_type,
     publisher,
     journal_name,
-    name.name as normalised_journal_name,
+    name.name                  AS normalised_journal_name,
     best_oa_location.url_for_landing_page,
     best_oa_location.url_for_pdf,
     journal_issn_l,
@@ -207,51 +243,43 @@ base_oa_calcs as (
     -- ### Is Open Access:
     -- We use the is_oa tag from Unpaywall directly to populate general OA status. This includes bronze.
     is_oa,
-    journal_is_in_doaj as is_in_doaj,
+    journal_is_in_doaj  AS is_in_doaj,
     journal_is_oa,
-    oa_status as unpaywall_oa_status,
+    oa_status           AS unpaywall_oa_status,
 
     -- ### Gold Open Access:
     -- Gold OA is defined as either the journal being in DOAJ or the best_oa_location being a publisher and a
     -- license being detected. This works because Unpaywall will set the publisher as the best oa location if
     -- it identifies an accessible publisher copy.
-    CASE
-      WHEN journal_is_in_doaj OR (best_oa_location.host_type = "publisher" AND best_oa_location.license is not null AND not journal_is_in_doaj) THEN TRUE
-      ELSE FALSE
-    END
-      as gold,
+    IF(journal_is_in_doaj OR (best_oa_location.host_type = "publisher" AND best_oa_location.license IS NOT NULL AND NOT journal_is_in_doaj)
+      TRUE,FALSE
+    ) AS gold,
 
     -- ### Gold Open Access in DOAJ Journal:
     -- gold_just_doaj is determined directly from the Unpaywall statement that the journal is in DOAJ. No further
     -- checking is done on this, so articles that Unpaywall does not capture as being accessible that are in DOAJ
     -- journals will be characterised as gold_just_doaj.
-    CASE
-      WHEN journal_is_in_doaj THEN TRUE
-      ELSE FALSE
-    END
-      as gold_just_doaj,
+    IF(journal_is_in_doaj,
+      TRUE,FALSE
+    ) AS gold_just_doaj,
 
     -- ### Hybrid Open Access:
     -- hybrid is defined as being available at a publisher with a discovered license, where the journal of publication
     -- is not in DOAJ. This means that some publisher hybrid is not detected because Unpaywall does not detect a
     -- license. The use of DOAJ as defining a "fully oa journal" is also narrow and future developments will
     -- expand this considering, among other parameters, the Unpaywall tag 'journal-is-oa'.
-    CASE
-      WHEN (best_oa_location.host_type = "publisher" AND best_oa_location.license is not null AND not journal_is_in_doaj) THEN TRUE
-      ELSE FALSE
-    END
-      as hybrid,
+    IF(best_oa_location.host_type = "publisher" AND best_oa_location.license IS NOT NULL AND NOT journal_is_in_doaj,
+      TRUE,FALSE
+    ) AS hybrid,
 
     -- ### Bronze Open Access:
     -- bronze is defined as being available at the publisher website but without a license being detected by Unpaywall.
     -- This is intended to capture cases where content is unilaterally made readable by the publisher (eg via a moving
     -- paywall) as in these cases a more open license is not generally applied. However, this is a heuristic and
     -- there are significant issues distinguishing between different modes by which publishers make content readable.
-    CASE
-      WHEN (best_oa_location.host_type = "publisher" AND best_oa_location.license is null AND not journal_is_in_doaj) THEN TRUE
-      ELSE FALSE
-    END
-      as bronze,
+    IF(best_oa_location.host_type = "publisher" AND best_oa_location.license IS NULL AND NOT journal_is_in_doaj,
+      TRUE,FALSE
+    ) AS bronze,
 
     -- ### Green Open Access:
     -- green is defined as any case where Unpaywall identifies a copy of an output in a repository. This includes
@@ -259,53 +287,45 @@ base_oa_calcs as (
     -- preprint repositories register content as being journal articles (SSRN is the most common case). Green as
     -- defined here also explicitly includes those outputs that are also available via the publisher. For the set
     -- of content which is only freely available via a repository see `green_only`.
-    CASE
-      WHEN (SELECT COUNT(1) FROM UNNEST(oa_locations) AS location WHERE location.host_type IN ('repository')) > 0 THEN TRUE
-      ELSE FALSE
-    END
-      as green,
+    --((SELECT COUNT(1) FROM UNNEST(oa_locations) AS location WHERE location.host_type IN ('repository')) > 0) AS green,
+    IF('repository' IN (SELECT host_type FROM UNNEST(oa_locations)),
+      TRUE,FALSE
+    ) AS green,
 
     -- ### Green Open Access where the outputs is not available Gold (DOAJ or Hybrid) or Bronze:
     -- green_only is the subset of outputs available from repositories that are not also available free to read from
     -- the publisher. This category enables analyses of gold, bronze and green as mutually exclusive categories, e.g.
     -- in the generation of stacked bar charts that include gold_doaj, green, hybrid and bronze. This corresponds to
     -- general usage of the term "green" in some other literature.
-    CASE
-      WHEN (SELECT COUNT(1) FROM UNNEST(oa_locations) AS location WHERE location.host_type IN ('repository')) > 0 AND
-        NOT (journal_is_in_doaj OR best_oa_location.host_type = "publisher") THEN TRUE
-      ELSE FALSE
-    END
-      as green_only,
+    --((SELECT COUNT(1) FROM UNNEST(oa_locations) AS location WHERE location.host_type IN ('repository')) > 0 AND NOT (journal_is_in_doaj OR best_oa_location.host_type = "publisher")) AS green_only,
+    IF('repository' IN (SELECT host_type FROM UNNEST(oa_locations)) AND NOT (journal_is_in_doaj OR best_oa_location.host_type = "publisher"),
+      TRUE,FALSE
+    ) AS green_only,
 
     -- ### Green Open Access where the output is not available Gold (DOAJ or Hybrid) but may be Bronze:
     -- green_only_ignoring_bronze provides the set of articles that are green and not gold. That is it includes articles
     -- that are green and bronze, but not gold. This category enables analyses of gold and green as mutually
     -- exclusive categories, e.g. in the generation of stacked bar charts that include gold_doaj, green and hybrid.
-    CASE
-      WHEN (SELECT COUNT(1) FROM UNNEST(oa_locations) AS location WHERE location.host_type IN ('repository')) > 0 AND
-        NOT (journal_is_in_doaj OR (best_oa_location.host_type = "publisher" AND best_oa_location.license is not null)) THEN TRUE
-      ELSE FALSE
-    END
-      as green_only_ignoring_bronze,
+    --(SELECT COUNT(1) FROM UNNEST(oa_locations) AS location WHERE location.host_type IN ('repository')) > 0 AND NOT (journal_is_in_doaj OR (best_oa_location.host_type = "publisher" AND best_oa_location.license IS NOT NULL)) AS green_only_ignoring_bronze,
+    IF('repository' IN (SELECT host_type FROM UNNEST(oa_locations)) AND NOT (journal_is_in_doaj OR (best_oa_location.host_type = "publisher" AND best_oa_location.license IS NOT NULL)),
+      TRUE,FALSE
+    ) AS green_only_ignoring_bronze,
 
     -- ### Convenience category for analysing articles that have a license for the best OA location
-    CASE
-      WHEN (best_oa_location.license IS NOT NULL) THEN TRUE
-      ELSE FALSE
-    END
-      as has_license,
+    IF(best_oa_location.license IS NOT NULL,
+      TRUE,FALSE
+    ) AS has_license,
 
     -- ### Convenience category for analysing articles that have a Creative Commons license for the best OA location
-    CASE
-      WHEN ((best_oa_location.license IS NOT NULL) AND (STARTS_WITH(best_oa_location.license, "cc"))) THEN TRUE
-      ELSE FALSE
-    END
-      as is_cclicensed,
+    IF(best_oa_location.license IS NOT NULL AND STARTS_WITH(best_oa_location.license, "cc"),
+      TRUE,FALSE
+    ) AS is_cclicensed,
 
     repo.repositories,
-  FROM `{{ unpaywall.project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}` as unpaywall
-  LEFT JOIN name on name.identifier = unpaywall.journal_issn_l
-  LEFT JOIN repositories as repo on repo.doi = unpaywall.doi
+
+  FROM `{{ unpaywall.project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}` AS unpaywall
+  LEFT JOIN name ON name.identifier = unpaywall.journal_issn_l
+  LEFT JOIN repositories AS repo ON repo.doi = unpaywall.doi
 )
 
 -- Re-organise the base_oa_calcs table and calculate COKI Open Access categories.
@@ -334,75 +354,43 @@ SELECT
     green,
     green_only,
     green_only_ignoring_bronze
-  ) as oa_color,
+  ) AS oa_color,
 
   -- Open Access license categories
   STRUCT(
     has_license,
     is_cclicensed
-  ) as oa_license,
+  ) AS oa_license,
 
   -- The COKI Open Access categories
   STRUCT(
-    is_oa as open,
-  NOT is_oa as closed,
-    gold_just_doaj OR hybrid OR bronze as publisher,
-    green as other_platform,
-    (gold_just_doaj OR hybrid OR bronze) AND NOT green as publisher_only,
-    (gold_just_doaj OR hybrid OR bronze) AND green as both,
-    green_only as other_platform_only,
+    is_oa                                              AS open,
+    NOT is_oa                                          AS closed,
+    gold_just_doaj OR hybrid OR bronze                 AS publisher,
+    green                                              AS other_platform,
+    NOT green AND (gold_just_doaj OR hybrid OR bronze) AS publisher_only,
+    green     AND (gold_just_doaj OR hybrid OR bronze) AS both,
+    green_only                                         AS other_platform_only,
 
     -- Publisher Open Categories
     STRUCT(
-      gold_just_doaj as oa_journal,
-      hybrid,
-      bronze as no_guarantees
-    ) as publisher_categories,
+      gold_just_doaj AS oa_journal,
+      hybrid         AS hybrid,
+      bronze         AS no_guarantees
+    ) AS publisher_categories,
 
     -- Other Platform Open Category calculations
-    STRUCT(
-      CASE
-        WHEN (SELECT COUNT(1) FROM UNNEST(repositories) AS location WHERE location.category IN ('Preprint')) > 0 THEN TRUE
-        ELSE FALSE
-      END
-        as preprint,
+    (
+      SELECT AS STRUCT
+        COUNTIF(r.category = 'Preprint'      ) > 0 AS preprint,
+        COUNTIF(r.category = 'Domain'        ) > 0 AS domain,
+        COUNTIF(r.category = 'Institution'   ) > 0 AS institution,
+        COUNTIF(r.category = 'Public'        ) > 0 AS public,
+        COUNTIF(r.category = 'Aggregator'    ) > 0 AS aggregator,
+        COUNTIF(r.category = 'Other Internet') > 0 AS other_internet,
+        COUNTIF(r.category = 'Unknown'       ) > 0 AS unknown
+      FROM UNNEST(repositories) AS r
+    ) AS other_platform_categories
 
-      CASE
-        WHEN (SELECT COUNT(1) FROM UNNEST(repositories) AS location WHERE location.category IN ('Domain')) > 0 THEN TRUE
-        ELSE FALSE
-      END
-        as domain,
-
-      CASE
-        WHEN (SELECT COUNT(1) FROM UNNEST(repositories) AS location WHERE location.category IN ('Institution')) > 0 THEN TRUE
-        ELSE FALSE
-      END
-        as institution,
-
-      CASE
-        WHEN (SELECT COUNT(1) FROM UNNEST(repositories) AS location WHERE location.category IN ('Public')) > 0 THEN TRUE
-        ELSE FALSE
-      END
-        as public,
-
-      CASE
-        WHEN (SELECT COUNT(1) FROM UNNEST(repositories) AS location WHERE location.category IN ('Aggregator')) > 0 THEN TRUE
-        ELSE FALSE
-      END
-        as aggregator,
-
-      CASE
-        WHEN (SELECT COUNT(1) FROM UNNEST(repositories) AS location WHERE location.category IN ('Other Internet')) > 0 THEN TRUE
-        ELSE FALSE
-      END
-        as other_internet,
-
-      CASE
-        WHEN (SELECT COUNT(1) FROM UNNEST(repositories) AS location WHERE location.category IN ('Unknown')) > 0 THEN TRUE
-        ELSE FALSE
-      END
-        as unknown
-    ) as other_platform_categories
-
-  ) as oa_coki,
+  ) AS oa_coki,
 FROM base_oa_calcs

@@ -1,40 +1,37 @@
 {#
-Copyright 2020 Curtin University.
-Authors: Richard Hosking
-#}
-{#
-The purpose of this script it to export a subsection of fields from the DOI table.
-The whole table is very large, and while this export is not small, it is more managable and targets the key fields required for search and dashboarding
-#}
+  Copyright 2020 Curtin University.
+  Authors: Richard Hosking
 
-SELECT 
-  doi,
-  mag.PaperId as mag_paperId,
-  crossref.title as title,
-  mag.abstract as abstract,
+  The purpose of this script it to export a subsection of fields from the DOI table.
+  The whole table is very large, and while this export is not small, it is more managable and targets the key fields required for search and dashboarding
+#}
+SELECT
+  doi                                   AS doi,
+  mag.PaperId                           AS mag_paperId,
+  crossref.title                        AS title,
+  mag.abstract                          AS abstract,
   DATE(crossref.published_year, 12, 31) AS published_year,
-  unpaywall.output_type, 
-  crossref.publisher, 
-  unpaywall.journal_name as journal,
-  mag.CitationCount as citation_count,
-  unpaywall.is_oa, 
-  unpaywall.gold, 
-  unpaywall.green,
-  unpaywall.bronze,
-  unpaywall.hybrid, 
-  unpaywall.green_only,
-  
-  ARRAY(SELECT DisplayName FROM UNNEST(mag.fields.fields.level_0)) as level_0, 
-  ARRAY(SELECT DisplayName FROM UNNEST(mag.fields.fields.level_1)) as level_1,
-  ARRAY(SELECT DisplayName FROM UNNEST(mag.fields.fields.level_2)) as level_2,
-  ARRAY(SELECT DisplayName FROM UNNEST(mag.fields.fields.level_3)) as level_3,
-  
-  ARRAY(SELECT identifier FROM UNNEST( affiliations.institutions ) WHERE identifier IS NOT NULL) as institutions,
-  ARRAY(SELECT identifier FROM UNNEST( affiliations.countries ) WHERE identifier IS NOT NULL) as countries,
-  ARRAY(SELECT identifier FROM UNNEST( affiliations.regions ) WHERE identifier IS NOT NULL) as regions,
-  ARRAY(SELECT identifier FROM UNNEST( affiliations.groupings ) WHERE identifier IS NOT NULL) as groupings,
-  ARRAY(SELECT identifier FROM UNNEST( affiliations.funders ) WHERE identifier IS NOT NULL) as funders,
-  ARRAY(SELECT OriginalAuthor FROM UNNEST( mag.authors.authors ) WHERE OriginalAuthor IS NOT NULL) as authors
-FROM 
-  `{{ project_id }}.{{ dataset_id }}.{{ table_name }}`
-WHERE crossref.published_year > 2000
+  unpaywall.output_type                 AS output_type,
+  crossref.publisher,                   AS publisher,
+  unpaywall.journal_name                AS journal,
+  mag.CitationCount                     AS citation_count,
+  unpaywall.is_oa                       AS is_oa,
+  unpaywall.gold                        AS gold,
+  unpaywall.green                       AS green,
+  unpaywall.bronze                      AS bronze,
+  unpaywall.hybrid                      AS hybrid,
+  unpaywall.green_only                  AS green_only,
+
+  ARRAY(SELECT DisplayName FROM UNNEST(mag.fields.fields.level_0)) AS level_0,
+  ARRAY(SELECT DisplayName FROM UNNEST(mag.fields.fields.level_1)) AS level_1,
+  ARRAY(SELECT DisplayName FROM UNNEST(mag.fields.fields.level_2)) AS level_2,
+  ARRAY(SELECT DisplayName FROM UNNEST(mag.fields.fields.level_3)) AS level_3,
+
+  ARRAY(SELECT identifier     FROM UNNEST(affiliations.institutions) WHERE identifier     IS NOT NULL) AS institutions,
+  ARRAY(SELECT identifier     FROM UNNEST(affiliations.countries   ) WHERE identifier     IS NOT NULL) AS countries,
+  ARRAY(SELECT identifier     FROM UNNEST(affiliations.regions     ) WHERE identifier     IS NOT NULL) AS regions,
+  ARRAY(SELECT identifier     FROM UNNEST(affiliations.groupings   ) WHERE identifier     IS NOT NULL) AS groupings,
+  ARRAY(SELECT identifier     FROM UNNEST(affiliations.funders     ) WHERE identifier     IS NOT NULL) AS funders,
+  ARRAY(SELECT OriginalAuthor FROM UNNEST(mag.authors.authors      ) WHERE OriginalAuthor IS NOT NULL) AS authors
+FROM `{{ project_id }}.{{ dataset_id }}.{{ table_name }}`
+WHERE crossref.published_year > 2000 -- TODO: convert this to a Jinja param
