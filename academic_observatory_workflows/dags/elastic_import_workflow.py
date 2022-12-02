@@ -91,7 +91,7 @@ configs = [
             "dev-coki-dashboards",
             "dev-coki-btaa",
             "coki-btaa",
-            "dev-coki-curtin",
+            "dev-coki-curtin-dashboard",
             "coki-curtin-dashboard",
         ],
         elastic_mappings_path=ELASTIC_MAPPINGS_PATH,
