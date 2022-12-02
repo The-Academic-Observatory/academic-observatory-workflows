@@ -251,7 +251,7 @@ base_oa_calcs AS (
     -- Gold OA is defined as either the journal being in DOAJ or the best_oa_location being a publisher and a
     -- license being detected. This works because Unpaywall will set the publisher as the best oa location if
     -- it identifies an accessible publisher copy.
-    IF(journal_is_in_doaj OR (best_oa_location.host_type = "publisher" AND best_oa_location.license IS NOT NULL AND NOT journal_is_in_doaj)
+    IF(journal_is_in_doaj OR (best_oa_location.host_type = "publisher" AND best_oa_location.license IS NOT NULL AND NOT journal_is_in_doaj),
       TRUE,FALSE
     ) AS gold,
 
