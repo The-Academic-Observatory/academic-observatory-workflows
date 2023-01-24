@@ -450,7 +450,7 @@ class DoiWorkflow(Workflow):
         "ror",
         "open_citations",
         "unpaywall",
-        "orcid",
+        # "orcid", # TODO: add back in when ORCID telescope is fixed
         "crossref_events",
         "openalex",
     ]
