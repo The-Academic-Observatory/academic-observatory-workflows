@@ -274,7 +274,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "ror_sensor": ["check_dependencies"],
                 "open_citations_sensor": ["check_dependencies"],
                 "unpaywall_sensor": ["check_dependencies"],
-                "orcid_sensor": ["check_dependencies"],
                 "crossref_events_sensor": ["check_dependencies"],
                 "openalex_sensor": ["check_dependencies"],
                 "check_dependencies": ["create_datasets"],
