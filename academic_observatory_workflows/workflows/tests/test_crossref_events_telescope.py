@@ -24,6 +24,7 @@ from airflow.models import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
 from google.cloud import bigquery
+from importlib_metadata import metadata
 
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.crossref_events_telescope import (
@@ -49,7 +50,7 @@ from observatory.platform.utils.test_utils import (
     module_file_path,
     find_free_port,
 )
-from observatory.platform.utils.url_utils import get_user_agent
+from observatory.platform.utils.url_utils import get_user_agent, retry_get_url
 from observatory.platform.utils.workflow_utils import blob_name, create_date_table_id
 
 
@@ -82,6 +83,14 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
             "mailto",
             max_threads=21,
             max_processes=1,
+        )
+        # Patch the retry_get_url method to change its defaults
+        # This is necessary as retrying the http request will break the VCR cassette call
+        new_defaults = list(retry_get_url.__defaults__)
+        new_defaults[0] = 0  # num_retries = 0
+        self.retry_get_url_patch = patch(
+            "academic_observatory_workflows.workflows.crossref_events_telescope.retry_get_url.__defaults__",
+            tuple(new_defaults),
         )
 
         # API environment
@@ -227,7 +236,8 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
                 # Test download task
                 vcr_ = vcr.VCR(ignore_localhost=True)
                 with vcr_.use_cassette(self.first_cassette):
-                    env.run_task(telescope.download.__name__)
+                    with self.retry_get_url_patch:
+                        env.run_task(telescope.download.__name__)
                 self.assertEqual(6, len(release.download_files))
                 for file in release.download_files:
                     if "2018-05-14" in file:
@@ -503,14 +513,15 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
                 pendulum.datetime(2018, 5, 14),
                 pendulum.datetime(2018, 5, 19),
                 True,
-                "aniek.roelofs@curtin.edu.au",
+                metadata("academic_observatory_workflows").get("Author-email"),
                 max_threads=1,
                 max_processes=1,
             )
 
             # Download files
             with vcr.use_cassette(self.first_cassette):
-                release.download()
+                with self.retry_get_url_patch:
+                    release.download()
 
             # Transform batch
             for file_path in release.download_files:

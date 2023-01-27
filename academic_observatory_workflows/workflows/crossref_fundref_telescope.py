@@ -42,7 +42,7 @@ from observatory.platform.utils.gc_utils import (
     bigquery_table_exists,
 )
 from observatory.platform.utils.proc_utils import wait_for_process
-from observatory.platform.utils.url_utils import retry_session
+from observatory.platform.utils.url_utils import retry_get_url
 from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
@@ -119,7 +119,7 @@ class CrossrefFundrefRelease(SnapshotRelease):
         ]
 
         # Download release
-        with requests.get(self.url, headers=random.choice(headers_list), stream=True) as response:
+        with retry_get_url(self.url, headers=random.choice(headers_list), stream=True) as response:
             with open(self.download_path, "wb") as file:
                 shutil.copyfileobj(response.raw, file)
 
@@ -387,38 +387,34 @@ def list_releases(start_date: pendulum.DateTime, end_date: pendulum.DateTime) ->
     while True:
         # Fetch page
         url = f"{CrossrefFundrefTelescope.RELEASES_URL}?per_page=100&page={current_page}"
-        response = retry_session().get(url, headers=headers)
+        response = retry_get_url(url, headers=headers)
 
-        # Check if correct response code
-        if response is not None and response.status_code == 200:
-            # Parse json
-            num_pages = int(response.headers["X-Total-Pages"])
-            json_response = json.loads(response.text)
+        # Parse json
+        num_pages = int(response.headers["X-Total-Pages"])
+        json_response = json.loads(response.text)
 
-            # Parse release information
-            for release in json_response:
-                version = float(release["tag_name"].strip("v"))
-                for source in release["assets"]["sources"]:
-                    if source["format"] == "tar.gz":
-                        # Parse release date
-                        if version == 0.1:
-                            release_date = pendulum.datetime(year=2014, month=3, day=1)
-                        elif version < 1.0:
-                            date_string = release["description"].split("\n")[0]
-                            release_date = pendulum.from_format("01 " + date_string, "DD MMMM YYYY")
-                        else:
-                            release_date = pendulum.parse(release["released_at"])
+        # Parse release information
+        for release in json_response:
+            version = float(release["tag_name"].strip("v"))
+            for source in release["assets"]["sources"]:
+                if source["format"] == "tar.gz":
+                    # Parse release date
+                    if version == 0.1:
+                        release_date = pendulum.datetime(year=2014, month=3, day=1)
+                    elif version < 1.0:
+                        date_string = release["description"].split("\n")[0]
+                        release_date = pendulum.from_format("01 " + date_string, "DD MMMM YYYY")
+                    else:
+                        release_date = pendulum.parse(release["released_at"])
 
-                        # Only include release if it is within start and end dates
-                        if start_date <= release_date < end_date:
-                            release_info.append({"url": source["url"], "date": release_date.format("YYYYMMDD")})
+                    # Only include release if it is within start and end dates
+                    if start_date <= release_date < end_date:
+                        release_info.append({"url": source["url"], "date": release_date.format("YYYYMMDD")})
 
-            # Check if we should exit or get the next page
-            if num_pages <= current_page:
-                break
-            current_page += 1
-        else:
-            raise AirflowException(f"Error retrieving response from: {url}")
+        # Check if we should exit or get the next page
+        if num_pages <= current_page:
+            break
+        current_page += 1
 
     return release_info
 

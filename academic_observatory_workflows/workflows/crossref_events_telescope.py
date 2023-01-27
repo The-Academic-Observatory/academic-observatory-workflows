@@ -21,17 +21,17 @@ import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExecutor
 from typing import List, Tuple, Union
+import requests
 
 import jsonlines
 import pendulum
-import requests
+from importlib_metadata import metadata
 from airflow.exceptions import AirflowSkipException
-from tenacity import RetryError, retry, stop_after_attempt, wait_exponential, wait_fixed
 
 from academic_observatory_workflows.api_type_ids import DatasetTypeId
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowVars
-from observatory.platform.utils.url_utils import get_user_agent
+from observatory.platform.utils.url_utils import get_user_agent, retry_get_url
 from observatory.platform.utils.workflow_utils import upload_files_from_list
 from observatory.platform.workflows.stream_telescope import (
     StreamRelease,
@@ -225,7 +225,7 @@ class CrossrefEventsTelescope(StreamTelescope):
         schema_folder: str = default_schema_folder(),
         batch_load: bool = True,
         airflow_vars: List = None,
-        mailto: str = "aniek.roelofs@curtin.edu.au",
+        mailto: str = metadata("academic_observatory_workflows").get("Author-email"),
         max_threads: int = min(32, os.cpu_count() + 4),
         max_processes: int = os.cpu_count(),
         dataset_type_id: str = DatasetTypeId.crossref_events,
@@ -324,28 +324,7 @@ class CrossrefEventsTelescope(StreamTelescope):
         release.transform()
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_fixed(20) + wait_exponential(multiplier=10, exp_base=3, max=60 * 10),
-)
-def get_response(url: str, headers: dict):
-    """Get response from the url with given headers and retry for certain status codes.
-
-    :param url: The url
-    :param headers: The headers dict
-    :return: The response
-    """
-    response = requests.get(url, headers=headers)
-    if response.status_code in [500, 400, 429]:
-        logging.info(
-            f'Downloading events from url: {url}, attempt: {get_response.retry.statistics["attempt_number"]}, '
-            f'idle for: {get_response.retry.statistics["idle_for"]}'
-        )
-        raise ConnectionError("Retrying url")
-    return response
-
-
-def parse_event_url(url: str) -> (str, str):
+def parse_event_url(url: str) -> Tuple(str, str):
     """Parse the URL to get the event type and date
 
     :param url: The url
@@ -371,30 +350,27 @@ def download_events(url: str, headers: dict, events_path: str, cursor_path: str)
     :return: next_cursor, counter of events and total number of events according to the response
     """
     try:
-        response = get_response(url, headers)
-    except RetryError:
+        response = retry_get_url(url, headers=headers)
+    except requests.exceptions.RequestException:
         # Try again with rows set to 100
         url = re.sub("rows=[0-9]*", "rows=100", url)
-        response = get_response(url, headers)
+        response = retry_get_url(url, headers=headers)
 
-    if response.status_code == 200:
-        response_json = response.json()
-        total_events = response_json["message"]["total-results"]
-        events = response_json["message"]["events"]
-        next_cursor = response_json["message"]["next-cursor"]
-        counter = len(events)
+    response_json = response.json()
+    total_events = response_json["message"]["total-results"]
+    events = response_json["message"]["events"]
+    next_cursor = response_json["message"]["next-cursor"]
+    counter = len(events)
 
-        # append events and cursor
-        if events:
-            with open(events_path, "a") as f:
-                with jsonlines.Writer(f) as writer:
-                    writer.write_all(events)
-        if next_cursor:
-            with open(cursor_path, "a") as f:
-                f.write(next_cursor + "\n")
-        return next_cursor, counter, total_events
-    else:
-        raise ConnectionError(f"Error requesting url: {url}, response: {response.text}")
+    # append events and cursor
+    if events:
+        with open(events_path, "a") as f:
+            with jsonlines.Writer(f) as writer:
+                writer.write_all(events)
+    if next_cursor:
+        with open(cursor_path, "a") as f:
+            f.write(next_cursor + "\n")
+    return next_cursor, counter, total_events
 
 
 def transform_events(event):

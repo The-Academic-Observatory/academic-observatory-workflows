@@ -41,7 +41,7 @@ from academic_observatory_workflows.config import schema_folder as default_schem
 from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
 from observatory.platform.utils.config_utils import find_schema
 from observatory.platform.utils.proc_utils import wait_for_process
-from observatory.platform.utils.url_utils import retry_session
+from observatory.platform.utils.url_utils import retry_session, retry_get_url
 from observatory.platform.utils.workflow_utils import blob_name, bq_load_shard, get_chunks
 from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
@@ -92,11 +92,7 @@ class CrossrefMetadataRelease(SnapshotRelease):
         header = {"Crossref-Plus-API-Token": f"Bearer {self.api_key}"}
 
         # Download release
-        with requests.get(self.url, headers=header, stream=True) as response:
-            # Check if authorisation with the api token was successful or not, raise error if not successful
-            if response.status_code != 200:
-                raise ConnectionError(f"Error downloading file {self.url}, status_code={response.status_code}")
-
+        with retry_get_url(self.url, headers=header, stream=True) as response:
             # Open file for saving
             with open(self.download_path, "wb") as file:
                 response.raw.read = functools.partial(response.raw.read, decode_content=True)

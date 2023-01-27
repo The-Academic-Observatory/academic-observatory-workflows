@@ -51,7 +51,7 @@ from observatory.platform.utils.jinja2_utils import (
     make_sql_jinja2_filename,
     render_template,
 )
-from observatory.platform.utils.url_utils import retry_session
+from observatory.platform.utils.url_utils import retry_get_url
 from observatory.platform.utils.workflow_utils import make_release_date
 from observatory.platform.workflows.workflow import Workflow
 
@@ -307,8 +307,8 @@ def fetch_ror_affiliations(repository_institution: str, num_retries: int = 3) ->
     print(f"fetch_ror_affiliations: {repository_institution}")
     rors = []
     try:
-        response = retry_session(num_retries=num_retries).get(
-            "https://api.ror.org/organizations", params={"affiliation": repository_institution}
+        response = retry_get_url(
+            "https://api.ror.org/organizations", num_retries=num_retries, params={"affiliation": repository_institution}
         )
         items = response.json()["items"]
         for item in items:

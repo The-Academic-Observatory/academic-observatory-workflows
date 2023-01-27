@@ -34,9 +34,7 @@ from academic_observatory_workflows.config import schema_folder as default_schem
 from academic_observatory_workflows.dag_tag import Tag
 from observatory.platform.utils.airflow_utils import AirflowVars
 from observatory.platform.utils.file_utils import list_to_jsonl_gz
-from observatory.platform.utils.url_utils import (
-    retry_session,
-)
+from observatory.platform.utils.url_utils import retry_get_url
 from observatory.platform.workflows.snapshot_telescope import (
     SnapshotRelease,
     SnapshotTelescope,
@@ -209,7 +207,7 @@ class RorTelescope(SnapshotTelescope):
         :return: None.
         """
         for release in releases:
-            with requests.get(release.url, stream=True) as r:
+            with retry_get_url(release.url, stream=True) as r:
                 with open(release.download_path, "wb") as f:
                     shutil.copyfileobj(r.raw, f)
             logging.info(f"Downloaded file from {release.url} to: {release.download_path}")
@@ -260,12 +258,7 @@ def list_ror_records(start_date: pendulum.DateTime, end_date: pendulum.DateTime,
     :return: the list of ROR records with required variables stored as a dictionary.
     """
     logging.info(f"Getting info on available ROR records from Zenodo, from url: {RorTelescope.ROR_DATASET_URL}")
-    response = retry_session().get(RorTelescope.ROR_DATASET_URL, timeout=timeout, headers={"Accept-encoding": "gzip"})
-    if response.status_code != 200:
-        raise AirflowException(
-            f"Request to get available records on Zenodo unsuccessful, url: {RorTelescope.ROR_DATASET_URL}, "
-            f"status code: {response.status_code}, response: {response.text}, reason: {response.reason}"
-        )
+    response = retry_get_url(RorTelescope.ROR_DATASET_URL, timeout=timeout, headers={"Accept-encoding": "gzip"})
     response_json = json.loads(response.text)
 
     # Get release date and url of records that are created between two dates
