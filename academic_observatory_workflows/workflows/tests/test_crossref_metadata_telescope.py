@@ -18,6 +18,7 @@ import json
 import os
 from datetime import datetime
 from unittest.mock import patch
+import requests
 
 import httpretty
 import pendulum
@@ -291,7 +292,7 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
         release = self.release
         with httpretty.enabled():
             httpretty.register_uri(httpretty.GET, release.url, body="", status=400)
-            with self.assertRaises(ConnectionError):
+            with self.assertRaises(requests.exceptions.HTTPError):
                 release.download()
 
     @patch("academic_observatory_workflows.workflows.crossref_metadata_telescope.subprocess.Popen")

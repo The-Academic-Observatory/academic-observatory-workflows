@@ -17,6 +17,7 @@
 import json
 import os
 from unittest.mock import patch
+import requests
 
 import httpretty
 import jsonlines
@@ -456,5 +457,5 @@ class TestRorTelescope(ObservatoryTestCase):
         # Test list records with a response code that is not 200
         with httpretty.enabled():
             httpretty.register_uri(httpretty.GET, RorTelescope.ROR_DATASET_URL, status=400)
-            with self.assertRaises(AirflowException):
+            with self.assertRaises(requests.exceptions.HTTPError):
                 list_ror_records(start_date, end_date)
