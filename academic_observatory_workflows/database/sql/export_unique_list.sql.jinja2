@@ -1,20 +1,17 @@
 {#
-Copyright 2020 Curtin University.
-Authors: Richard Hosking
-#}
-{#
-The purpose of this script it to export a unique list of entities for each of the aggregation tables (institution, country, group, etc)
-This is to improve the performance of drop-down lists in Elasticsearch and Kibana
-#}
+  Copyright 2020 Curtin University.
+  Authors: Richard Hosking
 
+  The purpose of this script it to export a unique list of entities for each of the aggregation tables (institution, country, group, etc)
+  This is to improve the performance of drop-down lists in Elasticsearch and Kibana
+#}
 SELECT
-  entity.id as {{ aggregate }}_id,
-  ANY_VALUE(entity.name) as {{ aggregate }}_name,
-  ANY_VALUE(entity.country) as {{ aggregate }}_country,
-  ANY_VALUE(entity.country_code) as {{ aggregate }}_country_code,
-  ANY_VALUE(entity.region) as {{ aggregate }}_region,
-  ANY_VALUE(entity.subregion) as {{ aggregate }}_subregion,
-  ANY_VALUE(entity.coordinates) as {{ aggregate }}_coordinates,
-FROM
-  `{{ project_id }}.{{ dataset_id }}.{{ table_id }}{{ release_date.strftime('%Y%m%d') }}` as entity
+  entity.id                       AS {{ aggregate }}_id,
+  ANY_VALUE(entity.name         ) AS {{ aggregate }}_name,
+  ANY_VALUE(entity.country      ) AS {{ aggregate }}_country,
+  ANY_VALUE(entity.country_code ) AS {{ aggregate }}_country_code,
+  ANY_VALUE(entity.region       ) AS {{ aggregate }}_region,
+  ANY_VALUE(entity.subregion    ) AS {{ aggregate }}_subregion,
+  ANY_VALUE(entity.coordinates  ) AS {{ aggregate }}_coordinates,
+FROM `{{ project_id }}.{{ dataset_id }}.{{ table_id }}{{ release_date.strftime('%Y%m%d') }}` AS entity
 GROUP BY entity.id

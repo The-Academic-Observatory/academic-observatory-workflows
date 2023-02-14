@@ -1,40 +1,80 @@
-{# Copyright 2020 Curtin University
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+{#
+  # Copyright 2020 Curtin University
+  #
+  # Licensed under the Apache License, Version 2.0 (the "License");
+  # you may not use this file except in compliance with the License.
+  # You may obtain a copy of the License at
+  #
+  #   http://www.apache.org/licenses/LICENSE-2.0
+  #
+  # Unless required by applicable law or agreed to in writing, software
+  # distributed under the License is distributed on an "AS IS" BASIS,
+  # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  # See the License for the specific language governing permissions and
+  # limitations under the License.
 
-# Author: Richard Hosking, James Diprose #}
+  # Author: Richard Hosking, James Diprose, Julian Tonti-Filippini
 
-{# This query takes the raw OpenCitations dataset, and creates a range of helpful fields that are easier to work with #}
+  This query takes the raw OpenCitations dataset, and creates a range of helpful fields that are easier to work with
+#}
 SELECT
-  UPPER(TRIM(cited)) as doi,
-  COUNT(cited) as citations_total, 
-  COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 0) as citations_before_publication,
-  COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 1) as citations_one_year,
-  COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 2) as citations_two_years,
-  COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 5) as citations_five_years,
-  
-  COUNTIF(journal_sc = True) as journal_sc_total,
-  COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 0 AND journal_sc = True) as journal_sc_before_publication,
-  COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 1 AND journal_sc = True) as journal_sc_one_year,
-  COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 2 AND journal_sc = True) as journal_sc_two_years,
-  COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 5 AND journal_sc = True) as journal_sc_five_years,
-  
-  COUNTIF(author_sc = True) as author_sc_total,
-  COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 0 AND author_sc = True) as author_sc_before_publication,
-  COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 1 AND author_sc = True) as author_sc_one_year,
-  COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 2 AND author_sc = True) as author_sc_two_years,
-  COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 5 AND author_sc = True) as author_sc_five_years
-FROM
-  `{{ open_citations.project_id }}.{{ open_citations.dataset_id }}.{{ open_citations.table_id }}{{ open_citations.release_date.strftime('%Y%m%d') }}` as citations
-GROUP BY
-  UPPER(TRIM(cited))
+  doi                           AS doi,
+  COUNT(doi)                    AS citations_total,
+  COUNTIF(         elapsed < 0) AS citations_before_publication,
+  COUNTIF(         elapsed < 1) AS citations_one_year,
+  COUNTIF(         elapsed < 2) AS citations_two_years,
+  COUNTIF(         elapsed < 5) AS citations_five_years,
+  COUNTIF(j_sc                ) AS journal_sc_total,
+  COUNTIF(j_sc AND elapsed < 0) AS journal_sc_before_publication,
+  COUNTIF(j_sc AND elapsed < 1) AS journal_sc_one_year,
+  COUNTIF(j_sc AND elapsed < 2) AS journal_sc_two_years,
+  COUNTIF(j_sc AND elapsed < 5) AS journal_sc_five_years,
+  COUNTIF(a_sc                ) AS author_sc_total,
+  COUNTIF(a_sc AND elapsed < 0) AS author_sc_before_publication,
+  COUNTIF(a_sc AND elapsed < 1) AS author_sc_one_year,
+  COUNTIF(a_sc AND elapsed < 2) AS author_sc_two_years,
+  COUNTIF(a_sc AND elapsed < 5) AS author_sc_five_years
+FROM (
+  SELECT 
+    UPPER(TRIM(cited))        AS doi,
+    IF(journal_sc,TRUE,FALSE) AS j_sc,
+    IF(author_sc,TRUE,FALSE)  AS a_sc,
+    {# 
+      The timespan field uses a string to indicate the duration between when the paper was published
+      and when the citation occurred. See: https://www.w3.org/TR/xmlschema11-2/#duration
+      For example: P10Y10M16D means that the citation happened 10 years, 10 months and 16 days after 
+      publication. A negative sign in the first position (before the P) indicates that the paper 
+      was cited before being published (many may be errors).
+    #}
+    -- previous version
+    -- IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) AS elapsed
+
+    -- suggested replacement
+    (IF(STARTS_WITH(timespan,'-'),-1,1) * CAST(REGEXP_EXTRACT(UPPER(timespan), "P([0-9]+)Y") AS INT64)) AS elapsed
+    
+  FROM `{{ open_citations.project_id }}.{{ open_citations.dataset_id }}.{{ open_citations.table_id }}{{ open_citations.release_date.strftime('%Y%m%d') }}`
+)
+GROUP BY doi
+
+{# 
+  -- previous query
+  SELECT
+    UPPER(TRIM(cited))                                                                                                                                                                            AS doi,
+    COUNT(cited)                                                                                                                                                                                  AS citations_total,
+    COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 0)                        AS citations_before_publication,
+    COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 1)                        AS citations_one_year,
+    COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 2)                        AS citations_two_years,
+    COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 5)                        AS citations_five_years,
+    COUNTIF(journal_sc = TRUE)                                                                                                                                                                    AS journal_sc_total,
+    COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 0 AND journal_sc = True)  AS journal_sc_before_publication,
+    COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 1 AND journal_sc = True)  AS journal_sc_one_year,
+    COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 2 AND journal_sc = True)  AS journal_sc_two_years,
+    COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 5 AND journal_sc = True)  AS journal_sc_five_years,
+    COUNTIF(author_sc = TRUE)                                                                                                                                                                     AS author_sc_total,
+    COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 0 AND author_sc = True)   AS author_sc_before_publication,
+    COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 1 AND author_sc = True)   AS author_sc_one_year,
+    COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 2 AND author_sc = True)   AS author_sc_two_years,
+    COUNTIF(IF(STARTS_WITH(timespan, "-"), -1, IF(STRPOS(timespan, "Y")-1 > 0, CAST(SUBSTR(timespan, STRPOS(timespan, "P")+1, STRPOS(timespan, "Y")-2) AS INT64), 0)) < 5 AND author_sc = True)   AS author_sc_five_years
+  FROM `{{ open_citations.project_id }}.{{ open_citations.dataset_id }}.{{ open_citations.table_id }}{{ open_citations.release_date.strftime('%Y%m%d') }}` AS citations
+  GROUP BY citations.doi
+#}

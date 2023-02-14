@@ -1,22 +1,24 @@
-{# Copyright 2020 Curtin University
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+{#
+  # Copyright 2020 Curtin University
+  #
+  # Licensed under the Apache License, Version 2.0 (the "License");
+  # you may not use this file except in compliance with the License.
+  # You may obtain a copy of the License at
+  #
+  #   http://www.apache.org/licenses/LICENSE-2.0
+  #
+  # Unless required by applicable law or agreed to in writing, software
+  # distributed under the License is distributed on an "AS IS" BASIS,
+  # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  # See the License for the specific language governing permissions and
+  # limitations under the License.
 
-# Author: Richard Hosking, James Diprose #}
-
+  # Author: Richard Hosking, James Diprose
+#}
 SELECT
-    UPPER(TRIM(crossref.doi)) as doi,
-    ARRAY_AGG(STRUCT(funder, fundref)) as funders
-FROM `{{ crossref_metadata.project_id }}.{{ crossref_metadata.dataset_id }}.{{ crossref_metadata.table_id }}{{ crossref_metadata.release_date.strftime('%Y%m%d') }}` as crossref, UNNEST(crossref.funder) as funder
-LEFT JOIN `{{ crossref_fundref.project_id }}.{{ crossref_fundref.dataset_id }}.{{ crossref_fundref.table_id }}{{ crossref_fundref.release_date.strftime('%Y%m%d') }}` as fundref on SUBSTR(fundref.funder, 19) = funder.doi
+  UPPER(TRIM(crossref.doi))          AS doi,
+  ARRAY_AGG(STRUCT(funder, fundref)) AS funders
+FROM `{{ crossref_metadata.project_id }}.{{ crossref_metadata.dataset_id }}.{{ crossref_metadata.table_id }}{{ crossref_metadata.release_date.strftime('%Y%m%d') }}` AS crossref,
+UNNEST(crossref.funder) AS funder
+LEFT JOIN `{{ crossref_fundref.project_id }}.{{ crossref_fundref.dataset_id }}.{{ crossref_fundref.table_id }}{{ crossref_fundref.release_date.strftime('%Y%m%d') }}` AS fundref ON SUBSTR(fundref.funder, 19) = funder.doi
 GROUP BY UPPER(TRIM(crossref.doi))

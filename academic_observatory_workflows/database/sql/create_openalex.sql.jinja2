@@ -1,50 +1,43 @@
-{# Copyright 2022 Curtin University
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+{#
+  # Copyright 2022 Curtin University
+  #
+  # Licensed under the Apache License, Version 2.0 (the "License");
+  # you may not use this file except in compliance with the License.
+  # You may obtain a copy of the License at
+  #
+  #   http://www.apache.org/licenses/LICENSE-2.0
+  #
+  # Unless required by applicable law or agreed to in writing, software
+  # distributed under the License is distributed on an "AS IS" BASIS,
+  # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  # See the License for the specific language governing permissions and
+  # limitations under the License.
 
-# Author: COKI Team #}
+  # Author: COKI Team
 
-{# Handle situation when a doi is assigned to multiple work ids.
- # Uses basic heuristic that favours high ror id count. Tie break with arbitrary selection.
- #}
+  Handle situation when a doi is assigned to multiple work ids.
+  Uses basic heuristic that favours high ror id count. Tie break with arbitrary selection.
+#}
 WITH
-ror_case1 as (SELECT id, upper(trim(doi)) doi, 0 as ror_count,  FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.Work` where doi is not null and authorships is null),
-ror_case2 as (SELECT id, upper(trim(doi)) doi, 0 as ror_count,  FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.Work` where doi is not null and array_length(authorships) = 0),
-ror_case3 as (SELECT id, upper(trim(doi)) doi, 0 as ror_count,  FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.Work`, unnest(authorships) auths where doi is not null and array_length(authorships) > 0 and auths.institutions is null),
-ror_case4 as (SELECT id, upper(trim(doi)) doi, 0 as ror_count,  FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.Work`, unnest(authorships) auths where doi is not null and array_length(authorships) > 0 and array_length(auths.institutions) = 0),
-ror_case5 as (SELECT work.id id, upper(trim(doi)) doi, count(inst.ror) ror_count,  FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.Work` work, unnest(authorships) auths, unnest(institutions) inst where doi is not null and array_length(authorships) > 0 and array_length(auths.institutions) > 0 group by upper(trim(doi)), work.id
+ror_case1 AS (SELECT            id, UPPER(TRIM(doi)) AS doi, 0               AS ror_count FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.Work`                                                                     WHERE doi IS NOT NULL AND authorships IS NULL),
+ror_case2 AS (SELECT            id, UPPER(TRIM(doi)) AS doi, 0               AS ror_count FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.Work`                                                                     WHERE doi IS NOT NULL AND ARRAY_LENGTH(authorships) = 0),
+ror_case3 AS (SELECT            id, UPPER(TRIM(doi)) AS doi, 0               AS ror_count FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.Work`,         UNNEST(authorships) AS auths                               WHERE doi IS NOT NULL AND ARRAY_LENGTH(authorships) > 0 AND auths.institutions IS NULL),
+ror_case4 AS (SELECT            id, UPPER(TRIM(doi)) AS doi, 0               AS ror_count FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.Work`,         UNNEST(authorships) AS auths                               WHERE doi IS NOT NULL AND ARRAY_LENGTH(authorships) > 0 AND ARRAY_LENGTH(auths.institutions) = 0),
+ror_case5 AS (SELECT work.id AS id, UPPER(TRIM(doi)) AS doi, COUNT(inst.ror) AS ror_count FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.Work` AS work, UNNEST(authorships) AS auths, UNNEST(institutions) AS inst WHERE doi IS NOT NULL AND ARRAY_LENGTH(authorships) > 0 AND ARRAY_LENGTH(auths.institutions) > 0 GROUP BY UPPER(TRIM(doi)), work.id),
+ror_cases_merged AS (
+  SELECT * FROM ror_case1 UNION ALL
+  SELECT * FROM ror_case2 UNION ALL
+  SELECT * FROM ror_case3 UNION ALL
+  SELECT * FROM ror_case4 UNION ALL
+  SELECT * FROM ror_case5
 ),
-ror_cases_merged as (
-SELECT * FROM ror_case1
-UNION ALL
-SELECT * FROM ror_case2
-UNION ALL
-SELECT * FROM ror_case3
-UNION ALL
-SELECT * FROM ror_case4
-UNION ALL
-SELECT * FROM ror_case5
-),
-ror_filtered as (SELECT
-doi, array_agg(id order by ror_count desc)[offset(0)] id
-FROM ror_cases_merged
-group by doi)
-
+ror_filtered AS (
+  SELECT doi, ARRAY_AGG(id ORDER BY ror_count DESC)[OFFSET(0)] AS id
+  FROM ror_cases_merged
+  GROUP BY doi
+)
 SELECT
-  UPPER(TRIM(SUBSTRING(openalex.doi, 17))) as doi,
+  UPPER(TRIM(SUBSTRING(openalex.doi, 17))) AS doi,
   openalex.* EXCEPT(doi)
-FROM
-`{{ openalex.project_id }}.{{ openalex.dataset_id }}.Work` openalex
-INNER JOIN
-ror_filtered
-ON openalex.id = ror_filtered.id
+FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.Work` AS openalex
+INNER JOIN ror_filtered ON openalex.id = ror_filtered.id
