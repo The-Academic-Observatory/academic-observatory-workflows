@@ -842,6 +842,7 @@ class DoiWorkflow(Workflow):
             table_id=output_table_id_sharded,
             location=self.data_location,
             clustering_fields=transform.output_clustering_fields,
+            schema_file_path=kwargs.get("schema"),
         )
 
         set_task_state(success, kwargs["task_id"])
