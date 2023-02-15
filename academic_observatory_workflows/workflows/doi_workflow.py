@@ -34,7 +34,7 @@ from google.api_core.exceptions import BadRequest
 from google.cloud import bigquery
 from google.cloud.bigquery import LoadJobConfig, LoadJob
 
-from academic_observatory_workflows.config import sql_folder
+from academic_observatory_workflows.config import sql_folder, schema_folder
 from academic_observatory_workflows.dag_tag import Tag
 from observatory.platform.utils.airflow_utils import AirflowVars, set_task_state
 from observatory.platform.utils.dag_run_sensor import DagRunSensor
@@ -53,6 +53,7 @@ from observatory.platform.utils.jinja2_utils import (
 )
 from observatory.platform.utils.url_utils import retry_get_url
 from observatory.platform.utils.workflow_utils import make_release_date
+from observatory.platform.utils.config_utils import find_schema
 from observatory.platform.workflows.workflow import Workflow
 
 MAX_QUERIES = 100
@@ -641,7 +642,11 @@ class DoiWorkflow(Workflow):
         task_id = f"create_{self.transform_doi.output_table.table_id}"
         self.add_task(
             self.create_intermediate_table,
-            op_kwargs={"transform": self.transform_doi, "task_id": task_id},
+            op_kwargs={
+                "transform": self.transform_doi,
+                "task_id": task_id,
+                "schema": find_schema(schema_folder(), self.transform_doi.output_table.table_id),
+            },
             task_id=task_id,
         )
 
@@ -649,7 +654,11 @@ class DoiWorkflow(Workflow):
         task_id = f"create_{self.transform_book.output_table.table_id}"
         self.add_task(
             self.create_intermediate_table,
-            op_kwargs={"transform": self.transform_book, "task_id": task_id},
+            op_kwargs={
+                "transform": self.transform_book,
+                "task_id": task_id,
+                "schema": find_schema(schema_folder(), self.transform_book.output_table.table_id),
+            },
             task_id=task_id,
         )
 
@@ -658,7 +667,13 @@ class DoiWorkflow(Workflow):
             for agg in self.AGGREGATIONS:
                 task_id = f"create_{agg.table_id}"
                 self.add_task(
-                    self.create_aggregate_table, op_kwargs={"aggregation": agg, "task_id": task_id}, task_id=task_id
+                    self.create_aggregate_table,
+                    op_kwargs={
+                        "aggregation": agg,
+                        "task_id": task_id,
+                        "schema": find_schema(schema_folder(), agg.table_id),
+                    },
+                    task_id=task_id,
                 )
 
         # Copy tables and create views
