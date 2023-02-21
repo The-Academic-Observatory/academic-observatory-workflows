@@ -27,6 +27,7 @@ import jsonlines
 import pendulum
 from importlib_metadata import metadata
 from airflow.exceptions import AirflowSkipException
+from ratelimit import limits, sleep_and_retry
 
 from academic_observatory_workflows.api_type_ids import DatasetTypeId
 from academic_observatory_workflows.config import schema_folder as default_schema_folder
@@ -350,10 +351,12 @@ def download_events(url: str, headers: dict, events_path: str, cursor_path: str)
     :return: next_cursor, counter of events and total number of events according to the response
     """
     try:
+        crossref_events_limiter()
         response = retry_get_url(url, headers=headers)
     except requests.exceptions.RequestException:
         # Try again with rows set to 100
         url = re.sub("rows=[0-9]*", "rows=100", url)
+        crossref_events_limiter()
         response = retry_get_url(url, headers=headers)
 
     response_json = response.json()
@@ -371,6 +374,13 @@ def download_events(url: str, headers: dict, events_path: str, cursor_path: str)
         with open(cursor_path, "a") as f:
             f.write(next_cursor + "\n")
     return next_cursor, counter, total_events
+
+
+@sleep_and_retry
+@limits(calls=15, period=1)
+def crossref_events_limiter():
+    """Task to throttle the calls to the crossref events API"""
+    return
 
 
 def transform_events(event):
