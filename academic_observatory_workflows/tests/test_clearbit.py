@@ -23,7 +23,7 @@ from click.testing import CliRunner
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
 from academic_observatory_workflows.config import test_fixtures_folder
-from observatory.platform.utils.file_utils import get_file_hash
+from observatory.platform.files import get_file_hash
 
 
 class TestClearbitUtils(unittest.TestCase):

@@ -20,48 +20,50 @@ import dataclasses
 import datetime
 import json
 import logging
+import math
 import os
 import os.path
 import shutil
 import statistics
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import field
-from typing import List, Dict
-from typing import Optional, Tuple, Union
+from typing import Tuple, Union, Optional, List, Dict
 from urllib.parse import urlparse
 from zipfile import ZipFile
 
 import google.cloud.bigquery as bigquery
 import jsonlines
-import math
 import nltk
 import numpy as np
 import pandas as pd
 import pendulum
 from airflow.exceptions import AirflowException
-from airflow.models.variable import Variable
 from airflow.sensors.external_task import ExternalTaskSensor
 from jinja2 import Template
 from pandas.api.types import is_string_dtype
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
-from academic_observatory_workflows.dag_tag import Tag
+from academic_observatory_workflows.config import Tag
 from academic_observatory_workflows.github import trigger_repository_dispatch
 from academic_observatory_workflows.institutions import INSTITUTION_IDS
 from academic_observatory_workflows.wikipedia import fetch_wiki_descriptions
 from academic_observatory_workflows.zenodo import Zenodo, make_draft_version, publish_new_version
-from observatory.platform.utils.airflow_utils import AirflowVars, get_airflow_connection_password
-from observatory.platform.utils.file_utils import load_jsonl, list_to_jsonl_gz
-from observatory.platform.utils.gc_utils import (
-    bigquery_sharded_table_id,
-    download_blobs_from_cloud_storage,
-    select_table_shard_dates,
-    upload_file_to_cloud_storage,
-    download_blob_from_cloud_storage,
+from observatory.platform.airflow import get_airflow_connection_password
+from observatory.platform.bigquery import (
+    bq_sharded_table_id,
+    bq_select_table_shard_dates,
+    bq_table_id,
 )
-from observatory.platform.utils.workflow_utils import make_release_date
-from observatory.platform.workflows.snapshot_telescope import SnapshotRelease
-from observatory.platform.workflows.workflow import Workflow
+from observatory.platform.files import load_jsonl, save_jsonl_gz
+from observatory.platform.gcs import (
+    gcs_blob_name_from_path,
+    gcs_download_blobs,
+    gcs_upload_file,
+    gcs_download_blob,
+    gcs_blob_uri,
+)
+from observatory.platform.observatory_config import CloudWorkspace
+from observatory.platform.workflows.workflow import Workflow, SnapshotRelease, cleanup, make_snapshot_date
 
 # The minimum number of outputs before including an entity in the analysis
 PERCENTAGE_FIELD_KEYS = [
@@ -101,8 +103,8 @@ SELECT
   (SELECT * from ror.types LIMIT 1) AS institution_type,
   ror.acronyms
 FROM
-  `{project_id}.{ror_dataset_id}.{ror_table_id}` as ror
-  LEFT OUTER JOIN `{project_id}.{settings_dataset_id}.{country_table_id}` as country ON ror.country.country_code = country.alpha2
+  `{ror_table_id}` as ror
+  LEFT OUTER JOIN `{country_table_id}` as country ON ror.country.country_code = country.alpha2
 ORDER BY name ASC
 """
 
@@ -115,7 +117,7 @@ SELECT
   country.region as region,
   country.alpha2 as alpha2 -- used for country flags
 FROM
-  `{project_id}.{settings_dataset_id}.{country_table_id}` as country
+  `{country_table_id}` as country
 ORDER BY name ASC
 """
 
@@ -149,8 +151,8 @@ SELECT
 
   agg.repositories
 FROM
-  `{project_id}.{agg_dataset_id}.{agg_table_id}` as agg
-WHERE agg.time_period >= 2000 AND agg.time_period <= {end_year}
+  `{agg_table_id}` as agg
+WHERE agg.time_period >= {start_year} AND agg.time_period <= {end_year}
 ORDER BY year DESC
 """
 
@@ -187,24 +189,16 @@ The COKI Open Access Dataset contains information from:
 
 
 class OaWebRelease(SnapshotRelease):
-    def __init__(
-        self,
-        *,
-        dag_id: str,
-        release_date: pendulum.DateTime,
-        data_bucket_name: str,
-        zenodo: Zenodo = Zenodo(),
-    ):
+    def __init__(self, *, dag_id: str, run_id: str, snapshot_date: pendulum.DateTime):
         """Create an OaWebRelease instance.
 
         :param dag_id: the dag id.
-        :param release_date: the release date.
+        :param run_id: the DAG run id.
+        :param snapshot_date: the release date.
         :param zenodo: the zenodo instance.
         """
 
-        super().__init__(dag_id=dag_id, release_date=release_date)
-        self.zenodo = zenodo
-        self.data_bucket_name = data_bucket_name
+        super().__init__(dag_id=dag_id, run_id=run_id, snapshot_date=snapshot_date)
 
     @property
     def build_path(self):
@@ -226,9 +220,6 @@ class OaWebRelease(SnapshotRelease):
 
 
 class OaWebWorkflow(Workflow):
-    DATA_BUCKET = "oa_web_data_bucket"
-    GITHUB_TOKEN_CONN = "oa_web_github_token"
-    ZENODO_TOKEN_CONN = "oa_web_zenodo_token"
     ROR_FILE = "ror.jsonl.gz"
     COUNTRY_INDEX_FILE = "country-index.jsonl.gz"
     INSTITUTION_INDEX_FILE = "institution-index.jsonl.gz"
@@ -283,81 +274,73 @@ class OaWebWorkflow(Workflow):
     def __init__(
         self,
         *,
-        input_project_id: str = "academic-observatory",
-        output_project_id: str = "academic-observatory",
-        dag_id: str = "oa_web_workflow",
+        dag_id: str,
+        cloud_workspace: CloudWorkspace,
+        data_bucket: str,
+        conceptrecid: int,
+        doi_dag_id: str = "doi",
+        table_names: List[str] = None,
+        bq_agg_dataset_id: str = "observatory",
+        bq_ror_dataset_id: str = "ror",
+        bq_settings_dataset_id: str = "settings",
+        version: str = "v9",
+        zenodo_host: str = "https://zenodo.org",
+        github_conn_id="oa_web_github_token",
+        zenodo_conn_id="oa_web_zenodo_token",
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2021, 5, 2),
         schedule_interval: Optional[str] = "@weekly",
-        catchup: Optional[bool] = False,
-        ext_dag_id: str = "doi",
-        table_names: List[str] = None,
-        airflow_vars: List[str] = None,
-        airflow_conns: List[str] = None,
-        agg_dataset_id: str = "observatory",
-        ror_dataset_id: str = "ror",
-        settings_dataset_id: str = "settings",
-        version: str = "v9",
-        conceptrecid: int = 6399462,
-        zenodo_host: str = "https://zenodo.org",
     ):
         """Create the OaWebWorkflow.
 
-        :param project_id: the Google Cloud project id.
         :param dag_id: the DAG id.
-        :param start_date: the start date.
-        :param schedule_interval: the schedule interval.
-        :param catchup: whether to catchup or not.
-        :param ext_dag_id: the DAG id to wait for.
+        :param cloud_workspace: The CloudWorkspace.
+        :param data_bucket: the Google Cloud Storage bucket where image data should be stored.
+        :param conceptrecid: the Zenodo Concept Record ID for the COKI Open Access Dataset. The Concept Record ID is
+        the last set of numbers from the Concept DOI.
+        :param doi_dag_id: the DAG id to wait for.
         :param table_names: the table names.
-        :param airflow_vars: required Airflow Variables.
-        :param airflow_conns: required Airflow Connections.
-        :param agg_dataset_id: the id of the dataset where the Academic Observatory aggregated data lives.
-        :param ror_dataset_id: the id of the dataset containing the ROR table.
-        :param settings_dataset_id: the id of the settings dataset, which contains the country table.
+        :param bq_agg_dataset_id: the id of the dataset where the Academic Observatory aggregated data lives.
+        :param bq_ror_dataset_id: the id of the dataset containing the ROR table.
+        :param bq_settings_dataset_id: the id of the settings dataset, which contains the country table.
         :param version: the dataset version published by this workflow. The Github Action pulls from a specific dataset
         version: https://github.com/The-Academic-Observatory/coki-oa-web/blob/develop/.github/workflows/build-on-data-update.yml#L68-L74.
         This is so that when breaking changes are made to the schema, the web application won't break.
-        :param conceptrecid: the Zenodo Concept Record ID for the COKI Open Access Dataset. The Concept Record ID is
-        the last set of numbers from the Concept DOI.
         :param zenodo_host: the Zenodo hostname, can be changed to https://sandbox.zenodo.org for testing.
+        :param github_conn_id: the Github Token Airflow Connection ID.
+        :param zenodo_conn_id: the Zenodo Token Airflow Connection ID.
+        :param start_date: the start date.
+        :param schedule_interval: the schedule interval.
         """
 
-        if airflow_vars is None:
-            airflow_vars = [
-                AirflowVars.DATA_PATH,
-                AirflowVars.PROJECT_ID,
-                AirflowVars.DATA_LOCATION,
-                AirflowVars.DOWNLOAD_BUCKET,
-                AirflowVars.TRANSFORM_BUCKET,
-                self.DATA_BUCKET,
-            ]
-
-        if airflow_conns is None:
-            airflow_conns = [self.GITHUB_TOKEN_CONN, self.ZENODO_TOKEN_CONN]
+        if table_names is None:
+            table_names = ["country", "institution"]
 
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
             schedule_interval=schedule_interval,
-            catchup=catchup,
-            airflow_vars=airflow_vars,
-            airflow_conns=airflow_conns,
+            catchup=False,
+            airflow_conns=[github_conn_id, zenodo_conn_id],
             tags=[Tag.academic_observatory],
         )
-        self.input_project_id = input_project_id
-        self.output_project_id = output_project_id
-        self.agg_dataset_id = agg_dataset_id
-        self.ror_dataset_id = ror_dataset_id
-        self.settings_dataset_id = settings_dataset_id
+        self.cloud_workspace = cloud_workspace
+        self.input_project_id = cloud_workspace.input_project_id
+        self.output_project_id = cloud_workspace.output_project_id
+        self.data_bucket = data_bucket
+        self.bq_agg_dataset_id = bq_agg_dataset_id
+        self.bq_ror_dataset_id = bq_ror_dataset_id
+        self.bq_settings_dataset_id = bq_settings_dataset_id
         self.table_names = table_names
         self.version = version
         self.conceptrecid = conceptrecid
         self.zenodo_host = zenodo_host
-        if table_names is None:
-            self.table_names = ["country", "institution"]
+
+        self.github_conn_id = github_conn_id
+        self.zenodo_conn_id = zenodo_conn_id
+        self.zenodo: Optional[Zenodo] = None
 
         self.add_operator(
-            ExternalTaskSensor(task_id=f"{ext_dag_id}_sensor", external_dag_id=ext_dag_id, mode="reschedule")
+            ExternalTaskSensor(task_id=f"{doi_dag_id}_sensor", external_dag_id=doi_dag_id, mode="reschedule")
         )
         self.add_setup_task(self.check_dependencies)
         self.add_task(self.query)
@@ -388,22 +371,21 @@ class OaWebWorkflow(Workflow):
         :return: A list of OaWebRelease instances
         """
 
-        release_date = make_release_date(**kwargs)
-        data_bucket_name = Variable.get(self.DATA_BUCKET)
-        zenodo_token = get_airflow_connection_password(self.ZENODO_TOKEN_CONN)
-        zenodo = Zenodo(host=self.zenodo_host, access_token=zenodo_token)
+        # Make Zenodo instance
+        zenodo_token = get_airflow_connection_password(self.zenodo_conn_id)
+        self.zenodo = Zenodo(host=self.zenodo_host, access_token=zenodo_token)
 
+        snapshot_date = make_snapshot_date(**kwargs)
         return OaWebRelease(
             dag_id=self.dag_id,
-            data_bucket_name=data_bucket_name,
-            release_date=release_date,
-            zenodo=zenodo,
+            run_id=kwargs["run_id"],
+            snapshot_date=snapshot_date,
         )
 
     def query(self, release: OaWebRelease, **kwargs):
         """Fetch the data for each table.
 
-        :param release: the release.
+        :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
@@ -412,68 +394,62 @@ class OaWebWorkflow(Workflow):
 
         results = []
         queries = []
+        blob_prefix = gcs_blob_name_from_path(release.download_folder)
 
         # Query the country and institution aggregations
         for table_name in self.table_names:
             # Aggregate release dates
-            agg_release_date = select_table_shard_dates(
-                project_id=self.input_project_id,
-                dataset_id=self.agg_dataset_id,
-                table_name=table_name,
-                end_date=release.release_date,
+            table_id = bq_table_id(self.input_project_id, self.bq_agg_dataset_id, table_name)
+            agg_snapshot_date = bq_select_table_shard_dates(
+                table_id=table_id,
+                end_date=release.snapshot_date,
             )[0]
-            table_id = bigquery_sharded_table_id(table_name, agg_release_date)
+            agg_table_id = bq_sharded_table_id(
+                self.input_project_id, self.bq_agg_dataset_id, table_name, agg_snapshot_date
+            )
 
             # Fetch data
-            destination_uri = (
-                f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{table_name}-data.jsonl.gz"
-            )
+            destination_uri = f"gs://{self.cloud_workspace.download_bucket}/{blob_prefix}/{table_name}-data.jsonl.gz"
             query = (
                 DATA_QUERY.format(
+                    agg_table_id=agg_table_id,
                     start_year=START_YEAR,
-                    project_id=self.input_project_id,
-                    agg_dataset_id=self.agg_dataset_id,
-                    agg_table_id=table_id,
                     end_year=END_YEAR,
                 ),
             )
             queries.append((query, destination_uri))
 
         # Query ROR table
-        ror_table_name = "ror"
-        ror_release_date = select_table_shard_dates(
-            project_id=self.input_project_id,
-            dataset_id=self.ror_dataset_id,
-            table_name=ror_table_name,
-            end_date=release.release_date,
+        ror_table_id = bq_table_id(self.input_project_id, self.bq_ror_dataset_id, "ror")
+        ror_snapshot_date = bq_select_table_shard_dates(
+            table_id=ror_table_id,
+            end_date=release.snapshot_date,
         )[0]
-        ror_sharded_table_id = bigquery_sharded_table_id(ror_table_name, ror_release_date)
+        ror_table_id = bq_sharded_table_id(
+            self.input_project_id, self.bq_ror_dataset_id, "ror", ror_snapshot_date
+        )
+        country_table_id = bq_table_id(self.input_project_id, self.bq_settings_dataset_id, "country")
 
         # Query institution index table
-        destination_uri = (
-            f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{self.INSTITUTION_INDEX_FILE}"
+        destination_uri = gcs_blob_uri(
+            self.cloud_workspace.download_bucket, f"{blob_prefix}/{self.INSTITUTION_INDEX_FILE}"
         )
         queries.append(
             (
                 INSTITUTION_INDEX_QUERY.format(
-                    project_id=self.input_project_id,
-                    ror_dataset_id=self.ror_dataset_id,
-                    ror_table_id=ror_sharded_table_id,
-                    settings_dataset_id=self.settings_dataset_id,
-                    country_table_id="country",
+                    ror_table_id=ror_table_id,
+                    country_table_id=country_table_id,
                 ),
                 destination_uri,
             )
         )
 
         # Query the country index table
-        destination_uri = f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{self.COUNTRY_INDEX_FILE}"
+        destination_uri = gcs_blob_uri(self.cloud_workspace.download_bucket, f"{blob_prefix}/{self.COUNTRY_INDEX_FILE}")
         queries.append(
             (
                 COUNTRY_INDEX_QUERY.format(
-                    project_id=self.input_project_id,
-                    settings_dataset_id=self.settings_dataset_id,
-                    country_table_id="country",
+                    country_table_id=country_table_id,
                 ),
                 destination_uri,
             )
@@ -495,16 +471,18 @@ class OaWebWorkflow(Workflow):
     def download(self, release: OaWebRelease, **kwargs):
         """Download the queried data.
 
-        :param release: the release.
+        :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
         :return: None.
         """
 
-        prefix = f"{self.dag_id}/{release.release_id}"
-        state = download_blobs_from_cloud_storage(
-            bucket_name=release.download_bucket, prefix=prefix, destination_path=release.download_folder
+        blob_prefix = gcs_blob_name_from_path(release.download_folder)
+        state = gcs_download_blobs(
+            bucket_name=self.cloud_workspace.download_bucket,
+            prefix=blob_prefix,
+            destination_path=release.download_folder,
         )
         if not state:
             raise AirflowException("OaWebWorkflow.download failed")
@@ -512,19 +490,19 @@ class OaWebWorkflow(Workflow):
     def make_draft_zenodo_version(self, release: OaWebRelease, **kwargs):
         """Make a draft Zenodo version of the dataset.
 
-        :param release: the release.
+        :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
         :return: None.
         """
 
-        make_draft_version(release.zenodo, self.conceptrecid)
+        make_draft_version(self.zenodo, self.conceptrecid)
 
     def download_assets(self, release: OaWebRelease, **kwargs):
         """Download assets.
 
-        :param release: the release.
+        :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
@@ -537,9 +515,7 @@ class OaWebWorkflow(Workflow):
         for blob_name in blob_names:
             # Download asset zip
             file_path = os.path.join(release.download_folder, blob_name)
-            download_blob_from_cloud_storage(
-                bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path
-            )
+            gcs_download_blob(bucket_name=self.data_bucket, blob_name=blob_name, file_path=file_path)
 
             # Unzip into build
             unzip_folder_path = os.path.join(release.build_path, "images")
@@ -549,7 +525,7 @@ class OaWebWorkflow(Workflow):
     def preprocess_data(self, release: OaWebRelease, **kwargs):
         """Preprocess data.
 
-        :param release: the release.
+        :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
@@ -572,12 +548,12 @@ class OaWebWorkflow(Workflow):
             # Save to intermediate path
             data_path = os.path.join(release.intermediate_path, file_name)
             records = df_data.to_dict("records")
-            list_to_jsonl_gz(data_path, records)
+            save_jsonl_gz(data_path, records)
 
     def build_indexes(self, release: OaWebRelease, **kwargs):
         """Build unique country and institution indexes.
 
-        :param release: the release.
+        :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
@@ -603,7 +579,7 @@ class OaWebWorkflow(Workflow):
             # Save index to intermediate
             index_path = os.path.join(release.intermediate_path, index_name)
             rows: List[Dict] = df_index.to_dict("records")
-            list_to_jsonl_gz(index_path, rows)
+            save_jsonl_gz(index_path, rows)
 
     def download_logos(self, release: OaWebRelease, **kwargs):
         """Download logos and update indexes.
@@ -627,12 +603,12 @@ class OaWebWorkflow(Workflow):
 
             # Save updated index
             rows: List[Dict] = df_index.to_dict("records")
-            list_to_jsonl_gz(index_path, rows)
+            save_jsonl_gz(index_path, rows)
 
     def download_wiki_descriptions(self, release: OaWebRelease, **kwargs):
         """Download wiki descriptions and update indexes.
 
-        :param release: the release.
+        :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
@@ -651,12 +627,12 @@ class OaWebWorkflow(Workflow):
 
             # Save updated index
             rows: List[Dict] = df_index.to_dict("records")
-            list_to_jsonl_gz(index_path, rows)
+            save_jsonl_gz(index_path, rows)
 
     def build_datasets(self, release: OaWebRelease, **kwargs):
         """Transform the queried data into the final format for the open access website.
 
-        :param release: the release.
+        :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
@@ -664,7 +640,7 @@ class OaWebWorkflow(Workflow):
         """
 
         # Get versions
-        res = release.zenodo.get_versions(self.conceptrecid, all_versions=1)
+        res = self.zenodo.get_versions(self.conceptrecid, all_versions=1)
         if res.status_code != 200:
             raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
         versions = res.json()
@@ -719,7 +695,7 @@ class OaWebWorkflow(Workflow):
             )
             for version in versions
         ]
-        last_updated = zenodo_versions[0].release_date.format("D MMMM YYYY")
+        last_updated = zenodo_versions[0].snapshot_date.format("D MMMM YYYY")
         country_stats = make_entity_stats(countries)
         institution_stats = make_entity_stats(institutions)
         stats = Stats(START_YEAR, END_YEAR, last_updated, zenodo_versions, country_stats, institution_stats)
@@ -737,15 +713,14 @@ class OaWebWorkflow(Workflow):
     def publish_zenodo_version(self, release: OaWebRelease, **kwargs):
         """Publish the new Zenodo version of the dataset.
 
-        :param release: the release.
+        :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
         :return: None.
         """
 
-        zenodo = release.zenodo
-        res = zenodo.get_versions(self.conceptrecid, all_versions=0)
+        res = self.zenodo.get_versions(self.conceptrecid, all_versions=0)
         if res.status_code != 200:
             raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
         draft = res.json()[0]
@@ -754,38 +729,38 @@ class OaWebWorkflow(Workflow):
             raise AirflowException(f"Latest version is not a draft: {draft_id}")
 
         file_path = os.path.join(release.out_path, "coki-oa-dataset.zip")
-        publish_new_version(release.zenodo, draft_id, file_path)
+        publish_new_version(self.zenodo, draft_id, file_path)
 
     def upload_dataset(self, release: OaWebRelease, **kwargs):
         """Publish the dataset produced by this workflow.
 
-        :param release: the release.
+        :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
         :return: None.
         """
 
-        # upload_file_to_cloud_storage should always rewrite a new version of latest.zip if it exists
+        # gcs_upload_file should always rewrite a new version of latest.zip if it exists
         # object versioning on the bucket will keep the previous versions
         for file_name in ["data.zip", "images.zip"]:
             blob_name = f"{self.version}/{file_name}"
             file_path = os.path.join(release.out_path, file_name)
-            upload_file_to_cloud_storage(
-                bucket_name=release.data_bucket_name, blob_name=blob_name, file_path=file_path, check_blob_hash=False
+            gcs_upload_file(
+                bucket_name=self.data_bucket, blob_name=blob_name, file_path=file_path, check_blob_hash=False
             )
 
     def repository_dispatch(self, release: OaWebRelease, **kwargs):
         """Trigger a Github repository_dispatch to trigger new website builds.
 
-        :param release: the release.
+        :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
         :return: None.
         """
 
-        token = get_airflow_connection_password(self.GITHUB_TOKEN_CONN)
+        token = get_airflow_connection_password(self.github_conn_id)
         event_types = ["data-update/develop", "data-update/staging", "data-update/production"]
         for event_type in event_types:
             trigger_repository_dispatch(token=token, event_type=event_type)
@@ -793,13 +768,14 @@ class OaWebWorkflow(Workflow):
     def cleanup(self, release: OaWebRelease, **kwargs):
         """Delete all files and folders associated with this release.
 
-        :param release: the release.
+        :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
         :return: None.
         """
-        release.cleanup()
+
+        cleanup(dag_id=self.dag_id, execution_date=kwargs["execution_date"], workflow_folder=release.workflow_folder)
 
 
 ###############
@@ -982,11 +958,11 @@ class Year:
 
 @dataclasses.dataclass
 class ZenodoVersion:
-    release_date: pendulum.DateTime
+    snapshot_date: pendulum.DateTime
     download_url: str
 
     def to_dict(self) -> Dict:
-        return {"release_date": self.release_date.strftime("%Y-%m-%d"), "download_url": self.download_url}
+        return {"snapshot_date": self.snapshot_date.strftime("%Y-%m-%d"), "download_url": self.download_url}
 
 
 @dataclasses.dataclass

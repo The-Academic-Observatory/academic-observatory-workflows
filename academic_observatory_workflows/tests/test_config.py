@@ -14,8 +14,9 @@
 
 
 import unittest
-from observatory.platform.utils.config_utils import module_file_path
+
 from academic_observatory_workflows.config import elastic_mappings_folder
+from observatory.platform.config import module_file_path
 
 
 class AcademicObservatoryWorkflowsConfig(unittest.TestCase):

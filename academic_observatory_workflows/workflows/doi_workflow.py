@@ -17,8 +17,6 @@
 from __future__ import annotations
 
 import copy
-import gzip
-import io
 import json
 import logging
 import os
@@ -27,34 +25,35 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Dict, List, Set, Optional, Tuple
 
-import jsonlines
 import pendulum
 import requests
 from airflow.exceptions import AirflowException
-from google.api_core.exceptions import BadRequest
-from google.cloud import bigquery
-from google.cloud.bigquery import LoadJobConfig, LoadJob
 
-from academic_observatory_workflows.config import sql_folder
-from academic_observatory_workflows.dag_tag import Tag
-from observatory.platform.utils.airflow_utils import AirflowVars, set_task_state
-from observatory.platform.utils.dag_run_sensor import DagRunSensor
-from observatory.platform.utils.gc_utils import (
-    bigquery_sharded_table_id,
-    copy_bigquery_table,
-    create_bigquery_dataset,
-    create_bigquery_table_from_query,
-    create_bigquery_view,
-    select_table_shard_dates,
+from academic_observatory_workflows.config import sql_folder, Tag
+from observatory.api.client.model.dataset_release import DatasetRelease
+from observatory.platform.api import make_observatory_api
+from observatory.platform.bigquery import (
+    bq_sharded_table_id,
+    bq_copy_table,
+    bq_create_dataset,
+    bq_create_table_from_query,
+    bq_create_view,
+    bq_select_table_shard_dates,
+    bq_run_query,
+    bq_table_id,
+    bq_select_latest_table,
+    bq_load_from_memory,
+    bq_update_table_description,
 )
-from observatory.platform.utils.gc_utils import run_bigquery_query
+from observatory.platform.config import AirflowConns
+from observatory.platform.observatory_config import CloudWorkspace
+from observatory.platform.utils.dag_run_sensor import DagRunSensor
 from observatory.platform.utils.jinja2_utils import (
     make_sql_jinja2_filename,
     render_template,
 )
 from observatory.platform.utils.url_utils import retry_get_url
-from observatory.platform.utils.workflow_utils import make_release_date
-from observatory.platform.workflows.workflow import Workflow
+from observatory.platform.workflows.workflow import Workflow, make_snapshot_date, set_task_state, SnapshotRelease
 
 MAX_QUERIES = 100
 
@@ -65,7 +64,7 @@ class Table:
     dataset_id: str
     table_name: str = None
     sharded: bool = False
-    release_date: pendulum.DateTime = None
+    snapshot_date: pendulum.DateTime = None
 
     @property
     def table_id(self):
@@ -75,7 +74,7 @@ class Table:
         """
 
         if self.sharded:
-            return bigquery_sharded_table_id(self.table_name, self.release_date)
+            return f"{self.table_name}{self.snapshot_date.strftime('%Y%m%d')}"
         return self.table_name
 
 
@@ -180,7 +179,7 @@ def make_dataset_transforms(
                 output_clustering_fields=["doi"],
             ),
             Transform(
-                inputs={"openalex": Table(input_project_id, dataset_id_openalex, "Work", sharded=False)},
+                inputs={"openalex": Table(input_project_id, dataset_id_openalex, "works", sharded=False)},
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "openalex"),
                 output_clustering_fields=["doi"],
             ),
@@ -342,15 +341,16 @@ def fetch_ror_affiliations(repository_institution: str, num_retries: int = 3) ->
     return {"repository_institution": repository_institution, "rors": rors}
 
 
-def get_release_date(project_id: str, dataset_id: str, table_name: str, release_date: pendulum.DateTime):
+def get_snapshot_date(project_id: str, dataset_id: str, table_id: str, snapshot_date: pendulum.DateTime):
     # Get last table shard date before current end date
-    logging.info(f"get_release_date {project_id}.{dataset_id}.{table_name} {release_date}")
-    table_shard_dates = select_table_shard_dates(project_id, dataset_id, table_name, release_date)
+    logging.info(f"get_snapshot_date {project_id}.{dataset_id}.{table_id} {snapshot_date}")
+    table_id = bq_table_id(project_id, dataset_id, table_id)
+    table_shard_dates = bq_select_table_shard_dates(table_id=table_id, end_date=snapshot_date)
     if len(table_shard_dates):
         shard_date = table_shard_dates[0]
     else:
         raise AirflowException(
-            f"{project_id}.{dataset_id}.{table_name} " f"with a table shard date <= {release_date} not found"
+            f"{project_id}.{dataset_id}.{table_id} " f"with a table shard date <= {snapshot_date} not found"
         )
 
     return shard_date
@@ -415,79 +415,6 @@ def ror_to_ror_hierarchy_index(ror: List[Dict]) -> Dict:
     return ancestor_index
 
 
-def bq_load_from_memory(table_address: str, records: List[Dict]) -> bool:
-    """Load data into BigQuery from memory.
-
-    :param table_address: the full table address, including project id, dataset id and table name.
-    :param records: the records to load.
-    :return: whether the table loaded or not.
-    """
-
-    # Save as JSON Lines in memory
-    with io.BytesIO() as bytes_io:
-        with gzip.GzipFile(fileobj=bytes_io, mode="w") as gzip_file:
-            with jsonlines.Writer(gzip_file) as writer:
-                writer.write_all(records)
-
-        # Load into BigQuery
-        client = bigquery.Client()
-        job_config = LoadJobConfig(
-            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-            autodetect=True,
-        )
-
-        try:
-            load_job: LoadJob = client.load_table_from_file(bytes_io, table_address, job_config=job_config, rewind=True)
-            success = load_job.result().state == "DONE"
-        except BadRequest as e:
-            logging.error(f"Load bigquery table {table_address} failed: {e}.")
-            if load_job:
-                logging.error(f"Errors:\n{load_job.errors}")
-            success = False
-
-    return success
-
-
-class ObservatoryRelease:
-    def __init__(
-        self,
-        *,
-        release_date: pendulum.DateTime,
-    ):
-        """Construct an ObservatoryRelease.
-
-        :param release_date: the release date.
-        """
-
-        self.release_date = release_date
-
-
-def bq_update_table_description(*, project_id: str, dataset_id: str, table_id: str, description: str):
-    """Update a BigQuery table description.
-
-    :param project_id: the Google Cloud Project ID.
-    :param dataset_id: the BigQuery Dataset ID.
-    :param table_id: the BigQuery table_id.
-    :param description: the description.
-    :return: None.
-    """
-
-    # Construct a BigQuery client object.
-    client = bigquery.Client()
-
-    # Get the table to update.
-    dataset_ref = f"{project_id}.{dataset_id}"
-    dataset = bigquery.Dataset(dataset_ref)
-    table = bigquery.Table(dataset.table(table_id))
-
-    # Update the table's description.
-    table.description = description
-
-    # Update the table in BigQuery.
-    client.update_table(table, ["description"])
-
-
 class DoiWorkflow(Workflow):
     SENSOR_DAG_IDS = [
         "crossref_metadata",
@@ -496,7 +423,7 @@ class DoiWorkflow(Workflow):
         "ror",
         "open_citations",
         "unpaywall",
-        # "orcid", # TODO: add back in when ORCID telescope is fixed
+        "orcid",
         "crossref_events",
         "openalex",
     ]
@@ -579,81 +506,71 @@ class DoiWorkflow(Workflow):
         ),
     ]
 
-    DAG_ID = "doi"
-
     def __init__(
         self,
         *,
-        input_project_id: str = "academic-observatory",
-        output_project_id: str = "academic-observatory",
-        data_location: str = "us",
-        intermediate_dataset_id: str = "observatory_intermediate",
-        dashboards_dataset_id: str = "coki_dashboards",
-        observatory_dataset_id: str = "observatory",
-        elastic_dataset_id: str = "data_export",
-        unpaywall_dataset_id: str = "our_research",
-        ror_dataset_id: str = "ror",
+        dag_id: str,
+        cloud_workspace: CloudWorkspace,
+        bq_intermediate_dataset_id: str = "observatory_intermediate",
+        bq_dashboards_dataset_id: str = "coki_dashboards",
+        bq_observatory_dataset_id: str = "observatory",
+        bq_elastic_dataset_id: str = "data_export",
+        bq_unpaywall_dataset_id: str = "our_research",
+        bq_ror_dataset_id: str = "ror",
+        api_dataset_id: str = "doi",
         transforms: Tuple = None,
-        dag_id: Optional[str] = DAG_ID,
+        max_fetch_threads: int = 4,
+        observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 8, 30),
         schedule_interval: Optional[str] = "@weekly",
-        catchup: Optional[bool] = False,
-        airflow_vars: List = None,
-        workflow_id: int = None,
-        max_fetch_threads: int = 4,
+        sensor_dag_ids: List[str] = None,
     ):
         """Create the DoiWorkflow.
-        :param input_project_id: the project id for input tables. These are separated to make testing easier.
-        :param output_project_id: the project id for output tables. These are separated to make testing easier.
-        :param data_location: the BigQuery dataset location.
-        :param intermediate_dataset_id: the BigQuery intermediate dataset id.
-        :param dashboards_dataset_id: the BigQuery dashboards dataset id.
-        :param observatory_dataset_id: the BigQuery observatory dataset id.
-        :param elastic_dataset_id: the BigQuery elastic dataset id.
-        :param dag_id: the DAG id.
+        :param dag_id: the DAG ID.
+        :param cloud_workspace: the cloud workspace settings.
+        :param bq_intermediate_dataset_id: the BigQuery intermediate dataset id.
+        :param bq_dashboards_dataset_id: the BigQuery dashboards dataset id.
+        :param bq_observatory_dataset_id: the BigQuery observatory dataset id.
+        :param bq_elastic_dataset_id: the BigQuery elastic dataset id.
+        :param bq_unpaywall_dataset_id: the BigQuery elastic dataset id.
+        :param bq_ror_dataset_id: the BigQuery elastic dataset id.
+        :param api_dataset_id: the DOI dataset id.
+        :param max_fetch_threads: maximum number of threads to use when fetching.
         :param start_date: the start date.
         :param schedule_interval: the schedule interval.
-        :param catchup: whether to catchup.
-        :param airflow_vars: the required Airflow Variables.
-        :param workflow_id: api workflow id.
-        :param max_fetch_threads: maximum number of threads to use when fetching.
         """
 
-        if airflow_vars is None:
-            airflow_vars = [
-                AirflowVars.DATA_PATH,
-                AirflowVars.PROJECT_ID,
-                AirflowVars.DATA_LOCATION,
-                AirflowVars.DOWNLOAD_BUCKET,
-                AirflowVars.TRANSFORM_BUCKET,
-            ]
-
-        # Initialise Telesecope base class
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
             schedule_interval=schedule_interval,
-            catchup=catchup,
-            airflow_vars=airflow_vars,
-            workflow_id=workflow_id,
+            catchup=False,
+            airflow_conns=[observatory_api_conn_id],
             tags=[Tag.academic_observatory],
         )
 
-        self.input_project_id = input_project_id
-        self.output_project_id = output_project_id
-        self.data_location = data_location
-        self.intermediate_dataset_id = intermediate_dataset_id
-        self.dashboards_dataset_id = dashboards_dataset_id
-        self.observatory_dataset_id = observatory_dataset_id
-        self.elastic_dataset_id = elastic_dataset_id
-        self.unpaywall_dataset_id = unpaywall_dataset_id
-        self.ror_dataset_id = ror_dataset_id
+        self.input_project_id = cloud_workspace.input_project_id
+        self.output_project_id = cloud_workspace.output_project_id
+        self.data_location = cloud_workspace.data_location
+
+        self.sensor_dag_ids = sensor_dag_ids
+        if sensor_dag_ids is None:
+            self.sensor_dag_ids = DoiWorkflow.SENSOR_DAG_IDS
+
+        self.bq_intermediate_dataset_id = bq_intermediate_dataset_id
+        self.bq_dashboards_dataset_id = bq_dashboards_dataset_id
+        self.bq_observatory_dataset_id = bq_observatory_dataset_id
+        self.bq_elastic_dataset_id = bq_elastic_dataset_id
+        self.bq_unpaywall_dataset_id = bq_unpaywall_dataset_id
+        self.bq_ror_dataset_id = bq_ror_dataset_id
+        self.api_dataset_id = api_dataset_id
         self.max_fetch_threads = max_fetch_threads
+        self.observatory_api_conn_id = observatory_api_conn_id
         self.input_table_id_tasks = []
 
         if transforms is None:
             self.transforms, self.transform_doi, self.transform_book = make_dataset_transforms(
-                input_project_id, output_project_id, dataset_id_observatory=observatory_dataset_id
+                self.input_project_id, self.output_project_id, dataset_id_observatory=bq_observatory_dataset_id
             )
         else:
             self.transforms, self.transform_doi, self.transform_book = transforms
@@ -663,7 +580,7 @@ class DoiWorkflow(Workflow):
     def create_tasks(self):
         # Add sensors
         with self.parallel_tasks():
-            for ext_dag_id in self.SENSOR_DAG_IDS:
+            for ext_dag_id in self.sensor_dag_ids:
                 sensor = DagRunSensor(
                     task_id=f"{ext_dag_id}_sensor",
                     external_dag_id=ext_dag_id,
@@ -737,7 +654,7 @@ class DoiWorkflow(Workflow):
 
         self.add_task(self.add_new_dataset_releases)
 
-    def make_release(self, **kwargs) -> ObservatoryRelease:
+    def make_release(self, **kwargs) -> SnapshotRelease:
         """Make a release instance. The release is passed as an argument to the function (TelescopeFunction) that is
         called in 'task_callable'.
 
@@ -747,50 +664,38 @@ class DoiWorkflow(Workflow):
         :return: A release instance or list of release instances
         """
 
-        release_date = make_release_date(**kwargs)
-        return ObservatoryRelease(
-            release_date=release_date,
+        snapshot_date = make_snapshot_date(**kwargs)
+        return SnapshotRelease(
+            dag_id=self.dag_id,
+            run_id=kwargs["run_id"],
+            snapshot_date=snapshot_date,
         )
 
-    def create_datasets(self, release: ObservatoryRelease, **kwargs):
-        """Create required BigQuery datasets.
-
-        :param release: the ObservatoryRelease.
-        :param kwargs: the context passed from the Airflow Operator.
-        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
-        to this argument.
-        :return: None.
-        """
+    def create_datasets(self, release: SnapshotRelease, **kwargs):
+        """Create required BigQuery datasets."""
 
         datasets = [
-            (self.intermediate_dataset_id, "Intermediate processing dataset for the Academic Observatory."),
-            (self.dashboards_dataset_id, "The latest data for display in the COKI dashboards."),
-            (self.observatory_dataset_id, "The Academic Observatory dataset."),
-            (self.elastic_dataset_id, "The Academic Observatory dataset for Elasticsearch."),
+            (self.bq_intermediate_dataset_id, "Intermediate processing dataset for the Academic Observatory."),
+            (self.bq_dashboards_dataset_id, "The latest data for display in the COKI dashboards."),
+            (self.bq_observatory_dataset_id, "The Academic Observatory dataset."),
+            (self.bq_elastic_dataset_id, "The Academic Observatory dataset for Elasticsearch."),
         ]
 
         for dataset_id, description in datasets:
-            create_bigquery_dataset(
-                self.output_project_id,
-                dataset_id,
-                self.data_location,
+            bq_create_dataset(
+                project_id=self.output_project_id,
+                dataset_id=dataset_id,
+                location=self.data_location,
                 description=description,
             )
 
-    def create_repo_institution_to_ror_table(self, release: ObservatoryRelease, **kwargs):
-        """Create the repository_institution_to_ror_table.
-
-        :param release: the ObservatoryRelease.
-        :param kwargs: the context passed from the Airflow Operator.
-        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
-        to this argument.
-        :return: None.
-        """
+    def create_repo_institution_to_ror_table(self, release: SnapshotRelease, **kwargs):
+        """Create the repository_institution_to_ror_table."""
 
         # Fetch unique Unpaywall repository institution names
         template_path = os.path.join(sql_folder(), make_sql_jinja2_filename("create_unpaywall_repo_names"))
-        sql = render_template(template_path, project_id=self.input_project_id, dataset_id=self.unpaywall_dataset_id)
-        records = run_bigquery_query(sql)
+        sql = render_template(template_path, project_id=self.input_project_id, dataset_id=self.bq_unpaywall_dataset_id)
+        records = bq_run_query(sql)
 
         # Fetch affiliation strings
         results = []
@@ -806,35 +711,26 @@ class DoiWorkflow(Workflow):
         results.sort(key=lambda r: r[key])
 
         # Load the BigQuery table
-        table_address = bigquery_sharded_table_id(
-            f"{self.output_project_id}.{self.intermediate_dataset_id}.repository_institution_to_ror",
-            release.release_date,
+        table_id = bq_sharded_table_id(
+            self.output_project_id,
+            self.bq_intermediate_dataset_id,
+            "repository_institution_to_ror",
+            release.snapshot_date,
         )
-        success = bq_load_from_memory(table_address, results)
+        success = bq_load_from_memory(table_id, results)
         set_task_state(success, self.create_repo_institution_to_ror_table.__name__)
 
-    def create_ror_hierarchy_table(self, release: ObservatoryRelease, **kwargs):
-        """Create the ROR hierarchy table.
-
-        :param release: the ObservatoryRelease.
-        :param kwargs: the context passed from the Airflow Operator.
-        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
-        to this argument.
-        :return: None.
-        """
+    def create_ror_hierarchy_table(self, release: SnapshotRelease, **kwargs):
+        """Create the ROR hierarchy table."""
 
         # Fetch latest ROR table
         ror_table_name = "ror"
-        ror_release_date = select_table_shard_dates(
-            project_id=self.input_project_id,
-            dataset_id=self.ror_dataset_id,
-            table_name=ror_table_name,
-            end_date=release.release_date,
-        )[0]
-        table_address = bigquery_sharded_table_id(
-            f"{self.input_project_id}.{self.ror_dataset_id}.{ror_table_name}", ror_release_date
+        ror_table_id = bq_select_latest_table(
+            table_id=bq_table_id(self.input_project_id, self.bq_ror_dataset_id, ror_table_name),
+            end_date=release.snapshot_date,
+            sharded=True,
         )
-        ror = [dict(row) for row in run_bigquery_query(f"SELECT * FROM {table_address}")]
+        ror = [dict(row) for row in bq_run_query(f"SELECT * FROM {ror_table_id}")]
 
         # Create ROR hierarchy table
         index = ror_to_ror_hierarchy_index(ror)
@@ -845,30 +741,22 @@ class DoiWorkflow(Workflow):
             records.append({"child_id": child_id, "ror_ids": [child_id] + list(ancestor_ids)})
 
         # Upload to intermediate table
-        table_address = bigquery_sharded_table_id(
-            f"{self.output_project_id}.{self.intermediate_dataset_id}.ror_hierarchy",
-            release.release_date,
+        table_id = bq_sharded_table_id(
+            self.output_project_id, self.bq_intermediate_dataset_id, "ror_hierarchy", release.snapshot_date
         )
-        success = bq_load_from_memory(table_address, records)
+        success = bq_load_from_memory(table_id, records)
         set_task_state(success, self.create_ror_hierarchy_table.__name__)
 
-    def create_intermediate_table(self, release: ObservatoryRelease, **kwargs):
-        """Create an intermediate table.
-
-        :param release: the ObservatoryRelease.
-        :param kwargs: the context passed from the Airflow Operator.
-        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
-        to this argument.
-        :return: None.
-        """
+    def create_intermediate_table(self, release: SnapshotRelease, **kwargs):
+        """Create an intermediate table."""
 
         transform: Transform = kwargs["transform"]
         input_tables = []
         for k, table in transform.inputs.items():
             # Add release_date so that table_id can be computed
             if table.sharded:
-                table.release_date = get_release_date(
-                    table.project_id, table.dataset_id, table.table_name, release.release_date
+                table.snapshot_date = get_snapshot_date(
+                    table.project_id, table.dataset_id, table.table_name, release.snapshot_date
                 )
 
             # Only add input tables when the table_name is not None as there is the odd Table instance
@@ -882,17 +770,18 @@ class DoiWorkflow(Workflow):
         )
         sql = render_template(
             template_path,
-            release_date=release.release_date,
+            snapshot_date=release.snapshot_date,
             **transform.inputs,
         )
-
-        output_table_id = bigquery_sharded_table_id(transform.output_table.table_name, release.release_date)
-        success = create_bigquery_table_from_query(
+        table_id = bq_sharded_table_id(
+            self.output_project_id,
+            transform.output_table.dataset_id,
+            transform.output_table.table_name,
+            release.snapshot_date,
+        )
+        success = bq_create_table_from_query(
             sql=sql,
-            project_id=self.output_project_id,
-            dataset_id=transform.output_table.dataset_id,
-            table_id=output_table_id,
-            location=self.data_location,
+            table_id=table_id,
             clustering_fields=transform.output_clustering_fields,
         )
 
@@ -902,23 +791,16 @@ class DoiWorkflow(Workflow):
 
         set_task_state(success, kwargs["task_id"])
 
-    def create_aggregate_table(self, release: ObservatoryRelease, **kwargs):
-        """Runs the aggregate table query.
-
-        :param release: the ObservatoryRelease.
-        :param kwargs: the context passed from the Airflow Operator.
-        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
-        to this argument.
-        :return: None.
-        """
+    def create_aggregate_table(self, release: SnapshotRelease, **kwargs):
+        """Runs the aggregate table query."""
 
         agg: Aggregation = kwargs["aggregation"]
         template_path = os.path.join(sql_folder(), make_sql_jinja2_filename("create_aggregate"))
         sql = render_template(
             template_path,
             project_id=self.output_project_id,
-            dataset_id=self.observatory_dataset_id,
-            release_date=release.release_date,
+            dataset_id=self.bq_observatory_dataset_id,
+            snapshot_date=release.snapshot_date,
             aggregation_field=agg.aggregation_field,
             group_by_time_field=agg.group_by_time_field,
             relate_to_institutions=agg.relate_to_institutions,
@@ -930,27 +812,19 @@ class DoiWorkflow(Workflow):
             relate_to_publishers=agg.relate_to_publishers,
         )
 
-        table_id = bigquery_sharded_table_id(agg.table_name, release.release_date)
-        success = create_bigquery_table_from_query(
+        table_id = bq_sharded_table_id(
+            self.output_project_id, self.bq_observatory_dataset_id, agg.table_name, release.snapshot_date
+        )
+        success = bq_create_table_from_query(
             sql=sql,
-            project_id=self.output_project_id,
-            dataset_id=self.observatory_dataset_id,
             table_id=table_id,
-            location=self.data_location,
             clustering_fields=["id"],
         )
 
         set_task_state(success, kwargs["task_id"])
 
-    def update_table_descriptions(self, release: ObservatoryRelease, **kwargs):
-        """Update descriptions for tables.
-
-        :param release: the ObservatoryRelease.
-        :param kwargs: the context passed from the Airflow Operator.
-        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
-        to this argument.
-        :return: None.
-        """
+    def update_table_descriptions(self, release: SnapshotRelease, **kwargs):
+        """Update descriptions for tables."""
 
         # Create list of input tables that were used to create our datasets
         ti = kwargs["ti"]
@@ -965,10 +839,10 @@ class DoiWorkflow(Workflow):
         # Update descriptions
         description = f"The DOI table.\n\nInput sources:\n"
         description += "".join([f"  - {input_table}\n" for input_table in input_tables])
-        table_id = bigquery_sharded_table_id("doi", release.release_date)
+        table_id = bq_sharded_table_id(
+            self.output_project_id, self.bq_observatory_dataset_id, "doi", release.snapshot_date
+        )
         bq_update_table_description(
-            project_id=self.output_project_id,
-            dataset_id=self.observatory_dataset_id,
             table_id=table_id,
             description=description,
         )
@@ -977,47 +851,35 @@ class DoiWorkflow(Workflow):
         for table_name in table_names:
             description = f"The DOI table aggregated by {table_name}.\n\nInput sources:\n"
             description += "".join([f"  - {input_table}\n" for input_table in input_tables])
-            table_id = bigquery_sharded_table_id(table_name, release.release_date)
+            table_id = bq_sharded_table_id(
+                self.output_project_id, self.bq_observatory_dataset_id, table_name, release.snapshot_date
+            )
             bq_update_table_description(
-                project_id=self.output_project_id,
-                dataset_id=self.observatory_dataset_id,
                 table_id=table_id,
                 description=description,
             )
 
-    def copy_to_dashboards(self, release: ObservatoryRelease, **kwargs):
-        """Copy tables to dashboards dataset.
-
-        :param release: the ObservatoryRelease.
-        :param kwargs: the context passed from the Airflow Operator.
-        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
-        to this argument.
-        :return: None.
-        """
+    def copy_to_dashboards(self, release: SnapshotRelease, **kwargs):
+        """Copy tables to dashboards dataset."""
 
         results = []
         table_names = [agg.table_name for agg in DoiWorkflow.AGGREGATIONS]
-        for table_name in table_names:
-            source_table_id = f"{self.output_project_id}.{self.observatory_dataset_id}.{bigquery_sharded_table_id(table_name, release.release_date)}"
-            destination_table_id = f"{self.output_project_id}.{self.dashboards_dataset_id}.{table_name}"
-            success = copy_bigquery_table(source_table_id, destination_table_id, self.data_location)
+        for table_id in table_names:
+            src_table_id = bq_sharded_table_id(
+                self.output_project_id, self.bq_observatory_dataset_id, table_id, release.snapshot_date
+            )
+            dst_table_id = bq_table_id(self.output_project_id, self.bq_dashboards_dataset_id, table_id)
+            success = bq_copy_table(src_table_id=src_table_id, dst_table_id=dst_table_id)
             if not success:
-                logging.error(f"Issue copying table: {source_table_id} to {destination_table_id}")
+                logging.error(f"Issue copying table: {src_table_id} to {dst_table_id}")
 
             results.append(success)
 
         success = all(results)
         set_task_state(success, self.copy_to_dashboards.__name__)
 
-    def create_dashboard_views(self, release: ObservatoryRelease, **kwargs):
-        """Create views for dashboards dataset.
-
-        :param release: the ObservatoryRelease.
-        :param kwargs: the context passed from the Airflow Operator.
-        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
-        to this argument.
-        :return: None.
-        """
+    def create_dashboard_views(self, release: SnapshotRelease, **kwargs):
+        """Create views for dashboards dataset."""
 
         # Create processed dataset
         template_path = os.path.join(sql_folder(), make_sql_jinja2_filename("comparison_view"))
@@ -1029,20 +891,14 @@ class DoiWorkflow(Workflow):
             query = render_template(
                 template_path,
                 project_id=self.output_project_id,
-                dataset_id=self.dashboards_dataset_id,
+                dataset_id=self.bq_dashboards_dataset_id,
                 table_id=table_name,
             )
-            create_bigquery_view(self.output_project_id, self.dashboards_dataset_id, view_name, query)
+            view_id = bq_table_id(self.output_project_id, self.bq_dashboards_dataset_id, view_name)
+            bq_create_view(view_id=view_id, query=query)
 
-    def export_for_elastic(self, release: ObservatoryRelease, **kwargs):
-        """Export data in a de-nested form for Elasticsearch.
-
-        :param release: the ObservatoryRelease.
-        :param kwargs: the context passed from the Airflow Operator.
-        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
-        to this argument.
-        :return: None.
-        """
+    def export_for_elastic(self, release: SnapshotRelease, **kwargs):
+        """Export data in a de-nested form for Elasticsearch."""
 
         agg = kwargs["aggregation"]
         tables = make_elastic_tables(
@@ -1071,17 +927,14 @@ class DoiWorkflow(Workflow):
 
                 msg = f"Exporting file_name={template_file_name}, aggregate={aggregate}, facet={facet}"
                 logging.info(msg)
+                input_table_id = bq_sharded_table_id(
+                    self.output_project_id, self.bq_observatory_dataset_id, agg.table_name, release.snapshot_date
+                )
+                output_table_id = bq_sharded_table_id(
+                    self.output_project_id, self.bq_elastic_dataset_id, f"ao_{aggregate}_{facet}", release.snapshot_date
+                )
                 future = executor.submit(
-                    export_aggregate_table,
-                    project_id=self.output_project_id,
-                    release_date=release.release_date,
-                    data_location=self.data_location,
-                    input_dataset_id=self.observatory_dataset_id,
-                    input_table_name=agg.table_name,
-                    template_file_name=template_file_name,
-                    output_table_id=self.elastic_dataset_id,
-                    aggregate=aggregate,
-                    facet=facet,
+                    export_aggregate_table, template_file_name, input_table_id, output_table_id, aggregate, facet
                 )
 
                 futures.append(future)
@@ -1099,6 +952,20 @@ class DoiWorkflow(Workflow):
 
         success = all(results)
         set_task_state(success, kwargs["task_id"])
+
+    def add_new_dataset_releases(self, release: SnapshotRelease, **kwargs):
+        """Adds release information to API."""
+
+        dataset_release = DatasetRelease(
+            dag_id=self.dag_id,
+            dataset_id=self.api_dataset_id,
+            dag_run_id=release.run_id,
+            snapshot_date=release.snapshot_date,
+            data_interval_start=kwargs["data_interval_start"],
+            data_interval_end=kwargs["data_interval_end"],
+        )
+        api = make_observatory_api(observatory_api_conn_id=self.observatory_api_conn_id)
+        api.post_dataset_release(dataset_release)
 
     def remove_aggregations(
         self, input_aggregations: List[Aggregation], aggregations_to_remove: Set[str]
@@ -1128,39 +995,22 @@ class DoiWorkflow(Workflow):
 
 
 def export_aggregate_table(
-    *,
-    project_id: str,
-    release_date: pendulum.Date,
-    data_location: str,
-    input_dataset_id: str,
-    input_table_name: str,
     template_file_name: str,
+    input_table_id: str,
     output_table_id: str,
     aggregate: str,
     facet: str,
 ):
-    """Export an aggregate table."""
-
     template_path = os.path.join(sql_folder(), template_file_name)
     sql = render_template(
         template_path,
-        project_id=project_id,
-        dataset_id=input_dataset_id,
-        table_name=input_table_name,
-        release_date=release_date,
+        table_id=input_table_id,
         aggregate=aggregate,
         facet=facet,
     )
-
-    export_table_id = f"ao_{aggregate}_{facet}"
-    processed_table_id = bigquery_sharded_table_id(export_table_id, release_date)
-
-    success = create_bigquery_table_from_query(
+    success = bq_create_table_from_query(
         sql=sql,
-        project_id=project_id,
-        dataset_id=output_table_id,
-        table_id=processed_table_id,
-        location=data_location,
+        table_id=output_table_id,
     )
 
     return success

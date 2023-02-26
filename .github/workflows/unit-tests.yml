@@ -1,6 +1,6 @@
 name: Unit Tests
 
-on: [push]
+on: [ push ]
 
 jobs:
   build:
@@ -8,8 +8,8 @@ jobs:
     strategy:
       max-parallel: 4
       matrix:
-        python-version: [3.8]
-        os: [ubuntu-20.04]
+        python-version: [ 3.8 ]
+        os: [ ubuntu-20.04 ]
 
     steps:
       - name: Checkout ${{ matrix.python-version }}
@@ -27,7 +27,7 @@ jobs:
           python -m pip install --upgrade pip
 
           cd ..
-          git clone https://github.com/The-Academic-Observatory/observatory-platform.git
+          git clone -b feature/workflow-config-file https://github.com/The-Academic-Observatory/observatory-platform.git
           cd observatory-platform
           pip install -e observatory-api
           pip install -e observatory-platform
@@ -55,6 +55,9 @@ jobs:
           TEST_GCP_PROJECT_ID: ${{ secrets.TEST_GCP_PROJECT_ID }}
           TEST_GCP_SERVICE_KEY: ${{ secrets.TEST_GCP_SERVICE_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_application_credentials.json
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
           AIRFLOW__CORE__LOAD_EXAMPLES: false
         run: |
           echo "${TEST_GCP_SERVICE_KEY}" | base64 --decode > /tmp/google_application_credentials.json

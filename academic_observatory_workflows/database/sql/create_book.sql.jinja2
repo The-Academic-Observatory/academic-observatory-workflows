@@ -117,7 +117,7 @@ SELECT
     crossref.published_year_month,
     (SELECT ARRAY_AGG(normalise_isbn_string(candidate_isbn) IGNORE NULLS) FROM UNNEST(crossref.isbn) as candidate_isbn) as work_isbns
     --ARRAY(SELECT normalise_isbn_string(candidate_isbn) as work_isbn from UNNEST(crossref.isbn) as candidate_isbn) as work_isbns
-FROM `{{ observatory.project_id }}.{{ observatory.dataset_id }}.doi{{ observatory.release_date.strftime('%Y%m%d') }}` as original, UNNEST(crossref.ISBN) as isbn),
+FROM `{{ observatory.project_id }}.{{ observatory.dataset_id }}.doi{{ observatory.snapshot_date.strftime('%Y%m%d') }}` as original, UNNEST(crossref.ISBN) as isbn),
 
 books as (
 SELECT

@@ -18,241 +18,162 @@
 from __future__ import annotations
 
 import functools
+import gzip
 import json
 import logging
 import os
 import shutil
-import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
-from subprocess import Popen
-from typing import Dict, List
 
 import jsonlines
 import pendulum
 import requests
-from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
-from airflow.models import Variable
 from bs4 import BeautifulSoup
+from google.cloud.bigquery import SourceFormat
 from natsort import natsorted
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
-from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
-from observatory.platform.utils.config_utils import find_schema
-from observatory.platform.utils.proc_utils import wait_for_process
-from observatory.platform.utils.url_utils import retry_session, retry_get_url
-from observatory.platform.utils.workflow_utils import blob_name, bq_load_shard, get_chunks
-from observatory.platform.workflows.snapshot_telescope import (
-    SnapshotRelease,
-    SnapshotTelescope,
+from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+from observatory.api.client.model.dataset_release import DatasetRelease
+from observatory.platform.api import make_observatory_api
+from observatory.platform.bigquery import (
+    bq_find_schema,
+    bq_sharded_table_id,
+    bq_load_table,
+    bq_create_dataset,
 )
-from academic_observatory_workflows.dag_tag import Tag
+from observatory.platform.config import AirflowConns
+from observatory.platform.files import list_files, get_chunks, clean_dir
+from observatory.platform.gcs import gcs_upload_files, gcs_blob_name_from_path, gcs_blob_uri
+from observatory.platform.observatory_config import CloudWorkspace
+from observatory.platform.utils.url_utils import retry_session, retry_get_url
+from observatory.platform.workflows.workflow import (
+    Workflow,
+    SnapshotRelease,
+    cleanup,
+    set_task_state,
+    WorkflowBashOperator,
+)
+
+SNAPSHOT_URL = "https://api.crossref.org/snapshots/monthly/{year}/{month:02d}/all.json.tar.gz"
+
+
+def make_snapshot_url(snapshot_date: pendulum.DateTime) -> str:
+    return SNAPSHOT_URL.format(year=snapshot_date.year, month=snapshot_date.month)
 
 
 class CrossrefMetadataRelease(SnapshotRelease):
-    def __init__(self, dag_id: str, release_date: pendulum.DateTime):
-        """Create a CrossrefMetadataRelease instance.
+    def __init__(self, *, dag_id: str, run_id: str, snapshot_date: pendulum.DateTime):
+        """Construct a RorRelease.
 
         :param dag_id: the DAG id.
-        :param release_date: the date of the release.
+        :param run_id: the DAG run id.
+        :param snapshot_date: the release date.
         """
 
-        download_files_regex = ".*.json.tar.gz$"
-        extract_files_regex = f".*.json$"
-        transform_files_regex = f".*.jsonl$"
-        super().__init__(dag_id, release_date, download_files_regex, extract_files_regex, transform_files_regex)
-
-        self.url = CrossrefMetadataTelescope.TELESCOPE_URL.format(year=release_date.year, month=release_date.month)
-
-    @property
-    def api_key(self):
-        """Return API token"""
-        connection = BaseHook.get_connection(AirflowConns.CROSSREF)
-        return connection.password
-
-    @property
-    def download_path(self) -> str:
-        """Get the path to the downloaded file.
-
-        :return: the file path.
-        """
-
-        return os.path.join(self.download_folder, "crossref_metadata.json.tar.gz")
-
-    def download(self):
-        """Download release.
-
-        :return: None.
-        """
-
-        logging.info(f"Downloading from url: {self.url}")
-
-        # Set API token header
-        header = {"Crossref-Plus-API-Token": f"Bearer {self.api_key}"}
-
-        # Download release
-        with retry_get_url(self.url, headers=header, stream=True) as response:
-            # Open file for saving
-            with open(self.download_path, "wb") as file:
-                response.raw.read = functools.partial(response.raw.read, decode_content=True)
-                shutil.copyfileobj(response.raw, file)
-
-        logging.info(f"Successfully download url to {self.download_path}")
-
-    def extract(self):
-        """Extract release. Decompress and unzip file to multiple json files.
-
-        :return: None.
-        """
-        logging.info(f"extract_release: {self.download_path}")
-
-        # Run command using GNUtar, bsdtar (on e.g. OS x) might give error: 'Error inclusion pattern: Failed to open
-        # 'pigz -d'
-        cmd = f'tar -xv -I "pigz -d" -f {self.download_path} -C {self.extract_folder}'
-        p: Popen = subprocess.Popen(
-            cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, executable="/bin/bash"
-        )
-        stdout, stderr = wait_for_process(p)
-        logging.debug(stdout)
-        success = p.returncode == 0 and "error" not in stderr.lower()
-
-        if success:
-            logging.info(f"extract_release success: {self.download_path}")
-        else:
-            logging.error(stdout)
-            logging.error(stderr)
-            raise AirflowException(f"extract_release error: {self.download_path}")
-
-    def transform(self, max_processes: int, batch_size: int = 500):
-        """Transform the Crossref Metadata release.
-        Each extracted file is transformed. This is done in parallel using the ThreadPoolExecutor.
-
-        :param max_processes: the number of processes to use when transforming files (one process per file).
-        :param batch_size: the number of files to send to ProcessPoolExecutor at one time.
-        :return: whether the transformation was successful or not.
-        """
-        logging.info(f"Transform input folder: {self.extract_folder}, output folder: {self.transform_folder}")
-        finished = 0
-
-        # List files and sort so that they are processed in ascending order
-        input_file_paths = natsorted(self.extract_files)
-
-        # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
-        for batch_input_file_paths in get_chunks(input_list=input_file_paths, chunk_size=batch_size):
-            with ProcessPoolExecutor(max_workers=max_processes) as executor:
-                futures = []
-
-                # Create tasks for each file
-                for input_file in batch_input_file_paths:
-                    # The output file will be a json lines file, hence adding the 'l' to the file extension
-                    output_file = os.path.join(self.transform_folder, os.path.basename(input_file) + "l")
-                    future = executor.submit(transform_file, input_file, output_file)
-                    futures.append(future)
-
-                # Wait for completed tasks
-                for future in as_completed(futures):
-                    future.result()
-                    finished += 1
-                    if finished % 1000 == 0:
-                        logging.info(f"Transformed {finished} files")
+        super().__init__(dag_id=dag_id, run_id=run_id, snapshot_date=snapshot_date)
+        self.download_file_name = "crossref_metadata.json.tar.gz"
+        self.download_file_path = os.path.join(self.download_folder, self.download_file_name)
+        self.extract_files_regex = r".*\.json$"
+        self.transform_files_regex = r".*\.jsonl.gz$"
 
 
-class CrossrefMetadataTelescope(SnapshotTelescope):
+class CrossrefMetadataTelescope(Workflow):
     """
     The Crossref Metadata Telescope
 
     Saved to the BigQuery table: <project_id>.crossref.crossref_metadataYYYYMMDD
     """
 
-    DAG_ID = "crossref_metadata"
-    DATASET_ID = "crossref"
-    SCHEDULE_INTERVAL = "0 0 7 * *"
-    TELESCOPE_URL = "https://api.crossref.org/snapshots/monthly/{year}/{month:02d}/all.json.tar.gz"
-
     def __init__(
         self,
-        dag_id: str = DAG_ID,
-        start_date: pendulum.DateTime = pendulum.datetime(2020, 6, 7),
-        schedule_interval: str = SCHEDULE_INTERVAL,
-        dataset_id: str = "crossref",
-        schema_folder: str = default_schema_folder(),
-        queue: str = "remote_queue",
-        dataset_description: str = "The Crossref Metadata Plus dataset: "
-        "https://www.crossref.org/services/metadata-retrieval/metadata-plus/",
-        load_bigquery_table_kwargs: Dict = None,
-        table_descriptions: Dict = None,
-        airflow_vars: List = None,
-        airflow_conns: List = None,
-        max_active_runs: int = 1,
+        *,
+        dag_id: str,
+        cloud_workspace: CloudWorkspace,
+        bq_dataset_id: str = "crossref",
+        bq_table_name: str = "crossref_metadata",
+        api_dataset_id: str = "crossref_metadata",
+        schema_folder: str = os.path.join(default_schema_folder(), "crossref_metadata"),
+        dataset_description: str = "Datasets created by Crossref: https://www.crossref.org/",
+        table_description: str = "The Crossref Metadata Plus dataset: https://www.crossref.org/services/metadata-retrieval/metadata-plus/",
+        crossref_metadata_conn_id: str = "crossref_metadata",
+        observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         max_processes: int = os.cpu_count(),
-        workflow_id: int = None,
+        batch_size: int = 200,
+        start_date: pendulum.DateTime = pendulum.datetime(2020, 6, 7),
+        schedule_interval: str = "0 0 7 * *",
+        catchup: bool = True,
+        queue: str = "remote_queue",
+        max_active_runs: int = 1,
     ):
         """The Crossref Metadata telescope
 
         :param dag_id: the id of the DAG.
+        :param cloud_workspace: the cloud workspace settings.
+        :param bq_dataset_id: the BigQuery dataset id.
+        :param bq_table_name: the BigQuery table name.
+        :param api_dataset_id: the Dataset ID to use when storing releases.
+        :param schema_folder: the SQL schema path.
+        :param dataset_description: description for the BigQuery dataset.
+        :param table_description: description for the BigQuery table.
+        :param crossref_metadata_conn_id: the Crossref Metadata Airflow connection key.
+        :param observatory_api_conn_id: the Observatory API connection key.
+        :param max_processes: the number of processes used with ProcessPoolExecutor to transform files in parallel.
+        :param batch_size: the number of files to send to ProcessPoolExecutor at one time.
         :param start_date: the start date of the DAG.
         :param schedule_interval: the schedule interval of the DAG.
-        :param dataset_id: the BigQuery dataset id.
-        :param schema_folder: the SQL schema path.
-        :param queue: Crossref Metadata tasks run on the worker VM, indicated by the 'remote_queue'.
-        :param dataset_description: description for the BigQuery dataset.
-        :param load_bigquery_table_kwargs: the customisation parameters for loading data into a BigQuery table.
-        :param table_descriptions: a dictionary with table ids and corresponding table descriptions.
-        :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow.
-        :param airflow_conns: list of airflow connection keys, for each connection it is checked if it exists in airflow
+        :param catchup: whether to catchup the DAG or not.
+        :param queue: what Airflow queue this job runs on.
         :param max_active_runs: the maximum number of DAG runs that can be run at once.
-        :param max_processes: the number of processes used with ProcessPoolExecutor to transform files in parallel.
-        :param workflow_id: api workflow id.
         """
 
-        if table_descriptions is None:
-            table_descriptions = {dag_id: "A single Crossref Metadata snapshot."}
-
-        if airflow_vars is None:
-            airflow_vars = [
-                AirflowVars.DATA_PATH,
-                AirflowVars.PROJECT_ID,
-                AirflowVars.DATA_LOCATION,
-                AirflowVars.DOWNLOAD_BUCKET,
-                AirflowVars.TRANSFORM_BUCKET,
-            ]
-        if airflow_conns is None:
-            airflow_conns = [AirflowConns.CROSSREF]
-
-        if load_bigquery_table_kwargs is None:
-            load_bigquery_table_kwargs = {"ignore_unknown_values": True}
-
         super().__init__(
-            dag_id,
-            start_date,
-            schedule_interval,
-            dataset_id,
-            schema_folder,
-            queue=queue,
-            dataset_description=dataset_description,
-            load_bigquery_table_kwargs=load_bigquery_table_kwargs,
-            table_descriptions=table_descriptions,
-            airflow_vars=airflow_vars,
-            airflow_conns=airflow_conns,
-            max_active_runs=max_active_runs,
-            workflow_id=workflow_id,
+            dag_id=dag_id,
+            start_date=start_date,
+            schedule_interval=schedule_interval,
+            catchup=catchup,
+            airflow_conns=[observatory_api_conn_id, crossref_metadata_conn_id],
             tags=[Tag.academic_observatory],
+            max_active_runs=max_active_runs,
+            queue=queue,
         )
+        self.cloud_workspace = cloud_workspace
+        self.bq_dataset_id = bq_dataset_id
+        self.bq_table_name = bq_table_name
+        self.api_dataset_id = api_dataset_id
+        self.schema_folder = schema_folder
+        self.dataset_description = dataset_description
+        self.table_description = table_description
+        self.crossref_metadata_conn_id = crossref_metadata_conn_id
+        self.observatory_api_conn_id = observatory_api_conn_id
         self.max_processes = max_processes
+        self.batch_size = batch_size
 
         self.add_setup_task(self.check_dependencies)
         self.add_setup_task(self.check_release_exists)
         self.add_task(self.download)
         self.add_task(self.upload_downloaded)
-        self.add_task(self.extract)
+        self.add_operator(
+            WorkflowBashOperator(
+                workflow=self,
+                task_id="extract",
+                bash_command='tar -xv -I "pigz -d" -f {{ release.download_file_path }} -C {{ release.extract_folder }}',
+            )
+        )
         self.add_task(self.transform)
         self.add_task(self.upload_transformed)
         self.add_task(self.bq_load)
-        self.add_task(self.cleanup)
         self.add_task(self.add_new_dataset_releases)
+        self.add_task(self.cleanup)
 
-    def make_release(self, **kwargs) -> List[CrossrefMetadataRelease]:
+    @property
+    def api_key(self):
+        """Return API token"""
+        connection = BaseHook.get_connection(self.crossref_metadata_conn_id)
+        return connection.password
+
+    def make_release(self, **kwargs) -> CrossrefMetadataRelease:
         """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is
         called in 'task_callable'.
 
@@ -263,17 +184,12 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         """
 
         # The release date is always the end of the execution_date month
-        release_date = kwargs["execution_date"].end_of("month")
-        return [CrossrefMetadataRelease(self.dag_id, release_date)]
+        snapshot_date = kwargs["data_interval_start"].end_of("month")
+        run_id = kwargs["run_id"]
+        return CrossrefMetadataRelease(dag_id=self.dag_id, run_id=run_id, snapshot_date=snapshot_date)
 
     def check_release_exists(self, **kwargs):
-        """Check that the release for this month exists.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html
-        for a list of the keyword arguments that are passed to this argument.
-        :return: None.
-        """
+        """Check that the release for this month exists."""
 
         # List all available releases for logging and debugging purposes
         # These values are not used to actually check if the release is available
@@ -286,96 +202,172 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
                 logging.info(href["href"])
 
         # Construct the release for the execution date and check if it exists.
-        # The release release for a given execution_date is added on the 5th day of the following month.
+        # The release for a given execution_date is added on the 5th day of the following month.
         # E.g. the 2020-05 release is added to the website on 2020-06-05.
-        execution_date = kwargs["execution_date"]
+        data_interval_start = kwargs["data_interval_start"]
+        exists = check_release_exists(data_interval_start, self.api_key)
+        assert (
+            exists
+        ), f"check_release_exists: release doesn't exist for month {data_interval_start.year}-{data_interval_start.month}, something is wrong and needs investigating."
 
-        url = CrossrefMetadataTelescope.TELESCOPE_URL.format(year=execution_date.year, month=execution_date.month)
-        logging.info(f"Checking if available release exists for {execution_date.year}-{execution_date.month}")
+        return True
 
-        # Get API key: it is required to check the head now
-        connection = BaseHook.get_connection(AirflowConns.CROSSREF)
-        api_key = connection.password
-        response = retry_session().head(url, headers={"Crossref-Plus-API-Token": f"Bearer {api_key}"})
-        if response.status_code == 302:
-            logging.info(f"Snapshot exists at url: {url}, response code: {response.status_code}")
-            return True
-        elif response.reason == "Not Found":
-            logging.info(
-                f"Snapshot does not exist at url: {url}, response code: {response.status_code}, "
-                f"reason: {response.reason}"
-            )
-            return False
-        else:
-            raise AirflowException(
-                f"Could not get head of url: {url}, response code: {response.status_code}," f"reason: {response.reason}"
-            )
+    def download(self, release: CrossrefMetadataRelease, **kwargs):
+        """Task to download the CrossrefMetadataRelease release for a given month."""
 
-    def download(self, releases: List[CrossrefMetadataRelease], **kwargs):
-        """Task to download the CrossrefMetadataRelease release for a given month.
+        clean_dir(release.download_folder)
 
-        :param releases: the list of CrossrefMetadataRelease instances.
-        :return: None.
-        """
+        url = make_snapshot_url(release.snapshot_date)
+        logging.info(f"Downloading from url: {url}")
 
-        # Download each release
-        for release in releases:
-            release.download()
+        # Set API token header
+        header = {"Crossref-Plus-API-Token": f"Bearer {self.api_key}"}
 
-    def extract(self, releases: List[CrossrefMetadataRelease], **kwargs):
-        """Task to extract the CrossrefMetadataRelease release for a given month.
+        # Download release
+        with retry_get_url(url, headers=header, stream=True) as response:
+            with open(release.download_file_path, "wb") as file:
+                response.raw.read = functools.partial(response.raw.read, decode_content=True)
+                shutil.copyfileobj(response.raw, file)
 
-        :param releases: the list of CrossrefMetadataRelease instances.
-        :return: None.
-        """
+        logging.info(f"Successfully download url to {release.download_file_path}")
 
-        for release in releases:
-            release.extract()
+    def upload_downloaded(self, release: CrossrefMetadataRelease, **kwargs):
+        """Upload data to Cloud Storage."""
 
-    def transform(self, releases: List[CrossrefMetadataRelease], **kwargs):
+        success = gcs_upload_files(
+            bucket_name=self.cloud_workspace.download_bucket, file_paths=[release.download_file_path]
+        )
+        set_task_state(success, self.upload_transformed.__name__, release)
+
+    def transform(self, release: CrossrefMetadataRelease, **kwargs):
         """Task to transform the CrossrefMetadataRelease release for a given month.
+        Each extracted file is transformed. This is done in parallel using the ThreadPoolExecutor."""
 
-        :param releases: the list of CrossrefMetadataRelease instances.
-        :return: None.
-        """
+        logging.info(f"Transform input folder: {release.extract_folder}, output folder: {release.transform_folder}")
+        clean_dir(release.transform_folder)
 
-        for release in releases:
-            release.transform(max_processes=self.max_processes)
+        # List files and sort so that they are processed in ascending order
+        input_file_paths = natsorted(list_files(release.extract_folder, release.extract_files_regex))
 
-    def bq_load(self, releases: List[SnapshotRelease], **kwargs):
+        # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
+        for i, chunk in enumerate(get_chunks(input_list=input_file_paths, chunk_size=self.batch_size)):
+            with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
+                futures = []
+
+                # Create tasks for each file
+                for input_file in chunk:
+                    future = executor.submit(transform_file, input_file)
+                    futures.append(future)
+
+                # Write data from batch into a single jsonl.gz file
+                # The output file will be a json lines gzip file, hence adding the 'l.gz' to the file extension
+                file_path = os.path.join(release.transform_folder, f"crossref_metadata_{i:012}.jsonl.gz")
+                with gzip.open(file_path, "wb") as gzip_file:
+                    with jsonlines.Writer(gzip_file) as writer:
+                        # Write data to the jsonlines.Writer as it becomes available
+                        for future in as_completed(futures):
+                            data = future.result()
+                            writer.write_all(data)
+
+                if i % 1000 == 0:
+                    logging.info(f"Transformed {i + 1} files")
+
+    def upload_transformed(self, release: CrossrefMetadataRelease, **kwargs) -> None:
+        """Upload the transformed data to Cloud Storage."""
+
+        files_list = list_files(release.transform_folder, release.transform_files_regex)
+        success = gcs_upload_files(bucket_name=self.cloud_workspace.transform_bucket, file_paths=files_list)
+        set_task_state(success, self.upload_transformed.__name__, release)
+
+    def bq_load(self, release: CrossrefMetadataRelease, **kwargs):
         """Task to load each transformed release to BigQuery.
-        The table_id is set to the file name without the extension.
+        The table_id is set to the file name without the extension."""
 
-        :param releases: a list of releases.
+        bq_create_dataset(
+            project_id=self.cloud_workspace.output_project_id,
+            dataset_id=self.bq_dataset_id,
+            location=self.cloud_workspace.data_location,
+            description=self.dataset_description,
+        )
+
+        # Selects all jsonl.gz files in the releases transform folder on the Google Cloud Storage bucket and all of its
+        # subfolders: https://cloud.google.com/bigquery/docs/batch-loading-data#load-wildcards
+        uri = gcs_blob_uri(
+            self.cloud_workspace.transform_bucket,
+            f"{gcs_blob_name_from_path(release.transform_folder)}/*.jsonl.gz",
+        )
+        table_id = bq_sharded_table_id(
+            self.cloud_workspace.output_project_id, self.bq_dataset_id, self.bq_table_name, release.snapshot_date
+        )
+        schema_file_path = bq_find_schema(
+            path=self.schema_folder, table_name=self.bq_table_name, release_date=release.snapshot_date
+        )
+        success = bq_load_table(
+            uri=uri,
+            table_id=table_id,
+            schema_file_path=schema_file_path,
+            source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
+            table_description=self.table_description,
+            ignore_unknown_values=True,
+        )
+        set_task_state(success, self.bq_load.__name__, release)
+
+    def add_new_dataset_releases(self, release: CrossrefMetadataRelease, **kwargs) -> None:
+        """Adds release information to API."""
+
+        dataset_release = DatasetRelease(
+            dag_id=self.dag_id,
+            dataset_id=self.api_dataset_id,
+            dag_run_id=release.run_id,
+            snapshot_date=release.snapshot_date,
+            data_interval_start=kwargs["data_interval_start"],
+            data_interval_end=kwargs["data_interval_end"],
+        )
+        api = make_observatory_api(observatory_api_conn_id=self.observatory_api_conn_id)
+        api.post_dataset_release(dataset_release)
+
+    def cleanup(self, release: CrossrefMetadataRelease, **kwargs) -> None:
+        """Delete all files, folders and XComs associated with this release.
+
+        :param release: the release instance.
+        :param kwargs: the context passed from the Airflow Operator.
+        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
+        to this argument.
         :return: None.
         """
-        # Load each transformed release
-        for release in releases:
-            transform_blob = f"{blob_name(release.transform_folder)}/*"
-            table_description = self.table_descriptions.get(self.dag_id, "")
-            schema_file_path = find_schema(self.schema_folder, self.dag_id, release_date=release.release_date)
-            bq_load_shard(
-                schema_file_path=schema_file_path,
-                project_id=Variable.get(AirflowVars.PROJECT_ID),
-                data_location=Variable.get(AirflowVars.DATA_LOCATION),
-                transform_bucket=Variable.get(AirflowVars.TRANSFORM_BUCKET),
-                transform_blob=transform_blob,
-                dataset_id=self.dataset_id,
-                table_id=self.dag_id,
-                source_format=self.source_format,
-                release_date=release.release_date,
-                dataset_description=self.dataset_description,
-                table_description=table_description,
-                **self.load_bigquery_table_kwargs,
-            )
+
+        cleanup(dag_id=self.dag_id, execution_date=kwargs["execution_date"], workflow_folder=release.workflow_folder)
 
 
-def transform_file(input_file_path: str, output_file_path: str):
-    """Transform a single crossref metadata json file.
+def check_release_exists(month: pendulum.DateTime, api_key: str) -> bool:
+    """Check if a release exists.
+
+    :param month: the month of the release given as a datetime.
+    :param api_key: the Crossref Metadata API key.
+    :return: if release exists or not.
+    """
+
+    url = make_snapshot_url(month)
+    logging.info(f"Checking if available release exists for {month.year}-{month.month}")
+
+    # Get API key: it is required to check the head now
+    response = retry_session().head(url, headers={"Crossref-Plus-API-Token": f"Bearer {api_key}"})
+    if response.status_code == 302:
+        logging.info(f"Snapshot exists at url: {url}, response code: {response.status_code}")
+        return True
+    else:
+        logging.info(
+            f"Snapshot does not exist at url: {url}, response code: {response.status_code}, "
+            f"reason: {response.reason}"
+        )
+        return False
+
+
+def transform_file(input_file_path: str):
+    """Transform a single Crossref Metadata json file.
     The json file is converted to a jsonl file and field names are transformed so they are accepted by BigQuery.
 
     :param input_file_path: the path of the file to transform.
-    :param output_file_path: where to save the transformed file.
     :return: None.
     """
 
@@ -388,9 +380,7 @@ def transform_file(input_file_path: str, output_file_path: str):
     for item in input_data["items"]:
         output_data.append(transform_item(item))
 
-    # Save as JSON Lines
-    with jsonlines.open(output_file_path, mode="w", compact=True) as output_file:
-        output_file.write_all(output_data)
+    return output_data
 
 
 def transform_item(item):

@@ -16,9 +16,8 @@
 
 from __future__ import annotations
 
-import logging
 import urllib.parse
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 import nltk
 import requests

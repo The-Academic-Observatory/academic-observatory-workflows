@@ -12,23 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Tuan Chien
+# Author: Tuan Chien, James Diprose
 
 
+import datetime
 import json
 import os
 import unittest
 from collections import OrderedDict
-from typing import OrderedDict
 from unittest.mock import MagicMock, call, patch
 
 import pendulum
-from airflow.exceptions import AirflowException
+from airflow import AirflowException
 from airflow.models import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
 
-import observatory.api.server.orm as orm
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.web_of_science_telescope import (
     WebOfScienceRelease,
@@ -37,24 +36,316 @@ from academic_observatory_workflows.workflows.web_of_science_telescope import (
     WosNameAttributes,
     WosUtilConst,
     WosUtility,
+    transform_xml_to_json,
 )
-from observatory.api.client import ApiClient, Configuration
-from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
-from observatory.platform.utils.airflow_utils import AirflowConns, AirflowVars
-from observatory.platform.utils.api import make_observatory_api
-from observatory.platform.utils.gc_utils import run_bigquery_query
-from observatory.platform.utils.release_utils import get_dataset_releases
-from observatory.platform.utils.test_utils import (
+from observatory.platform.api import get_dataset_releases
+from observatory.platform.bigquery import bq_sharded_table_id
+from observatory.platform.files import list_files, is_gzip
+from observatory.platform.gcs import gcs_blob_name_from_path
+from observatory.platform.observatory_config import Workflow
+from observatory.platform.observatory_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
-    module_file_path,
     find_free_port,
 )
-from observatory.platform.utils.workflow_utils import (
-    bigquery_sharded_table_id,
-    blob_name,
-    make_dag_id,
-)
+
+
+class TestWebOfScienceTelescope(ObservatoryTestCase):
+    """Test the WebOfScienceTelescope."""
+
+    def __init__(self, *args, **kwargs):
+        """Constructor which sets up variables used by tests.
+
+        :param args: arguments.
+        :param kwargs: keyword arguments.
+        """
+
+        super(TestWebOfScienceTelescope, self).__init__(*args, **kwargs)
+        self.maxDiff = None  # so that entire diff from assertions are compared and returned
+        self.dag_id = "curtin_wos"
+        self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
+        self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
+
+    def test_dag_structure(self):
+        """Test that the DAG has the correct structure."""
+
+        workflow = WebOfScienceTelescope(
+            dag_id=self.dag_id, cloud_workspace=self.fake_cloud_workspace, institution_ids=["123"], wos_conn_id="abc"
+        )
+
+        dag = workflow.make_dag()
+        self.assert_dag_structure(
+            {
+                "check_dependencies": ["download"],
+                "download": ["upload_downloaded"],
+                "upload_downloaded": ["transform"],
+                "transform": ["upload_transformed"],
+                "upload_transformed": ["bq_load"],
+                "bq_load": ["add_new_dataset_releases"],
+                "add_new_dataset_releases": ["cleanup"],
+                "cleanup": [],
+            },
+            dag,
+        )
+
+    def test_dag_load(self):
+        """Test that workflow can be loaded from a DAG bag."""
+
+        # Success
+        env = ObservatoryEnvironment(
+            workflows=[
+                Workflow(
+                    dag_id=self.dag_id,
+                    name="Web of Science Telescope Curtin University",
+                    class_name="academic_observatory_workflows.workflows.web_of_science_telescope.WebOfScienceTelescope",
+                    cloud_workspace=self.fake_cloud_workspace,
+                    kwargs=dict(institution_ids=["123"], wos_conn_id="abc"),
+                )
+            ]
+        )
+
+        with env.create():
+            self.assert_dag_load_from_config(self.dag_id)
+
+        # Failure to load caused by missing kwargs
+        env = ObservatoryEnvironment(
+            workflows=[
+                Workflow(
+                    dag_id=self.dag_id,
+                    name="Web of Science Telescope Curtin University",
+                    class_name="academic_observatory_workflows.workflows.web_of_science_telescope.WebOfScienceTelescope",
+                    cloud_workspace=self.fake_cloud_workspace,
+                    kwargs=dict(),
+                )
+            ]
+        )
+
+        with env.create():
+            with self.assertRaises(AssertionError) as cm:
+                self.assert_dag_load_from_config(self.dag_id)
+            msg = cm.exception.args[0]
+            self.assertTrue("missing 2 required keyword-only arguments" in msg)
+            self.assertTrue("institution_ids" in msg)
+            self.assertTrue("wos_conn_id" in msg)
+
+    def test_telescope(self):
+        """Test workflow end to end"""
+
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
+        bq_dataset_id = env.add_dataset()
+
+        with env.create():
+            # Add login/pass connection
+            conn_id = "wos_curtin_university"
+            conn = Connection(conn_id=conn_id, uri=f"http://login:password@localhost")
+            env.add_connection(conn)
+
+            execution_date = pendulum.datetime(2021, 1, 1)
+            workflow = WebOfScienceTelescope(
+                dag_id=self.dag_id,
+                cloud_workspace=env.cloud_workspace,
+                institution_ids=["Curtin University"],
+                wos_conn_id=conn_id,
+                bq_dataset_id=bq_dataset_id,
+                earliest_date=execution_date,
+            )
+            dag = workflow.make_dag()
+
+            with env.create_dag_run(dag, execution_date) as dag_run:
+                snapshot_date = pendulum.datetime(2021, 2, 1)
+                release = WebOfScienceRelease(
+                    dag_id=self.dag_id,
+                    run_id=dag_run.run_id,
+                    snapshot_date=snapshot_date,
+                )
+
+                # Check dependencies
+                ti = env.run_task(workflow.check_dependencies.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # Download
+                with patch(
+                    "academic_observatory_workflows.workflows.web_of_science_telescope.WosUtility.search"
+                ) as m_search:
+                    with patch(
+                        "academic_observatory_workflows.workflows.web_of_science_telescope.WosClient"
+                    ) as m_client:
+                        m_client.return_value.__enter__.return_value.name = MagicMock()
+                        m_search.return_value = MockApiResponse("api_response.xml")
+                        ti = env.run_task(workflow.download.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                download_files = list_files(release.download_folder, release.download_file_regex)
+                self.assertEqual(len(download_files), 1)
+
+                # upload_downloaded
+                ti = env.run_task(workflow.upload_downloaded.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                for file_path in download_files:
+                    self.assert_blob_integrity(env.download_bucket, gcs_blob_name_from_path(file_path), file_path)
+
+                # Transform
+                ti = env.run_task(workflow.transform.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assertTrue(os.path.isfile(release.transform_file_path))
+                self.assertTrue(is_gzip(release.transform_file_path))
+
+                # Upload_transformed
+                ti = env.run_task(workflow.upload_transformed.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_blob_integrity(
+                    env.transform_bucket,
+                    gcs_blob_name_from_path(release.transform_file_path),
+                    release.transform_file_path,
+                )
+
+                # bq_load
+                ti = env.run_task(workflow.bq_load.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                table_id = bq_sharded_table_id(
+                    self.project_id, workflow.bq_dataset_id, workflow.bq_table_name, release.snapshot_date
+                )
+                expected_rows = 1
+                self.assert_table_integrity(table_id, expected_rows)
+
+                # Sample some fields to check in the first row
+                self.assert_table_content(
+                    table_id,
+                    [
+                        {
+                            "categories": {
+                                "subjects": [
+                                    {
+                                        "text": "Construction & Building Technology",
+                                        "code": "FA",
+                                        "ascatype": "traditional",
+                                    },
+                                    {"text": "Engineering, Civil", "code": "IM", "ascatype": "traditional"},
+                                    {
+                                        "text": "Materials Science, Multidisciplinary",
+                                        "code": "PM",
+                                        "ascatype": "traditional",
+                                    },
+                                    {
+                                        "text": "Construction & Building Technology",
+                                        "code": None,
+                                        "ascatype": "extended",
+                                    },
+                                    {"text": "Engineering", "code": None, "ascatype": "extended"},
+                                    {"text": "Materials Science", "code": None, "ascatype": "extended"},
+                                ],
+                                "subheadings": ["Technology"],
+                                "headings": ["Science & Technology"],
+                            },
+                            "fund_ack": {"grants": [], "text": []},
+                            "identifiers": {
+                                "art_no": "ARTN 100000",
+                                "doi": "10.1000/fake",
+                                "eissn": "0000-0000",
+                                "issn": "0000-0001",
+                                "meeting_abs": None,
+                                "xref_doi": None,
+                                "isbn": None,
+                                "eisbn": None,
+                                "parent_book_doi": None,
+                                "uid": "WOS:00000000000001",
+                            },
+                            "abstract": [],
+                            "conferences": [],
+                            "ref_count": 1,
+                            "names": [
+                                {
+                                    "full_name": "Family, F.",
+                                    "daisng_id": 10000001,
+                                    "orcid": None,
+                                    "last_name": "Family",
+                                    "wos_standard": "Family, First",
+                                    "role": "author",
+                                    "first_name": "First",
+                                    "r_id": None,
+                                    "seq_no": 1,
+                                },
+                                {
+                                    "full_name": "Family, Second",
+                                    "daisng_id": 10000002,
+                                    "orcid": None,
+                                    "last_name": "Family",
+                                    "wos_standard": "Supit, Second",
+                                    "role": "author",
+                                    "first_name": "Second",
+                                    "r_id": None,
+                                    "seq_no": 2,
+                                },
+                            ],
+                            "languages": [{"name": "English", "type": "primary"}],
+                            "title": "Fake title",
+                            "orgs": [
+                                {
+                                    "org_name": "Curtin University",
+                                    "country": "Australia",
+                                    "state": "WA",
+                                    "names": [
+                                        {
+                                            "wos_standard": "Family, First",
+                                            "full_name": "Family, First",
+                                            "daisng_id": 10000001,
+                                            "last_name": "Family",
+                                            "first_name": "First",
+                                        },
+                                        {
+                                            "wos_standard": "Family, Second",
+                                            "full_name": "Family, Second",
+                                            "daisng_id": 10000002,
+                                            "last_name": "Family",
+                                            "first_name": "Second",
+                                        },
+                                    ],
+                                    "suborgs": ["Dept Fake Data"],
+                                    "city": "Perth",
+                                }
+                            ],
+                            "keywords": [],
+                            "pub_info": {
+                                "publisher": "ELSEVIER SCI LTD",
+                                "publisher_city": "PERTH",
+                                "doc_type": "Correction",
+                                "source": "FAKE JOURNAL",
+                                "pub_type": "Journal",
+                                "page_count": 1,
+                                "sort_date": datetime.date(2021, 1, 1),
+                            },
+                            "snapshot_date": datetime.date(2021, 2, 1),
+                            "institution_ids": ["Curtin University"],
+                        }
+                    ],
+                    "title",
+                )
+
+                # Test that DatasetRelease is added to database
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
+                self.assertEqual(len(dataset_releases), 0)
+                ti = env.run_task(workflow.add_new_dataset_releases.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
+                self.assertEqual(len(dataset_releases), 1)
+
+                # Test that all workflow data deleted
+                ti = env.run_task(workflow.cleanup.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_cleanup(release.workflow_folder)
+
+    def test_transform_xml_to_json(self):
+        """Check that transform_xml_to_json succeeds and fails in certain cases"""
+
+        test_folder = test_fixtures_folder("web_of_science")
+        api_response_file_path = os.path.join(test_folder, "api_response.xml")
+        api_response_diff_file_path = os.path.join(test_folder, "api_response_diff_schema.xml")
+
+        # Success parsing
+        transform_xml_to_json(api_response_file_path)
+
+        # Fail parsing as schema changed
+        with self.assertRaises(AirflowException) as cm:
+            transform_xml_to_json(api_response_diff_file_path)
 
 
 class TestWosUtility(unittest.TestCase):
@@ -349,8 +640,7 @@ class TestWosParse(unittest.TestCase):
         with open(self.wos_2020_10_01_json_path, "r") as f:
             self.data = json.load(f)
 
-        self.harvest_datetime = pendulum.now().isoformat()
-        self.release_date = pendulum.date(2020, 10, 1).isoformat()
+        self.snapshot_date = pendulum.datetime(2020, 10, 1)
 
     def test_get_identifiers(self):
         """Extract identifiers"""
@@ -740,12 +1030,10 @@ class TestWosParse(unittest.TestCase):
         wos_inst_id = ["Generic University"]
         entry = WosJsonParser.parse_json(
             data=entry,
-            harvest_datetime=self.harvest_datetime,
-            release_date=self.release_date,
+            snapshot_date=self.snapshot_date,
             institution_ids=wos_inst_id,
         )
-        self.assertEqual(entry["harvest_datetime"], self.harvest_datetime)
-        self.assertEqual(entry["release_date"], self.release_date)
+        self.assertEqual(entry["snapshot_date"], self.snapshot_date.date().isoformat())
         self.assertEqual(entry["identifiers"]["uid"], "WOS:000000000000000")
         self.assertEqual(entry["pub_info"]["pub_type"], "Journal")
         self.assertEqual(
@@ -771,383 +1059,3 @@ class MockApiResponse:
             self.records = f.read()
 
         self.recordsFound = "1"
-
-
-class TestWebOfScienceTelescope(ObservatoryTestCase):
-    """Test the WebOfScienceTelescope."""
-
-    def __init__(self, *args, **kwargs):
-        """Constructor which sets up variables used by tests.
-
-        :param args: arguments.
-        :param kwargs: keyword arguments.
-        """
-
-        super(TestWebOfScienceTelescope, self).__init__(*args, **kwargs)
-
-        self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
-        self.host = "localhost"
-        self.api_port = find_free_port()
-        self.data_location = "us"
-
-        self.org_name = "Curtin University"
-        self.conn_id = "web_of_science_curtin_university"
-        self.earliest_date = pendulum.datetime(2021, 1, 1).isoformat()
-
-        # API environment
-        configuration = Configuration(host=f"http://{self.host}:{self.api_port}")
-        api_client = ApiClient(configuration)
-        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
-
-    def setup_api(self, env, extra=None):
-        dt = pendulum.now("UTC")
-
-        if extra is None:
-            extra = {
-                "airflow_connections": [self.conn_id],
-                "institution_ids": ["Curtin University"],
-                "earliest_date": self.earliest_date,
-            }
-
-        name = "Web of Science Telescope"
-        workflow_type = orm.WorkflowType(name=name, type_id=WebOfScienceTelescope.DAG_ID, created=dt, modified=dt)
-        env.api_session.add(workflow_type)
-
-        organisation = orm.Organisation(
-            name=self.org_name,
-            created=dt,
-            modified=dt,
-            project_id=self.project_id,
-            download_bucket=env.download_bucket,
-            transform_bucket=env.transform_bucket,
-        )
-
-        env.api_session.add(organisation)
-        telescope = orm.Workflow(
-            name=name,
-            workflow_type=workflow_type,
-            organisation=organisation,
-            modified=dt,
-            created=dt,
-            extra=extra,
-        )
-        env.api_session.add(telescope)
-        env.api_session.commit()
-
-        env.api_session.add(
-            orm.TableType(
-                type_id="partitioned",
-                name="partitioned bq table",
-                modified=dt,
-                created=dt,
-            )
-        )
-        env.api_session.commit()
-
-        env.api_session.add(
-            orm.DatasetType(
-                type_id="dataset_type_id",
-                name="ds type",
-                extra={},
-                table_type={"id": 1},
-                modified=dt,
-                created=dt,
-            )
-        )
-        env.api_session.commit()
-
-        dataset = orm.Dataset(
-            name="Web of Science Dataset",
-            address="project.dataset.table",
-            service="bigquery",
-            workflow=telescope,
-            dataset_type={"id": 1},
-            created=dt,
-            modified=dt,
-        )
-        env.api_session.add(dataset)
-        env.api_session.commit()
-
-    def setup_connections(self, env):
-        # Add Observatory API connection
-        conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.api_port}")
-        env.add_connection(conn)
-
-        # Add login/pass connection
-        conn = Connection(conn_id=self.conn_id, uri=f"http://login:password@localhost")
-        env.add_connection(conn)
-
-    def get_telescope(self, dataset_id):
-        api = make_observatory_api()
-        workflow_type = api.get_workflow_type(type_id=WebOfScienceTelescope.DAG_ID)
-        telescopes = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
-        self.assertEqual(len(telescopes), 1)
-
-        dag_id = make_dag_id(WebOfScienceTelescope.DAG_ID, telescopes[0].organisation.name)
-        airflow_conns = telescopes[0].extra.get("airflow_connections")
-        institution_ids = telescopes[0].extra.get("institution_ids")
-        earliest_date_str = telescopes[0].extra.get("earliest_date")
-        earliest_date = pendulum.parse(earliest_date_str)
-
-        airflow_vars = [
-            AirflowVars.DATA_PATH,
-            AirflowVars.DATA_LOCATION,
-        ]
-
-        telescope = WebOfScienceTelescope(
-            dag_id=dag_id,
-            dataset_id=dataset_id,
-            airflow_conns=airflow_conns,
-            airflow_vars=airflow_vars,
-            institution_ids=institution_ids,
-            earliest_date=earliest_date,
-            workflow_id=1,
-        )
-
-        return telescope
-
-    def test_ctor(self):
-        self.assertRaises(
-            AirflowException,
-            WebOfScienceTelescope,
-            dag_id="dag",
-            dataset_id="dataset",
-            workflow_id=1,
-            airflow_conns=[],
-            airflow_vars=[],
-            institution_ids=[],
-        )
-
-        self.assertRaises(
-            AirflowException,
-            WebOfScienceTelescope,
-            dag_id="dag",
-            dataset_id="dataset",
-            airflow_conns=["conn"],
-            airflow_vars=[],
-            institution_ids=[],
-            workflow_id=1,
-        )
-
-    @patch("observatory.platform.utils.release_utils.make_observatory_api")
-    def test_dag_structure(self, m_makeapi):
-        """Test that the Crossref Events DAG has the correct structure."""
-
-        m_makeapi.return_value = self.api
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
-
-        with env.create():
-            self.setup_connections(env)
-            self.setup_api(env)
-            telescope = WebOfScienceTelescope(
-                dag_id="web_of_science",
-                airflow_conns=["conn"],
-                airflow_vars=[],
-                institution_ids=["123"],
-                workflow_id=1,
-            )
-            dag = telescope.make_dag()
-            self.assert_dag_structure(
-                {
-                    "check_dependencies": ["download"],
-                    "download": ["upload_downloaded"],
-                    "upload_downloaded": ["transform"],
-                    "transform": ["upload_transformed"],
-                    "upload_transformed": ["bq_load"],
-                    "bq_load": ["cleanup"],
-                    "cleanup": ["add_new_dataset_releases"],
-                    "add_new_dataset_releases": [],
-                },
-                dag,
-            )
-
-    @patch("observatory.platform.utils.release_utils.make_observatory_api")
-    def test_dag_load(self, m_makeapi):
-        """Test that the DAG can be loaded from a DAG bag."""
-
-        m_makeapi.return_value = self.api
-        dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "web_of_science_telescope.py")
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
-
-        with env.create():
-            self.setup_connections(env)
-            self.setup_api(env)
-            dag_file = os.path.join(
-                module_file_path("academic_observatory_workflows.dags"), "web_of_science_telescope.py"
-            )
-            dag_id = make_dag_id(WebOfScienceTelescope.DAG_ID, self.org_name)
-            self.assert_dag_load(dag_id, dag_file)
-
-    @patch("observatory.platform.utils.release_utils.make_observatory_api")
-    def test_dag_load_missing_params(self, m_makeapi):
-        """Make sure an exception is thrown if essential parameters are missing."""
-
-        m_makeapi.return_value = self.api
-        dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "web_of_science_telescope.py")
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
-        with env.create():
-            self.setup_connections(env)
-            extra = {"airflow_connections": [self.conn_id]}
-            self.setup_api(env, extra=extra)
-            dag_file = os.path.join(
-                module_file_path("academic_observatory_workflows.dags"), "web_of_science_telescope.py"
-            )
-            dag_id = make_dag_id(WebOfScienceTelescope.DAG_ID, self.org_name)
-            self.assertRaises(AssertionError, self.assert_dag_load, dag_id, dag_file)
-
-    @patch("observatory.platform.utils.release_utils.make_observatory_api")
-    def test_telescope_bad_schema(self, m_makeapi):
-        m_makeapi.return_value = self.api
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
-        bad_api_response = MockApiResponse("api_response_diff_schema.xml")
-
-        with env.create(task_logging=True):
-            self.setup_connections(env)
-            self.setup_api(env)
-            dataset_id = env.add_dataset()
-            execution_date = pendulum.datetime(2021, 1, 1)
-            telescope = self.get_telescope(dataset_id)
-            dag = telescope.make_dag()
-
-            release_date = pendulum.datetime(2021, 2, 1)
-            release = WebOfScienceRelease(
-                dag_id=make_dag_id(WebOfScienceTelescope.DAG_ID, self.org_name),
-                release_date=release_date,
-                login="login",
-                password="pass",
-                institution_ids=["Curtin University"],
-                earliest_date=pendulum.datetime(2021, 1, 1),
-            )
-
-            with env.create_dag_run(dag, execution_date):
-                # check dependencies
-                ti = env.run_task(telescope.check_dependencies.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                # download
-                with patch(
-                    "academic_observatory_workflows.workflows.web_of_science_telescope.WosUtility.search"
-                ) as m_search:
-                    with patch(
-                        "academic_observatory_workflows.workflows.web_of_science_telescope.WosClient"
-                    ) as m_client:
-                        m_client.return_value.__enter__.return_value.name = MagicMock()
-                        m_search.return_value = bad_api_response
-                        ti = env.run_task(telescope.download.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
-                        self.assertEqual(len(release.download_files), 2)
-
-                # upload_downloaded
-                ti = env.run_task(telescope.upload_downloaded.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-                self.assert_blob_integrity(
-                    env.download_bucket, blob_name(release.download_files[0]), release.download_files[0]
-                )
-
-                # transform
-                self.assertRaises(AirflowException, env.run_task, telescope.transform.__name__)
-
-    @patch("academic_observatory_workflows.workflows.web_of_science_telescope.pendulum.now")
-    @patch("observatory.platform.utils.release_utils.make_observatory_api")
-    def test_telescope(self, m_makeapi, m_pendnow):
-        m_makeapi.return_value = self.api
-        m_pendnow.return_value = pendulum.datetime(2021, 2, 1)
-
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
-        api_response = MockApiResponse("api_response.xml")
-
-        with env.create():
-            self.setup_connections(env)
-            self.setup_api(env)
-            dataset_id = env.add_dataset()
-            execution_date = pendulum.datetime(2021, 1, 1)
-            telescope = self.get_telescope(dataset_id)
-            dag = telescope.make_dag()
-
-            release_date = pendulum.datetime(2021, 2, 1)
-            release = WebOfScienceRelease(
-                dag_id=make_dag_id(WebOfScienceTelescope.DAG_ID, self.org_name),
-                release_date=release_date,
-                login="login",
-                password="pass",
-                institution_ids=["Curtin University"],
-                earliest_date=pendulum.datetime(2021, 1, 1),
-            )
-
-            with env.create_dag_run(dag, execution_date):
-                # check dependencies
-                ti = env.run_task(telescope.check_dependencies.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                # download
-                with patch(
-                    "academic_observatory_workflows.workflows.web_of_science_telescope.WosUtility.search"
-                ) as m_search:
-                    with patch(
-                        "academic_observatory_workflows.workflows.web_of_science_telescope.WosClient"
-                    ) as m_client:
-                        m_client.return_value.__enter__.return_value.name = MagicMock()
-                        m_search.return_value = api_response
-                        ti = env.run_task(telescope.download.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
-                        self.assertEqual(len(release.download_files), 2)
-
-                # upload_downloaded
-                ti = env.run_task(telescope.upload_downloaded.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-                self.assert_blob_integrity(
-                    env.download_bucket, blob_name(release.download_files[0]), release.download_files[0]
-                )
-
-                # transform
-                ti = env.run_task(telescope.transform.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                # upload_transformed
-                ti = env.run_task(telescope.upload_transformed.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-                for file in release.transform_files:
-                    self.assert_blob_integrity(env.transform_bucket, blob_name(file), file)
-
-                # bq_load
-                ti = env.run_task(telescope.bq_load.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                table_id = (
-                    f"{self.project_id}.{dataset_id}."
-                    f"{bigquery_sharded_table_id(WebOfScienceTelescope.DAG_ID, release.release_date)}"
-                )
-                expected_rows = 2
-                self.assert_table_integrity(table_id, expected_rows)
-
-                # Sample some fields to check in the first row
-                sql = f"SELECT * FROM {self.project_id}.{dataset_id}.web_of_science20210201"
-                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
-                    records = list(run_bigquery_query(sql))
-                self.assertEqual(records[0]["abstract"], [])
-                self.assertEqual(records[0]["ref_count"], 1)
-                self.assertEqual(records[0]["harvest_datetime"].strftime("%Y%m%d"), "20210201")
-                self.assertEqual(records[0]["title"], "Fake title")
-                self.assertEqual(records[0]["keywords"], [])
-                self.assertEqual(records[0]["release_date"].strftime("%Y%m%d"), "20210201")
-                self.assertEqual(records[0]["institution_ids"], ["Curtin University"])
-
-                # cleanup
-                download_folder, extract_folder, transform_folder = (
-                    release.download_folder,
-                    release.extract_folder,
-                    release.transform_folder,
-                )
-                env.run_task(telescope.cleanup.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-                self.assert_cleanup(download_folder, extract_folder, transform_folder)
-
-                # add_dataset_release_task
-                dataset_releases = get_dataset_releases(dataset_id=1)
-                self.assertEqual(len(dataset_releases), 0)
-                ti = env.run_task("add_new_dataset_releases")
-                self.assertEqual(ti.state, State.SUCCESS)
-                dataset_releases = get_dataset_releases(dataset_id=1)
-                self.assertEqual(len(dataset_releases), 1)
-                self.assertEqual(pendulum.instance(dataset_releases[0].start_date), release.release_date)
-                self.assertEqual(pendulum.instance(dataset_releases[0].end_date), release.release_date)

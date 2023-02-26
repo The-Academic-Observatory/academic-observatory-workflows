@@ -801,7 +801,7 @@ WITH tmp_disciplines AS
             FROM UNNEST(openalex.concepts) as fields where fields.level = 0)) )) as level0
       ) as disciplines
   FROM
-    `{{ project_id }}.{{ dataset_id }}.doi{{ release_date.strftime('%Y%m%d') }}` as dois,
+    `{{ project_id }}.{{ dataset_id }}.doi{{ snapshot_date.strftime('%Y%m%d') }}` as dois,
     UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
   WHERE
     aggregrate.identifier IS NOT NULL
@@ -824,7 +824,7 @@ tmp_access_types AS (
       )
     ) as access_types
   FROM
-    `{{ project_id }}.{{ dataset_id }}.doi{{ release_date.strftime('%Y%m%d') }}` as dois,
+    `{{ project_id }}.{{ dataset_id }}.doi{{ snapshot_date.strftime('%Y%m%d') }}` as dois,
     UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
   WHERE
     aggregrate.identifier IS NOT NULL
@@ -1079,7 +1079,7 @@ SELECT
         FROM UNNEST(dois.events.events) as event)))
   ) as events,
 
-FROM `{{ project_id }}.{{ dataset_id }}.doi{{ release_date.strftime('%Y%m%d') }}` as dois, UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
+FROM `{{ project_id }}.{{ dataset_id }}.doi{{ snapshot_date.strftime('%Y%m%d') }}` as dois, UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
 WHERE aggregrate.identifier IS NOT NULL
 GROUP BY aggregrate.identifier, crossref.{{ group_by_time_field }}
 )

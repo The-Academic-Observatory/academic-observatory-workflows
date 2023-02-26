@@ -24,7 +24,6 @@ import pandas as pd
 import pendulum
 import vcr
 from airflow.models.connection import Connection
-from airflow.models.variable import Variable
 from airflow.utils.state import State
 from click.testing import CliRunner
 
@@ -33,8 +32,8 @@ from academic_observatory_workflows.config import schema_folder, test_fixtures_f
 from academic_observatory_workflows.tests.test_zenodo import MockZenodo
 from academic_observatory_workflows.workflows.oa_web_workflow import (
     Description,
-    OaWebRelease,
     OaWebWorkflow,
+    OaWebRelease,
     clean_ror_id,
     clean_url,
     fetch_institution_logo,
@@ -57,16 +56,16 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     make_index,
     save_json,
 )
-from observatory.platform.utils.config_utils import find_schema
-from observatory.platform.utils.file_utils import load_jsonl
-from observatory.platform.utils.gc_utils import upload_file_to_cloud_storage
-from observatory.platform.utils.test_utils import (
+from observatory.platform.bigquery import bq_find_schema
+from observatory.platform.files import load_jsonl
+from observatory.platform.gcs import gcs_upload_file
+from observatory.platform.observatory_config import Workflow
+from observatory.platform.observatory_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
     Table,
     bq_load_tables,
     make_dummy_dag,
-    module_file_path,
 )
 
 academic_observatory_workflows.workflows.oa_web_workflow.INCLUSION_THRESHOLD = {"country": 0, "institution": 0}
@@ -215,8 +214,11 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         self.oa_web_fixtures = "oa_web_workflow"
 
         # For testing workflow functions
-        self.release = OaWebRelease(dag_id="dag", release_date=pendulum.now(), data_bucket_name="data-bucket-name")
-        self.workflow = OaWebWorkflow(input_project_id=self.project_id, output_project_id=self.project_id)
+        self.dag_id = "oa_web_workflow"
+        self.data_bucket_name = "data-bucket-name"
+        self.conceptrecid = 1055172
+        # self.release = OaWebRelease(dag_id="dag", snapshot_date=pendulum.now(), data_bucket_name=)
+        # self.workflow = OaWebWorkflow(dag_id=self.dag_id, input_project_id=self.project_id, output_project_id=self.project_id)
         repositories = [
             {"id": "PubMed Central", "total_outputs": 15, "category": "Domain", "home_repo": False},
             {"id": "Europe PMC", "total_outputs": 12, "category": "Domain", "home_repo": False},
@@ -349,14 +351,16 @@ class TestOaWebWorkflow(ObservatoryTestCase):
     ####################################
 
     def test_dag_structure(self):
-        """Test that the DAG has the correct structure.
-
-        :return: None
-        """
+        """Test that the DAG has the correct structure."""
 
         env = ObservatoryEnvironment(enable_api=False)
         with env.create():
-            dag = OaWebWorkflow(input_project_id=self.project_id, output_project_id=self.project_id).make_dag()
+            dag = OaWebWorkflow(
+                dag_id=self.dag_id,
+                cloud_workspace=env.cloud_workspace,
+                data_bucket=self.data_bucket_name,
+                conceptrecid=self.conceptrecid,
+            ).make_dag()
             self.assert_dag_structure(
                 {
                     "doi_sensor": ["check_dependencies"],
@@ -379,25 +383,56 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             )
 
     def test_dag_load(self):
-        """Test that the DAG can be loaded from a DAG bag.
+        """Test that the DAG can be loaded from a DAG bag."""
 
-        :return: None
-        """
+        # Test successful
+        env = ObservatoryEnvironment(
+            workflows=[
+                Workflow(
+                    dag_id=self.dag_id,
+                    name="Open Access Website Workflow",
+                    class_name="academic_observatory_workflows.workflows.oa_web_workflow.OaWebWorkflow",
+                    cloud_workspace=self.fake_cloud_workspace,
+                    kwargs=dict(
+                        data_bucket=self.data_bucket_name,
+                        conceptrecid=self.conceptrecid,
+                    ),
+                )
+            ]
+        )
 
-        env = ObservatoryEnvironment(project_id=self.project_id, data_location=self.data_location, enable_api=False)
         with env.create():
-            dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "oa_web_workflow.py")
-            self.assert_dag_load("oa_web_workflow", dag_file)
+            self.assert_dag_load_from_config(self.dag_id)
+
+        # Test required kwargs
+        env = ObservatoryEnvironment(
+            workflows=[
+                Workflow(
+                    dag_id=self.dag_id,
+                    name="Open Access Website Workflow",
+                    class_name="academic_observatory_workflows.workflows.oa_web_workflow.OaWebWorkflow",
+                    cloud_workspace=self.fake_cloud_workspace,
+                    kwargs=dict(),
+                )
+            ]
+        )
+
+        with env.create():
+            with self.assertRaises(AssertionError) as cm:
+                self.assert_dag_load_from_config(self.dag_id)
+            msg = cm.exception.args[0]
+            self.assertTrue("missing 2 required keyword-only arguments" in msg)
+            self.assertTrue("data_bucket" in msg)
+            self.assertTrue("conceptrecid" in msg)
 
     def setup_tables(
-        self, dataset_id_all: str, dataset_id_settings: str, bucket_name: str, release_date: pendulum.DateTime
+        self, dataset_id_all: str, dataset_id_settings: str, bucket_name: str, snapshot_date: pendulum.DateTime
     ):
         ror = load_jsonl(test_fixtures_folder("doi", "ror.jsonl"))
         country = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "country.jsonl.gz"))
         institution = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "institution.jsonl.gz"))
         settings_country = load_jsonl(test_fixtures_folder("doi", "country.jsonl"))
 
-        analysis_schema_path = schema_folder()
         oa_web_schema_path = test_fixtures_folder(self.oa_web_fixtures, "schema")
         with CliRunner().isolated_filesystem() as t:
             tables = [
@@ -406,93 +441,100 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     True,
                     dataset_id_all,
                     ror,
-                    find_schema(analysis_schema_path, "ror", release_date=release_date),
+                    bq_find_schema(
+                        path=os.path.join(schema_folder(), "ror"), table_name="ror", release_date=snapshot_date
+                    ),
                 ),
                 Table(
                     "country",
                     True,
                     dataset_id_all,
                     country,
-                    find_schema(oa_web_schema_path, "country"),
+                    bq_find_schema(path=oa_web_schema_path, table_name="country"),
                 ),
                 Table(
                     "institution",
                     True,
                     dataset_id_all,
                     institution,
-                    find_schema(oa_web_schema_path, "institution", release_date=release_date),
+                    bq_find_schema(path=oa_web_schema_path, table_name="institution", release_date=snapshot_date),
                 ),
                 Table(
                     "country",
                     False,
                     dataset_id_settings,
                     settings_country,
-                    find_schema(analysis_schema_path, "country"),
+                    bq_find_schema(path=os.path.join(schema_folder(), "doi"), table_name="country"),
                 ),
             ]
 
             bq_load_tables(
-                tables=tables, bucket_name=bucket_name, release_date=release_date, data_location=self.data_location
+                project_id=self.project_id,
+                tables=tables,
+                bucket_name=bucket_name,
+                snapshot_date=snapshot_date,
             )
 
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.Zenodo")
     @patch("academic_observatory_workflows.workflows.oa_web_workflow.trigger_repository_dispatch")
     def test_telescope(self, mock_trigger_repository_dispatch, mock_zenodo):
-        """Test the telescope end to end.
-
-        :return: None.
-        """
+        """Test the telescope end to end."""
 
         mock_zenodo.return_value = MockZenodo()
-        execution_date = pendulum.datetime(2021, 11, 13)
+        execution_date = pendulum.datetime(2021, 11, 14)
+        snapshot_date = pendulum.datetime(2021, 11, 21)
         env = ObservatoryEnvironment(project_id=self.project_id, data_location=self.data_location, enable_api=False)
-        dataset_id = env.add_dataset("data")
-        dataset_id_settings = env.add_dataset("settings")
+        bq_dataset_id = env.add_dataset("data")
+        bq_dataset_id_settings = env.add_dataset("settings")
         data_bucket = env.add_bucket()
         github_token = "github-token"
         zenodo_token = "zenodo-token"
 
         with env.create() as t:
-            # Add data bucket variable
-            env.add_variable(Variable(key=OaWebWorkflow.DATA_BUCKET, val=data_bucket))
-
-            # Add Github token connection
-            env.add_connection(Connection(conn_id=OaWebWorkflow.GITHUB_TOKEN_CONN, uri=f"http://:{github_token}@"))
-
-            # Add Zenodo token connection
-            env.add_connection(Connection(conn_id=OaWebWorkflow.ZENODO_TOKEN_CONN, uri=f"http://:{zenodo_token}@"))
-
-            # Run fake DOI workflow
+            # Run fake DOI workflow to test sensor
             dag = make_dummy_dag("doi", execution_date)
             with env.create_dag_run(dag, execution_date):
                 # Running all of a DAGs tasks sets the DAG to finished
                 ti = env.run_task("dummy_task")
                 self.assertEqual(State.SUCCESS, ti.state)
 
+            # Setup dependencies
             # Upload fake data to BigQuery
             self.setup_tables(
-                dataset_id_all=dataset_id,
-                dataset_id_settings=dataset_id_settings,
+                dataset_id_all=bq_dataset_id,
+                dataset_id_settings=bq_dataset_id_settings,
                 bucket_name=env.download_bucket,
-                release_date=execution_date,
+                snapshot_date=snapshot_date,
             )
 
             # Upload fake cached zip files file to bucket
             for file_name in ["images-base.zip", "images.zip"]:
                 file_path = test_fixtures_folder("oa_web_workflow", file_name)
-                upload_file_to_cloud_storage(data_bucket, file_name, file_path)
+                gcs_upload_file(bucket_name=data_bucket, blob_name=file_name, file_path=file_path)
+
+            # Setup workflow and connections
+            workflow = OaWebWorkflow(
+                dag_id=self.dag_id,
+                cloud_workspace=env.cloud_workspace,
+                data_bucket=data_bucket,
+                conceptrecid=self.conceptrecid,
+                bq_ror_dataset_id=bq_dataset_id,
+                bq_agg_dataset_id=bq_dataset_id,
+                bq_settings_dataset_id=bq_dataset_id_settings,
+            )
+            dag = workflow.make_dag()
+            env.add_connection(Connection(conn_id=workflow.github_conn_id, uri=f"http://:{github_token}@"))
+            env.add_connection(Connection(conn_id=workflow.zenodo_conn_id, uri=f"http://:{zenodo_token}@"))
 
             # Run workflow
-            workflow = OaWebWorkflow(
-                input_project_id=self.project_id,
-                output_project_id=self.project_id,
-                agg_dataset_id=dataset_id,
-                ror_dataset_id=dataset_id,
-                settings_dataset_id=dataset_id_settings,
-            )
+            with env.create_dag_run(dag, execution_date) as dag_run:
+                # Mocked and expected data
+                release = OaWebRelease(
+                    dag_id=self.dag_id,
+                    run_id=dag_run.run_id,
+                    snapshot_date=snapshot_date,
+                )
 
-            dag = workflow.make_dag()
-            with env.create_dag_run(dag, execution_date):
                 # DOI Sensor
                 ti = env.run_task("doi_sensor")
                 self.assertEqual(State.SUCCESS, ti.state)
@@ -508,9 +550,6 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 # Download data
                 ti = env.run_task(workflow.download.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
-                base_folder = os.path.join(
-                    t, "data", "telescopes", "download", "oa_web_workflow", "oa_web_workflow_2021_11_13"
-                )
                 expected_file_names = [
                     "country-index.jsonl.gz",
                     "institution-index.jsonl.gz",
@@ -518,7 +557,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "institution-data.jsonl.gz",
                 ]
                 for file_name in expected_file_names:
-                    path = os.path.join(base_folder, file_name)
+                    path = os.path.join(release.download_folder, file_name)
                     self.assertTrue(os.path.isfile(path))
 
                 # Make draft Zenodo version
@@ -533,7 +572,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "images-base.zip",
                 ]
                 for file_name in expected_file_names:
-                    path = os.path.join(base_folder, file_name)
+                    path = os.path.join(release.download_folder, file_name)
                     self.assertTrue(os.path.isfile(path))
 
                 # Preprocess data
@@ -543,17 +582,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "country-data.jsonl.gz",
                     "institution-data.jsonl.gz",
                 ]
-                intermediate_folder = os.path.join(
-                    t,
-                    "data",
-                    "telescopes",
-                    "transform",
-                    "oa_web_workflow",
-                    "oa_web_workflow_2021_11_13",
-                    "intermediate",
-                )
                 for file_name in expected_file_names:
-                    path = os.path.join(intermediate_folder, file_name)
+                    path = os.path.join(release.transform_folder, "intermediate", file_name)
                     self.assertTrue(os.path.isfile(path))
 
                 # Build indexes
@@ -564,7 +594,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     "institution-index.jsonl.gz",
                 ]
                 for file_name in expected_file_names:
-                    path = os.path.join(intermediate_folder, file_name)
+                    path = os.path.join(release.transform_folder, "intermediate", file_name)
                     self.assertTrue(os.path.isfile(path))
 
                 # Download logos
@@ -578,10 +608,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 # Build datasets
                 ti = env.run_task(workflow.build_datasets.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
-                base_folder = os.path.join(
-                    t, "data", "telescopes", "transform", "oa_web_workflow", "oa_web_workflow_2021_11_13"
-                )
-                build_folder = os.path.join(base_folder, "build")
+                build_folder = os.path.join(release.transform_folder, "build")
                 expected_files = make_expected_build_files(build_folder)
                 print("Checking expected transformed files")
                 for file in expected_files:
@@ -591,7 +618,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 # Check that full dataset zip file exists
                 archives = ["data.zip", "images.zip", "coki-oa-dataset.zip"]
                 for file_name in archives:
-                    latest_file = os.path.join(base_folder, "out", file_name)
+                    latest_file = os.path.join(release.transform_folder, "out", file_name)
                     print(f"\t{latest_file}")
                     self.assertTrue(os.path.isfile(latest_file))
 
@@ -614,14 +641,10 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/staging")
                 mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/production")
 
-                # Test that all telescope data deleted
-                download_folder, extract_folder, transform_folder = (
-                    os.path.join(t, "data", "telescopes", "download", "oa_web_workflow", "oa_web_workflow_2021_11_13"),
-                    os.path.join(t, "data", "telescopes", "extract", "oa_web_workflow", "oa_web_workflow_2021_11_13"),
-                    os.path.join(t, "data", "telescopes", "transform", "oa_web_workflow", "oa_web_workflow_2021_11_13"),
-                )
-                env.run_task(workflow.cleanup.__name__)
-                self.assert_cleanup(download_folder, extract_folder, transform_folder)
+                # Test that all workflow data deleted
+                ti = env.run_task(workflow.cleanup.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_cleanup(release.workflow_folder)
 
     ####################################
     # Test workflow functions
@@ -633,14 +656,11 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         df = pd.DataFrame(test_data)
         return df
 
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_load_data(self, mock_var_get):
+    def test_load_data(self):
         entity_type = "country"
         with CliRunner().isolated_filesystem() as t:
-            mock_var_get.return_value = t
-
-            # Save CSV
-            path = os.path.join(self.release.download_folder, f"{entity_type}-index.jsonl")
+            # Save Data
+            path = os.path.join(t, f"{entity_type}-index.jsonl")
             df = self.save_mock_data(path, self.country_index)
 
             # Load csv
@@ -659,11 +679,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         actual = df.to_dict(orient="records")[0]
         self.assertEqual(expected, actual)
 
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_make_index_df(self, mock_var_get):
+    def test_make_index_df(self):
         with CliRunner().isolated_filesystem() as t:
-            mock_var_get.return_value = t
-
             # Country
             entity_type = "country"
             df_index, df_data = load_index_and_data(entity_type, self.country_index, self.country_data)
@@ -772,16 +789,14 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             for e, a in zip(expected, actual):
                 self.assertDictEqual(e, a)
 
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_update_index_with_logos(self, mock_var_get):
+    def test_update_index_with_logos(self):
         with CliRunner().isolated_filesystem() as t:
-            mock_var_get.return_value = t
             sizes = ["sm", "md", "lg"]
 
             # Country table
             entity_type = "country"
             df_index, _ = load_index_and_data(entity_type, self.country_index, self.country_data)
-            update_index_with_logos(self.release.build_path, entity_type, df_index)
+            update_index_with_logos(t, entity_type, df_index)
 
             for i, row in df_index.iterrows():
                 for size in sizes:
@@ -837,7 +852,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             df_index, _ = load_index_and_data(entity_type, institution_index, institution_data)
             sizes = ["sm", "md", "lg"]
             with vcr.use_cassette(test_fixtures_folder("oa_web_workflow", "test_make_logos.yaml")):
-                df_index = update_index_with_logos(self.release.build_path, entity_type, df_index)
+                df_index = update_index_with_logos(t, entity_type, df_index)
                 curtin_row = df_index[df_index["id"] == "02n415q13"].iloc[0]
                 foo_row = df_index[df_index["id"] == "12345"].iloc[0]
                 for size in sizes:
@@ -857,14 +872,11 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     self.assertEqual(expected_foo_path, foo_row[key])
 
                     # Check that downloaded logo exists
-                    full_path = os.path.join(self.release.build_path, "images", expected_curtin_path)
+                    full_path = os.path.join(t, "images", expected_curtin_path)
                     self.assertTrue(os.path.isfile(full_path))
 
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_save_index_df(self, mock_var_get):
+    def test_save_index_df(self):
         with CliRunner().isolated_filesystem() as t:
-            mock_var_get.return_value = t
-
             for entity_type, index, data, entity_ids in self.entities:
                 # Load index
                 df_index = pd.DataFrame(index)
@@ -876,24 +888,21 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
                 # Make index
                 df_index = make_index_df(entity_type, df_index, df_data)
-                update_index_with_logos(self.release.build_path, entity_type, df_index)
+                update_index_with_logos(t, entity_type, df_index)
 
                 # Make entities
                 entities = make_entities(entity_type, df_index, df_data)
 
                 # Save index from entities
-                data_path = os.path.join(self.release.build_path, "data")
+                data_path = os.path.join(t, "data")
                 os.makedirs(data_path, exist_ok=True)
                 file_path = os.path.join(data_path, f"{entity_type}.json")
                 data = make_index(entity_type, entities)
                 save_json(file_path, data)
                 self.assertTrue(os.path.isfile(file_path))
 
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_make_entities(self, mock_var_get):
+    def test_make_entities(self):
         with CliRunner().isolated_filesystem() as t:
-            mock_var_get.return_value = t
-
             # Country
             entity_type = "country"
 
@@ -1203,11 +1212,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             a_dict = a_entity.to_dict()
             self.assertDictEqual(e_dict, a_dict)
 
-    @patch("academic_observatory_workflows.workflows.oa_web_workflow.Variable.get")
-    def test_save_entities(self, mock_var_get):
+    def test_save_entities(self):
         with CliRunner().isolated_filesystem() as t:
-            mock_var_get.return_value = t
-
             for entity_type, index, data, entity_ids in self.entities:
                 # Read data
                 df_index = pd.DataFrame(index)
@@ -1219,7 +1225,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 # Save entities
                 df_index = make_index_df(entity_type, df_index, df_data)
                 entities = make_entities(entity_type, df_index, df_data)
-                path = os.path.join(self.release.build_path, "data", entity_type)
+                path = os.path.join(t, "data", entity_type)
                 save_entities(path, entities)
 
                 # Check that entity json files are saved

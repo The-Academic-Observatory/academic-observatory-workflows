@@ -20,13 +20,11 @@ import json
 import logging
 import os
 
-from academic_observatory_workflows.config import elastic_mappings_folder
-from academic_observatory_workflows.dags.elastic_import_workflow import load_elastic_mappings_ao
-from observatory.platform.utils.config_utils import module_file_path
-from observatory.platform.utils.file_utils import load_file
+from academic_observatory_workflows.config import elastic_mappings_folder, load_elastic_mappings_ao
+from observatory.platform.files import load_file
+from observatory.platform.observatory_config import Workflow
+from observatory.platform.observatory_environment import ObservatoryEnvironment, ObservatoryTestCase
 from observatory.platform.utils.jinja2_utils import render_template
-from observatory.platform.utils.test_utils import ObservatoryEnvironment, ObservatoryTestCase
-from observatory.platform.utils.workflow_utils import make_dag_id
 
 
 class TestElasticImportWorkflow(ObservatoryTestCase):
@@ -35,6 +33,7 @@ class TestElasticImportWorkflow(ObservatoryTestCase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self.dag_id = "elastic_import_observatory"
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
 
@@ -138,17 +137,24 @@ class TestElasticImportWorkflow(ObservatoryTestCase):
             self.assertEqual(expected_mappings, actual_mappings)
 
     def test_dag_load(self):
-        """Test that the DAG can be loaded from a DAG bag.
+        """Test that workflow can be loaded from a DAG bag."""
 
-        :return: None
-        """
+        env = ObservatoryEnvironment(
+            workflows=[
+                Workflow(
+                    dag_id=self.dag_id,
+                    name="Elastic Import Observatory Workflow",
+                    class_name="observatory.platform.workflows.elastic_import_workflow.ElasticImportWorkflow",
+                    cloud_workspace=self.fake_cloud_workspace,
+                    kwargs=dict(
+                        sensor_dag_ids=["doi"],
+                        kibana_spaces=["test-space"],
+                        elastic_import_config="academic_observatory_workflows.config.ELASTIC_IMPORT_CONFIG",
+                        tags=["academic-observatory"],
+                    ),
+                )
+            ]
+        )
 
-        env = ObservatoryEnvironment(self.project_id, self.data_location, enable_api=False)
         with env.create():
-            expected_dag_ids = [make_dag_id("elastic_import", suffix) for suffix in ["observatory"]]
-
-            dag_file = os.path.join(
-                module_file_path("academic_observatory_workflows.dags"), "elastic_import_workflow.py"
-            )
-            for dag_id in expected_dag_ids:
-                self.assert_dag_load(dag_id, dag_file)
+            self.assert_dag_load_from_config(self.dag_id)

@@ -1,0 +1,234 @@
+[
+  {
+    "name": "cited_by_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "The total number Works that cite a work this author has created."
+  },
+  {
+    "name": "counts_by_year",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The total number  Works that cite a work this author has created."
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The number of  Works this this author has created."
+      },
+      {
+        "name": "year",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The year."
+      }
+    ],
+    "description": "Author.works_count and Author.cited_by_count for each of the last ten years, binned by year. To put it another way: each year, you can see how many works this author published, and how many times they got cited. Any works or citations older than ten years old aren't included."
+  },
+  {
+    "name": "created_date",
+    "type": "DATE",
+    "mode": "NULLABLE",
+    "description": "The date this Author object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
+  },
+  {
+    "name": "display_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The name of the author as a single string."
+  },
+  {
+    "name": "display_name_alternatives",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "Other ways that we've found this author's name displayed."
+  },
+  {
+    "name": "id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The OpenAlex ID for this author."
+  },
+  {
+    "name": "ids",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "mag",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "this author's Microsoft Academic Graph ID"
+      },
+      {
+        "name": "openalex",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this author's OpenAlex ID. Same as Author.id"
+      },
+      {
+        "name": "orcid",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this author's ORCID ID. Same as Author.orcid"
+      },
+      {
+        "name": "scopus",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this author's Scopus author ID"
+      },
+      {
+        "name": "twitter",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this author's Twitter handle"
+      },
+      {
+        "name": "wikipedia",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this author's Wikipedia page"
+      }
+    ],
+    "description": "All the persistent identifiers (PIDs) that we know about for this author, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible. The openalex ID is the same one you'll find at Author.id. All the IDs are strings except for mag, which is an integer."
+  },
+  {
+    "name": "last_known_institution",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "country_code",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The country where this institution is located, represented as an ISO two-letter country code."
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The primary name of the institution."
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The OpenAlex ID for this institution."
+      },
+      {
+        "name": "ror",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The ROR ID for this institution. The ROR (Research Organization Registry) identifier is a globally unique ID for research organization. ROR is the successor to GRiD, which is no longer being updated."
+      },
+      {
+        "name": "type",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The institution's primary type, using the ROR \"type\" controlled vocabulary. Possible values are: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, and Other."
+      }
+    ],
+    "description": "This author's last known institutional affiliation. In this context \"last known\" means that we took all the Works where this author has an institutional affiliation, sorted them by publication date, and selected the most recent one. This is a dehydrated Institution object, and you can find more documentation on the Institution page."
+  },
+  {
+    "name": "most_cited_work",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The title of the most cited work."
+  },
+  {
+    "name": "orcid",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The ORCID for this author. ORCID global and unique ID for authors."
+  },
+  {
+    "name": "summary_stats",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "2yr_mean_citedness",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": "The 2-year mean citedness for this author. Also known as impact factor."
+      },
+      {
+        "name": "h_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The h-index for this author."
+      },
+      {
+        "name": "i10_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The i-10 index for this author."
+      }
+    ],
+    "description": "Citation metrics for this author."
+  },
+  {
+    "name": "updated_date",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "The last time anything in this author object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  },
+  {
+    "name": "works_api_url",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": " A URL that will get you a list of all this author's works. We express this as an API URL (instead of just listing the works themselves) because sometimes an author's publication list is too long to reasonably fit into a single author object."
+  },
+  {
+    "name": "works_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "The number of Works this this author has created."
+  },
+  {
+    "name": "x_concepts",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The English-language label of the concept."
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The OpenAlex ID for this concept."
+      },
+      {
+        "name": "level",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The level in the concept tree where this concept lives."
+      },
+      {
+        "name": "score",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": "The strength of association between this author and the listed concept, from 0-100."
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The Wikidata ID for this concept. "
+      }
+    ],
+    "description": "The \"x\" in x_concepts is because it's experimental and subject to removal with very little warning. We plan to replace it with a custom link to the Concepts API endpoint."
+  }
+]

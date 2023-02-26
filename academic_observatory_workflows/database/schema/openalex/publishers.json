@@ -1,0 +1,164 @@
+[
+  {
+    "name": "alternate_titles",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "A list of alternate titles for this publisher."
+  },
+  {
+    "name": "cited_by_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "The number of citations to works that are linked to this publisher through journals or other sources. For example, if a publisher publishes 27 journals and those 27 journals have 3,050 works, this number is the sum of the cited_by_count values for all of those 3,050 works."
+  },
+  {
+    "name": "country_codes",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "The countries where the publisher is primarily located, as an ISO two-letter country code."
+  },
+  {
+    "name": "counts_by_year",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The total number of Works that cite a Work published by this publisher."
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The total number of Works that are published by this publisher."
+      },
+      {
+        "name": "year",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The year."
+      }
+    ],
+    "description": "The values of works_count and cited_by_count for each of the last ten years, binned by year. To put it another way: for every listed year, you can see how many new works are linked to this publisher, and how many times any work linked to this publisher was cited.\nYears with zero citations and zero works have been removed so you will need to add those back in if you need them."
+  },
+  {
+    "name": "created_date",
+    "type": "DATE",
+    "mode": "NULLABLE",
+    "description": "The date this Publisher object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
+  },
+  {
+    "name": "display_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The primary name of the publisher."
+  },
+  {
+    "name": "hierarchy_level",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "The hierarchy level for this publisher. A publisher with hierarchy level 0 has no parent publishers. A hierarchy level 1 publisher has one parent above it, and so on."
+  },
+  {
+    "name": "id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The OpenAlex ID for this publisher."
+  },
+  {
+    "name": "ids",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": "All the external identifiers that we know about for this publisher. IDs are expressed as URIs whenever possible.",
+    "fields": [
+      {
+        "name": "openalex",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this publishers's OpenAlex ID"
+      },
+      {
+        "name": "ror",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this publisher's ROR ID"
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this publisher's Wikidata ID"
+      }
+    ]
+  },
+  {
+    "name": "image_thumbnail_url",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "This is usually a hotlink to a wikimedia image. You can change the width=300 parameter in the URL if you want a different thumbnail size."
+  },
+  {
+    "name": "image_url",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "URL where you can get an image representing this publisher. Usually this a hotlink to a Wikimedia image, and usually it's a seal or logo."
+  },
+  {
+    "name": "lineage",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "OpenAlex IDs of publishers. The list will include this publisher's ID, as well as any parent publishers. If this publisher's hierarchy_level is 0, this list will only contain its own ID."
+  },
+  {
+    "name": "parent_publisher",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "An OpenAlex ID linking to the direct parent of the publisher. This will be null if the publisher's hierarchy_level is 0."
+  },
+  {
+    "name": "sources_api_url",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "An URL that will get you a list of all the sources published by this publisher.\nWe express this as an API URL (instead of just listing the sources themselves) because there might be thousands of sources linked to a publisher, and that's too many to fit here."
+  },
+  {
+    "name": "summary_stats",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": "Citation metrics for this publisher",
+    "fields": [
+      {
+        "name": "2yr_mean_citedness",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": "The 2-year mean citedness for this publisher. Also known as impact factor. While the h-index and the i-10 index are normally author-level metrics and the 2-year mean citedness is normally a journal-level metric, they can be calculated for any set of papers, so we include them for publishers."
+      },
+      {
+        "name": "h_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The h-index for this publisher."
+      },
+      {
+        "name": "i10_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The i-10 index for this publisher."
+      }
+    ]
+  },
+  {
+    "name": "updated_date",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "The last time anything in this publisher object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  },
+  {
+    "name": "works_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "The number of works published by this publisher."
+  }
+]
