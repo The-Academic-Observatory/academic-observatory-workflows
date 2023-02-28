@@ -16,5 +16,5 @@ SELECT
   ANY_VALUE(entity.subregion) as {{ aggregate }}_subregion,
   ANY_VALUE(entity.coordinates) as {{ aggregate }}_coordinates,
 FROM
-  `{{ project_id }}.{{ dataset_id }}.{{ table_id }}{{ release_date.strftime('%Y%m%d') }}` as entity
+  `{{ project_id }}.{{ dataset_id }}.{{ table_name }}{{ release_date.strftime('%Y%m%d') }}` as entity
 GROUP BY entity.id

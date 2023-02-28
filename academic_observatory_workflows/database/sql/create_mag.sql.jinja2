@@ -21,7 +21,7 @@ WITH affiliations_processed as (
     affiliation.DisplayName,
     IF(override.grid_id is not null, override.grid_id, affiliation.GridId) as GridId
   FROM `{{ mag.project_id }}.{{ mag.dataset_id }}.Affiliations{{ mag.release_date.strftime('%Y%m%d') }}` as affiliation
-  LEFT JOIN `{{ mag.project_id }}.{{ settings.dataset_id }}.mag_affiliation_override` as override on override.AffiliationId = affiliation.AffiliationId
+  LEFT JOIN `{{ mag_affiliation_override.project_id }}.{{ mag_affiliation_override.dataset_id }}.{{ mag_affiliation_override.table_id }}` as override on override.AffiliationId = affiliation.AffiliationId
 ),
 
 {# This query preprocesses the Fields of Study to simply the later queries #}

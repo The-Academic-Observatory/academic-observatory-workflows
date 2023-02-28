@@ -98,7 +98,7 @@ name as (
 -- Converts ROR links into hostnames and then makes an index of ROR hostnames to ROR ids
 ror_domain_index as (
   SELECT NET.REG_DOMAIN(link) as domain, ARRAY_AGG(STRUCT(ror.id as id, ror.name as name)) as rors,
-  FROM `{{ ror.project_id }}.{{ ror.dataset_id }}.{{ ror.table_id }}{{ ror.release_date.strftime('%Y%m%d') }}` as ror, UNNEST(ror.links) as link
+  FROM `{{ ror.project_id }}.{{ ror.dataset_id }}.{{ ror.table_id }}` as ror, UNNEST(ror.links) as link
   WHERE link IS NOT NULL
   GROUP BY domain
 ),
@@ -125,15 +125,15 @@ oai_to_ror as (
 -- Adds the rors array with ROR id and name to the repository table, our ground truth table of repository info.
 repository as (
   SELECT endpoint_id, url_domain, pmh_domain, repo.name, category, ARRAY_AGG(STRUCT(ror.id as id, ror.name as name)) as rors
-  FROM `{{ repository.project_id }}.{{ repository.dataset_id }}.repository` as repo
-  LEFT JOIN `{{ ror.project_id }}.{{ ror.dataset_id }}.{{ ror.table_id }}{{ ror.release_date.strftime('%Y%m%d') }}` as ror ON ror.id = repo.ror_id
+  FROM `{{ repository.project_id }}.{{ repository.dataset_id }}.{{ repository.table_id }}` as repo
+  LEFT JOIN `{{ ror.project_id }}.{{ ror.dataset_id }}.{{ ror.table_id }}` as ror ON ror.id = repo.ror_id
   GROUP BY endpoint_id, url_domain, pmh_domain, name, category
 ),
 
 -- Makes sure that the ROR id and name in the rors array are in the correct order
 repo_inst_to_ror as (
   SELECT repository_institution, ARRAY(SELECT STRUCT(ror.id as id, ror.name as name) from UNNEST(rtr.rors) as ror) as rors
-  FROM `{{ repository_institution_to_ror.project_id }}.{{ repository_institution_to_ror.dataset_id }}.{{ repository_institution_to_ror.table_id  }}{{ repository_institution_to_ror.release_date.strftime('%Y%m%d') }}` as rtr
+  FROM `{{ repository_institution_to_ror.project_id }}.{{ repository_institution_to_ror.dataset_id }}.{{ repository_institution_to_ror.table_id  }}` as rtr
 ),
 
 -- Adds coki_repository_name, pmh_domain, category and rors to the Unpaywall repositories lists

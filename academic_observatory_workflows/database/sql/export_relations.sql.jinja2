@@ -39,6 +39,6 @@ SELECT
   relation.percentage_of_all_outputs as {{ facet }}_percent_of_all_outputs,
   relation.percentage_of_all_oa as {{ facet }}_percent_of_all_oa
 FROM
-  `{{ project_id }}.{{ dataset_id }}.{{ table_id }}{{ release_date.strftime('%Y%m%d') }}` as entity,
+  `{{ project_id }}.{{ dataset_id }}.{{ table_name }}{{ release_date.strftime('%Y%m%d') }}` as entity,
   UNNEST({{ facet }}) as relation
 ORDER BY entity.id, published_year ASC

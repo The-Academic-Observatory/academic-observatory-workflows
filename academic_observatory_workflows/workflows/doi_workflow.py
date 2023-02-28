@@ -19,6 +19,7 @@ from __future__ import annotations
 import copy
 import gzip
 import io
+import json
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -62,9 +63,20 @@ MAX_QUERIES = 100
 class Table:
     project_id: str
     dataset_id: str
-    table_id: str = None
+    table_name: str = None
     sharded: bool = False
     release_date: pendulum.DateTime = None
+
+    @property
+    def table_id(self):
+        """Generates the BigQuery table_id for both sharded and non-sharded tables.
+
+        :return: BigQuery table_id.
+        """
+
+        if self.sharded:
+            return bigquery_sharded_table_id(self.table_name, self.release_date)
+        return self.table_name
 
 
 @dataclass
@@ -76,7 +88,7 @@ class Transform:
 
 @dataclass
 class Aggregation:
-    table_id: str
+    table_name: str
     aggregation_field: str
     group_by_time_field: str = "published_year"
     relate_to_institutions: bool = False
@@ -126,14 +138,16 @@ def make_dataset_transforms(
             Transform(
                 inputs={
                     "ror": Table(input_project_id, dataset_id_ror, "ror", sharded=True),
-                    "settings": Table(input_project_id, dataset_id_settings),
+                    "country": Table(input_project_id, dataset_id_settings, "country"),
                 },
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "ror"),
             ),
             Transform(
                 inputs={
                     "mag": Table(input_project_id, dataset_id_mag, "Affiliations", sharded=True),
-                    "settings": Table(input_project_id, dataset_id_settings),
+                    "mag_affiliation_override": Table(
+                        input_project_id, dataset_id_settings, "mag_affiliation_override"
+                    ),
                 },
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "mag"),
                 output_clustering_fields=["Doi"],
@@ -154,7 +168,7 @@ def make_dataset_transforms(
                 inputs={
                     "unpaywall": Table(input_project_id, dataset_id_unpaywall, "unpaywall", sharded=False),
                     "ror": Table(input_project_id, dataset_id_ror, "ror", sharded=True),
-                    "repository": Table(input_project_id, dataset_id_settings),
+                    "repository": Table(input_project_id, dataset_id_settings, "repository"),
                     "repository_institution_to_ror": Table(
                         output_project_id,
                         dataset_id_observatory_intermediate,
@@ -174,11 +188,11 @@ def make_dataset_transforms(
         Transform(
             inputs={
                 "observatory_intermediate": Table(output_project_id, dataset_id_observatory_intermediate),
-                "unpaywall": Table(output_project_id, dataset_id_unpaywall),
+                "unpaywall": Table(output_project_id, dataset_id_unpaywall, "unpaywall"),
                 "crossref_metadata": Table(
                     input_project_id, dataset_id_crossref_metadata, "crossref_metadata", sharded=True
                 ),
-                "settings": Table(input_project_id, dataset_id_settings),
+                "groupings": Table(input_project_id, dataset_id_settings, "groupings"),
             },
             output_table=Table(output_project_id, dataset_id_observatory, "doi"),
             output_clustering_fields=["doi"],
@@ -197,7 +211,7 @@ def make_dataset_transforms(
 
 
 def make_elastic_tables(
-    aggregate_table_id: str,
+    aggregate_table_name: str,
     relate_to_institutions: bool = False,
     relate_to_countries: bool = False,
     relate_to_groups: bool = False,
@@ -210,26 +224,30 @@ def make_elastic_tables(
     tables = [
         {
             "file_name": make_sql_jinja2_filename("export_unique_list"),
-            "aggregate": aggregate_table_id,
+            "aggregate": aggregate_table_name,
             "facet": "unique_list",
         },
         {
             "file_name": make_sql_jinja2_filename("export_access_types"),
-            "aggregate": aggregate_table_id,
+            "aggregate": aggregate_table_name,
             "facet": "access_types",
         },
         {
             "file_name": make_sql_jinja2_filename("export_disciplines"),
-            "aggregate": aggregate_table_id,
+            "aggregate": aggregate_table_name,
             "facet": "disciplines",
         },
         {
             "file_name": make_sql_jinja2_filename("export_output_types"),
-            "aggregate": aggregate_table_id,
+            "aggregate": aggregate_table_name,
             "facet": "output_types",
         },
-        {"file_name": make_sql_jinja2_filename("export_events"), "aggregate": aggregate_table_id, "facet": "events"},
-        {"file_name": make_sql_jinja2_filename("export_metrics"), "aggregate": aggregate_table_id, "facet": "metrics"},
+        {"file_name": make_sql_jinja2_filename("export_events"), "aggregate": aggregate_table_name, "facet": "events"},
+        {
+            "file_name": make_sql_jinja2_filename("export_metrics"),
+            "aggregate": aggregate_table_name,
+            "facet": "metrics",
+        },
     ]
 
     # Optional Relationships
@@ -238,7 +256,7 @@ def make_elastic_tables(
         tables.append(
             {
                 "file_name": export_relations,
-                "aggregate": aggregate_table_id,
+                "aggregate": aggregate_table_name,
                 "facet": "institutions",
             }
         )
@@ -246,7 +264,7 @@ def make_elastic_tables(
         tables.append(
             {
                 "file_name": export_relations,
-                "aggregate": aggregate_table_id,
+                "aggregate": aggregate_table_name,
                 "facet": "countries",
             }
         )
@@ -254,7 +272,7 @@ def make_elastic_tables(
         tables.append(
             {
                 "file_name": export_relations,
-                "aggregate": aggregate_table_id,
+                "aggregate": aggregate_table_name,
                 "facet": "groupings",
             }
         )
@@ -262,7 +280,7 @@ def make_elastic_tables(
         tables.append(
             {
                 "file_name": export_relations,
-                "aggregate": aggregate_table_id,
+                "aggregate": aggregate_table_name,
                 "facet": "members",
             }
         )
@@ -270,7 +288,7 @@ def make_elastic_tables(
         tables.append(
             {
                 "file_name": export_relations,
-                "aggregate": aggregate_table_id,
+                "aggregate": aggregate_table_name,
                 "facet": "journals",
             }
         )
@@ -279,7 +297,7 @@ def make_elastic_tables(
         tables.append(
             {
                 "file_name": export_relations,
-                "aggregate": aggregate_table_id,
+                "aggregate": aggregate_table_name,
                 "facet": "funders",
             }
         )
@@ -288,7 +306,7 @@ def make_elastic_tables(
         tables.append(
             {
                 "file_name": export_relations,
-                "aggregate": aggregate_table_id,
+                "aggregate": aggregate_table_name,
                 "facet": "publishers",
             }
         )
@@ -321,15 +339,15 @@ def fetch_ror_affiliations(repository_institution: str, num_retries: int = 3) ->
     return {"repository_institution": repository_institution, "rors": rors}
 
 
-def get_release_date(project_id: str, dataset_id: str, table_id: str, release_date: pendulum.DateTime):
+def get_release_date(project_id: str, dataset_id: str, table_name: str, release_date: pendulum.DateTime):
     # Get last table shard date before current end date
-    logging.info(f"get_release_date {project_id}.{dataset_id}.{table_id} {release_date}")
-    table_shard_dates = select_table_shard_dates(project_id, dataset_id, table_id, release_date)
+    logging.info(f"get_release_date {project_id}.{dataset_id}.{table_name} {release_date}")
+    table_shard_dates = select_table_shard_dates(project_id, dataset_id, table_name, release_date)
     if len(table_shard_dates):
         shard_date = table_shard_dates[0]
     else:
         raise AirflowException(
-            f"{project_id}.{dataset_id}.{table_id} " f"with a table shard date <= {release_date} not found"
+            f"{project_id}.{dataset_id}.{table_name} " f"with a table shard date <= {release_date} not found"
         )
 
     return shard_date
@@ -394,10 +412,10 @@ def ror_to_ror_hierarchy_index(ror: List[Dict]) -> Dict:
     return ancestor_index
 
 
-def bq_load_from_memory(table_id: str, records: List[Dict]) -> bool:
+def bq_load_from_memory(table_address: str, records: List[Dict]) -> bool:
     """Load data into BigQuery from memory.
 
-    :param table_id: the full table_id, including project id, dataset id and table name.
+    :param table_address: the full table address, including project id, dataset id and table name.
     :param records: the records to load.
     :return: whether the table loaded or not.
     """
@@ -417,10 +435,10 @@ def bq_load_from_memory(table_id: str, records: List[Dict]) -> bool:
         )
 
         try:
-            load_job: LoadJob = client.load_table_from_file(bytes_io, table_id, job_config=job_config, rewind=True)
+            load_job: LoadJob = client.load_table_from_file(bytes_io, table_address, job_config=job_config, rewind=True)
             success = load_job.result().state == "DONE"
         except BadRequest as e:
-            logging.error(f"Load bigquery table {table_id} failed: {e}.")
+            logging.error(f"Load bigquery table {table_address} failed: {e}.")
             if load_job:
                 logging.error(f"Errors:\n{load_job.errors}")
             success = False
@@ -440,6 +458,31 @@ class ObservatoryRelease:
         """
 
         self.release_date = release_date
+
+
+def bq_update_table_description(*, project_id: str, dataset_id: str, table_id: str, description: str):
+    """Update a BigQuery table description.
+
+    :param project_id: the Google Cloud Project ID.
+    :param dataset_id: the BigQuery Dataset ID.
+    :param table_id: the BigQuery table_id.
+    :param description: the description.
+    :return: None.
+    """
+
+    # Construct a BigQuery client object.
+    client = bigquery.Client()
+
+    # Get the table to update.
+    dataset_ref = f"{project_id}.{dataset_id}"
+    dataset = bigquery.Dataset(dataset_ref)
+    table = bigquery.Table(dataset.table(table_id))
+
+    # Update the table's description.
+    table.description = description
+
+    # Update the table in BigQuery.
+    client.update_table(table, ["description"])
 
 
 class DoiWorkflow(Workflow):
@@ -519,8 +562,18 @@ class DoiWorkflow(Workflow):
             relate_to_groups=True,
             relate_to_funders=True,
         ),
-        Aggregation("region", "regions", relate_to_funders=True, relate_to_publishers=True),
-        Aggregation("subregion", "subregions", relate_to_funders=True, relate_to_publishers=True),
+        Aggregation(
+            "region",
+            "regions",
+            relate_to_funders=True,
+            relate_to_publishers=True,
+        ),
+        Aggregation(
+            "subregion",
+            "subregions",
+            relate_to_funders=True,
+            relate_to_publishers=True,
+        ),
     ]
 
     DAG_ID = "doi"
@@ -593,6 +646,7 @@ class DoiWorkflow(Workflow):
         self.unpaywall_dataset_id = unpaywall_dataset_id
         self.ror_dataset_id = ror_dataset_id
         self.max_fetch_threads = max_fetch_threads
+        self.input_table_id_tasks = []
 
         if transforms is None:
             self.transforms, self.transform_doi, self.transform_book = make_dataset_transforms(
@@ -628,25 +682,28 @@ class DoiWorkflow(Workflow):
         self.add_task(self.create_ror_hierarchy_table)
 
         # Create tasks for processing intermediate tables
+        self.input_table_task_ids = []
         with self.parallel_tasks():
             for transform in self.transforms:
-                task_id = f"create_{transform.output_table.table_id}"
+                task_id = f"create_{transform.output_table.table_name}"
                 self.add_task(
                     self.create_intermediate_table,
                     op_kwargs={"transform": transform, "task_id": task_id},
                     task_id=task_id,
                 )
+                self.input_table_task_ids.append(task_id)
 
         # Create DOI Table
-        task_id = f"create_{self.transform_doi.output_table.table_id}"
+        task_id = f"create_{self.transform_doi.output_table.table_name}"
         self.add_task(
             self.create_intermediate_table,
             op_kwargs={"transform": self.transform_doi, "task_id": task_id},
             task_id=task_id,
         )
+        self.input_table_task_ids.append(task_id)
 
         # Create Book Table
-        task_id = f"create_{self.transform_book.output_table.table_id}"
+        task_id = f"create_{self.transform_book.output_table.table_name}"
         self.add_task(
             self.create_intermediate_table,
             op_kwargs={"transform": self.transform_book, "task_id": task_id},
@@ -656,12 +713,13 @@ class DoiWorkflow(Workflow):
         # Create final tables
         with self.parallel_tasks():
             for agg in self.AGGREGATIONS:
-                task_id = f"create_{agg.table_id}"
+                task_id = f"create_{agg.table_name}"
                 self.add_task(
                     self.create_aggregate_table, op_kwargs={"aggregation": agg, "task_id": task_id}, task_id=task_id
                 )
 
         # Copy tables and create views
+        self.add_task(self.update_table_descriptions)
         self.add_task(self.copy_to_dashboards)
         self.add_task(self.create_dashboard_views)
 
@@ -669,7 +727,7 @@ class DoiWorkflow(Workflow):
         with self.parallel_tasks():
             # Remove the author aggregation from the list of aggregations to reduce cluster size on Elastic
             for agg in self.remove_aggregations(self.AGGREGATIONS, {"author"}):
-                task_id = f"export_{agg.table_id}"
+                task_id = f"export_{agg.table_name}"
                 self.add_task(
                     self.export_for_elastic, op_kwargs={"aggregation": agg, "task_id": task_id}, task_id=task_id
                 )
@@ -745,11 +803,11 @@ class DoiWorkflow(Workflow):
         results.sort(key=lambda r: r[key])
 
         # Load the BigQuery table
-        table_id = bigquery_sharded_table_id(
+        table_address = bigquery_sharded_table_id(
             f"{self.output_project_id}.{self.intermediate_dataset_id}.repository_institution_to_ror",
             release.release_date,
         )
-        success = bq_load_from_memory(table_id, results)
+        success = bq_load_from_memory(table_address, results)
         set_task_state(success, self.create_repo_institution_to_ror_table.__name__)
 
     def create_ror_hierarchy_table(self, release: ObservatoryRelease, **kwargs):
@@ -767,13 +825,13 @@ class DoiWorkflow(Workflow):
         ror_release_date = select_table_shard_dates(
             project_id=self.input_project_id,
             dataset_id=self.ror_dataset_id,
-            table_id=ror_table_name,
+            table_name=ror_table_name,
             end_date=release.release_date,
         )[0]
-        table_id = bigquery_sharded_table_id(
+        table_address = bigquery_sharded_table_id(
             f"{self.input_project_id}.{self.ror_dataset_id}.{ror_table_name}", ror_release_date
         )
-        ror = [dict(row) for row in run_bigquery_query(f"SELECT * FROM {table_id}")]
+        ror = [dict(row) for row in run_bigquery_query(f"SELECT * FROM {table_address}")]
 
         # Create ROR hierarchy table
         index = ror_to_ror_hierarchy_index(ror)
@@ -784,11 +842,11 @@ class DoiWorkflow(Workflow):
             records.append({"child_id": child_id, "ror_ids": [child_id] + list(ancestor_ids)})
 
         # Upload to intermediate table
-        table_id = bigquery_sharded_table_id(
+        table_address = bigquery_sharded_table_id(
             f"{self.output_project_id}.{self.intermediate_dataset_id}.ror_hierarchy",
             release.release_date,
         )
-        success = bq_load_from_memory(table_id, records)
+        success = bq_load_from_memory(table_address, records)
         set_task_state(success, self.create_ror_hierarchy_table.__name__)
 
     def create_intermediate_table(self, release: ObservatoryRelease, **kwargs):
@@ -802,16 +860,22 @@ class DoiWorkflow(Workflow):
         """
 
         transform: Transform = kwargs["transform"]
-
+        input_tables = []
         for k, table in transform.inputs.items():
+            # Add release_date so that table_id can be computed
             if table.sharded:
                 table.release_date = get_release_date(
-                    table.project_id, table.dataset_id, table.table_id, release.release_date
+                    table.project_id, table.dataset_id, table.table_name, release.release_date
                 )
+
+            # Only add input tables when the table_name is not None as there is the odd Table instance
+            # that is just used to specify the project id and dataset id in the SQL queries
+            if table.table_name is not None:
+                input_tables.append(f"{table.project_id}.{table.dataset_id}.{table.table_id}")
 
         # Create processed table
         template_path = os.path.join(
-            sql_folder(), make_sql_jinja2_filename(f"create_{transform.output_table.table_id}")
+            sql_folder(), make_sql_jinja2_filename(f"create_{transform.output_table.table_name}")
         )
         sql = render_template(
             template_path,
@@ -819,15 +883,19 @@ class DoiWorkflow(Workflow):
             **transform.inputs,
         )
 
-        output_table_id_sharded = bigquery_sharded_table_id(transform.output_table.table_id, release.release_date)
+        output_table_id = bigquery_sharded_table_id(transform.output_table.table_name, release.release_date)
         success = create_bigquery_table_from_query(
             sql=sql,
             project_id=self.output_project_id,
             dataset_id=transform.output_table.dataset_id,
-            table_id=output_table_id_sharded,
+            table_id=output_table_id,
             location=self.data_location,
             clustering_fields=transform.output_clustering_fields,
         )
+
+        # Publish XComs with full table paths
+        ti = kwargs["ti"]
+        ti.xcom_push(key="input_tables", value=json.dumps(input_tables))
 
         set_task_state(success, kwargs["task_id"])
 
@@ -859,17 +927,60 @@ class DoiWorkflow(Workflow):
             relate_to_publishers=agg.relate_to_publishers,
         )
 
-        sharded_table_id = bigquery_sharded_table_id(agg.table_id, release.release_date)
+        table_id = bigquery_sharded_table_id(agg.table_name, release.release_date)
         success = create_bigquery_table_from_query(
             sql=sql,
             project_id=self.output_project_id,
             dataset_id=self.observatory_dataset_id,
-            table_id=sharded_table_id,
+            table_id=table_id,
             location=self.data_location,
             clustering_fields=["id"],
         )
 
         set_task_state(success, kwargs["task_id"])
+
+    def update_table_descriptions(self, release: ObservatoryRelease, **kwargs):
+        """Update descriptions for tables.
+
+        :param release: the ObservatoryRelease.
+        :param kwargs: the context passed from the Airflow Operator.
+        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
+        to this argument.
+        :return: None.
+        """
+
+        # Create list of input tables that were used to create our datasets
+        ti = kwargs["ti"]
+        results = ti.xcom_pull(task_ids=self.input_table_task_ids, key="input_tables")
+        input_tables = set()
+        for task_input_tables in results:
+            for input_table in json.loads(task_input_tables):
+                input_tables.add(input_table)
+        input_tables = list(input_tables)
+        input_tables.sort()
+
+        # Update descriptions
+        description = f"The DOI table.\n\nInput sources:\n"
+        description += "".join([f"  - {input_table}\n" for input_table in input_tables])
+        table_id = bigquery_sharded_table_id("doi", release.release_date)
+        bq_update_table_description(
+            project_id=self.output_project_id,
+            dataset_id=self.observatory_dataset_id,
+            table_id=table_id,
+            description=description,
+        )
+
+        table_names = [agg.table_name for agg in self.AGGREGATIONS]
+        for table_name in table_names:
+            description = f"The DOI table aggregated by {table_name}.\n\nInput sources:\n"
+            description += "".join([f"  - {input_table}\n" for input_table in input_tables])
+            table_id = bigquery_sharded_table_id(table_name, release.release_date)
+            bq_update_table_description(
+                project_id=self.output_project_id,
+                dataset_id=self.observatory_dataset_id,
+                table_id=table_id,
+                description=description,
+            )
 
     def copy_to_dashboards(self, release: ObservatoryRelease, **kwargs):
         """Copy tables to dashboards dataset.
@@ -882,10 +993,10 @@ class DoiWorkflow(Workflow):
         """
 
         results = []
-        table_ids = [agg.table_id for agg in DoiWorkflow.AGGREGATIONS]
-        for table_id in table_ids:
-            source_table_id = f"{self.output_project_id}.{self.observatory_dataset_id}.{bigquery_sharded_table_id(table_id, release.release_date)}"
-            destination_table_id = f"{self.output_project_id}.{self.dashboards_dataset_id}.{table_id}"
+        table_names = [agg.table_name for agg in DoiWorkflow.AGGREGATIONS]
+        for table_name in table_names:
+            source_table_id = f"{self.output_project_id}.{self.observatory_dataset_id}.{bigquery_sharded_table_id(table_name, release.release_date)}"
+            destination_table_id = f"{self.output_project_id}.{self.dashboards_dataset_id}.{table_name}"
             success = copy_bigquery_table(source_table_id, destination_table_id, self.data_location)
             if not success:
                 logging.error(f"Issue copying table: {source_table_id} to {destination_table_id}")
@@ -909,14 +1020,14 @@ class DoiWorkflow(Workflow):
         template_path = os.path.join(sql_folder(), make_sql_jinja2_filename("comparison_view"))
 
         # Create views
-        table_ids = ["country", "funder", "group", "institution", "publisher", "subregion"]
-        for table_id in table_ids:
-            view_name = f"{table_id}_comparison"
+        table_names = ["country", "funder", "group", "institution", "publisher", "subregion"]
+        for table_name in table_names:
+            view_name = f"{table_name}_comparison"
             query = render_template(
                 template_path,
                 project_id=self.output_project_id,
                 dataset_id=self.dashboards_dataset_id,
-                table_id=table_id,
+                table_id=table_name,
             )
             create_bigquery_view(self.output_project_id, self.dashboards_dataset_id, view_name, query)
 
@@ -932,7 +1043,7 @@ class DoiWorkflow(Workflow):
 
         agg = kwargs["aggregation"]
         tables = make_elastic_tables(
-            agg.table_id,
+            agg.table_name,
             relate_to_institutions=agg.relate_to_institutions,
             relate_to_countries=agg.relate_to_countries,
             relate_to_groups=agg.relate_to_groups,
@@ -963,7 +1074,7 @@ class DoiWorkflow(Workflow):
                     release_date=release.release_date,
                     data_location=self.data_location,
                     input_dataset_id=self.observatory_dataset_id,
-                    input_table_id=agg.table_id,
+                    input_table_name=agg.table_name,
                     template_file_name=template_file_name,
                     output_table_id=self.elastic_dataset_id,
                     aggregate=aggregate,
@@ -990,24 +1101,24 @@ class DoiWorkflow(Workflow):
         self, input_aggregations: List[Aggregation], aggregations_to_remove: Set[str]
     ) -> List[Aggregation]:
 
-        """Remove a set of aggregations from a given list. Removal is based on mathcing the table_id
+        """Remove a set of aggregations from a given list. Removal is based on mathcing the table_name
         string in the Aggregation object.
 
         When removing items from the Aggregation list, you will need to reflect the same changes in
         unit test for the DOI Workflow DAG structure.
 
         This function actually works in reverse and builds a list of aggregations if it does not match to the
-        table_id in the "aggregations_to_remove" set. This is to get around a strange memory bug that refuses
+        table_name in the "aggregations_to_remove" set. This is to get around a strange memory bug that refuses
         to modify the AGGREGATIONS list with .remove()
 
         :param input_aggregations: List of Aggregations to have elements removed.
-        :param aggregations_to_remove: Set of aggregations to remove, matching on "table_id" in the Aggregation class.
+        :param aggregations_to_remove: Set of aggregations to remove, matching on "table_name" in the Aggregation class.
         :return aggregations_removed: Return a list of Aggregations with the desired items removed.
         """
 
         aggregations_removed = []
         for agg in input_aggregations:
-            if agg.table_id not in aggregations_to_remove:
+            if agg.table_name not in aggregations_to_remove:
                 aggregations_removed.append(agg)
 
         return aggregations_removed
@@ -1019,32 +1130,20 @@ def export_aggregate_table(
     release_date: pendulum.Date,
     data_location: str,
     input_dataset_id: str,
-    input_table_id: str,
+    input_table_name: str,
     template_file_name: str,
     output_table_id: str,
     aggregate: str,
     facet: str,
 ):
-    """Export an aggregate table.
-
-    :param project_id:
-    :param release_date:
-    :param data_location:
-    :param input_dataset_id:
-    :param input_table_id:
-    :param template_file_name:
-    :param output_table_id:
-    :param aggregate:
-    :param facet:
-    :return:
-    """
+    """Export an aggregate table."""
 
     template_path = os.path.join(sql_folder(), template_file_name)
     sql = render_template(
         template_path,
         project_id=project_id,
         dataset_id=input_dataset_id,
-        table_id=input_table_id,
+        table_name=input_table_name,
         release_date=release_date,
         aggregate=aggregate,
         facet=facet,
