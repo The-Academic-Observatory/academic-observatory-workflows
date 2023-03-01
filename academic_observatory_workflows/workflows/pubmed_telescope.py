@@ -34,8 +34,7 @@ import tarfile
 
 # Airflow modules
 from airflow import AirflowException
-from academic_observatory_workflows.dag_tag import Tag
-
+from airflow.models.taskinstance import TaskInstance
 
 from google.cloud.bigquery import SourceFormat
 from observatory.platform.utils.airflow_utils import AirflowVars, make_workflow_folder
@@ -149,7 +148,6 @@ class PubMedTelescope(Workflow):
         self.ftp_server_url = ftp_server_url  # FTP server URL
         self.baseline_path = "/pubmed/baseline/"
         self.updatefiles_path = "/pubmed/updatefiles/"
-        self.files_to_download_for_release = []
         self.download_file_name_pattern = "*.xml.gz"
         self.transform_file_name_pattern = "*.json.gz"
         self.check_md5_hash = check_md5_hash
@@ -172,7 +170,8 @@ class PubMedTelescope(Workflow):
 
         self.add_setup_task(self.check_dependencies)
         self.add_task(self.check_releases)  # check releases and get list of files to download
-        # self.add_task(self.download_files) # download the xml files from the FTP server, shove into gzip
+        self.add_task(self.download)  # download the xml files from the FTP server, shove into gzip
+
         # self.add_task(upload_downloaded) # upload to GCS
         # self.add_task(transform) # convert xml files into *.jsonl.gz, validate if neccesary using their API
         # self.add_task(upload_trasformed) # upload to GCS
@@ -182,10 +181,7 @@ class PubMedTelescope(Workflow):
         # self.add_task(self.bq_delete_old)
         # self.add_task(self.bq_create_snapshot)
 
-        ## make baseline table from
-
-        # Add to release API
-        # self.add_task(self.add_new_dataset_releases)
+        # add release to api to keep track.
 
     def make_release(self, **kwargs) -> PubMedRelease:
         """Creates a new Pubmed release instance
@@ -200,360 +196,204 @@ class PubMedTelescope(Workflow):
         return release
 
     def check_releases(self, release: PubMedRelease, **kwargs):
-        """Check previous releases and get a list files required to download/make this release."""
+        """Use previous releases of the Pubmed telescope to determine which files are needed from the FTP server for the new release.
+
+        :param workflow_id:
+        :param ftp_server_url: Pubmed FTP server address.
+        :param start_date: start of release period.
+        :param start_date: end of release period.
+        :param baseline_path: Path on the Pubmed FTP server to the 'baseline' files.
+        :param updatefiles_path: Path on the Pubmed FTP server to the 'updatefiles_path' files.
+        :return: List of files to download from the PubMed FTP server.
+        """
 
         end_date = kwargs["data_interval_end"].subtract(days=1).end_of("day")
 
-        self.files_to_download_for_release = check_pubmed_releases(
-            self.workflow_id,
-            self.ftp_server_url,
-            self.start_date,
-            end_date,
-            self.baseline_path,
-            self.updatefiles_path,
-        )
+        # Open FTP connection to PubMed servers.
+        ftp_conn = ftplib.FTP(self.ftp_server_url, timeout=1000000.0)
+        ftp_conn.login()  # anonymous login (publicly available data)
 
-        logging.info(f"Files to download for this release: {self.files_to_download_for_release}")
+        files_to_download = []
+        if self.download_baseline:
+            logging.info(f"This is the first release of the PubMed Telescope. Grabbing list of 'baseline' files. ")
 
-    # def download(self, **kwargs):
-    #     """Task to download the PubMed data from the FTP server.
+            # Change to the baseline directory.
+            ftp_conn.cwd(self.baseline_path)
 
-    #     :param release: an OpenAlexRelease instance.
-    #     :param kwargs: The context passed from the PythonOperator.
-    #     :return: None.
-    #     """
+            # Find all the xml.gz files available from the server.
+            baseline_list = ftp_conn.nlst()
+            files_to_download = [
+                self.baseline_path + file for file in baseline_list if (file.split(".")[-1] == "gz" in file)
+            ]
+            files_to_download.sort()
 
-    # return download_pubmed(self.files_to_download_for_release)
+            logging.info(f"List of files to download from the PubMed FTP server for 'baseline': {files_to_download}")
 
-    # def upload_downloaded(self, release: PubMedRelease, **kwargs):
-    #     """Task to upload the data for the PubMed release.
-
-    #     :param release: an PubMedRelease instance.
-    #     :param kwargs: The context passed from the PythonOperator.
-    #     :return: None.
-    #     """
-
-    #     release.upload_downloaded()
-
-    # def transform(self, release: PubMedRelease, **kwargs):
-    #     """Task to transform the PubMedRelease data.
-
-    #     :param release: an PubMedRelease instance.
-    #     :param kwargs: The context passed from the PythonOperator.
-    #     :return: None.
-    #     """
-    #     release.transform()
-
-    # def upload_transformed():
-    #     """Upload the part Pubmed files"""
-
-    # def bq_load(self, release: PubMedRelease, **kwargs):
-    #     return release.load_part_files_into_bq()
-
-
-def check_pubmed_releases(
-    workflow_id: int,
-    ftp_server_url: str,
-    start_date: pendulum.datetime,
-    end_date: pendulum.datetime,
-    baseline_path: str,
-    updatefiles_path: str,
-) -> List[str]:
-    """Use previous releases of the Pubmed telescope to determine which files are needed from the FTP server for the new release.
-
-    :param workflow_id:
-    :param ftp_server_url: Pubmed FTP server address.
-    :param start_date: start of release period.
-    :param start_date: end of release period.
-    :param baseline_path: Path on the Pubmed FTP server to the 'baseline' files.
-    :param updatefiles_path: Path on the Pubmed FTP server to the 'updatefiles_path' files.
-    :return: List of files to download from the PubMed FTP server.
-    """
-
-    # Open FTP connection to PubMed servers.
-    ftp_conn = ftplib.FTP(ftp_server_url, timeout=1000000.0)
-    ftp_conn.login()  # anonymous login (publicly available data)
-
-    if is_first_release(workflow_id):
-        logging.info(f"This is the first release of the PubMed Telescope. ")
-
-        # Change to the baseline directory.
-        ftp_conn.cwd(baseline_path)
-
-        # Find all the xml.gz files available from the server.
-        baseline_list = ftp_conn.nlst()
-        files_to_download = [file for file in baseline_list if (file.split(".")[-1] == "gz" in file)]
-        files_to_download.sort()
-
-        logging.info(f"List of files to download from the PubMed FTP server for 'baseline': {files_to_download}")
+        logging.info(f"Grabbing list of 'updatefiles' for this release: {self.start_date} to {end_date}")
 
         # Change to updatefiles directory
-        ftp_conn.cwd(updatefiles_path)
+        ftp_conn.cwd(self.updatefiles_path)
 
         # Find all the xml.gz files available from the server.
         updatefiles_list = ftp_conn.nlst()
         updatefiles_xml_gz = [file for file in updatefiles_list if (file.split(".")[-1] == "gz" in file)]
         updatefiles_xml_gz.sort()
 
-        # Find the files in the date range for the release (given from previous airflow step)
         updatefiles_to_download = [
-            file
+            self.updatefiles_path + file
             for file in updatefiles_xml_gz
-            if pendulum.datetime(ftp_conn.sendcmd("MDTM {}".format(file))[4:]) in pendulum.period(start_date, end_date)
+            if pendulum.from_format(ftp_conn.sendcmd("MDTM {}".format(file))[4:], "YYYYMMDDHHmmss")
+            in pendulum.period(self.start_date, end_date)
         ]
 
         logging.info(
             f"List of files to download from the PubMed FTP server for 'updatefiles': {updatefiles_to_download}"
         )
 
-        # Merge the two list to for the initial release.
-        files_to_download.extend(files_to_download)
-
-    else:
-        logging.info(f"This is not the first run of this telescope. For this release, {start_date} to {end_date}")
-
-        # Change to updatefiles directory
-        ftp_conn.cwd(updatefiles_path)
-
-        # Find all the xml.gz files available from the server.
-        updatefiles_list = ftp_conn.nlst()
-        updatefiles_xml_gz = [file for file in updatefiles_list if (file.split(".")[-1] == "gz" in file)]
-        updatefiles_xml_gz.sort()
-
-        # Find the files in the date range for the release (given from previous airflow step)
-        files_to_download = [
-            file
-            for file in updatefiles_xml_gz
-            if pendulum.datetime(ftp_conn.sendcmd("MDTM {}".format(file))[4:]) in pendulum.period(start_date, end_date)
-        ]
-
-        # TODO: Check release api for last downloaded files for the release, need use of "extra" param in release.
-
-    # Close the connection to the FTP server.
-    ftp_conn.close()
-
-    return files_to_download
-
-
-#### Not used, in dev
-# def download_pubmed(
-#     check_md5_hash: bool,
-#     list_of_files_to_download: List[str],
-#     database_url: str,
-#     start_date: pendulum.datetime,
-#     release_date_interval: pendulum.period,
-# ):
-#     """Download and compress the PubMed database files from the FTP server.
-
-#     Downloaded files:
-#     pubmed_telescope/{year_of_release}/{pubmed_files}.xml.gz
-#     pubmed_telescope/{year_of_release}/updatedfiles-{release.start_date}-{release.end_date}/{update_files}.xml.gz
-
-#     GZip'ed:
-#     pubmed_telescope/{year_of_release}/baseline.gz
-#     pubmed_telescope/{year_of_release}/updatedfiles-{release.start_date}-{release.end_date}/{end_date}.gz
-#     """
-
-#     download_dst_path_year = os.path.join(self.download_folder, f"{self.start_date.year}")
-#     download_dst_path_baseline = os.path.join(download_dst_path_year, "baseline")
-#     download_dst_path_release = os.path.join(
-#         download_dst_path_year,
-#     )
-
-#     # Open FTP connection
-#     ftp_conn = ftplib.FTP(database_url, timeout=1000000.0)
-#     ftp_conn.login()  # anonymous login (publicly available data)
-
-#     download_baseline = True
-#     if download_baseline:
-#         # If required to download all of the year baseline files again.
-
-#         # Change to correct directory.
-#         ftp_conn.cwd(f"{database_path}/baseline/")
-
-#         # Find all the xml.gz files available from the server.
-#         file_list = ftp_conn.nlst()
-#         file_list_xml_gz = [file for file in file_list if (file.split(".")[-1] == "gz" in file)].sort()
-
-#         logging.info(f"Downloading PubMed baseline files from FTP server.\nFiles to download: {file_list_xml_gz}")
-
-#         downloaded_baseline = []
-#         for file in file_list_xml_gz:
-#             # Download the file
-#             with open(file, "wb") as f:
-#                 ftp_conn.retrbinary(f"RETR {file}", f.write)
-
-#             # Download the hash the above downloaded file.
-#             with open(file, "rb") as f_in:
-#                 data = f_in.read()
-#                 md5hash_from_download = hashlib.md5(data).hexdigest()
-
-#             # Download corresponding md5 hash.
-#             with open(f"{file}.md5", "wb") as f:
-#                 ftp_conn.retrbinary(f"RETR {file}.md5", f.write)
-
-#             # Peep md5 file.
-#             with open(f"{file}.md5", "r") as f_md5:
-#                 md5_from_pubmed_ftp = f_md5.read()
-
-#             # If md5 does not match, raise an Airflow exception.
-#             if md5hash_from_download in md5_from_pubmed_ftp:
-#                 downloaded_updatefiles.append(file)
-#             else:
-#                 raise AirflowException(f"MD5 hash does not match the given MD5 checksum from server: {file}")
-
-#         # with open( os.join.path(download_dst_path, 'baseline.gz')):
-
-#     download_updatedfiles = False
-#     if download_updatedfiles:
-#         updatefile_dst_path = os.join.path(download_dst_path_release, "updatefiles")
-
-#         # Change to correct directory.
-#         ftp_conn.cwd(updatefiles_path)
-
-#         # Find all the xml.gz files available on the FTP server.
-#         file_list = ftp_conn.nlst()
-#         file_list_xml_gz = [file for file in file_list if (file.split(".")[-1] == "gz" in file)].sort()
-
-#         # Find the files in the date range for the release (given from previous airflow step)
-#         files_to_download = [
-#             file for file in file_list_xml_gz if ftp_conn.sendcmd("MDTM {}".format(file))[4:] in release_date_interval
-#         ]
-
-#         downloaded_updatefiles = []
-#         for file in files_to_download:
-#             # Download the file
-#             with open(file, "wb") as f:
-#                 ftp_conn.retrbinary(f"RETR {file}", f.write)
+        files_to_download.extend(updatefiles_to_download)
 
-#             # Download the hash the above downloaded file.
-#             with open(file, "rb") as f_in:
-#                 data = f_in.read()
-#                 md5hash_from_download = hashlib.md5(data).hexdigest()
+        # TODO: Check release api for last downloaded files, need to look at "extra" param.
+        # Get list of all releases, check that sequence of files from FTP are are consecutive from beginning to end.
+        # throw an error if there's a file missing in the sequence.
 
-#             # Download corresponding md5 hash.
-#             with open(f"{file}.md5", "wb") as f:
-#                 ftp_conn.retrbinary(f"RETR {file}.md5", f.write)
+        # Close the connection to the FTP server.
+        ftp_conn.close()
 
-#             if check_md5_hash:
-#                 # Peep md5 file.
-#                 with open(f"{file}.md5", "r") as f_md5:
-#                     md5_from_pubmed_ftp = f_md5.read()
+        # Push list of files to download into the xcom.
+        ti: TaskInstance = kwargs["ti"]
+        ti.xcom_push(key="files_to_download", value=files_to_download)
 
-#                 # If md5 does not match, raise an Airflow exception.
-#                 if md5hash_from_download in md5_from_pubmed_ftp:
-#                     downloaded_updatefiles.append(file)
-#                 else:
-#                     raise AirflowException(f"MD5 hash does not match the given MD5 checksum from server: {file}")
+    def download(self, release: PubMedRelease, **kwargs):
+        """Download files from PubMed's FTP server for this release.
 
-#         # with open( os.join.path(updatefile_dst_path, '{release_date}.gz') ):
-#         #     for file in downloaded_updatefiles:
-#         #         with open( os.join.path())
+        List contains their os path as well.
 
-#     # Close the FTP connection to prevent errors.
-#     ftp_conn.close()
 
-# if downloaded_baseline:
-#     # Gzip the baseline XML files into a GZIP for the upload task
-# if downloaded_updatefiles:
-# Gzip the updatefiles for the release period and name them the period
+        ??? Need to do this ???
+        Downloaded files:
+        pubmed_telescope/{year_of_release}/{pubmed_files}.xml.gz
+        pubmed_telescope/{year_of_release}/updatedfiles-{release.start_date}-{release.end_date}/{update_files}.xml.gz
 
-## Add list of updated files to the context of the telescope for next steps?
+        GZip'ed:
+        pubmed_telescope/{year_of_release}/baseline.gz
+        pubmed_telescope/{year_of_release}/updatedfiles-{release.start_date}-{release.end_date}/{end_date}.gz
+        """
 
+        # Grab list of files to download from xcom
+        ti: TaskInstance = kwargs["ti"]
+        files_to_download = ti.xcom_pull(key="files_to_download")
 
-#### OLD - to review
-# class PubMedRelease(Release):
-#     def __init__(
-#         self,
-#         dag_id: str,
-#         workflow_id: int,
-#         dataset_type_id: str,
-#         start_date: pendulum.DateTime,
-#         end_date: pendulum.DateTime,
-#         first_release: bool,
-#     ):
-#         """Construct a PubMedRelease
+        logging.info(f"Files to download from PubMed: {files_to_download}")
 
-#         :param dag_id: the id of the DAG.
-#         :param workflow_id: Observatory API workflow id.
-#         :param start_date: the start_date of the release.
-#         :param end_date: the end_date of the release.
+        # Open FTP connection
+        ftp_conn = ftplib.FTP(self.ftp_server_url, timeout=1000000.0)
+        ftp_conn.login()  # anonymous login (publicly available data)
 
-#         :param first_release: whether this is the first release that is processed for this DAG
-#         :param extra: Extra information added to the release api
-#         """
-#         super().__init__(
-#             dag_id, start_date, end_date, first_release, download_files_regex=".*.gz", transform_files_regex=".*.gz"
-#         )
+        downloaded_files_for_release = []
+        for file_on_ftp in files_to_download:
+            file = file_on_ftp.split("/")[-1]
 
-#     def upload_downloaded(
-#         upload_baseline: bool,
-#         upload_updatefiles: bool,
-#     ):
-#         """Upload downloaded PubMed database files to GCS in a gzip.
+            print(f"Downloading: {file}")
 
-#         The baseline files will be separate from the update files.
+            try:
+                # Download file
+                with open(file, "wb") as f:
+                    ftp_conn.retrbinary(f"RETR {file_on_ftp}", f.write)
+            except:
+                raise AirflowException(
+                    f"Unable to download {file_on_ftp} from PubMed's FTP server {self.ftp_server_url}"
+                )
 
-#         Baseline files are only updated each year
-#         """
+            if self.check_md5_hash:
+                # Create the hash from the above downloaded file.
+                with open(file, "rb") as f_in:
+                    data = f_in.read()
+                    md5hash_from_download = hashlib.md5(data).hexdigest()
 
-#         gcs_uri = ""
+                # Download corresponding md5 hash.
+                with open(f"{file}.md5", "wb") as f:
+                    ftp_conn.retrbinary(f"RETR {file_on_ftp}.md5", f.write)
 
-#         if upload_baseline:
-#             logging.info(f"Uploading the Gzipped baseline files to GCS: {gcs_uri}")
+                # Peep into md5 file.
+                with open(f"{file}.md5", "r") as f_md5:
+                    md5_from_pubmed_ftp = f_md5.read()
 
-#             # gcp_upload_file function
+                # If md5 does not match, raise an Airflow exception.
+                if md5hash_from_download in md5_from_pubmed_ftp:
+                    downloaded_files_for_release.append(file)
+                else:
+                    raise AirflowException(f"MD5 hash does not match the given MD5 checksum from server: {file}")
+            else:
+                downloaded_files_for_release.append(file)
 
-#         if upload_updatefiles:
-#             release_period = pendulum.period(
-#                 self.start_date,
-#             )
-#             logging.info(f"Uploading the Gzipped updatefiles for release period {release_period}: {gcs_uri}")
+        # Close the FTP connection to prevent errors.
+        ftp_conn.close()
 
-#             # upload the files to GCS just for this release.
+        # Push list of downloaded files into the xcom
+        ti.xcom_push(key="downloaded_files_for_release", value=downloaded_files_for_release)
 
-#         # gcs_connector = something
+    def upload_downloaded(self, release: PubMedRelease, **kwargs):
+        """Put all files into a tar ball and upload to GCS."""
 
-#         # list of raw files to upload
+        # Grab list of files downloaded from xcom.
+        ti: TaskInstance = kwargs["ti"]
+        downloaded_files_for_release = ti.xcom_pull(key="downloaded_files_for_release")
 
-#         ### Upload to download bucket
+        # Make tar gz ball of downloaded files.
 
-#     def transform(self, downloaded_files: List[str]):
-#         """Transform the downloaded files for the release, baseline"""
+        # Upload to GCS.
 
-#         # get list of files to tranfsorm from the download task
+    def transform(self, release: PubMedRelease, **kwargs):
+        """Transform the *.xml.gz files from the FTP server into usable jsonl like files."""
 
-#         transformed_files = []
-#         for file in downloaded_files:
-#             with gzip.open(file, "rb") as f_in, open(f"{file}.json", "w") as f_out:
-#                 data_dict = xmltodict.parse(f_in.read())
-#                 json.dump(data_dict, f_out)
-#             transformed_files.append(file)
+        # Loop through all of the files and add them together, compiling into a larger table
 
-#         ## Combine the release adds and deletions into one file or keep separate?
+        # Grab list of files downloaded.
+        ti: TaskInstance = kwargs["ti"]
+        downloaded_files_for_release = ti.xcom_pull(key="downloaded_files_for_release")
 
-#     def upload_transformed(self, tranformed_files: List[str]):
-#         """Upload the transformed files (unnested XMLs) from the transform task.
+        files_to_squash = []
+        for file in downloaded_files_for_release:
+            # with gzip.open(file, "rb") as f_in, open(f"{file}.json", "w") as f_out:
+            #     data_dict = xmltodict.parse(f_in.read())
+            #     json.dump(data_dict, f_out)
+            # transformed_files.append(file)
 
+            with gzip.open(file, "rb") as f_in:
+                data_dict = xmltodict.parse(f_in.read())
+                files_to_squash.append(data_dict)
 
-#         transform_bucket/pubmed_telescope/{year_of_release}/baseline.jsonl.gz
-#         transform_bucket/pubmed_telescope/{year_of_release}/updatedfiles-{release.start_date}-{release.end_date}/{end_date}.jsonl.gz
-#         """
+        ## Combine the release adds and deletions into one file or keep separate?
 
-#     # use gcs connector
+        # Dump output as a jsonl file
 
-#     def apply_udates_to_table():  ### If it already exists - to get check bool from the
-#         """If the direct previous release exists, the new schedule interval data to create a new table"""
+    def upload_transformed(self, release: PubMedRelease, **kwargs):
+        """Upload the transformed and combined release files from PubMed to GCS."""
 
-#         # TODO: Find a column that the matching could be done for a deletion.
+        # figure out pubmed telescope bucket / directory
 
-#         # Where to do it - here in the telescope and make a copy of the table first, keep it in GCS then BQ
-#         # OR
-#         # only do it in BQ. copy the original table first and then apply the new updates.
-#         # s
-#         # delete row from tableid where 'column' = something
-#         #
+        # Compress the combined file into a jsonl.gz file
 
-#         # do an injest first then additions from
+        # use gcs connector to upload file
 
-#         # * to ask Jamie
+    def do_clever_snapshot_things(self, release: PubMedRelease, **kwargs):
+        ## Apply updates to last table.
+
+        ## use uploaded transform file into change the latest snapshot
+
+        ## check that the last snapshot table was actually the last release.
+
+        """Make new snapsohts of the tables, using the last."""
+
+        # if this is the first release, make a new initial table.
+
+        # if this is the next squential release to the last, then append additions and deletion to the last table and make a new snapshot.
+
+        # figure out how to do this without large bigquery costs.
+
+    def cleanup(self, release: PubMedRelease, **kwargs):
+        """Cleanup files and task instances from this release."""
+
+        ## os. remove file tree of this release.
+
+        ## remove task instances.
