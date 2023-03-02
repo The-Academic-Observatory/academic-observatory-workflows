@@ -309,15 +309,16 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     "create_region",
                     "create_subregion",
                 ],
-                "create_country": ["copy_to_dashboards"],
-                "create_funder": ["copy_to_dashboards"],
-                "create_group": ["copy_to_dashboards"],
-                "create_institution": ["copy_to_dashboards"],
-                "create_author": ["copy_to_dashboards"],
-                "create_journal": ["copy_to_dashboards"],
-                "create_publisher": ["copy_to_dashboards"],
-                "create_region": ["copy_to_dashboards"],
-                "create_subregion": ["copy_to_dashboards"],
+                "create_country": ["update_table_descriptions"],
+                "create_funder": ["update_table_descriptions"],
+                "create_group": ["update_table_descriptions"],
+                "create_institution": ["update_table_descriptions"],
+                "create_author": ["update_table_descriptions"],
+                "create_journal": ["update_table_descriptions"],
+                "create_publisher": ["update_table_descriptions"],
+                "create_region": ["update_table_descriptions"],
+                "create_subregion": ["update_table_descriptions"],
+                "update_table_descriptions": ["copy_to_dashboards"],
                 "copy_to_dashboards": ["create_dashboard_views"],
                 "create_dashboard_views": [
                     "export_country",
@@ -544,7 +545,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
                 # Test that source dataset transformations run
                 for transform in transforms:
-                    task_id = f"create_{transform.output_table.table_id}"
+                    task_id = f"create_{transform.output_table.table_name}"
                     ti = env.run_task(task_id)
                     self.assertEqual(expected_state, ti.state)
 
@@ -580,12 +581,12 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
                 # Test aggregations tasks
                 for agg in DoiWorkflow.AGGREGATIONS:
-                    task_id = f"create_{agg.table_id}"
+                    task_id = f"create_{agg.table_name}"
                     ti = env.run_task(task_id)
                     self.assertEqual(expected_state, ti.state)
 
                     # Aggregation assert table exists
-                    expected_table_id = f"{self.project_id}.{observatory_dataset_id}.{agg.table_id}{release_suffix}"
+                    expected_table_id = f"{self.project_id}.{observatory_dataset_id}.{agg.table_name}{release_suffix}"
                     self.assert_table_integrity(expected_table_id)
 
                 # Assert country aggregation output
@@ -607,30 +608,33 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 self.assert_aggregate(expected_output, actual_output)
                 # TODO: test correctness of remaining outputs
 
+                # Test updating table descriptions
+                ti = env.run_task("update_table_descriptions")
+                self.assertEqual(expected_state, ti.state)
+
                 # Test copy to dashboards
                 ti = env.run_task("copy_to_dashboards")
                 self.assertEqual(expected_state, ti.state)
-                table_ids = [agg.table_id for agg in DoiWorkflow.AGGREGATIONS]
-                for table_id in table_ids:
-                    self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{table_id}")
+                for agg in DoiWorkflow.AGGREGATIONS:
+                    self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{agg.table_name}")
 
                 # Test create dashboard views
                 ti = env.run_task("create_dashboard_views")
                 self.assertEqual(expected_state, ti.state)
-                for table_id in ["country", "funder", "group", "institution", "publisher", "subregion"]:
-                    self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{table_id}_comparison")
+                for table_name in ["country", "funder", "group", "institution", "publisher", "subregion"]:
+                    self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{table_name}_comparison")
 
                 # Test create exported tables for Elasticsearch
                 # Remove author from AGGREGATIONS list to save space on Elastic.
                 for agg in DoiWorkflow.remove_aggregations(DoiWorkflow, DoiWorkflow.AGGREGATIONS, {"author"}):
-                    table_id = agg.table_id
-                    task_id = f"export_{table_id}"
+                    table_name = agg.table_name
+                    task_id = f"export_{table_name}"
                     ti = env.run_task(task_id)
                     self.assertEqual(expected_state, ti.state)
 
                     # Check that the correct tables exist for each aggregation
                     tables = make_elastic_tables(
-                        table_id,
+                        agg.table_name,
                         relate_to_institutions=agg.relate_to_institutions,
                         relate_to_countries=agg.relate_to_countries,
                         relate_to_groups=agg.relate_to_groups,

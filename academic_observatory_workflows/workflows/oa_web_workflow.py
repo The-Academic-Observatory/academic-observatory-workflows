@@ -290,7 +290,7 @@ class OaWebWorkflow(Workflow):
         schedule_interval: Optional[str] = "@weekly",
         catchup: Optional[bool] = False,
         ext_dag_id: str = "doi",
-        table_ids: List[str] = None,
+        table_names: List[str] = None,
         airflow_vars: List[str] = None,
         airflow_conns: List[str] = None,
         agg_dataset_id: str = "observatory",
@@ -308,7 +308,7 @@ class OaWebWorkflow(Workflow):
         :param schedule_interval: the schedule interval.
         :param catchup: whether to catchup or not.
         :param ext_dag_id: the DAG id to wait for.
-        :param table_ids: the table ids.
+        :param table_names: the table names.
         :param airflow_vars: required Airflow Variables.
         :param airflow_conns: required Airflow Connections.
         :param agg_dataset_id: the id of the dataset where the Academic Observatory aggregated data lives.
@@ -349,12 +349,12 @@ class OaWebWorkflow(Workflow):
         self.agg_dataset_id = agg_dataset_id
         self.ror_dataset_id = ror_dataset_id
         self.settings_dataset_id = settings_dataset_id
-        self.table_ids = table_ids
+        self.table_names = table_names
         self.version = version
         self.conceptrecid = conceptrecid
         self.zenodo_host = zenodo_host
-        if table_ids is None:
-            self.table_ids = ["country", "institution"]
+        if table_names is None:
+            self.table_names = ["country", "institution"]
 
         self.add_operator(
             ExternalTaskSensor(task_id=f"{ext_dag_id}_sensor", external_dag_id=ext_dag_id, mode="reschedule")
@@ -414,40 +414,40 @@ class OaWebWorkflow(Workflow):
         queries = []
 
         # Query the country and institution aggregations
-        for agg_table_id in self.table_ids:
+        for table_name in self.table_names:
             # Aggregate release dates
             agg_release_date = select_table_shard_dates(
                 project_id=self.input_project_id,
                 dataset_id=self.agg_dataset_id,
-                table_id=agg_table_id,
+                table_name=table_name,
                 end_date=release.release_date,
             )[0]
-            agg_sharded_table_id = bigquery_sharded_table_id(agg_table_id, agg_release_date)
+            table_id = bigquery_sharded_table_id(table_name, agg_release_date)
 
             # Fetch data
             destination_uri = (
-                f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{agg_table_id}-data.jsonl.gz"
+                f"gs://{release.download_bucket}/{self.dag_id}/{release.release_id}/{table_name}-data.jsonl.gz"
             )
             query = (
                 DATA_QUERY.format(
                     start_year=START_YEAR,
                     project_id=self.input_project_id,
                     agg_dataset_id=self.agg_dataset_id,
-                    agg_table_id=agg_sharded_table_id,
+                    agg_table_id=table_id,
                     end_year=END_YEAR,
                 ),
             )
             queries.append((query, destination_uri))
 
         # Query ROR table
-        ror_table_id = "ror"
+        ror_table_name = "ror"
         ror_release_date = select_table_shard_dates(
             project_id=self.input_project_id,
             dataset_id=self.ror_dataset_id,
-            table_id=ror_table_id,
+            table_name=ror_table_name,
             end_date=release.release_date,
         )[0]
-        ror_sharded_table_id = bigquery_sharded_table_id(ror_table_id, ror_release_date)
+        ror_sharded_table_id = bigquery_sharded_table_id(ror_table_name, ror_release_date)
 
         # Query institution index table
         destination_uri = (
@@ -560,7 +560,7 @@ class OaWebWorkflow(Workflow):
         # Country
         #################
 
-        for category in self.table_ids:
+        for category in self.table_names:
             logging.info(f"preprocess_data: {category}")
 
             # Load and preprocess data
@@ -584,7 +584,7 @@ class OaWebWorkflow(Workflow):
         :return: None.
         """
 
-        for category in self.table_ids:
+        for category in self.table_names:
             logging.info(f"build_indexes: {category}")
 
             # Load downloaded index
@@ -615,7 +615,7 @@ class OaWebWorkflow(Workflow):
         :return: None.
         """
 
-        for category in self.table_ids:
+        for category in self.table_names:
             logging.info(f"download_logos: {category}")
 
             # Load index
@@ -639,7 +639,7 @@ class OaWebWorkflow(Workflow):
         :return: None.
         """
 
-        for category in self.table_ids:
+        for category in self.table_names:
             logging.info(f"download_wiki_descriptions: {category}")
 
             # Load index
@@ -670,10 +670,10 @@ class OaWebWorkflow(Workflow):
         versions = res.json()
 
         # Make required folders
-        entity_index = {category: [] for category in self.table_ids}
+        entity_index = {category: [] for category in self.table_names}
         build_data_path = os.path.join(release.build_path, "data")
         os.makedirs(build_data_path, exist_ok=True)
-        for category in self.table_ids:
+        for category in self.table_names:
             logging.info(f"Transforming {category} entity")
 
             # Load index

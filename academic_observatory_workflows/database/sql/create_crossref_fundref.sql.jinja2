@@ -17,6 +17,6 @@
 SELECT
     UPPER(TRIM(crossref.doi)) as doi,
     ARRAY_AGG(STRUCT(funder, fundref)) as funders
-FROM `{{ crossref_metadata.project_id }}.{{ crossref_metadata.dataset_id }}.{{ crossref_metadata.table_id }}{{ crossref_metadata.release_date.strftime('%Y%m%d') }}` as crossref, UNNEST(crossref.funder) as funder
-LEFT JOIN `{{ crossref_fundref.project_id }}.{{ crossref_fundref.dataset_id }}.{{ crossref_fundref.table_id }}{{ crossref_fundref.release_date.strftime('%Y%m%d') }}` as fundref on SUBSTR(fundref.funder, 19) = funder.doi
+FROM `{{ crossref_metadata.project_id }}.{{ crossref_metadata.dataset_id }}.{{ crossref_metadata.table_id }}` as crossref, UNNEST(crossref.funder) as funder
+LEFT JOIN `{{ crossref_fundref.project_id }}.{{ crossref_fundref.dataset_id }}.{{ crossref_fundref.table_id }}` as fundref on SUBSTR(fundref.funder, 19) = funder.doi
 GROUP BY UPPER(TRIM(crossref.doi))

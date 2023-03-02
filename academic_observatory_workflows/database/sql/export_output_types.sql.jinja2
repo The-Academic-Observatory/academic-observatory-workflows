@@ -29,6 +29,6 @@ SELECT
   ROUND(SAFE_DIVIDE( ( output_types.num_green_outputs ) * 100 , output_types.total_outputs ), 2) as output_types_percent_green,
   ROUND(SAFE_DIVIDE( ( output_types.num_gold_outputs ) * 100 , output_types.total_outputs ), 2) as output_types_percent_gold
 FROM
-  `{{ project_id }}.{{ dataset_id }}.{{ table_id }}{{ release_date.strftime('%Y%m%d') }}`,
+  `{{ project_id }}.{{ dataset_id }}.{{ table_name }}{{ release_date.strftime('%Y%m%d') }}`,
   UNNEST(output_types) as output_types
 ORDER BY id, published_year ASC

@@ -151,7 +151,7 @@ events_matched as (SELECT
   ARRAY_CONCAT_AGG(crossref_events.months) as months,
   ARRAY_CONCAT_AGG(crossref_events.years) as years,
 FROM ISBN_DOI, UNNEST(dois) as doi
-LEFT JOIN `{{ crossref_events.project_id }}.{{ crossref_events.dataset_id }}.{{ crossref_events.table_id }}{{ crossref_events.release_date.strftime('%Y%m%d') }}` as crossref_events ON crossref_events.doi = doi
+LEFT JOIN `{{ crossref_events.project_id }}.{{ crossref_events.dataset_id }}.{{ crossref_events.table_id }}` as crossref_events ON crossref_events.doi = doi
 GROUP BY ISBN),
 
 events_aggregated as (SELECT
