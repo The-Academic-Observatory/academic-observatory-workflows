@@ -333,7 +333,7 @@ def fetch_ror_affiliations(repository_institution: str, num_retries: int = 3) ->
             if item["chosen"]:
                 org = item["organization"]
                 rors.append({"id": org["id"], "name": org["name"]})
-    except requests.exceptions.RetryError as e:
+    except requests.exceptions.HTTPError as e:
         logging.error(f"requests.exceptions.RetryError fetch_ror_affiliations error fetching: {e}")
 
     return {"repository_institution": repository_institution, "rors": rors}
