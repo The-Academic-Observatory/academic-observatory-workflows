@@ -334,7 +334,9 @@ def fetch_ror_affiliations(repository_institution: str, num_retries: int = 3) ->
                 org = item["organization"]
                 rors.append({"id": org["id"], "name": org["name"]})
     except requests.exceptions.HTTPError as e:
-        logging.error(f"requests.exceptions.RetryError fetch_ror_affiliations error fetching: {e}")
+        # If the repository_institution string causes a 500 error with the ROR affiliation matcher
+        # Then catch the error and continue as if no ROR ids were matched for this entry.
+        logging.error(f"requests.exceptions.HTTPError fetch_ror_affiliations error fetching: {e}")
 
     return {"repository_institution": repository_institution, "rors": rors}
 
