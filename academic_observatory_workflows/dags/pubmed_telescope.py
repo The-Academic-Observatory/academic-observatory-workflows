@@ -32,30 +32,23 @@ workflows = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
 for workflow in workflows:
     dag_id = make_dag_id(PubMedTelescope.DAG_ID_PREFIX, "pubmed")
 
-    # organisation = workflow.organisation
-    # organisation_name = organisation.name
-    # project_id = organisation.project_id
-    # download_bucket = organisation.download_bucket
-    # transform_bucket = organisation.transform_bucket
-
     dataset_description = f"PubMed Dataset. Please see https://pubmed.ncbi.nlm.nih.gov/ for more information."
 
     workflow = PubMedTelescope(
         dag_id=dag_id,
-        project_id="project_id",
-        download_bucket="download_bucket",
-        transform_bucket="transform_bucket",
-        data_location="us",
         schema_folder="none",
         source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
         workflow_id=workflow.id,
         start_date=pendulum.datetime(2022, 12, 8),
+        # data_interval_start=pendulum.datetime(2022, 12, 8),
         schedule_interval="@weekly",
         catchup=True,
         ftp_server_url="ftp.ncbi.nlm.nih.gov",
         check_md5_hash=True,
         dataset_id="pubmed",
+        table_id="pubmed",
         dataset_description=dataset_description,
+        max_processes=4,
     )
 
     globals()[workflow.dag_id] = workflow.make_dag()
