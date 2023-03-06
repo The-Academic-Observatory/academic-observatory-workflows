@@ -242,7 +242,7 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         self.max_processes = max_processes
 
         self.add_setup_task(self.check_dependencies)
-        self.add_setup_task(self.check_release_exists)
+        self.add_setup_task(self.list_releases)
         self.add_task(self.download)
         self.add_task(self.upload_downloaded)
         self.add_task(self.extract)
@@ -262,7 +262,8 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         :return: a list of CrossrefMetadataRelease instances.
         """
 
-        release_date = kwargs["execution_date"]
+        # The release date is always the end of the execution_date month
+        release_date = kwargs["execution_date"].end_of("month")
         return [CrossrefMetadataRelease(self.dag_id, release_date)]
 
     def check_release_exists(self, **kwargs):
@@ -273,6 +274,7 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         for a list of the keyword arguments that are passed to this argument.
         :return: None.
         """
+
         # List all available releases
         logging.info(f"Listing available releases since start date ({self.start_date}):")
         for dt in pendulum.period(pendulum.instance(self.start_date), pendulum.today("UTC")).range("years"):
