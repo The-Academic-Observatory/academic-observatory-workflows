@@ -275,7 +275,8 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         :return: None.
         """
 
-        # List all available releases
+        # List all available releases for logging and debugging purposes
+        # These values are not used to actually check if the release is available
         logging.info(f"Listing available releases since start date ({self.start_date}):")
         for dt in pendulum.period(pendulum.instance(self.start_date), pendulum.today("UTC")).range("years"):
             response = requests.get(f"https://api.crossref.org/snapshots/monthly/{dt.year}")
