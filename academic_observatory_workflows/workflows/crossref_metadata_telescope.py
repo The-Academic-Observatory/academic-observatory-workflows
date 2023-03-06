@@ -242,7 +242,7 @@ class CrossrefMetadataTelescope(SnapshotTelescope):
         self.max_processes = max_processes
 
         self.add_setup_task(self.check_dependencies)
-        self.add_setup_task(self.list_releases)
+        self.add_setup_task(self.check_release_exists)
         self.add_task(self.download)
         self.add_task(self.upload_downloaded)
         self.add_task(self.extract)
