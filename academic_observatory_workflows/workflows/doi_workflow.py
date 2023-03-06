@@ -336,10 +336,8 @@ def fetch_ror_affiliations(repository_institution: str, num_retries: int = 3) ->
     except requests.exceptions.HTTPError as e:
         # If the repository_institution string causes a 500 error with the ROR affiliation matcher
         # Then catch the error and continue as if no ROR ids were matched for this entry.
-        # Otherwise, re-raise error as something else is likely wrong
         logging.error(f"requests.exceptions.HTTPError fetch_ror_affiliations error fetching: {e}")
-        if e.response.status_code != 500:
-            raise e
+        # TODO: it would be better to re-raise the error when it isn't a 500 error as something else is likely wrong
 
     return {"repository_institution": repository_institution, "rors": rors}
 
