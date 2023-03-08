@@ -18,10 +18,10 @@ import json
 import os
 from datetime import datetime
 from unittest.mock import patch
-import requests
 
 import httpretty
 import pendulum
+import requests
 from airflow.exceptions import AirflowException
 from airflow.models import Connection
 from airflow.utils.state import State
@@ -199,7 +199,9 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
         dataset_id = env.add_dataset()
 
         # Setup Telescope
-        execution_date = pendulum.datetime(year=2022, month=1, day=1)
+        # Execution date is always the 7th of the month and the start of the data interval
+        # The DAG run for execution date of 2023-01-07 actually runs on 2023-02-07
+        execution_date = pendulum.datetime(year=2023, month=1, day=7)
         telescope = CrossrefMetadataTelescope(dataset_id=dataset_id, workflow_id=1)
         dag = telescope.make_dag()
 
@@ -222,7 +224,11 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
                     httpretty.register_uri(httpretty.HEAD, url, body="", status=302)
                     env.run_task(telescope.check_release_exists.__name__)
 
-                release = CrossrefMetadataRelease(telescope.dag_id, execution_date)
+                # Release date is the end of the execution date month
+                # Assert that URL is as expected
+                release_date = execution_date.end_of("month")
+                release = CrossrefMetadataRelease(telescope.dag_id, release_date)
+                self.assertEqual(f"https://api.crossref.org/snapshots/monthly/2023/01/all.json.tar.gz", release.url)
 
                 # Test download task
                 with httpretty.enabled():
