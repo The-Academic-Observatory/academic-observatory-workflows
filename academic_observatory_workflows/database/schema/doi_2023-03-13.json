@@ -2331,55 +2331,55 @@
         "name": "oa_coki",
         "mode": "NULLABLE",
         "type": "RECORD",
-        "description": null,
+        "description": "Custom fields created by COKI to determine OA categories",
         "fields": [
           {
             "name": "open",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Work is designated as open access by Unpaywall",
             "fields": []
           },
           {
             "name": "closed",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Work is not designated as open access by Unpaywall",
             "fields": []
           },
           {
             "name": "publisher",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Work is designated as Publisher Open. An article published in an Open Access Journal or made accessible in a Subscription Journal. Where the Unpaywall journal_is_in_doaj field is True or where the Unpaywall best_oa_location location_type field is “publisher”",
             "fields": []
           },
           {
             "name": "other_platform",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Work is designated as Other Platform Open. The publication was shared online; on a preprint server, a university library repository, domain repository or an academic staff page. Any article where any oa_location element in the Unpaywall data has the location_type “repository”",
             "fields": []
           },
           {
             "name": "publisher_only",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Work is designated as only Publisher Open (and not Other Platform Open or Closed).",
             "fields": []
           },
           {
             "name": "both",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Work is designated as both Publisher Open and Other Platform Open.",
             "fields": []
           },
           {
             "name": "other_platform_only",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Work is designated only as Other Platform Open (and not Publisher Open or Closed).",
             "fields": []
           },
           {
@@ -2392,21 +2392,21 @@
                 "name": "oa_journal",
                 "mode": "NULLABLE",
                 "type": "BOOLEAN",
-                "description": null,
+                "description": "OA Journal. Work is published in an Open Access Journal. We use the journal_is_in_doaj tag from Unpaywall to define this category which requires that there be some licensing information provided.",
                 "fields": []
               },
               {
                 "name": "hybrid",
                 "mode": "NULLABLE",
                 "type": "BOOLEAN",
-                "description": null,
+                "description": "Hybrid. Work is published in a Subscription Journal with an open license. We check that the license field for the best_oa_location is not null and journal_is_in_doaj is False. This includes the value of “implied_oa” which covers cases where publishers have a general assertion of a license but it is not clear from the page.",
                 "fields": []
               },
               {
                 "name": "no_guarantees",
                 "mode": "NULLABLE",
                 "type": "BOOLEAN",
-                "description": null,
+                "description": "No Guarantees. Work is published in a Subscription Publisher with no reuse rights. All cases where the best_oa_location is “publisher”, the license field is null, and journal_is_in_doaj is False.",
                 "fields": []
               }
             ]
@@ -2421,49 +2421,49 @@
                 "name": "preprint",
                 "mode": "NULLABLE",
                 "type": "BOOLEAN",
-                "description": null,
+                "description": "Preprint. Work is deposited on servers that do not make claims about formal peer review. Generally non-peer reviewed manuscripts, including working papers on platforms such as arXiv, bioRxiv, SSRN, RePec etc. Where we have manually classified a repository as a preprint server.",
                 "fields": []
               },
               {
                 "name": "domain",
                 "mode": "NULLABLE",
                 "type": "BOOLEAN",
-                "description": null,
+                "description": "Domain. Work is placed in a domain repository, also known as disciplinary or subject repositories. A domain repository contains publications from a specific subject area. Examples include PubMed Central, Europe PMC and Econstor. Where we have manually classified a repository as a domain repository.",
                 "fields": []
               },
               {
                 "name": "institution",
                 "mode": "NULLABLE",
                 "type": "BOOLEAN",
-                "description": null,
+                "description": "Institution. Work is placed in an institutional repository, which are archives for storing and distributing an institution's research outputs. Includes repositories shared amongst multiple institutions. Where we have manually matched a repository to an institution, or where oa_locations.repository_institution matches a ROR id with the ROR affiliation matcher, or where the domain from the pmh_id field matches a link from a ROR record.",
                 "fields": []
               },
               {
                 "name": "public",
                 "mode": "NULLABLE",
                 "type": "BOOLEAN",
-                "description": null,
+                "description": "Public. Work is from a repository that can be used by researchers from any domain and to deposit any form of output, including pre-prints, published manuscripts and datasets. Semantic Scholar, Figshare and Zenodo are a few examples. Where we have manually classified a repository as a public repository.",
                 "fields": []
               },
               {
                 "name": "aggregator",
                 "mode": "NULLABLE",
                 "type": "BOOLEAN",
-                "description": null,
+                "description": "Aggregator. Work is found on an aggregator. Where we have manually classified a repository as an aggregator.",
                 "fields": []
               },
               {
                 "name": "other_internet",
                 "mode": "NULLABLE",
                 "type": "BOOLEAN",
-                "description": null,
+                "description": "Other Internet. Work is found on sites we have not classified. In practice these are copies identified by CiteSeer X which is in turn indexed by Unpaywall. It may include publications on academic staff pages, blogs and social networks. We do not directly track outputs on platforms such as academia.edu and researchgate.net. Outputs found on CiteSeer X, which often point to academic staff pages and blogs. We do not currently track outputs from academic social networks. Also includes outputs from repositories that we have not yet classified.",
                 "fields": []
               },
               {
                 "name": "unknown",
                 "mode": "NULLABLE",
                 "type": "BOOLEAN",
-                "description": null,
+                "description": "Unknown.",
                 "fields": []
               }
             ]
@@ -2480,42 +2480,43 @@
             "name": "coki_repository_name",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Repository name determined manually by COKI",
             "fields": []
           },
           {
             "name": "endpoint_id",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "oa_location.endpoint_id from Unpaywall",
             "fields": []
           },
           {
             "name": "repository_institution",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "oa_location.repository_institution from Unpaywall",
             "fields": []
           },
           {
             "name": "pmh_domain",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "A list of unique OAI PMH hostnames oa_location.pmh_id from Unpaywall",
             "fields": []
           },
           {
             "name": "pmh_id",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "OAI-PMH endpoint where we found this location. This is primarily for internal debugging. It's null for locations that weren't found using OAI-PMH. oa_location.pmh_id from Unpaywall"
+            ,
             "fields": []
           },
           {
             "name": "url",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The url_for_pdf if there is one; otherwise landing page URL. When we can't find a url_for_pdf (or there isn't one), this field uses the url_for_landing_page, which is a useful fallback for some use cases. best_oa_location.url from Unpaywall",
             "fields": []
           },
           {
@@ -2590,76 +2591,76 @@
         "name": "institutions",
         "mode": "REPEATED",
         "type": "RECORD",
-        "description": null,
+        "description": "Institutional details sourced from https://ror.org/ and mapped to Countries and Regions by COKI ",
         "fields": [
           {
             "name": "identifier",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Unique ROR ID for the organization",
             "fields": []
           },
           {
             "name": "types",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Organization type. Allowed types: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, Other",
             "fields": []
           },
           {
             "name": "name",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The primary name of the organization",
             "fields": []
           },
           {
             "name": "country",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Country where organization is located",
             "fields": []
           },
           {
             "name": "country_code",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's ISO 3166 three letter alpha2 code.",
             "fields": []
           },
           {
             "name": "country_code_2",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's ISO 3166 two letter alpha2 code.",
             "fields": []
           },
           {
             "name": "region",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's United Nations Statistics Division M49 region name.",
             "fields": []
           },
           {
             "name": "subregion",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's United Nations Statistics Division M49 subregion name.",
             "fields": []
           },
           {
             "name": "coordinates",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization's location by latitude and longitude",
             "fields": []
           },
           {
             "name": "members",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Membership group manualy derived by COKI",
             "fields": []
           }
         ]
@@ -3001,34 +3002,34 @@
         "name": "funders",
         "mode": "REPEATED",
         "type": "RECORD",
-        "description": null,
+        "description": "Funder data is sourced from https://www.crossref.org/services/funder-registry/ and mapped to country and region by COKI",
         "fields": [
           {
             "name": "identifier",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Funding body identifier",
             "fields": []
           },
           {
             "name": "name",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Funding body primary name",
             "fields": []
           },
           {
             "name": "doi",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "DOI for the funder",
             "fields": []
           },
           {
             "name": "types",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "type is always "Funder"",
             "fields": []
           },
           {
@@ -3077,14 +3078,14 @@
             "name": "funding_body_type",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Type of funding body",
             "fields": []
           },
           {
             "name": "funding_body_subtype",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Government (gov) or private (pri)",
             "fields": []
           },
           {
