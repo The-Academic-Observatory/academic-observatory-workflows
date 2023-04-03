@@ -10,7 +10,7 @@
     "name": "crossref",
     "mode": "NULLABLE",
     "type": "RECORD",
-    "description": " Crossref data is sourced from https://www.crossref.org/.",
+    "description": "Crossref data is sourced from https://www.crossref.org/.",
     "fields": [
       {
         "name": "title",
@@ -244,7 +244,7 @@
         "name": "funder",
         "mode": "REPEATED",
         "type": "RECORD",
-        "description": "Funder related data from https://www.crossref.org/services/funder-registry/",
+        "description": "Funder related data from https://www.crossref.org/services/funder-registry/.",
         "fields": [
           {
             "name": "DOI",
@@ -321,7 +321,29 @@
                 "mode": "REPEATED",
                 "type": "RECORD",
                 "description": "Identifier for the author's institution or organization (ROR, ISNI, Wikidata).",
-                "fields": []
+                "fields": [
+                  {
+                    "name": "id",
+                    "mode": "NULLABLE",
+                    "type": "STRING",
+                    "description": null,
+                    "fields": []
+                  },
+                  {
+                    "name": "id_type",
+                    "mode": "NULLABLE",
+                    "type": "STRING",
+                    "description": null,
+                    "fields": []
+                  },
+                  {
+                    "name": "asserted_by",
+                    "mode": "NULLABLE",
+                    "type": "STRING",
+                    "description": null,
+                    "fields": []
+                  }
+                ]
               },
               {
                 "name": "place",
@@ -407,7 +429,7 @@
             "name": "content_version",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": "Either vor (version of record), am (accepted manuscript) or tdm.",
+            "description": "Either vor (version of record), am (accepted manuscript) or tdm (text and data mining).",
             "fields": []
           },
           {
@@ -461,7 +483,7 @@
     "name": "openalex",
     "mode": "NULLABLE",
     "type": "RECORD",
-    "description": "OpenAlex data is sourced from https://openalex.org/",
+    "description": "OpenAlex data is sourced from https://openalex.org/.",
     "fields": [
       {
         "name": "doi",
@@ -502,7 +524,7 @@
         "name": "publication_date",
         "mode": "NULLABLE",
         "type": "STRING",
-        "description": "The day when this work was published, formatted as an ISO 8601 date.\nWhere different publication dates exist, we select the earliest available date of electronic publication. \nThis date applies to the version found at Work.url. The other versions, found in Work.alternate_host_venues, may have been published at different (earlier) dates.",
+        "description": "The day when this work was published, formatted as an ISO 8601 date. Where different publication dates exist, we select the earliest available date of electronic publication. This date applies to the version found at Work.url. The other versions, found in Work.alternate_host_venues, may have been published at different (earlier) dates.",
         "fields": []
       },
       {
@@ -522,21 +544,21 @@
             "name": "doi",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": "The DOI. This is most likely, but not necessarily, a Crossref DOI",
+            "description": "The DOI. This is most likely, but not necessarily, a Crossref DOI.",
             "fields": []
           },
           {
             "name": "mag",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "The Microsoft Academic Graph ID",
+            "description": "The Microsoft Academic Graph ID.",
             "fields": []
           },
           {
             "name": "pmid",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": "The Pubmed Identifier",
+            "description": "The Pubmed Identifier.",
             "fields": []
           },
           {
@@ -657,7 +679,7 @@
             "name": "oa_url",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": "The best Open Access (OA) URL for this work. Although there are many ways to define OA, in this context an OA URL is one where you can read the fulltext of this work without needing to pay money or log in. The \"best\" such URL is the one closest to the version of record. This URL might be a direct link to a PDF, or it might be to a landing page that links to the free PDF",
+            "description": "The best Open Access (OA) URL for this work. Although there are many ways to define OA, in this context an OA URL is one where you can read the fulltext of this work without needing to pay money or log in. The \"best\" such URL is the one closest to the version of record. This URL might be a direct link to a PDF, or it might be to a landing page that links to the free PDF.",
             "fields": []
           }
         ]
@@ -714,7 +736,7 @@
                 "name": "id",
                 "mode": "NULLABLE",
                 "type": "STRING",
-                "description": "The OpenAlex ID for this institution."
+                "description": "The OpenAlex ID for this institution.",
                 "fields": []
               },
               {
@@ -810,14 +832,14 @@
         "name": "is_paratext",
         "mode": "NULLABLE",
         "type": "BOOLEAN",
-        "description": "True if we think this work is paratext. In our context, paratext is stuff that's in scholarly venue (like a journal) but is about the venue rather than a scholarly work properly speaking.  Some examples and nonexamples: -yep it's paratext: front cover, back cover, table of contents, editorial board listing, issue information,  masthead. -no,  not paratext: research paper, dataset, letters to the editor, figures. Turns out there is a lot of paratext in registries like Crossref. That's not a bad thing... but we've found that it's good to have a way to filter it out.\nWe determine is_paratext algorithmically using title heuristics. ",
+        "description": "True if we think this work is paratext. In our context, paratext is stuff that's in scholarly venue (like a journal) but is about the venue rather than a scholarly work properly speaking.  Some examples and nonexamples: -yep it's paratext: front cover, back cover, table of contents, editorial board listing, issue information,  masthead. -no,  not paratext: research paper, dataset, letters to the editor, figures. Turns out there is a lot of paratext in registries like Crossref. That's not a bad thing... but we've found that it's good to have a way to filter it out. We determine is_paratext algorithmically using title heuristics. ",
         "fields": []
       },
       {
         "name": "concepts",
         "mode": "REPEATED",
         "type": "RECORD",
-        "description": "List of dehydrated Concept objects. \nEach Concept object in the list also has one additional property",
+        "description": "List of dehydrated Concept objects. Each Concept object in the list also has one additional property.",
         "fields": [
           {
             "name": "id",
@@ -830,7 +852,7 @@
             "name": "wikidata",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": "The Wikidata ID for this concept. ",
+            "description": "The Wikidata ID for this concept.",
             "fields": []
           },
           {
@@ -1284,7 +1306,22 @@
                 "mode": "REPEATED",
                 "type": "RECORD",
                 "description": null,
-                "fields": []
+                "fields": [
+                  {
+                    "name": "AttributeType",
+                    "mode": "NULLABLE",
+                    "type": "INTEGER",
+                    "description": null,
+                    "fields": []
+                  },
+                  {
+                    "name": "AttributeValue",
+                    "mode": "NULLABLE",
+                    "type": "STRING",
+                    "description": null,
+                    "fields": []
+                  }
+                ]
               }
             ]
           },
@@ -1334,7 +1371,22 @@
                 "mode": "REPEATED",
                 "type": "RECORD",
                 "description": null,
-                "fields": []
+                "fields": [
+                  {
+                    "name": "AttributeType",
+                    "mode": "NULLABLE",
+                    "type": "INTEGER",
+                    "description": null,
+                    "fields": []
+                  },
+                  {
+                    "name": "AttributeValue",
+                    "mode": "NULLABLE",
+                    "type": "STRING",
+                    "description": null,
+                    "fields": []
+                  }
+                ]
               }
             ]
           },
@@ -1376,7 +1428,7 @@
                 "name": "Score",
                 "mode": "NULLABLE",
                 "type": "FLOAT",
-                "description": null,
+                "description": "Confidence range between 0 and 1. Bigger number representing higher confidence",
                 "fields": []
               },
               {
@@ -1384,9 +1436,24 @@
                 "mode": "REPEATED",
                 "type": "RECORD",
                 "description": null,
-                "fields": []
-              }
-            ]
+                "fields": [
+                  {
+                  "name": "AttributeType",
+                  "mode": "NULLABLE",
+                  "type": "INTEGER",
+                  "description": null,
+                  "fields": []
+                },
+                {
+                  "name": "AttributeValue",
+                  "mode": "NULLABLE",
+                  "type": "STRING",
+                  "description": null,
+                  "fields": []
+                }
+              ]
+            }
+          ]
           },
           {
             "name": "level_3",
@@ -1434,7 +1501,22 @@
                 "mode": "REPEATED",
                 "type": "RECORD",
                 "description": null,
-                "fields": []
+                "fields": [
+                  {
+                    "name": "AttributeType",
+                    "mode": "NULLABLE",
+                    "type": "INTEGER",
+                    "description": null,
+                    "fields": []
+                  },
+                  {
+                    "name": "AttributeValue",
+                    "mode": "NULLABLE",
+                    "type": "STRING",
+                    "description": null,
+                    "fields": []
+                  }
+                ]
               }
             ]
           },
@@ -1484,7 +1566,22 @@
                 "mode": "REPEATED",
                 "type": "RECORD",
                 "description": null,
-                "fields": []
+                "fields": [
+                  {
+                    "name": "AttributeType",
+                    "mode": "NULLABLE",
+                    "type": "INTEGER",
+                    "description": null,
+                    "fields": []
+                  },
+                  {
+                    "name": "AttributeValue",
+                    "mode": "NULLABLE",
+                    "type": "STRING",
+                    "description": null,
+                    "fields": []
+                  }
+                ]
               }
             ]
           },
@@ -1534,7 +1631,22 @@
                 "mode": "REPEATED",
                 "type": "RECORD",
                 "description": null,
-                "fields": []
+                "fields": [
+                  {
+                    "name": "AttributeType",
+                    "mode": "NULLABLE",
+                    "type": "INTEGER",
+                    "description": null,
+                    "fields": []
+                  },
+                  {
+                    "name": "AttributeValue",
+                    "mode": "NULLABLE",
+                    "type": "STRING",
+                    "description": null,
+                    "fields": []
+                  }
+                ]
               }
             ]
           }
@@ -1869,7 +1981,7 @@
     "name": "open_citations",
     "mode": "NULLABLE",
     "type": "RECORD",
-    "description": "Data sourced from Open Citations https://opencitations.net/"
+    "description": "Data sourced from Open Citations https://opencitations.net/.",
     "fields": [
       {
         "name": "doi",
@@ -1989,7 +2101,7 @@
     "name": "events",
     "mode": "NULLABLE",
     "type": "RECORD",
-    "descriptions": "Data sourced from Crossref Events https://www.crossref.org/services/event-data/"
+    "descriptions": "Data sourced from Crossref Events https://www.crossref.org/services/event-data/.",
     "fields": [
       {
         "name": "doi",
@@ -2084,7 +2196,7 @@
     "name": "unpaywall",
     "mode": "NULLABLE",
     "type": "RECORD",
-    "description": "Unpaywall data is sourced from https://unpaywall.org/",
+    "description": "Unpaywall data is sourced from https://unpaywall.org/. COKI also interprets Unpaywall data to determine OA categories at the output level.",
     "fields": [
       {
         "name": "doi",
@@ -2125,7 +2237,7 @@
         "name": "normalised_journal_name",
         "mode": "NULLABLE",
         "type": "STRING",
-        "description": null,
+        "description": "Journal name normalised by COKI. The most common occurance of the journal name for each ISSN-L.",
         "fields": []
       },
       {
@@ -2181,63 +2293,63 @@
         "name": "gold",
         "mode": "NULLABLE",
         "type": "BOOLEAN",
-        "description": null
+        "description": "Gold OA is defined as either the journal being in DOAJ or the best_oa_location being a publisher and a license being detected. This works because Unpaywall will set the publisher as the best oa location if it identifies an accessible publisher copy.",
         "fields": []
       },
       {
         "name": "gold_just_doaj",
         "mode": "NULLABLE",
         "type": "BOOLEAN",
-        "description": null,
+        "description": "Gold Open Access in DOAJ Journal is determined directly from the Unpaywall statement that the journal is in DOAJ. No further checking is done on this, so articles that Unpaywall does not capture as being accessible that are in DOAJ journals will be characterised as gold_just_doaj.",
         "fields": []
       },
       {
         "name": "hybrid",
         "mode": "NULLABLE",
         "type": "BOOLEAN",
-        "description": null,
+        "description": "Hybrid Open Access is defined as being available at a publisher with a discovered license, where the journal of publication is not in DOAJ. This means that some publisher hybrid is not detected because Unpaywall does not detect a license. The use of DOAJ as defining a 'fully oa journal' is also narrow and future developments will expand this considering, among other parameters, the Unpaywall tag 'journal-is-oa'.",
         "fields": []
       },
       {
         "name": "bronze",
         "mode": "NULLABLE",
         "type": "BOOLEAN",
-        "description": null,
+        "description": "Bronze Open Access is defined as being available at the publisher website but without a license being detected by Unpaywall. This is intended to capture cases where content is unilaterally made readable by the publisher (eg via a moving paywall) as in these cases a more open license is not generally applied. However, this is a heuristic and there are significant issues distinguishing between different modes by which publishers make content readable.",
         "fields": []
       },
       {
         "name": "green",
         "mode": "NULLABLE",
         "type": "BOOLEAN",
-        "description": null,
+        "description": "Green Open Access is defined as any case where Unpaywall identifies a copy of an output in a repository. This includes preprint repositories (eg arxiv) both submitted, accepted and VoR versions of outputs. In a small number of cases preprint repositories register content as being journal articles (SSRN is the most common case). Green as defined here also explicitly includes those outputs that are also available via the publisher. For the set of content which is only freely available via a repository see `green_only`.",
         "fields": []
       },
       {
         "name": "green_only",
         "mode": "NULLABLE",
         "type": "BOOLEAN",
-        "description": null,
+        "description": "Green Open Access where the outputs is not available Gold (DOAJ or Hybrid) or Bronze: green_only is the subset of outputs available from repositories that are not also available free to read from the publisher. This category enables analyses of gold, bronze and green as mutually exclusive categories, e.g. in the generation of stacked bar charts that include gold_doaj, green, hybrid and bronze. This corresponds to general usage of the term 'green' in some other literature.",
         "fields": []
       },
       {
         "name": "green_only_ignoring_bronze",
         "mode": "NULLABLE",
         "type": "BOOLEAN",
-        "description": null,
+        "description": "Green Open Access where the output is not available Gold (DOAJ or Hybrid) but may be Bronze: green_only_ignoring_bronze provides the set of articles that are green and not gold. That is it includes articles that are green and bronze, but not gold. This category enables analyses of gold and green as mutually exclusive categories, e.g. in the generation of stacked bar charts that include gold_doaj, green and hybrid.",
         "fields": []
       },
       {
         "name": "has_license",
         "mode": "NULLABLE",
         "type": "BOOLEAN",
-        "description": null,
+        "description": "Convenience category for analysing articles that have a license for the best OA location",
         "fields": []
       },
       {
         "name": "is_cclicensed",
         "mode": "NULLABLE",
         "type": "BOOLEAN",
-        "description": null,
+        "description": "Convenience category for analysing articles that have a Creative Commons license for the best OA location",
         "fields": []
       }
     ]
@@ -2246,61 +2358,61 @@
     "name": "coki",
     "mode": "NULLABLE",
     "type": "RECORD",
-    "description": null,
+    "description": "Categories determined by COKI",
     "fields": [
       {
         "name": "oa_color",
         "mode": "NULLABLE",
         "type": "RECORD",
-        "description": null,
+        "description": "OA colour categories determined by COKI from Unpaywall data",
         "fields": [
           {
             "name": "gold",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Gold OA is defined as either the journal being in DOAJ or the best_oa_location being a publisher and a license being detected. This works because Unpaywall will set the publisher as the best oa location if it identifies an accessible publisher copy.",
             "fields": []
           },
           {
             "name": "gold_just_doaj",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Gold Open Access in DOAJ Journal is determined directly from the Unpaywall statement that the journal is in DOAJ. No further checking is done on this, so articles that Unpaywall does not capture as being accessible that are in DOAJ journals will be characterised as gold_just_doaj.",
             "fields": []
           },
           {
             "name": "hybrid",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Hybrid Open Access is defined as being available at a publisher with a discovered license, where the journal of publication is not in DOAJ. This means that some publisher hybrid is not detected because Unpaywall does not detect a license. The use of DOAJ as defining a 'fully oa journal' is also narrow and future developments will expand this considering, among other parameters, the Unpaywall tag 'journal-is-oa'.",
             "fields": []
           },
           {
             "name": "bronze",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Bronze Open Access is defined as being available at the publisher website but without a license being detected by Unpaywall. This is intended to capture cases where content is unilaterally made readable by the publisher (eg via a moving paywall) as in these cases a more open license is not generally applied. However, this is a heuristic and there are significant issues distinguishing between different modes by which publishers make content readable.",
             "fields": []
           },
           {
             "name": "green",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Green Open Access is defined as any case where Unpaywall identifies a copy of an output in a repository. This includes preprint repositories (eg arxiv) both submitted, accepted and VoR versions of outputs. In a small number of cases preprint repositories register content as being journal articles (SSRN is the most common case). Green as defined here also explicitly includes those outputs that are also available via the publisher. For the set of content which is only freely available via a repository see `green_only`.",
             "fields": []
           },
           {
             "name": "green_only",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Green Open Access where the outputs is not available Gold (DOAJ or Hybrid) or Bronze: green_only is the subset of outputs available from repositories that are not also available free to read from the publisher. This category enables analyses of gold, bronze and green as mutually exclusive categories, e.g. in the generation of stacked bar charts that include gold_doaj, green, hybrid and bronze. This corresponds to general usage of the term 'green' in some other literature.",
             "fields": []
           },
           {
             "name": "green_only_ignoring_bronze",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Green Open Access where the output is not available Gold (DOAJ or Hybrid) but may be Bronze: green_only_ignoring_bronze provides the set of articles that are green and not gold. That is it includes articles that are green and bronze, but not gold. This category enables analyses of gold and green as mutually exclusive categories, e.g. in the generation of stacked bar charts that include gold_doaj, green and hybrid.",
             "fields": []
           }
         ]
@@ -2309,20 +2421,20 @@
         "name": "oa_license",
         "mode": "NULLABLE",
         "type": "RECORD",
-        "description": null,
+        "description":"OA licence information determined by COKI from Unpaywall data",
         "fields": [
           {
             "name": "has_license",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Convenience category for analysing articles that have a license for the best OA location",
             "fields": []
           },
           {
             "name": "is_cclicensed",
             "mode": "NULLABLE",
             "type": "BOOLEAN",
-            "description": null,
+            "description": "Convenience category for analysing articles that have a Creative Commons license for the best OA location",
             "fields": []
           }
         ]
@@ -2331,7 +2443,7 @@
         "name": "oa_coki",
         "mode": "NULLABLE",
         "type": "RECORD",
-        "description": "Custom fields created by COKI to determine OA categories",
+        "description": "Custom fields created by COKI to determine COKI OA categories",
         "fields": [
           {
             "name": "open",
@@ -2597,35 +2709,35 @@
             "name": "identifier",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": "Unique ROR ID for the organization",
+            "description": "Unique ROR ID for the organization.",
             "fields": []
           },
           {
             "name": "types",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": "Organization type. Allowed types: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, Other",
+            "description": "Organization type. Allowed types: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, Other.",
             "fields": []
           },
           {
             "name": "name",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": "The primary name of the organization",
+            "description": "The primary name of the organization.",
             "fields": []
           },
           {
             "name": "country",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": "Country where organization is located",
+            "description": "Country where organization is located (The country's name as displayed on it's Wikipedia page).",
             "fields": []
           },
           {
             "name": "country_code",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": "The organization country's ISO 3166 three letter alpha2 code.",
+            "description": "The organization country's ISO 3166 three letter alpha3 code.",
             "fields": []
           },
           {
@@ -2653,14 +2765,14 @@
             "name": "coordinates",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": "The organization's location by latitude and longitude",
+            "description": "The organization's location by latitude and longitude.",
             "fields": []
           },
           {
             "name": "members",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": "Membership group manualy derived by COKI",
+            "description": "Membership group manually derived by COKI.",
             "fields": []
           }
         ]
@@ -2675,77 +2787,77 @@
             "name": "identifier",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's ISO 3166 three letter alpha3 code.",
             "fields": []
           },
           {
             "name": "name",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Country where organization is located (The country's name as displayed on it's Wikipedia page).",
             "fields": []
           },
           {
             "name": "types",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Set to 'Country'.",
             "fields": []
           },
           {
             "name": "country",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Country where organization is located (The country's name as displayed on it's Wikipedia page).",
             "fields": []
           },
           {
             "name": "country_code",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's ISO 3166 three letter alpha3 code.",
             "fields": []
           },
           {
             "name": "country_code_2",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's ISO 3166 two letter alpha2 code.",
             "fields": []
           },
           {
             "name": "region",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's United Nations Statistics Division M49 region name.",
             "fields": []
           },
           {
             "name": "subregion",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's United Nations Statistics Division M49 subregion name.",
             "fields": []
           },
           {
             "name": "coordinates",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "count",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": null,
+            "description": "Number of unique organisations per country.",
             "fields": []
           },
           {
             "name": "members",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Unique ROR ID for the organization/s in the country.",
             "fields": []
           }
         ]
@@ -2760,77 +2872,77 @@
             "name": "identifier",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's United Nations Statistics Division M49 subregion name.",
             "fields": []
           },
           {
             "name": "name",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's United Nations Statistics Division M49 subregion name.",
             "fields": []
           },
           {
             "name": "types",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country_code",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country_code_2",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "region",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's United Nations Statistics Division M49 region name.",
             "fields": []
           },
           {
             "name": "subregion",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "coordinates",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "count",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": null,
+            "description": "Number of unique organisations per subregion.",
             "fields": []
           },
           {
             "name": "members",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "The unique ISO 3166 three letter alpha3 code for the country/s in the subregion.",
             "fields": []
           }
         ]
@@ -2845,77 +2957,77 @@
             "name": "identifier",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's United Nations Statistics Division M49 region name.",
             "fields": []
           },
           {
             "name": "name",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's United Nations Statistics Division M49 region name.",
             "fields": []
           },
           {
             "name": "types",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Set to 'Region'.",
             "fields": []
           },
           {
             "name": "country",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country_code",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country_code_2",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "region",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's United Nations Statistics Division M49 region name.",
             "fields": []
           },
           {
             "name": "subregion",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to 'Subregion'.",
             "fields": []
           },
           {
             "name": "coordinates",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "count",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": null,
+            "description": "Number of unique organisations per region.",
             "fields": []
           },
           {
             "name": "members",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "The unique United Nations Statistics Division M49 subregion name for the subregions in the region.",
             "fields": []
           }
         ]
@@ -2930,70 +3042,70 @@
             "name": "identifier",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Membership group manually derived by COKI.",
             "fields": []
           },
           {
             "name": "name",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Membership group manually derived by COKI.",
             "fields": []
           },
           {
             "name": "types",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Set to 'Grouping'.",
             "fields": []
           },
           {
             "name": "country",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country_code",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's ISO 3166 two letter alpha2 code.",
             "fields": []
           },
           {
             "name": "country_code_2",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The organization country's ISO 3166 two letter alpha2 code.",
             "fields": []
           },
           {
             "name": "region",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "subregion",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "coordinates",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "members",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Unique ROR ID for the organization/s in the membership group.",
             "fields": []
           }
         ]
@@ -3002,7 +3114,7 @@
         "name": "funders",
         "mode": "REPEATED",
         "type": "RECORD",
-        "description": "Funder data is sourced from https://www.crossref.org/services/funder-registry/ and mapped to country and region by COKI",
+        "description": "Funder data is sourced from crossref fundref https://www.crossref.org/services/funder-registry/",
         "fields": [
           {
             "name": "identifier",
@@ -3029,70 +3141,70 @@
             "name": "types",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": "type is always "Funder"",
+            "description": "Set to 'Funder'",
             "fields": []
           },
           {
             "name": "country",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Country name from crossref fundref.",
             "fields": []
           },
           {
             "name": "country_code",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Country code from crossref fundref.",
             "fields": []
           },
           {
             "name": "country_code_2",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "region",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Region from crossref fundref.",
             "fields": []
           },
           {
             "name": "subregion",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "coordinates",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "funding_body_type",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": "Type of funding body",
+            "description": "Type of funding body from crossref fundref.",
             "fields": []
           },
           {
             "name": "funding_body_subtype",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": "Government (gov) or private (pri)",
+            "description": "Government (gov) or private (pri) from crossref fundref.",
             "fields": []
           },
           {
             "name": "members",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           }
         ]
@@ -3101,76 +3213,76 @@
         "name": "disciplines",
         "mode": "REPEATED",
         "type": "RECORD",
-        "description": null,
+        "description": "Values are sourced from Open Alex level 0 concepts https://docs.openalex.org/api-entities/concepts",
         "fields": [
           {
             "name": "identifier",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The English-language label of the concept (level 0).",
             "fields": []
           },
           {
             "name": "name",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description":"The English-language label of the concept (level 0).",
             "fields": []
           },
           {
             "name": "types",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Set to 'Discipline'",
             "fields": []
           },
           {
             "name": "country",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country_code",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country_code_2",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "region",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "subregion",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "coordinates",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "members",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           }
         ]
@@ -3179,90 +3291,90 @@
         "name": "authors",
         "mode": "REPEATED",
         "type": "RECORD",
-        "description": null,
+        "description": "Values are sourced from ORCID, https://orcid.org/",
         "fields": [
           {
             "name": "identifier",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The ORCID ID for an author (in URL-form).",
             "fields": []
           },
           {
             "name": "name",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The name of the author.",
             "fields": []
           },
           {
             "name": "given_names",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description":"The given name of the author.",
             "fields": []
           },
           {
             "name": "family_name",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "The family name of the author.",
             "fields": []
           },
           {
             "name": "types",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Set to 'Author'.",
             "fields": []
           },
           {
             "name": "country",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country_code",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country_code_2",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "region",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "subregion",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "coordinates",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "members",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           }
         ]
@@ -3271,76 +3383,76 @@
         "name": "journals",
         "mode": "REPEATED",
         "type": "RECORD",
-        "description": null,
+        "description": "Values sourced from Unpaywall, https://unpaywall.org/.",
         "fields": [
           {
             "name": "identifier",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "A single ISSN for the journal publishing this resource. An ISSN-L can be used as a primary key for a journal when more than one ISSN is assigned to it. Resources' journal_issns are mapped to ISSN-Ls using the issn.org table, with some manual corrections.",
             "fields": []
           },
           {
             "name": "name",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Journal name normalised by COKI. The most common occurance of the journal name for each ISSN-L.",
             "fields": []
           },
           {
             "name": "types",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Set to 'Journal'",
             "fields": []
           },
           {
             "name": "country",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country_code",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country_code_2",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "region",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "subregion",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "coordinates",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "members",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           }
         ]
@@ -3349,76 +3461,76 @@
         "name": "publishers",
         "mode": "REPEATED",
         "type": "RECORD",
-        "description": null,
+        "description": "Values sourced from crossref, https://www.crossref.org/",
         "fields": [
           {
             "name": "identifier",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description":  "Name of work's publisher.",
             "fields": []
           },
           {
             "name": "name",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description":  "Name of work's publisher.",
             "fields": []
           },
           {
             "name": "types",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Set to 'Publisher'.",
             "fields": []
           },
           {
             "name": "country",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country_code",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "country_code_2",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "region",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "subregion",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "coordinates",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           },
           {
             "name": "members",
             "mode": "REPEATED",
             "type": "STRING",
-            "description": null,
+            "description": "Set to null.",
             "fields": []
           }
         ]
