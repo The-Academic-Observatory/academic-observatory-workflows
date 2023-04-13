@@ -17,10 +17,11 @@
 # Common libraries
 import os
 import subprocess
-from typing import List, Tuple
+from typing import Dict, List, OrderedDict, Tuple
 import pendulum
 import datetime
 import logging
+import re
 
 # To download the files from the FTP server
 import ftplib
@@ -29,8 +30,13 @@ import ftplib
 import hashlib
 from psutil import Popen
 
-# Unpacking and parse XML to json files.
-import xmltodict
+# For Injesting the XML using Biopython library.
+from Bio import Entrez
+from Bio.Entrez.Parser import StringElement, ListElement, DictionaryElement, OrderedListElement, IntegerElement, NoneElement
+
+# Alternative method for injest
+import xmlschema
+
 import gzip
 import json
 import tarfile
@@ -44,6 +50,7 @@ from airflow.models.taskinstance import TaskInstance
 from airflow.models.variable import Variable
 
 from google.cloud.bigquery import SourceFormat
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from observatory.platform.utils.airflow_utils import AirflowVars, make_workflow_folder
 from observatory.platform.workflows.workflow import Workflow, Release
 
@@ -66,16 +73,15 @@ from observatory.platform.utils.release_utils import (
 
 from observatory.platform.utils.gc_utils import (
     bigquery_sharded_table_id,
-    download_blobs_from_cloud_storage,
     select_table_shard_dates,
     upload_file_to_cloud_storage,
-    download_blob_from_cloud_storage,
 )
 
 from observatory.platform.utils.workflow_utils import (
     SubFolder,
-    bq_load_shard,
     make_release_date,
+    change_keys,
+    convert,
     table_ids_from_path,
     delete_old_xcoms,
 )
@@ -122,14 +128,15 @@ class PubMedTelescope(Workflow):
         *,
         dag_id: str,
         workflow_id: int,
-        start_date: str = pendulum.datetime(year=2022, month=12, day=8),
+        start_date: str = pendulum.datetime(year=2022, month=12, day=4),
         # data_interval_start: pendulum.DateTime = pendulum.datetime(2022, 12, 8),
         schedule_interval: str = "0 0 * * 0",  # weekly
         catchup: bool = True,
         dataset_id: str = None,
         merge_partition_field: str = None,
-        schema_folder: str = None,
+        schema_folder: str = default_schema_folder(),
         dataset_type_id: str = None,
+        # queue: str = "default",
         table_id: str,
         ftp_server_url: str,
         check_md5_hash: bool,
@@ -169,6 +176,7 @@ class PubMedTelescope(Workflow):
             schedule_interval=schedule_interval,
             airflow_vars=airflow_vars,
             workflow_id=workflow_id,
+            # queue=queue,
             # data_interval_start=data_interval_start,
             # dataset_id=dataset_id,
             # dataset_type_id=dataset_type_id,
@@ -193,6 +201,7 @@ class PubMedTelescope(Workflow):
         self.workflow_id = workflow_id
         self.schedule_interval = schedule_interval
         self.schema_file_path = os.path.join(self.schema_folder)
+        self.schema_skeleton_path = os.path.join(self.schema_folder, "pubmed_structure_2023-03-22.json")
 
         # PubMed settings
         self.ftp_server_url = ftp_server_url  # FTP server URL
@@ -212,7 +221,7 @@ class PubMedTelescope(Workflow):
         self.add_task(self.download)  # download the xml files from the FTP server, shove into gzip
         self.add_task(self.upload_downloaded)  # upload raw files from pubmed servers for specific releases
         self.add_task(self.transform)
-        self.add_task(self.upload_transformed)  # upload additions and deletions files from transform/cleaning step
+        # self.add_task(self.upload_transformed)  # upload additions and deletions files from transform/cleaning step
 
         # self.add_task(transform) # convert xml files into *.jsonl.gz, validate if neccesary using their API
 
@@ -234,6 +243,7 @@ class PubMedTelescope(Workflow):
         kwargs["data_interval_start"] = self.start_date
 
         # TODO: Figure out why the end date for the release is so wrong - should be + 7 days but its well over 2 months after the start date.
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! dates are cooked. Need to fix !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
         logging.info(f"Start date: {self.start_date} End date: {self.end_date} First release: {self.first_release}")
         self.release_id = self.start_date.strftime("%Y_%m_%d") + "-" + self.end_date.strftime("%Y_%m_%d")
@@ -368,7 +378,7 @@ class PubMedTelescope(Workflow):
 
         # for file_on_ftp in files_to_download:
         # For testing
-        for i in range(0, 3, 1):  # -  for testing
+        for i in range(0, 1, 1):  # -  for testing
             file_on_ftp = files_to_download[i]
 
             file = file_on_ftp.split("/")[-1]
@@ -408,13 +418,15 @@ class PubMedTelescope(Workflow):
                         download_success = True
                         downloaded_files_for_release.append(file_download_location)
                     else:
-                        download_attemp_count += 1
                         raise logging.info(f"MD5 hash does not match the given MD5 checksum from server: {file}")
 
                 if not download_success:
                     raise AirflowException(
                         f"Unable to download {file_on_ftp} from PubMed's FTP server {self.ftp_server_url} after {self.max_download_retry}"
                     )
+
+                download_attemp_count += 1
+
             else:
                 logging.info(f"Downloading: {file}")
                 try:
@@ -479,6 +491,12 @@ class PubMedTelescope(Workflow):
         Outputs additions.jsonl.gz and deletions.jsonl.gz files for the release.
         """
 
+        # Read master dictionary from file.
+        # Not all of Pubmed has the fields in the XML files.
+
+        # If instance in dictionary exists, add to the matching master dict copy.
+        # read in the schema and make sure that they're the same
+
         # Grab list of files downloaded.
         ti: TaskInstance = kwargs["ti"]
         downloaded_files_for_release = ti.xcom_pull(key="downloaded_files_for_release")
@@ -489,68 +507,128 @@ class PubMedTelescope(Workflow):
 
         additions_for_release = []
         deletions_for_release = []
+        
+        # TODO: Consider parallelising this section.
+
+        # Loop through each of the PubMed database files and gather additions and deletions.
+        # for file in downloaded_files_for_release:
+        for i in range(0, 1, 1):  # -  for testing
+            file = downloaded_files_for_release[i] # -  for testing
+
+            logging.info(f"Running through file - {file}")
+
+            with gzip.open(file, "rb") as f_in:
+                
+                # Use the BioPython library for reading in the xml files and putting into a usable format.
+                # TODO: Confirm that this library pulls down the necessary schemas from withing the xml header and does a self validation.
+
+                data_dict = Entrez.read(f_in, validate=True)
+
+                # Using the XMLSchema library - Slowest option of the two by 10x but more robust as it checks against the XSD schema during the import. 
+                # Path to the XSD schemas needed for this method.
+                # pubmed_schema = xmlschema.XMLSchema(os.path.join(self.schema_folder,"pubmed_xsd_schemas","pubmed_230101.xsd"))
+                # data_dict_dirty_keys = pubmed_schema.to_dict(f_in)
+                # data_dict = change_keys( pubmed_data_dirty_keys, convert)
+
+                try:
+                    logging.info(f"Extracting additions to the PubMed dataset - {file}")
+
+                    # Remove the bad characters from the keys on import
+                    additions = [
+                        addition
+                        for addition in data_dict["PubmedArticle"]
+                    ]
+                    additions_for_release.extend(additions)
+                except:
+                    logging.info(f"No additions in this file - {file}")
+
+                try:
+                    logging.info(f"Extracting deletions from the PubMed dataset - {file}")
+                    deletions = [
+                        deletion
+                        for deletion in data_dict["DeleteCitation"]
+                    ]
+                    deletions_for_release.extend(deletions)
+                except:
+                    logging.info(f"No deletions in this file - {file}")
+
+        logging.info(
+            "Checking through the additions for this release to see if any deletions can be done before going onto BigQuery."
+        )
+
+        # TODO: Do a check step to make sure there are no doubles of the deletes?? Each deletion *should* be unique in the DB.
+
+        # TODO: Consider parallelising this section - initial baseline additions will be ~ 35 million entries and needs to be quicker for checking deletions.
+        additions_with_dels_checked = additions_for_release.copy()
+        deletions_with_dels_checked = deletions_for_release.copy()
+
+        print(additions_with_dels_checked[0])
+        for record_to_delete in deletions_for_release:
+            for addition_to_check in additions_for_release:
+                to_check = addition_to_check["MedlineCitation"]["PMID"]
+                if record_to_delete == to_check:
+                    deletions_with_dels_checked.remove(record_to_delete)
+                    additions_with_dels_checked.remove(addition_to_check)
+
+                    # logging.info(f"Removed the following record from additions list - {count} {record_to_delete}")
+
+        # Do some sort of assert check to make sure all of the deletions are done properly and none missing
+
+        logging.info(
+            f"There are {len(deletions_with_dels_checked)} deletions left to do on BQ and {len(additions_with_dels_checked)} additions to add to the snapshot for this release."
+        )
+
+        ################################################################################################
+
+        # # Working on additions file
+        # logging.info(f"Removing bad characters from keys from additions file  data.")
+
+        # # Give each thread a chunk of the work to do.
+        # chunk_size = len(additions_with_dels_checked) // self.max_processes
+        # chunks = [additions_with_dels_checked[i : i + chunk_size] for i in range(0, len(additions_with_dels_checked), chunk_size)]
+
+        # additions_cleaned_fieldnames = []
+        # with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_processes) as executor:
+        #     # send off chunks to each of the threads
+        #     futures = [ executor.submit(rename_bad_keys_in_dict_list, chunk) for chunk in chunks]
+
+        #     for future in concurrent.futures.as_completed(futures):
+        #         fields_renamed = future.result()
+        #         additions_cleaned_fieldnames.extend(fields_renamed)
+
+        # # Working on deletions file
+        # logging.info(f"Removing bad characters from keys from deletions file data.")
+
+        # # Give each thread a chunk of the work to do.
+        # chunk_size = len(deletions_with_dels_checked) // self.max_processes
+        # chunks = [deletions_with_dels_checked[i : i + chunk_size] for i in range(0, len(deletions_with_dels_checked), chunk_size)]
+
+        # deletions_cleaned_fieldnames = []
+        # with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_processes) as executor:
+        #     # send off chunks to each of the threads
+        #     futures = [ executor.submit(rename_bad_keys_in_dict_list, chunk) for chunk in chunks]
+
+        #     for future in concurrent.futures.as_completed(futures):
+        #         fields_renamed = future.result()
+        #         deletions_cleaned_fieldnames.extend(fields_renamed)
+
+        ################################################################################################
+
+        # Write out the processed additions and deletions to file.
         with gzip.open(additions_file_path, "w") as f_add_out, gzip.open(deletions_file_path, "w") as f_del_out:
-            # TODO: Consider parallelising this section.
 
-            # Loop through each of the PubMed database files and gather additions and deletions.
-            # for file in downloaded_files_for_release:
-            for i in range(0, 3, 1):  # -  for testing
-                file = downloaded_files_for_release[i]
-
-                logging.info(f"Running through file - {file}")
-
-                with gzip.open(file, "rb") as f_in:
-                    data_dict = xmltodict.parse(f_in.read())
-
-                    try:
-                        logging.info(f"Extracting additions to the PubMed dataset - {file}")
-                        additions_for_release.extend(data_dict["PubmedArticleSet"]["PubmedArticle"])
-                    except:
-                        logging.info(f"No additions in this file - {file}")
-
-                    try:
-                        logging.info(f"Extracting deletions from the PubMed dataset - {file}")
-                        deletions_for_release.extend(data_dict["PubmedArticleSet"]["DeleteCitation"]["PMID"])
-                    except:
-                        logging.info(f"No deletions in this file - {file}")
-
-            logging.info(
-                "Checking through the additions for this release to see if any deletions can be done before going onto BigQuery."
-            )
-
-            # TODO: Do a check step to make sure there are no doubles of the deletes?? Each deletion *should* be unique in the DB.
-
-            # TODO: Consider parallelising this section - initial baseline additions will be ~ 35 million entries and needs to be quicker for checking deletions.
-            additions_with_dels_checked = additions_for_release.copy()
-            deletions_with_dels_checked = deletions_for_release.copy()
-            for record_to_delete in deletions_for_release:
-                for addition_to_check in additions_for_release:
-                    if record_to_delete == addition_to_check["MedlineCitation"]["PMID"]:
-                        deletions_with_dels_checked.remove(record_to_delete)
-                        additions_with_dels_checked.remove(addition_to_check)
-
-                        # logging.info(f"Removed the following record from additions list - {count} {record_to_delete}")
-
-            # Do some sort of assert check to make sure all of the deletions are done properly and none missing
-
-            logging.info(
-                f"There are {len(deletions_with_dels_checked)} deletions left to do on BQ and {len(additions_with_dels_checked)} additions to add to the snapshot for this release."
-            )
-
-            # TODO: Rename the field of the data? Some are pretty bad, such as "#text" and some have other strange characters in them.
-
-            # Write out the processed additions and deletions to file.
             logging.info(f"Writing additions to file - {additions_file_path}")
             for line in additions_with_dels_checked:
-                f_add_out.write(str.encode(json.dumps(line) + "\n"))
+                f_add_out.write(str.encode(json.dumps(line, cls=CustomStrEncoder) + "\n"))
+                # Custom encoder used here so that the abstracts (AbstractText) are written as strings, not dictionary objects
 
             logging.info(f"Writing deletions to file - {deletions_file_path}")
             for line in deletions_with_dels_checked:
                 f_del_out.write(str.encode(json.dumps(line) + "\n"))
 
         # Push list of transform files into the xcom
-        ti.xcom_push(key="transform_additions_for_release", value=additions_file_path)
-        ti.xcom_push(key="transform_deletions_for_release", value=deletions_file_path)
+        # ti.xcom_push(key="transform_additions_for_release", value=additions_file_path)
+        # ti.xcom_push(key="transform_deletions_for_release", value=deletions_file_path)
 
     def upload_transformed(self, release: PubMedRelease, **kwargs):
         """Upload the transformed and combined release files to GCS."""
@@ -590,7 +668,9 @@ class PubMedTelescope(Workflow):
         ti: TaskInstance = kwargs["ti]"]
         uploaded_transform_files = ti.xcom_pull(key="uploaded_transform_files")
 
-        #
+        ### MAJOR
+        ### TODO: Make BQ json schema based on the pubmed_230101.xsd schema that includes all possible fields. 
+        ###
 
         if self.download_baseline or not bigquery_table_exists(self.project_id, self.dataset_id, self.table_id):
             logging.info("Create new Pubmed BQ table.")
@@ -705,6 +785,88 @@ def run_subprocess_cmd(proc: Popen, args: list):
     logging.info("Finished cmd successfully")
 
 
+# TODO: Clean up this function if possible.
+def add_attributes_to_data_from_biopython_classes(obj):
+
+    """Add attributes from the biopython data import and continue going down the data tree"""
+    
+    if isinstance(obj, StringElement ):
+        if len(list(obj.attributes.keys())) > 0:
+            # New object to hold the string data.
+            new = {}
+            new['value'] = obj
+
+            # Loop through attributes and add as needed.
+            for key in list(obj.attributes.keys()):
+                new[key] = add_attributes_to_data_from_biopython_classes(obj.attributes[key])
+        else:
+            new = obj
+        
+        return new
+
+    if isinstance(obj, DictionaryElement):
+        # New object to hold the string data.
+        new = {}
+        # Loop through attributes and add as needed.
+        for key in list(obj.attributes.keys()):
+            new[key] = add_attributes_to_data_from_biopython_classes(obj.attributes[key])
+
+        # loop through values as needed
+        for k, v in list(obj.items()):
+            new[k] = add_attributes_to_data_from_biopython_classes(v)
+
+        return new
+
+    if isinstance(obj, (ListElement, OrderedListElement) ):
+        # New object to hold the string data.
+        new = {}
+        if len(obj) > 0:
+            new[obj[0].tag] = [ add_attributes_to_data_from_biopython_classes(v) for v in obj ]
+        try:
+            # Loop through attributes and add as needed.
+            for key in list(obj.attributes.keys()):
+                new[key] = add_attributes_to_data_from_biopython_classes( obj.attributes[key] )
+        except: 
+            pass
+
+        return new
+    
+    if isinstance(obj, list): 
+        new = [ add_attributes_to_data_from_biopython_classes(v) for v in obj ]
+        return new
+
+    else:
+        return obj
+
+class CustomStrEncoder(json.JSONEncoder):
+
+    """Custom encoder for JSON dump for it to write a dictionary field as a string of text."""
+
+    def _transform_obj_to_str(self, obj):
+        
+        if isinstance(obj, str):
+            return obj 
+        elif isinstance(obj, dict):
+            new = obj.__class__()
+            # Loop through field names for the match fields to change to text. 
+            for k, v in list(obj.items()):
+
+                # TODO: Change this to an input of a List or Set for multiple fields if needed - hard coding bad. 
+                if k == "AbstractText":
+                    new[k] = str(v)
+                else:
+                    new[k] = self._transform_obj_to_str(v)
+            return new
+        elif isinstance(obj, list):
+            return [self._transform_obj_to_str(elem) for elem in obj]
+        else:
+            return obj
+
+    def encode(self, obj):
+        transformed_obj = self._transform_obj_to_str(obj)
+        return super(CustomStrEncoder, self).encode(transformed_obj)
+
+
 # Not used because FTP server can't download multiple files using multiple threads.
 # def download_file_from_ftp(files_to_download: List[str], ftp_server_url: str, check_md5_hash: bool) -> List[str]:
 #     """Function for allowing parallisation of downloading the PubMed files"""
@@ -798,3 +960,62 @@ def run_subprocess_cmd(proc: Popen, args: list):
 #     for future in concurrent.futures.as_completed(futures):
 #         file = future.result()
 #         downloaded_files_for_release.append(file)
+
+
+### OLD BAD - DOESN'T WORK ###
+
+# def rename_bad_keys_in_dict_list(obj_list_input: List[Dict]) -> List[Dict]:
+#     """Remove bad characters from a keys in a dictionary for Bigquery import."""
+
+#     obj_list_output = []
+#     for obj in obj_list_input:
+#         obj_list_output.append(change_keys(obj, convert))
+
+#     return obj_list_output
+
+# def update_dict_with_missing_keys(input_dict, schema_dict):
+#     if isinstance(schema_dict, dict):
+#         if not input_dict:
+#             input_dict = schema_dict
+#         else:
+#             for key in schema_dict.keys():
+#                 # print(f"key: {key} in schema_dict")
+
+#                 if key not in input_dict:
+#                     # Push schema branch onto data branch so that format is the same
+#                     input_dict[key] = schema_dict[key]
+#             else:
+#                 update_dict_with_missing_keys(input_dict[key], schema_dict[key])
+
+#     elif isinstance(schema_dict, list):
+#         if len(input_dict):
+#             print("Help: ", schema_dict, input_dict)
+#             for i in range(len(input_dict)):
+#                 update_dict_with_missing_keys(input_dict[i], schema_dict[0])
+#         else:
+#             input_dict = schema_dict
+#             # logging.info(f"Empty list", schema_dict)
+
+# def fix_xml_structure(path, key, value):
+#     #print(f"In postprocessing function with key: {key}")
+    
+#         #if isinstance(value, str) or isinstance(value, OrderedDict):.
+#     if isinstance(value, str): 
+#         value = [value]
+
+#     # All possible lists in pubmed
+#     list_to_change = ['QualifierName', 'DescriptorName', "Grant", "PublicationType", "Author", "PubMedPubDate", "ArticleIdList", "Reference"]
+#     if isinstance(value, dict) and key in list_to_change: 
+#         value = [value]
+
+#     return key, value
+
+    # The optional argument `postprocessor` is a function that takes `path`,
+    # `key` and `value` as positional arguments and returns a new `(key, value)`
+    # pair where both `key` and `value` may have changed. Usage example::
+
+    #     >>> def postprocessor(path, key, value):
+    #     ...     try:
+    #     ...         return key + ':int', int(value)
+    #     ...     except (ValueError, TypeError):
+    #     ...         return key, value

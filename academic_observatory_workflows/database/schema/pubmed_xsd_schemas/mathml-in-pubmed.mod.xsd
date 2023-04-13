@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ============================================================= -->
+<!-- MATHML 3.0 MODULES -->
+<!-- ============================================================= -->
+<!-- MATHML 3.0 QUALIFIED NAMES -->
+<!-- MATHML 3.0 DTD -->
+<!-- MATHML 3.0 EXTRA ENTITIES -->
+<!-- MATHML 3.0 ALIASES -->
+<!-- NAMED CHARACTERS -->
+<!-- ============================================================= -->
+<!-- SET UP "mml" AS THE MATH PREFIX -->
+<!-- ============================================================= -->
+<!-- MAKE MATH PREFIX PARAMETER ENTITY HAPPEN -->
+<!-- MAKE PREFIX EQUAL "mml" -->
+<!-- SET UP "pfx" -->
+<!-- USE "pfx" TO SET THE MATH ELEMENT NAME -->
+<!-- ============================================================= -->
+<!-- CALL THE MATHML ENTITIES -->
+<!-- ============================================================= -->
+<!-- MATHML CHARACTER ENTITIES -->
+<!--
+    Set the "INCLUDE" or "IGNORE" marked section
+    switch for the MATHML 3.0 DTD. This switch
+    determines whether the math processing in
+    the -%mathml.dtd; module or the
+    -%xmlspecchars.ent; module in this DTD Suite
+    will invoke the sets of special characters
+    that are defined AND INVOKED in the
+    -%xmlspecchars.ent; module.
+    A value of "IGNORE" turns off the second
+    invocation from the MathML DTD.
+-->
+<!-- MATHML-SPECIFIC CHARACTER ENTITIES -->
+<!--
+    Because the MATHML invocation is canceled
+    using the parameter entity just defined,
+    the two external entities below must be
+    invoked from here, as neither XMLspecchars
+    nor the MathML DTD will invoke them.
+-->
+<!-- New characters defined by MathML -->
+<!--                     MathML aliases for characters defined above -->
+<!-- NAMED CHARACTERS -->
+<!-- ============================================================= -->
+<!-- RESTRICT CONTENT OF ANNOTATION -->
+<!-- ============================================================= -->
+<!-- MATHML ANNOTATION MODEL -->
+<!--
+    The MathML 3.0 DTD establishes the content of 
+    the <mml:annotation-xml> element as any MathML
+    expression. This is unnecessarily broad, 
+    causing inconvenience during conversion. 
+    The model has been restricted to
+    one or more paragraphs.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" xmlns:xlink="##xlink" xmlns:mml="http://www.w3.org/1998/Math/MathML">
+    <xs:import namespace="##xlink" schemaLocation="xlink.xsd"/>
+    <xs:import namespace="http://www.w3.org/1998/Math/MathML" schemaLocation="mathml3.xsd"/>
+    <xs:import namespace="http://www.w3.org/XML/1998/namespace" schemaLocation="xml.xsd"/>
+    <!-- ============================================================= -->
+    <!-- MathML 3.0 INVOCATION -->
+    <!-- ============================================================= -->
+</xs:schema>

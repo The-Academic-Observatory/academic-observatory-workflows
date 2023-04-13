@@ -8,3 +8,5 @@ boto3>=1.15.0,<2
 nltk==3.*
 Deprecated>1,<2
 limits>3,<4
+xmlschema>=2.2.2
+bioopython>=1.81

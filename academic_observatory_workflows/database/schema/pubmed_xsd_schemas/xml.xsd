@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="http://www.w3.org/XML/1998/namespace" xmlns:xlink="##xlink" xmlns:mml="http://www.w3.org/1998/Math/MathML">
+    <xs:import schemaLocation="pubmed_230101.xsd"/>
+    <xs:import namespace="##xlink" schemaLocation="xlink.xsd"/>
+    <xs:import namespace="http://www.w3.org/1998/Math/MathML" schemaLocation="mathml3.xsd"/>
+    <xs:attribute name="lang"/>
+    <xs:attribute name="space">
+        <xs:simpleType>
+            <xs:restriction base="xs:token">
+                <xs:enumeration value="default"/>
+                <xs:enumeration value="preserve"/>
+            </xs:restriction>
+        </xs:simpleType>
+    </xs:attribute>
+</xs:schema>
