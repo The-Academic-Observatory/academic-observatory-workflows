@@ -324,7 +324,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
         )
 
         with env.create(task_logging=True):
-            start_date = pendulum.datetime(year=2021, month=10, day=10)
+            start_date = pendulum.datetime(year=2023, month=4, day=10)
             workflow = DoiWorkflow(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
@@ -354,8 +354,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     self.assertEqual(expected_state, ti.state)
 
             # Run Dummy Dags
-            execution_date = pendulum.datetime(year=2023, month=6, day=18)
-            snapshot_date = pendulum.datetime(year=2023, month=6, day=25)
+            execution_date = pendulum.datetime(year=2023, month=4, day=17)
+            snapshot_date = pendulum.datetime(year=2023, month=4, day=22)
             expected_state = "success"
             for dag_id in DoiWorkflow.SENSOR_DAG_IDS:
                 dag = make_dummy_dag(dag_id, execution_date)

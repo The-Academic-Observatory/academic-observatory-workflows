@@ -169,21 +169,21 @@
         "type": "RECORD",
         "description": "Work is designated as only Publisher Open (and not Other Platform Open or Closed).",
         "fields": [
-            {
-              "name": "total",
-              "mode": "NULLABLE",
-              "type": "INTEGER",
-              "description": "The total number of outputs for this OA type.",
-              "fields": []
-            },
-            {
-              "name": "percent",
-              "mode": "NULLABLE",
-              "type": "FLOAT",
-              "description": "The percentage of outputs for this OA type.",
-              "fields": []
-            }
-          ]
+          {
+            "name": "total",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "The total number of outputs for this OA type.",
+            "fields": []
+          },
+          {
+            "name": "percent",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": "The percentage of outputs for this OA type.",
+            "fields": []
+          }
+        ]
       },
       {
         "name": "both",
@@ -191,21 +191,21 @@
         "type": "RECORD",
         "description": null,
         "fields": [
-            {
-              "name": "total",
-              "mode": "NULLABLE",
-              "type": "INTEGER",
-              "description": "The total number of outputs for this OA type.",
-              "fields": []
-            },
-            {
-              "name": "percent",
-              "mode": "NULLABLE",
-              "type": "FLOAT",
-              "description": "The percentage of outputs for this OA type.",
-              "fields": []
-            }
-          ]
+          {
+            "name": "total",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "The total number of outputs for this OA type.",
+            "fields": []
+          },
+          {
+            "name": "percent",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": "The percentage of outputs for this OA type.",
+            "fields": []
+          }
+        ]
       },
       {
         "name": "other_platform_only",
@@ -213,21 +213,21 @@
         "type": "RECORD",
         "description": null,
         "fields": [
-            {
-              "name": "total",
-              "mode": "NULLABLE",
-              "type": "INTEGER",
-              "description": "The total number of outputs for this OA type.",
-              "fields": []
-            },
-            {
-              "name": "percent",
-              "mode": "NULLABLE",
-              "type": "FLOAT",
-              "description": "The percentage of outputs for this OA type.",
-              "fields": []
-            }
-          ]
+          {
+            "name": "total",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "The total number of outputs for this OA type.",
+            "fields": []
+          },
+          {
+            "name": "percent",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": "The percentage of outputs for this OA type.",
+            "fields": []
+          }
+        ]
       },
       {
         "name": "publisher_categories",
@@ -241,21 +241,21 @@
             "type": "RECORD",
             "description": null,
             "fields": [
-                {
-                  "name": "total",
-                  "mode": "NULLABLE",
-                  "type": "INTEGER",
-                  "description": "The total number of outputs for this OA type.",
-                  "fields": []
-                },
-                {
-                  "name": "percent",
-                  "mode": "NULLABLE",
-                  "type": "FLOAT",
-                  "description": "The percentage of outputs for this OA type.",
-                  "fields": []
-                }
-              ]
+              {
+                "name": "total",
+                "mode": "NULLABLE",
+                "type": "INTEGER",
+                "description": "The total number of outputs for this OA type.",
+                "fields": []
+              },
+              {
+                "name": "percent",
+                "mode": "NULLABLE",
+                "type": "FLOAT",
+                "description": "The percentage of outputs for this OA type.",
+                "fields": []
+              }
+            ]
           },
           {
             "name": "hybrid",
@@ -263,21 +263,21 @@
             "type": "RECORD",
             "description": null,
             "fields": [
-                {
-                  "name": "total",
-                  "mode": "NULLABLE",
-                  "type": "INTEGER",
-                  "description": "The total number of outputs for this OA type.",
-                  "fields": []
-                },
-                {
-                  "name": "percent",
-                  "mode": "NULLABLE",
-                  "type": "FLOAT",
-                  "description": "The percentage of outputs for this OA type.",
-                  "fields": []
-                }
-              ]
+              {
+                "name": "total",
+                "mode": "NULLABLE",
+                "type": "INTEGER",
+                "description": "The total number of outputs for this OA type.",
+                "fields": []
+              },
+              {
+                "name": "percent",
+                "mode": "NULLABLE",
+                "type": "FLOAT",
+                "description": "The percentage of outputs for this OA type.",
+                "fields": []
+              }
+            ]
           },
           {
             "name": "no_guarantees",
@@ -285,21 +285,21 @@
             "type": "RECORD",
             "description": null,
             "fields": [
-                {
-                  "name": "total",
-                  "mode": "NULLABLE",
-                  "type": "INTEGER",
-                  "description": "The total number of outputs for this OA type.",
-                  "fields": []
-                },
-                {
-                  "name": "percent",
-                  "mode": "NULLABLE",
-                  "type": "FLOAT",
-                  "description": "The percentage of outputs for this OA type.",
-                  "fields": []
-                }
-              ]
+              {
+                "name": "total",
+                "mode": "NULLABLE",
+                "type": "INTEGER",
+                "description": "The total number of outputs for this OA type.",
+                "fields": []
+              },
+              {
+                "name": "percent",
+                "mode": "NULLABLE",
+                "type": "FLOAT",
+                "description": "The percentage of outputs for this OA type.",
+                "fields": []
+              }
+            ]
           }
         ]
       },
@@ -315,21 +315,21 @@
             "type": "RECORD",
             "description": null,
             "fields": [
-                {
-                  "name": "total",
-                  "mode": "NULLABLE",
-                  "type": "INTEGER",
-                  "description": "The total number of outputs for this OA type.",
-                  "fields": []
-                },
-                {
-                  "name": "percent",
-                  "mode": "NULLABLE",
-                  "type": "FLOAT",
-                  "description": "The percentage of outputs for this OA type.",
-                  "fields": []
-                }
-              ]
+              {
+                "name": "total",
+                "mode": "NULLABLE",
+                "type": "INTEGER",
+                "description": "The total number of outputs for this OA type.",
+                "fields": []
+              },
+              {
+                "name": "percent",
+                "mode": "NULLABLE",
+                "type": "FLOAT",
+                "description": "The percentage of outputs for this OA type.",
+                "fields": []
+              }
+            ]
           },
           {
             "name": "domain",
@@ -337,21 +337,21 @@
             "type": "RECORD",
             "description": null,
             "fields": [
-                {
-                  "name": "total",
-                  "mode": "NULLABLE",
-                  "type": "INTEGER",
-                  "description": "The total number of outputs for this OA type.",
-                  "fields": []
-                },
-                {
-                  "name": "percent",
-                  "mode": "NULLABLE",
-                  "type": "FLOAT",
-                  "description": "The percentage of outputs for this OA type.",
-                  "fields": []
-                }
-              ]
+              {
+                "name": "total",
+                "mode": "NULLABLE",
+                "type": "INTEGER",
+                "description": "The total number of outputs for this OA type.",
+                "fields": []
+              },
+              {
+                "name": "percent",
+                "mode": "NULLABLE",
+                "type": "FLOAT",
+                "description": "The percentage of outputs for this OA type.",
+                "fields": []
+              }
+            ]
           },
           {
             "name": "institution",
@@ -359,21 +359,21 @@
             "type": "RECORD",
             "description": null,
             "fields": [
-                {
-                  "name": "total",
-                  "mode": "NULLABLE",
-                  "type": "INTEGER",
-                  "description": "The total number of outputs for this OA type.",
-                  "fields": []
-                },
-                {
-                  "name": "percent",
-                  "mode": "NULLABLE",
-                  "type": "FLOAT",
-                  "description": "The percentage of outputs for this OA type.",
-                  "fields": []
-                }
-              ]
+              {
+                "name": "total",
+                "mode": "NULLABLE",
+                "type": "INTEGER",
+                "description": "The total number of outputs for this OA type.",
+                "fields": []
+              },
+              {
+                "name": "percent",
+                "mode": "NULLABLE",
+                "type": "FLOAT",
+                "description": "The percentage of outputs for this OA type.",
+                "fields": []
+              }
+            ]
           },
           {
             "name": "public",
@@ -381,20 +381,20 @@
             "type": "RECORD",
             "description": null,
             "fields": [
-                {
-                    "name": "total",
-                    "mode": "NULLABLE",
-                    "type": "INTEGER",
-                    "description": "The total number of outputs for this OA type.",
-                    "fields": []
-                  },
-                  {
-                    "name": "percent",
-                    "mode": "NULLABLE",
-                    "type": "FLOAT",
-                    "description": "The percentage of outputs for this OA type.",
-                    "fields": []
-                  }
+              {
+                "name": "total",
+                "mode": "NULLABLE",
+                "type": "INTEGER",
+                "description": "The total number of outputs for this OA type.",
+                "fields": []
+              },
+              {
+                "name": "percent",
+                "mode": "NULLABLE",
+                "type": "FLOAT",
+                "description": "The percentage of outputs for this OA type.",
+                "fields": []
+              }
             ]
           },
           {
@@ -403,20 +403,20 @@
             "type": "RECORD",
             "description": null,
             "fields": [
-                {
-                    "name": "total",
-                    "mode": "NULLABLE",
-                    "type": "INTEGER",
-                    "description": "The total number of outputs for this OA type.",
-                    "fields": []
-                  },
-                  {
-                    "name": "percent",
-                    "mode": "NULLABLE",
-                    "type": "FLOAT",
-                    "description": "The percentage of outputs for this OA type.",
-                    "fields": []
-                  }
+              {
+                "name": "total",
+                "mode": "NULLABLE",
+                "type": "INTEGER",
+                "description": "The total number of outputs for this OA type.",
+                "fields": []
+              },
+              {
+                "name": "percent",
+                "mode": "NULLABLE",
+                "type": "FLOAT",
+                "description": "The percentage of outputs for this OA type.",
+                "fields": []
+              }
             ]
           },
           {
@@ -425,20 +425,20 @@
             "type": "RECORD",
             "description": null,
             "fields": [
-                {
-                    "name": "total",
-                    "mode": "NULLABLE",
-                    "type": "INTEGER",
-                    "description": "The total number of outputs for this OA type.",
-                    "fields": []
-                  },
-                  {
-                    "name": "percent",
-                    "mode": "NULLABLE",
-                    "type": "FLOAT",
-                    "description": "The percentage of outputs for this OA type.",
-                    "fields": []
-                  }
+              {
+                "name": "total",
+                "mode": "NULLABLE",
+                "type": "INTEGER",
+                "description": "The total number of outputs for this OA type.",
+                "fields": []
+              },
+              {
+                "name": "percent",
+                "mode": "NULLABLE",
+                "type": "FLOAT",
+                "description": "The percentage of outputs for this OA type.",
+                "fields": []
+              }
             ]
           },
           {
@@ -447,20 +447,20 @@
             "type": "RECORD",
             "description": null,
             "fields": [
-                {
-                    "name": "total",
-                    "mode": "NULLABLE",
-                    "type": "INTEGER",
-                    "description": "The total number of outputs for this OA type.",
-                    "fields": []
-                  },
-                  {
-                    "name": "percent",
-                    "mode": "NULLABLE",
-                    "type": "FLOAT",
-                    "description": "The percentage of outputs for this OA type.",
-                    "fields": []
-                  }
+              {
+                "name": "total",
+                "mode": "NULLABLE",
+                "type": "INTEGER",
+                "description": "The total number of outputs for this OA type.",
+                "fields": []
+              },
+              {
+                "name": "percent",
+                "mode": "NULLABLE",
+                "type": "FLOAT",
+                "description": "The percentage of outputs for this OA type.",
+                "fields": []
+              }
             ]
           }
         ]
@@ -522,86 +522,86 @@
         "type": "RECORD",
         "description": "Crossref data is sourced from https://www.crossref.org/.",
         "fields": [
-            {
-              "name": "total_citations",
-              "mode": "NULLABLE",
-              "type": "INTEGER",
-              "description": "The total number of citatations.",
-              "fields": []
-            },
-            {
-              "name": "citations_per_output",
-              "mode": "NULLABLE",
-              "type": "FLOAT",
-              "description": "Total number of citations divided by number of outputs.",
-              "fields": []
-            },
-            {
-              "name": "outputs_with_citations",
-              "mode": "NULLABLE",
-              "type": "INTEGER",
-              "description": "Number of outputs that have at least one citation.",
-              "fields": []
-            },
-            {
-              "name": "outputs_without_citations",
-              "mode": "NULLABLE",
-              "type": "INTEGER",
-              "description": "Number of outputs that have no citations.",
-              "fields": []
-            },
-            {
-              "name": "citations_per_cited_output",
-              "mode": "NULLABLE",
-              "type": "FLOAT",
-              "description": "Total number of citations divided by number of outputs that have at least one citation.",
-              "fields": []
-            }
-          ]
-        },
+          {
+            "name": "total_citations",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "The total number of citatations.",
+            "fields": []
+          },
+          {
+            "name": "citations_per_output",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": "Total number of citations divided by number of outputs.",
+            "fields": []
+          },
+          {
+            "name": "outputs_with_citations",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "Number of outputs that have at least one citation.",
+            "fields": []
+          },
+          {
+            "name": "outputs_without_citations",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "Number of outputs that have no citations.",
+            "fields": []
+          },
+          {
+            "name": "citations_per_cited_output",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": "Total number of citations divided by number of outputs that have at least one citation.",
+            "fields": []
+          }
+        ]
+      },
       {
         "name": "open_citations",
         "mode": "NULLABLE",
         "type": "RECORD",
         "description": "Open Citations data is sourced from https://opencitations.net/.",
         "fields": [
-            {
-              "name": "total_citations",
-              "mode": "NULLABLE",
-              "type": "INTEGER",
-              "description": "The total number of citatations.",
-              "fields": []
-            },
-            {
-              "name": "citations_per_output",
-              "mode": "NULLABLE",
-              "type": "FLOAT",
-              "description": "Total number of citations divided by number of outputs.",
-              "fields": []
-            },
-            {
-              "name": "outputs_with_citations",
-              "mode": "NULLABLE",
-              "type": "INTEGER",
-              "description": "Number of outputs that have at least one citation.",
-              "fields": []
-            },
-            {
-              "name": "outputs_without_citations",
-              "mode": "NULLABLE",
-              "type": "INTEGER",
-              "description": "Number of outputs that have no citations.",
-              "fields": []
-            },
-            {
-              "name": "citations_per_cited_output",
-              "mode": "NULLABLE",
-              "type": "FLOAT",
-              "description": "Total number of citations divided by number of outputs that have at least one citation.",
-              "fields": []
-            }
-          ]
-        },
+          {
+            "name": "total_citations",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "The total number of citatations.",
+            "fields": []
+          },
+          {
+            "name": "citations_per_output",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": "Total number of citations divided by number of outputs.",
+            "fields": []
+          },
+          {
+            "name": "outputs_with_citations",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "Number of outputs that have at least one citation.",
+            "fields": []
+          },
+          {
+            "name": "outputs_without_citations",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "Number of outputs that have no citations.",
+            "fields": []
+          },
+          {
+            "name": "citations_per_cited_output",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": "Total number of citations divided by number of outputs that have at least one citation.",
+            "fields": []
+          }
+        ]
+      },
       {
         "name": "mag",
         "mode": "NULLABLE",
@@ -644,8 +644,8 @@
             "fields": []
           }
         ]
-    }
-]
+      }
+    ]
   },
   {
     "name": "output_types",
@@ -1023,187 +1023,187 @@
     "type": "RECORD",
     "description": "Breakdown of countries.",
     "fields": [
-        {
-            "name": "id",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "ID of entity.",
-            "fields": []
-          },
+      {
+        "name": "id",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "ID of entity.",
+        "fields": []
+      },
+      {
+        "name": "total_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "percentage_of_all_outputs",
+        "mode": "NULLABLE",
+        "type": "FLOAT",
+        "description": "Percentage of all outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "percentage_of_all_oa",
+        "mode": "NULLABLE",
+        "type": "FLOAT",
+        "description": "Percentage of all OA associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Name of the entity.",
+        "fields": []
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Country where entity is located (The country's name as displayed on it's Wikipedia page). Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's ISO 3166 three letter alpha3 code. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's United Nations Statistics Division M49 subregion name. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's United Nations Statistics Division M49 region name. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity's location by latitude and longitude. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "num_oa_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_in_doaj",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs associated with this entity in doaj.",
+        "fields": []
+      },
+      {
+        "name": "num_green_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_gold_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of gold OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_gold_just_doaj_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of gold OA outputs just in doaj associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_hybrid_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of hybrid OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_bronze_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of bronze OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_green_only_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green only outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_green_only_ignoring_bronze_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green only ignoring bronze outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_has_license",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs that have a license associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_is_cclicensed",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs that have a Creative Commons license associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "citations",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "description": "Breakdown of citations across data providers.",
+        "fields": [
           {
-            "name": "total_outputs",
+            "name": "openalex",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of outputs associated with this entity.",
+            "description": "Number of citations derived from Open Alex.",
             "fields": []
           },
           {
-            "name": "percentage_of_all_outputs",
-            "mode": "NULLABLE",
-            "type": "FLOAT",
-            "description": "Percentage of all outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "percentage_of_all_oa",
-            "mode": "NULLABLE",
-            "type": "FLOAT",
-            "description": "Percentage of all OA associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "name",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "Name of the entity.",
-            "fields": []
-          },
-          {
-            "name": "country",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "Country where entity is located (The country's name as displayed on it's Wikipedia page). Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "country_code",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's ISO 3166 three letter alpha3 code. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "region",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's United Nations Statistics Division M49 subregion name. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "subregion",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's United Nations Statistics Division M49 region name. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "coordinates",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity's location by latitude and longitude. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "num_oa_outputs",
+            "name": "crosssref",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of OA outputs associated with this entity.",
+            "description": "Number of citations derived from Crossref.",
             "fields": []
           },
           {
-            "name": "num_in_doaj",
+            "name": "open_citations",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of outputs associated with this entity in doaj.",
+            "description": "Number of citations derived from Open Citations.",
             "fields": []
           },
           {
-            "name": "num_green_outputs",
+            "name": "mag",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of green OA outputs associated with this entity.",
+            "description": "Number of citations derived from MAG.",
             "fields": []
-          },
-          {
-            "name": "num_gold_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of gold OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_gold_just_doaj_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of gold OA outputs just in doaj associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_hybrid_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of hybrid OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_bronze_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of bronze OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_green_only_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of green only outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_green_only_ignoring_bronze_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of green only ignoring bronze outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_has_license",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of outputs that have a license associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_is_cclicensed",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of outputs that have a Creative Commons license associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "citations",
-            "mode": "NULLABLE",
-            "type": "RECORD",
-            "description": "Breakdown of citations across data providers.",
-            "fields": [
-              {
-                "name": "openalex",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Open Alex.",
-                "fields": []
-              },
-              {
-                "name": "crosssref",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Crossref.",
-                "fields": []
-              },
-              {
-                "name": "open_citations",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Open Citations.",
-                "fields": []
-              },
-              {
-                "name": "mag",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from MAG.",
-                "fields": []
-              }
+          }
         ]
       },
       {
@@ -1250,187 +1250,187 @@
     "type": "RECORD",
     "description": "Breakdown of groups manually derived by COKI.",
     "fields": [
-        {
-            "name": "id",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "ID of entity.",
-            "fields": []
-          },
+      {
+        "name": "id",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "ID of entity.",
+        "fields": []
+      },
+      {
+        "name": "total_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "percentage_of_all_outputs",
+        "mode": "NULLABLE",
+        "type": "FLOAT",
+        "description": "Percentage of all outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "percentage_of_all_oa",
+        "mode": "NULLABLE",
+        "type": "FLOAT",
+        "description": "Percentage of all OA associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Name of the entity.",
+        "fields": []
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Country where entity is located (The country's name as displayed on it's Wikipedia page). Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's ISO 3166 three letter alpha3 code. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's United Nations Statistics Division M49 subregion name. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's United Nations Statistics Division M49 region name. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity's location by latitude and longitude. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "num_oa_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_in_doaj",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs associated with this entity in doaj.",
+        "fields": []
+      },
+      {
+        "name": "num_green_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_gold_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of gold OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_gold_just_doaj_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of gold OA outputs just in doaj associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_hybrid_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of hybrid OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_bronze_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of bronze OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_green_only_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green only outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_green_only_ignoring_bronze_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green only ignoring bronze outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_has_license",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs that have a license associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_is_cclicensed",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs that have a Creative Commons license associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "citations",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "description": "Breakdown of citations across data providers.",
+        "fields": [
           {
-            "name": "total_outputs",
+            "name": "openalex",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of outputs associated with this entity.",
+            "description": "Number of citations derived from Open Alex.",
             "fields": []
           },
           {
-            "name": "percentage_of_all_outputs",
-            "mode": "NULLABLE",
-            "type": "FLOAT",
-            "description": "Percentage of all outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "percentage_of_all_oa",
-            "mode": "NULLABLE",
-            "type": "FLOAT",
-            "description": "Percentage of all OA associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "name",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "Name of the entity.",
-            "fields": []
-          },
-          {
-            "name": "country",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "Country where entity is located (The country's name as displayed on it's Wikipedia page). Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "country_code",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's ISO 3166 three letter alpha3 code. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "region",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's United Nations Statistics Division M49 subregion name. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "subregion",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's United Nations Statistics Division M49 region name. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "coordinates",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity's location by latitude and longitude. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "num_oa_outputs",
+            "name": "crosssref",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of OA outputs associated with this entity.",
+            "description": "Number of citations derived from Crossref.",
             "fields": []
           },
           {
-            "name": "num_in_doaj",
+            "name": "open_citations",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of outputs associated with this entity in doaj.",
+            "description": "Number of citations derived from Open Citations.",
             "fields": []
           },
           {
-            "name": "num_green_outputs",
+            "name": "mag",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of green OA outputs associated with this entity.",
+            "description": "Number of citations derived from MAG.",
             "fields": []
-          },
-          {
-            "name": "num_gold_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of gold OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_gold_just_doaj_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of gold OA outputs just in doaj associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_hybrid_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of hybrid OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_bronze_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of bronze OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_green_only_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of green only outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_green_only_ignoring_bronze_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of green only ignoring bronze outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_has_license",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of outputs that have a license associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_is_cclicensed",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of outputs that have a Creative Commons license associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "citations",
-            "mode": "NULLABLE",
-            "type": "RECORD",
-            "description": "Breakdown of citations across data providers.",
-            "fields": [
-              {
-                "name": "openalex",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Open Alex.",
-                "fields": []
-              },
-              {
-                "name": "crosssref",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Crossref.",
-                "fields": []
-              },
-              {
-                "name": "open_citations",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Open Citations.",
-                "fields": []
-              },
-              {
-                "name": "mag",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from MAG.",
-                "fields": []
-              }
+          }
         ]
       },
       {
@@ -1477,187 +1477,187 @@
     "type": "RECORD",
     "description": "Breakdown of funder information sourced from crossref fundref https://www.crossref.org/services/funder-registry/.",
     "fields": [
-        {
-            "name": "id",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "ID of entity.",
-            "fields": []
-          },
+      {
+        "name": "id",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "ID of entity.",
+        "fields": []
+      },
+      {
+        "name": "total_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "percentage_of_all_outputs",
+        "mode": "NULLABLE",
+        "type": "FLOAT",
+        "description": "Percentage of all outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "percentage_of_all_oa",
+        "mode": "NULLABLE",
+        "type": "FLOAT",
+        "description": "Percentage of all OA associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Name of the entity.",
+        "fields": []
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Country where entity is located (The country's name as displayed on it's Wikipedia page). Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's ISO 3166 three letter alpha3 code. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's United Nations Statistics Division M49 subregion name. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's United Nations Statistics Division M49 region name. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity's location by latitude and longitude. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "num_oa_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_in_doaj",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs associated with this entity in doaj.",
+        "fields": []
+      },
+      {
+        "name": "num_green_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_gold_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of gold OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_gold_just_doaj_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of gold OA outputs just in doaj associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_hybrid_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of hybrid OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_bronze_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of bronze OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_green_only_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green only outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_green_only_ignoring_bronze_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green only ignoring bronze outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_has_license",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs that have a license associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_is_cclicensed",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs that have a Creative Commons license associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "citations",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "description": "Breakdown of citations across data providers.",
+        "fields": [
           {
-            "name": "total_outputs",
+            "name": "openalex",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of outputs associated with this entity.",
+            "description": "Number of citations derived from Open Alex.",
             "fields": []
           },
           {
-            "name": "percentage_of_all_outputs",
-            "mode": "NULLABLE",
-            "type": "FLOAT",
-            "description": "Percentage of all outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "percentage_of_all_oa",
-            "mode": "NULLABLE",
-            "type": "FLOAT",
-            "description": "Percentage of all OA associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "name",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "Name of the entity.",
-            "fields": []
-          },
-          {
-            "name": "country",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "Country where entity is located (The country's name as displayed on it's Wikipedia page). Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "country_code",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's ISO 3166 three letter alpha3 code. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "region",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's United Nations Statistics Division M49 subregion name. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "subregion",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's United Nations Statistics Division M49 region name. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "coordinates",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity's location by latitude and longitude. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "num_oa_outputs",
+            "name": "crosssref",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of OA outputs associated with this entity.",
+            "description": "Number of citations derived from Crossref.",
             "fields": []
           },
           {
-            "name": "num_in_doaj",
+            "name": "open_citations",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of outputs associated with this entity in doaj.",
+            "description": "Number of citations derived from Open Citations.",
             "fields": []
           },
           {
-            "name": "num_green_outputs",
+            "name": "mag",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of green OA outputs associated with this entity.",
+            "description": "Number of citations derived from MAG.",
             "fields": []
-          },
-          {
-            "name": "num_gold_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of gold OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_gold_just_doaj_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of gold OA outputs just in doaj associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_hybrid_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of hybrid OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_bronze_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of bronze OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_green_only_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of green only outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_green_only_ignoring_bronze_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of green only ignoring bronze outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_has_license",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of outputs that have a license associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_is_cclicensed",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of outputs that have a Creative Commons license associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "citations",
-            "mode": "NULLABLE",
-            "type": "RECORD",
-            "description": "Breakdown of citations across data providers.",
-            "fields": [
-              {
-                "name": "openalex",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Open Alex.",
-                "fields": []
-              },
-              {
-                "name": "crosssref",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Crossref.",
-                "fields": []
-              },
-              {
-                "name": "open_citations",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Open Citations.",
-                "fields": []
-              },
-              {
-                "name": "mag",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from MAG.",
-                "fields": []
-              }
+          }
         ]
       },
       {
@@ -1699,192 +1699,419 @@
     ]
   },
   {
-    "name": "publishers",
+    "name": "members",
     "mode": "REPEATED",
     "type": "RECORD",
-    "description": "Breakdown of publisher information sourced from Crossref, https://www.crossref.org/.",
+    "description": null,
     "fields": [
-        {
-            "name": "id",
+      {
+        "name": "id",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "total_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "percentage_of_all_outputs",
+        "mode": "NULLABLE",
+        "type": "FLOAT",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "percentage_of_all_oa",
+        "mode": "NULLABLE",
+        "type": "FLOAT",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "num_oa_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "num_in_doaj",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "num_green_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "num_gold_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "num_gold_just_doaj_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "num_hybrid_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "num_bronze_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "num_green_only_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "num_green_only_ignoring_bronze_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "num_has_license",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "num_is_cclicensed",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "citations",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "description": null,
+        "fields": [
+          {
+            "name": "openalex",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": null,
+            "fields": []
+          },
+          {
+            "name": "crosssref",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": null,
+            "fields": []
+          },
+          {
+            "name": "open_citations",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": null,
+            "fields": []
+          },
+          {
+            "name": "mag",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": null,
+            "fields": []
+          }
+        ]
+      },
+      {
+        "name": "disciplines",
+        "mode": "REPEATED",
+        "type": "RECORD",
+        "description": null,
+        "fields": [
+          {
+            "name": "field",
             "mode": "NULLABLE",
             "type": "STRING",
-            "description": "ID of entity.",
+            "description": null,
             "fields": []
           },
           {
             "name": "total_outputs",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "percentage_of_all_outputs",
-            "mode": "NULLABLE",
-            "type": "FLOAT",
-            "description": "Percentage of all outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "percentage_of_all_oa",
-            "mode": "NULLABLE",
-            "type": "FLOAT",
-            "description": "Percentage of all OA associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "name",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "Name of the entity.",
-            "fields": []
-          },
-          {
-            "name": "country",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "Country where entity is located (The country's name as displayed on it's Wikipedia page). Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "country_code",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's ISO 3166 three letter alpha3 code. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "region",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's United Nations Statistics Division M49 subregion name. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "subregion",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's United Nations Statistics Division M49 region name. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "coordinates",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity's location by latitude and longitude. Set to null if not relevant.",
+            "description": null,
             "fields": []
           },
           {
             "name": "num_oa_outputs",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of OA outputs associated with this entity.",
+            "description": null,
             "fields": []
           },
           {
-            "name": "num_in_doaj",
+            "name": "sum_of_scores",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": null,
+            "fields": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "publishers",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "description": "Breakdown of publisher information sourced from Crossref, https://www.crossref.org/.",
+    "fields": [
+      {
+        "name": "id",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "ID of entity.",
+        "fields": []
+      },
+      {
+        "name": "total_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "percentage_of_all_outputs",
+        "mode": "NULLABLE",
+        "type": "FLOAT",
+        "description": "Percentage of all outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "percentage_of_all_oa",
+        "mode": "NULLABLE",
+        "type": "FLOAT",
+        "description": "Percentage of all OA associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Name of the entity.",
+        "fields": []
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Country where entity is located (The country's name as displayed on it's Wikipedia page). Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's ISO 3166 three letter alpha3 code. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's United Nations Statistics Division M49 subregion name. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's United Nations Statistics Division M49 region name. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity's location by latitude and longitude. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "num_oa_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_in_doaj",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs associated with this entity in doaj.",
+        "fields": []
+      },
+      {
+        "name": "num_green_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_gold_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of gold OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_gold_just_doaj_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of gold OA outputs just in doaj associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_hybrid_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of hybrid OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_bronze_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of bronze OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_green_only_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green only outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_green_only_ignoring_bronze_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green only ignoring bronze outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_has_license",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs that have a license associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_is_cclicensed",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs that have a Creative Commons license associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "citations",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "description": "Breakdown of citations across data providers.",
+        "fields": [
+          {
+            "name": "openalex",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of outputs associated with this entity in doaj.",
+            "description": "Number of citations derived from Open Alex.",
             "fields": []
           },
           {
-            "name": "num_green_outputs",
+            "name": "crosssref",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of green OA outputs associated with this entity.",
+            "description": "Number of citations derived from Crossref.",
             "fields": []
           },
           {
-            "name": "num_gold_outputs",
+            "name": "open_citations",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of gold OA outputs associated with this entity.",
+            "description": "Number of citations derived from Open Citations.",
             "fields": []
           },
           {
-            "name": "num_gold_just_doaj_outputs",
+            "name": "mag",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of gold OA outputs just in doaj associated with this entity.",
+            "description": "Number of citations derived from MAG.",
             "fields": []
-          },
-          {
-            "name": "num_hybrid_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of hybrid OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_bronze_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of bronze OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_green_only_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of green only outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_green_only_ignoring_bronze_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of green only ignoring bronze outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_has_license",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of outputs that have a license associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_is_cclicensed",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of outputs that have a Creative Commons license associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "citations",
-            "mode": "NULLABLE",
-            "type": "RECORD",
-            "description": "Breakdown of citations across data providers.",
-            "fields": [
-              {
-                "name": "openalex",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Open Alex.",
-                "fields": []
-              },
-              {
-                "name": "crosssref",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Crossref.",
-                "fields": []
-              },
-              {
-                "name": "open_citations",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Open Citations.",
-                "fields": []
-              },
-              {
-                "name": "mag",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from MAG.",
-                "fields": []
-              }
+          }
         ]
       },
       {
@@ -1931,187 +2158,187 @@
     "type": "RECORD",
     "description": "Breakdown of journals sourced from Unpaywall, https://unpaywall.org/.",
     "fields": [
-        {
-            "name": "id",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "ID of entity.",
-            "fields": []
-          },
+      {
+        "name": "id",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "ID of entity.",
+        "fields": []
+      },
+      {
+        "name": "total_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "percentage_of_all_outputs",
+        "mode": "NULLABLE",
+        "type": "FLOAT",
+        "description": "Percentage of all outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "percentage_of_all_oa",
+        "mode": "NULLABLE",
+        "type": "FLOAT",
+        "description": "Percentage of all OA associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Name of the entity.",
+        "fields": []
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Country where entity is located (The country's name as displayed on it's Wikipedia page). Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's ISO 3166 three letter alpha3 code. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's United Nations Statistics Division M49 subregion name. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity country's United Nations Statistics Division M49 region name. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The entity's location by latitude and longitude. Set to null if not relevant.",
+        "fields": []
+      },
+      {
+        "name": "num_oa_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_in_doaj",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs associated with this entity in doaj.",
+        "fields": []
+      },
+      {
+        "name": "num_green_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_gold_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of gold OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_gold_just_doaj_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of gold OA outputs just in doaj associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_hybrid_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of hybrid OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_bronze_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of bronze OA outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_green_only_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green only outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_green_only_ignoring_bronze_outputs",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of green only ignoring bronze outputs associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_has_license",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs that have a license associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "num_is_cclicensed",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Total number of outputs that have a Creative Commons license associated with this entity.",
+        "fields": []
+      },
+      {
+        "name": "citations",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "description": "Breakdown of citations across data providers.",
+        "fields": [
           {
-            "name": "total_outputs",
+            "name": "openalex",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of outputs associated with this entity.",
+            "description": "Number of citations derived from Open Alex.",
             "fields": []
           },
           {
-            "name": "percentage_of_all_outputs",
-            "mode": "NULLABLE",
-            "type": "FLOAT",
-            "description": "Percentage of all outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "percentage_of_all_oa",
-            "mode": "NULLABLE",
-            "type": "FLOAT",
-            "description": "Percentage of all OA associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "name",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "Name of the entity.",
-            "fields": []
-          },
-          {
-            "name": "country",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "Country where entity is located (The country's name as displayed on it's Wikipedia page). Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "country_code",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's ISO 3166 three letter alpha3 code. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "region",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's United Nations Statistics Division M49 subregion name. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "subregion",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity country's United Nations Statistics Division M49 region name. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "coordinates",
-            "mode": "NULLABLE",
-            "type": "STRING",
-            "description": "The entity's location by latitude and longitude. Set to null if not relevant.",
-            "fields": []
-          },
-          {
-            "name": "num_oa_outputs",
+            "name": "crosssref",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of OA outputs associated with this entity.",
+            "description": "Number of citations derived from Crossref.",
             "fields": []
           },
           {
-            "name": "num_in_doaj",
+            "name": "open_citations",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of outputs associated with this entity in doaj.",
+            "description": "Number of citations derived from Open Citations.",
             "fields": []
           },
           {
-            "name": "num_green_outputs",
+            "name": "mag",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description": "Total number of green OA outputs associated with this entity.",
+            "description": "Number of citations derived from MAG.",
             "fields": []
-          },
-          {
-            "name": "num_gold_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of gold OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_gold_just_doaj_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of gold OA outputs just in doaj associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_hybrid_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of hybrid OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_bronze_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of bronze OA outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_green_only_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of green only outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_green_only_ignoring_bronze_outputs",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of green only ignoring bronze outputs associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_has_license",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of outputs that have a license associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "num_is_cclicensed",
-            "mode": "NULLABLE",
-            "type": "INTEGER",
-            "description": "Total number of outputs that have a Creative Commons license associated with this entity.",
-            "fields": []
-          },
-          {
-            "name": "citations",
-            "mode": "NULLABLE",
-            "type": "RECORD",
-            "description": "Breakdown of citations across data providers.",
-            "fields": [
-              {
-                "name": "openalex",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Open Alex.",
-                "fields": []
-              },
-              {
-                "name": "crosssref",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Crossref.",
-                "fields": []
-              },
-              {
-                "name": "open_citations",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from Open Citations.",
-                "fields": []
-              },
-              {
-                "name": "mag",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Number of citations derived from MAG.",
-                "fields": []
-              }
+          }
         ]
       },
       {
@@ -2319,47 +2546,47 @@
                 "type": "RECORD",
                 "description": "Breakdown of citations from Open Alex.",
                 "fields": [
-                    {
-                        "name": "total_citations",
+                  {
+                    "name": "total_citations",
+                    "mode": "NULLABLE",
+                    "type": "INTEGER",
+                    "description": "Total number of citatations from this source.",
+                    "fields": []
+                  },
+                  {
+                    "name": "percentiles",
+                    "mode": "NULLABLE",
+                    "type": "RECORD",
+                    "description": "Percentile breakdown of citations.",
+                    "fields": [
+                      {
+                        "name": "per_25th",
                         "mode": "NULLABLE",
-                        "type": "INTEGER",
-                        "description": "Total number of citatations from this source.",
+                        "type": "FLOAT",
+                        "description": "25th Percentile.",
                         "fields": []
                       },
                       {
-                        "name": "percentiles",
+                        "name": "median",
                         "mode": "NULLABLE",
-                        "type": "RECORD",
-                        "description": "Percentile breakdown of citations.",
-                        "fields": [
-                          {
-                            "name": "per_25th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "25th Percentile.",
-                            "fields": []
-                          },
-                          {
-                            "name": "median",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "Median number of citations.",
-                            "fields": []
-                          },
-                          {
-                            "name": "per_90th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "90th percentile.",
-                            "fields": []
-                          },
-                          {
-                            "name": "per_95th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "95th percentile.",
-                            "fields": []
-                          }
+                        "type": "FLOAT",
+                        "description": "Median number of citations.",
+                        "fields": []
+                      },
+                      {
+                        "name": "per_90th",
+                        "mode": "NULLABLE",
+                        "type": "FLOAT",
+                        "description": "90th percentile.",
+                        "fields": []
+                      },
+                      {
+                        "name": "per_95th",
+                        "mode": "NULLABLE",
+                        "type": "FLOAT",
+                        "description": "95th percentile.",
+                        "fields": []
+                      }
                     ]
                   }
                 ]
@@ -2370,47 +2597,47 @@
                 "type": "RECORD",
                 "description": "Breakdown of citations from Open Citations.",
                 "fields": [
-                    {
-                        "name": "total_citations",
+                  {
+                    "name": "total_citations",
+                    "mode": "NULLABLE",
+                    "type": "INTEGER",
+                    "description": "Total number of citatations from this source.",
+                    "fields": []
+                  },
+                  {
+                    "name": "percentiles",
+                    "mode": "NULLABLE",
+                    "type": "RECORD",
+                    "description": "Percentile breakdown of citations.",
+                    "fields": [
+                      {
+                        "name": "per_25th",
                         "mode": "NULLABLE",
-                        "type": "INTEGER",
-                        "description": "Total number of citatations from this source.",
+                        "type": "FLOAT",
+                        "description": "25th Percentile.",
                         "fields": []
                       },
                       {
-                        "name": "percentiles",
+                        "name": "median",
                         "mode": "NULLABLE",
-                        "type": "RECORD",
-                        "description": "Percentile breakdown of citations.",
-                        "fields": [
-                          {
-                            "name": "per_25th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "25th Percentile.",
-                            "fields": []
-                          },
-                          {
-                            "name": "median",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "Median number of citations.",
-                            "fields": []
-                          },
-                          {
-                            "name": "per_90th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "90th percentile.",
-                            "fields": []
-                          },
-                          {
-                            "name": "per_95th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "95th percentile.",
-                            "fields": []
-                          }
+                        "type": "FLOAT",
+                        "description": "Median number of citations.",
+                        "fields": []
+                      },
+                      {
+                        "name": "per_90th",
+                        "mode": "NULLABLE",
+                        "type": "FLOAT",
+                        "description": "90th percentile.",
+                        "fields": []
+                      },
+                      {
+                        "name": "per_95th",
+                        "mode": "NULLABLE",
+                        "type": "FLOAT",
+                        "description": "95th percentile.",
+                        "fields": []
+                      }
                     ]
                   }
                 ]
@@ -2421,47 +2648,47 @@
                 "type": "RECORD",
                 "description": "Breakdown of citations from Crossref.",
                 "fields": [
-                    {
-                        "name": "total_citations",
+                  {
+                    "name": "total_citations",
+                    "mode": "NULLABLE",
+                    "type": "INTEGER",
+                    "description": "Total number of citatations from this source.",
+                    "fields": []
+                  },
+                  {
+                    "name": "percentiles",
+                    "mode": "NULLABLE",
+                    "type": "RECORD",
+                    "description": "Percentile breakdown of citations.",
+                    "fields": [
+                      {
+                        "name": "per_25th",
                         "mode": "NULLABLE",
-                        "type": "INTEGER",
-                        "description": "Total number of citatations from this source.",
+                        "type": "FLOAT",
+                        "description": "25th Percentile.",
                         "fields": []
                       },
                       {
-                        "name": "percentiles",
+                        "name": "median",
                         "mode": "NULLABLE",
-                        "type": "RECORD",
-                        "description": "Percentile breakdown of citations.",
-                        "fields": [
-                          {
-                            "name": "per_25th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "25th Percentile.",
-                            "fields": []
-                          },
-                          {
-                            "name": "median",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "Median number of citations.",
-                            "fields": []
-                          },
-                          {
-                            "name": "per_90th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "90th percentile.",
-                            "fields": []
-                          },
-                          {
-                            "name": "per_95th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "95th percentile.",
-                            "fields": []
-                          }
+                        "type": "FLOAT",
+                        "description": "Median number of citations.",
+                        "fields": []
+                      },
+                      {
+                        "name": "per_90th",
+                        "mode": "NULLABLE",
+                        "type": "FLOAT",
+                        "description": "90th percentile.",
+                        "fields": []
+                      },
+                      {
+                        "name": "per_95th",
+                        "mode": "NULLABLE",
+                        "type": "FLOAT",
+                        "description": "95th percentile.",
+                        "fields": []
+                      }
                     ]
                   }
                 ]
@@ -2479,7 +2706,7 @@
             "name": "num_green_outputs",
             "mode": "NULLABLE",
             "type": "INTEGER",
-            "description":  "Number of green OA outputs of this field.",
+            "description": "Number of green OA outputs of this field.",
             "fields": []
           },
           {
@@ -2626,20 +2853,20 @@
         "type": "RECORD",
         "description": "Green Open Access is defined as any case where Unpaywall identifies a copy of an output in a repository. This includes preprint repositories (eg arxiv) both submitted, accepted and VoR versions of outputs. In a small number of cases preprint repositories register content as being journal articles (SSRN is the most common case). Green as defined here also explicitly includes those outputs that are also available via the publisher. For the set of content which is only freely available via a repository see \"green_only\".",
         "fields": [
-            {
-                "name": "total_outputs",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Total number of outputs associated with this OA type.",
-                "fields": []
-              },
-              {
-                "name": "percent",
-                "mode": "NULLABLE",
-                "type": "FLOAT",
-                "description": "Percent of outputs associated with this OA type.",
-                "fields": []
-              }
+          {
+            "name": "total_outputs",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "Total number of outputs associated with this OA type.",
+            "fields": []
+          },
+          {
+            "name": "percent",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": "Percent of outputs associated with this OA type.",
+            "fields": []
+          }
         ]
       },
       {
@@ -2648,20 +2875,20 @@
         "type": "RECORD",
         "description": "Gold OA is defined as either the journal being in DOAJ or the best_oa_location being a publisher and a license being detected. This works because Unpaywall will set the publisher as the best oa location if it identifies an accessible publisher copy.",
         "fields": [
-            {
-                "name": "total_outputs",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Total number of outputs associated with this OA type.",
-                "fields": []
-              },
-              {
-                "name": "percent",
-                "mode": "NULLABLE",
-                "type": "FLOAT",
-                "description": "Percent of outputs associated with this OA type.",
-                "fields": []
-              }
+          {
+            "name": "total_outputs",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "Total number of outputs associated with this OA type.",
+            "fields": []
+          },
+          {
+            "name": "percent",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": "Percent of outputs associated with this OA type.",
+            "fields": []
+          }
         ]
       },
       {
@@ -2670,20 +2897,20 @@
         "type": "RECORD",
         "description": "Gold Open Access in DOAJ Journal is determined directly from the Unpaywall statement that the journal is in DOAJ. No further checking is done on this, so articles that Unpaywall does not capture as being accessible that are in DOAJ journals will be characterised as gold_just_doaj.",
         "fields": [
-            {
-                "name": "total_outputs",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Total number of outputs associated with this OA type.",
-                "fields": []
-              },
-              {
-                "name": "percent",
-                "mode": "NULLABLE",
-                "type": "FLOAT",
-                "description": "Percent of outputs associated with this OA type.",
-                "fields": []
-              }
+          {
+            "name": "total_outputs",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "Total number of outputs associated with this OA type.",
+            "fields": []
+          },
+          {
+            "name": "percent",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": "Percent of outputs associated with this OA type.",
+            "fields": []
+          }
         ]
       },
       {
@@ -2692,20 +2919,20 @@
         "type": "RECORD",
         "description": "Hybrid Open Access is defined as being available at a publisher with a discovered license, where the journal of publication is not in DOAJ. This means that some publisher hybrid is not detected because Unpaywall does not detect a license. The use of DOAJ as defining a 'fully oa journal' is also narrow and future developments will expand this considering, among other parameters, the Unpaywall tag 'journal-is-oa'.",
         "fields": [
-            {
-                "name": "total_outputs",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Total number of outputs associated with this OA type.",
-                "fields": []
-              },
-              {
-                "name": "percent",
-                "mode": "NULLABLE",
-                "type": "FLOAT",
-                "description": "Percent of outputs associated with this OA type.",
-                "fields": []
-              }
+          {
+            "name": "total_outputs",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "Total number of outputs associated with this OA type.",
+            "fields": []
+          },
+          {
+            "name": "percent",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": "Percent of outputs associated with this OA type.",
+            "fields": []
+          }
         ]
       },
       {
@@ -2714,20 +2941,20 @@
         "type": "RECORD",
         "description": "Bronze Open Access is defined as being available at the publisher website but without a license being detected by Unpaywall. This is intended to capture cases where content is unilaterally made readable by the publisher (eg via a moving paywall) as in these cases a more open license is not generally applied. However, this is a heuristic and there are significant issues distinguishing between different modes by which publishers make content readable.",
         "fields": [
-            {
-                "name": "total_outputs",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Total number of outputs associated with this OA type.",
-                "fields": []
-              },
-              {
-                "name": "percent",
-                "mode": "NULLABLE",
-                "type": "FLOAT",
-                "description": "Percent of outputs associated with this OA type.",
-                "fields": []
-              }
+          {
+            "name": "total_outputs",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "Total number of outputs associated with this OA type.",
+            "fields": []
+          },
+          {
+            "name": "percent",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": "Percent of outputs associated with this OA type.",
+            "fields": []
+          }
         ]
       },
       {
@@ -2736,20 +2963,20 @@
         "type": "RECORD",
         "description": "Green Open Access where the outputs is not available Gold (DOAJ or Hybrid) or Bronze: green_only is the subset of outputs available from repositories that are not also available free to read from the publisher. This category enables analyses of gold, bronze and green as mutually exclusive categories, e.g. in the generation of stacked bar charts that include gold_doaj, green, hybrid and bronze. This corresponds to general usage of the term 'green' in some other literature.",
         "fields": [
-            {
-                "name": "total_outputs",
-                "mode": "NULLABLE",
-                "type": "INTEGER",
-                "description": "Total number of outputs associated with this OA type.",
-                "fields": []
-              },
-              {
-                "name": "percent",
-                "mode": "NULLABLE",
-                "type": "FLOAT",
-                "description": "Percent of outputs associated with this OA type.",
-                "fields": []
-              }
+          {
+            "name": "total_outputs",
+            "mode": "NULLABLE",
+            "type": "INTEGER",
+            "description": "Total number of outputs associated with this OA type.",
+            "fields": []
+          },
+          {
+            "name": "percent",
+            "mode": "NULLABLE",
+            "type": "FLOAT",
+            "description": "Percent of outputs associated with this OA type.",
+            "fields": []
+          }
         ]
       },
       {
@@ -2863,47 +3090,47 @@
                 "type": "RECORD",
                 "description": "Breakdown of citations from Open Citations.",
                 "fields": [
-                    {
-                        "name": "total_citations",
+                  {
+                    "name": "total_citations",
+                    "mode": "NULLABLE",
+                    "type": "INTEGER",
+                    "description": "Total number of citations.",
+                    "fields": []
+                  },
+                  {
+                    "name": "percentiles",
+                    "mode": "NULLABLE",
+                    "type": "RECORD",
+                    "description": "Percentile breakdown of citations.",
+                    "fields": [
+                      {
+                        "name": "per_25th",
                         "mode": "NULLABLE",
-                        "type": "INTEGER",
-                        "description": "Total number of citations.",
+                        "type": "FLOAT",
+                        "description": "25th percentile.",
                         "fields": []
                       },
                       {
-                        "name": "percentiles",
+                        "name": "median",
                         "mode": "NULLABLE",
-                        "type": "RECORD",
-                        "description": "Percentile breakdown of citations.",
-                        "fields": [
-                          {
-                            "name": "per_25th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "25th percentile.",
-                            "fields": []
-                          },
-                          {
-                            "name": "median",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "Median number of citations.",
-                            "fields": []
-                          },
-                          {
-                            "name": "per_90th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "90th percentile.",
-                            "fields": []
-                          },
-                          {
-                            "name": "per_95th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "95th percentile.",
-                            "fields": []
-                          }
+                        "type": "FLOAT",
+                        "description": "Median number of citations.",
+                        "fields": []
+                      },
+                      {
+                        "name": "per_90th",
+                        "mode": "NULLABLE",
+                        "type": "FLOAT",
+                        "description": "90th percentile.",
+                        "fields": []
+                      },
+                      {
+                        "name": "per_95th",
+                        "mode": "NULLABLE",
+                        "type": "FLOAT",
+                        "description": "95th percentile.",
+                        "fields": []
+                      }
                     ]
                   }
                 ]
@@ -2914,47 +3141,47 @@
                 "type": "RECORD",
                 "description": "Breakdown of citations from Crossref.",
                 "fields": [
-                    {
-                        "name": "total_citations",
+                  {
+                    "name": "total_citations",
+                    "mode": "NULLABLE",
+                    "type": "INTEGER",
+                    "description": "Total number of citations.",
+                    "fields": []
+                  },
+                  {
+                    "name": "percentiles",
+                    "mode": "NULLABLE",
+                    "type": "RECORD",
+                    "description": "Percentile breakdown of citations.",
+                    "fields": [
+                      {
+                        "name": "per_25th",
                         "mode": "NULLABLE",
-                        "type": "INTEGER",
-                        "description": "Total number of citations.",
+                        "type": "FLOAT",
+                        "description": "25th percentile.",
                         "fields": []
                       },
                       {
-                        "name": "percentiles",
+                        "name": "median",
                         "mode": "NULLABLE",
-                        "type": "RECORD",
-                        "description": "Percentile breakdown of citations.",
-                        "fields": [
-                          {
-                            "name": "per_25th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "25th percentile.",
-                            "fields": []
-                          },
-                          {
-                            "name": "median",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "Median number of citations.",
-                            "fields": []
-                          },
-                          {
-                            "name": "per_90th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "90th percentile.",
-                            "fields": []
-                          },
-                          {
-                            "name": "per_95th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "95th percentile.",
-                            "fields": []
-                          }
+                        "type": "FLOAT",
+                        "description": "Median number of citations.",
+                        "fields": []
+                      },
+                      {
+                        "name": "per_90th",
+                        "mode": "NULLABLE",
+                        "type": "FLOAT",
+                        "description": "90th percentile.",
+                        "fields": []
+                      },
+                      {
+                        "name": "per_95th",
+                        "mode": "NULLABLE",
+                        "type": "FLOAT",
+                        "description": "95th percentile.",
+                        "fields": []
+                      }
                     ]
                   }
                 ]
@@ -2965,47 +3192,47 @@
                 "type": "RECORD",
                 "description": "Breakdown of citations from MAG.",
                 "fields": [
-                    {
-                        "name": "total_citations",
+                  {
+                    "name": "total_citations",
+                    "mode": "NULLABLE",
+                    "type": "INTEGER",
+                    "description": "Total number of citations.",
+                    "fields": []
+                  },
+                  {
+                    "name": "percentiles",
+                    "mode": "NULLABLE",
+                    "type": "RECORD",
+                    "description": "Percentile breakdown of citations.",
+                    "fields": [
+                      {
+                        "name": "per_25th",
                         "mode": "NULLABLE",
-                        "type": "INTEGER",
-                        "description": "Total number of citations.",
+                        "type": "FLOAT",
+                        "description": "25th percentile.",
                         "fields": []
                       },
                       {
-                        "name": "percentiles",
+                        "name": "median",
                         "mode": "NULLABLE",
-                        "type": "RECORD",
-                        "description": "Percentile breakdown of citations.",
-                        "fields": [
-                          {
-                            "name": "per_25th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "25th percentile.",
-                            "fields": []
-                          },
-                          {
-                            "name": "median",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "Median number of citations.",
-                            "fields": []
-                          },
-                          {
-                            "name": "per_90th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "90th percentile.",
-                            "fields": []
-                          },
-                          {
-                            "name": "per_95th",
-                            "mode": "NULLABLE",
-                            "type": "FLOAT",
-                            "description": "95th percentile.",
-                            "fields": []
-                          }
+                        "type": "FLOAT",
+                        "description": "Median number of citations.",
+                        "fields": []
+                      },
+                      {
+                        "name": "per_90th",
+                        "mode": "NULLABLE",
+                        "type": "FLOAT",
+                        "description": "90th percentile.",
+                        "fields": []
+                      },
+                      {
+                        "name": "per_95th",
+                        "mode": "NULLABLE",
+                        "type": "FLOAT",
+                        "description": "95th percentile.",
+                        "fields": []
+                      }
                     ]
                   }
                 ]

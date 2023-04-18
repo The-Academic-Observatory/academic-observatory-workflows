@@ -30,7 +30,7 @@ import requests
 from airflow.exceptions import AirflowException
 from airflow.operators.empty import EmptyOperator
 
-from academic_observatory_workflows.config import sql_folder, Tag
+from academic_observatory_workflows.config import sql_folder, Tag, schema_folder
 from observatory.api.client.model.dataset_release import DatasetRelease
 from observatory.platform.api import make_observatory_api
 from observatory.platform.bigquery import (
@@ -45,6 +45,7 @@ from observatory.platform.bigquery import (
     bq_select_latest_table,
     bq_load_from_memory,
     bq_update_table_description,
+    bq_find_schema as find_schema,
 )
 from observatory.platform.config import AirflowConns
 from observatory.platform.observatory_config import CloudWorkspace
@@ -462,6 +463,7 @@ class DoiWorkflow(Workflow):
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 8, 30),
         schedule: Optional[str] = "@weekly",
         sensor_dag_ids: List[str] = None,
+        schema_folder: str = schema_folder(),
     ):
         """Create the DoiWorkflow.
         :param dag_id: the DAG ID.
@@ -473,6 +475,7 @@ class DoiWorkflow(Workflow):
         :param bq_ror_dataset_id: the BigQuery ROR dataset id.
         :param api_dataset_id: the DOI dataset id.
         :param max_fetch_threads: maximum number of threads to use when fetching.
+        :param schema_folder: The path to the folde containing the bigquery schemas
         :param start_date: the start date.
         :param schedule: the schedule interval.
         """
@@ -502,6 +505,7 @@ class DoiWorkflow(Workflow):
         self.api_dataset_id = api_dataset_id
         self.max_fetch_threads = max_fetch_threads
         self.observatory_api_conn_id = observatory_api_conn_id
+        self.schema_folder = schema_folder
         self.input_table_id_tasks = []
 
         if sql_queries is None:
@@ -545,7 +549,7 @@ class DoiWorkflow(Workflow):
                     task_id = sql_query.name
                     self.add_task(
                         self.create_intermediate_table,
-                        op_kwargs={"sql_query": sql_query, "task_id": task_id},
+                        op_kwargs={"sql_query": sql_query, "task_id": task_id, "schema_name": "doi"},
                         task_id=task_id,
                     )
                     self.input_table_task_ids.append(task_id)
@@ -694,10 +698,14 @@ class DoiWorkflow(Workflow):
             sql_query.output_table.table_name,
             release.snapshot_date,
         )
+        schema = None
+        if kwargs.get("schema_name"):
+            schema = find_schema(self.schema_folder, kwargs["schema_name"], release.release_date)
         success = bq_create_table_from_query(
             sql=sql,
             table_id=table_id,
             clustering_fields=sql_query.output_clustering_fields,
+            schema_file_path=schema,
         )
 
         # Publish XComs with full table paths
@@ -730,10 +738,12 @@ class DoiWorkflow(Workflow):
         table_id = bq_sharded_table_id(
             self.output_project_id, self.bq_observatory_dataset_id, agg.table_name, release.snapshot_date
         )
+        schema = find_schema(self.schema_folder, "aggregate", release.release_date)
         success = bq_create_table_from_query(
             sql=sql,
             table_id=table_id,
             clustering_fields=["id"],
+            schema_file_path=schema,
         )
 
         set_task_state(success, kwargs["task_id"])
