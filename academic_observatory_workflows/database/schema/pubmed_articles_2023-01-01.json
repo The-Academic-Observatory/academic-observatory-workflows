@@ -1,0 +1,1120 @@
+[
+  {
+    "name": "PubmedData",
+    "mode": "NULLABLE",
+    "type": "RECORD",
+    "fields": [
+      {
+        "name": "ArticleIdList",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "ArticleId",
+            "mode": "REPEATED",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "IdType",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "value",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "History",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "PubMedPubDate",
+            "mode": "REPEATED",
+            "type": "RECORD",
+
+            "fields": [
+              {
+                "name": "Minute",
+                "mode": "NULLABLE",
+                "type": "INTEGER"
+              },
+              {
+                "name": "Hour",
+                "mode": "NULLABLE",
+                "type": "INTEGER"
+              },
+              {
+                "name": "Day",
+                "mode": "NULLABLE",
+                "type": "INTEGER"
+              },
+              {
+                "name": "Month",
+                "mode": "NULLABLE",
+                "type": "INTEGER"
+              },
+              {
+                "name": "Year",
+                "mode": "NULLABLE",
+                "type": "INTEGER"
+              },
+              {
+                "name": "PubStatus",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "PublicationStatus",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "ReferenceList",
+        "mode": "REPEATED",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "Title",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "Reference",
+            "mode": "REPEATED",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "ArticleIdList",
+                "mode": "NULLABLE",
+                "type": "RECORD",
+                "fields": [
+                  {
+                    "name": "ArticleId",
+                    "mode": "REPEATED",
+                    "type": "RECORD",
+                    "fields": [
+                      {
+                        "name": "IdType",
+                        "mode": "NULLABLE",
+                        "type": "STRING"
+                      },
+                      {
+                        "name": "value",
+                        "mode": "NULLABLE",
+                        "type": "STRING"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "Citation",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          },
+          {
+            "name": "ReferenceList",
+            "mode": "REPEATED",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "Title",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "Reference",
+                "mode": "REPEATED",
+                "type": "RECORD",
+                "fields": [
+                  {
+                    "name": "ArticleIdList",
+                    "mode": "NULLABLE",
+                    "type": "RECORD",
+                    "fields": [
+                      {
+                        "name": "ArticleId",
+                        "mode": "REPEATED",
+                        "type": "RECORD",
+                        "fields": [
+                          {
+                            "name": "IdType",
+                            "mode": "NULLABLE",
+                            "type": "STRING"
+                          },
+                          {
+                            "name": "value",
+                            "mode": "NULLABLE",
+                            "type": "STRING"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Citation",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  }
+                ]
+              },
+              {
+                "name": "ReferenceList",
+                "mode": "REPEATED",
+                "type": "RECORD",
+                "fields": [
+                  {
+                    "name": "Title",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "Reference",
+                    "mode": "REPEATED",
+                    "type": "RECORD",
+                    "fields": [
+                      {
+                        "name": "ArticleIdList",
+                        "mode": "NULLABLE",
+                        "type": "RECORD",
+                        "fields": [
+                          {
+                            "name": "ArticleId",
+                            "mode": "REPEATED",
+                            "type": "RECORD",
+                            "fields": [
+                              {
+                                "name": "IdType",
+                                "mode": "NULLABLE",
+                                "type": "STRING"
+                              },
+                              {
+                                "name": "value",
+                                "mode": "NULLABLE",
+                                "type": "STRING"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "name": "Citation",
+                        "mode": "NULLABLE",
+                        "type": "STRING"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ReferenceList",
+                    "mode": "REPEATED",
+                    "type": "STRING"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "MedlineCitation",
+    "mode": "NULLABLE",
+    "type": "RECORD",
+    "fields": [
+      {
+        "name": "NumberOfReferences",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "PersonalNameSubjectList",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "PersonalNameSubject",
+            "mode": "REPEATED",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "Initials",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "ForeName",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "LastName",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "SupplMeshList",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "SupplMeshName",
+            "mode": "REPEATED",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "UI",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "Type",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "value",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "IndexingMethod",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "ChemicalList",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "Chemical",
+            "mode": "REPEATED",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "NameOfSubstance",
+                "mode": "NULLABLE",
+                "type": "RECORD",
+
+                "fields": [
+                  {
+                    "name": "UI",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "value",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  }
+                ]
+              },
+              {
+                "name": "RegistryNumber",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "VersionID",
+        "mode": "NULLABLE",
+        "type": "INTEGER"
+      },
+      {
+        "name": "CommentsCorrectionsList",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "CommentsCorrections",
+            "mode": "REPEATED",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "PMID",
+                "mode": "NULLABLE",
+                "type": "RECORD",
+                "fields": [
+                  {
+                    "name": "Version",
+                    "mode": "NULLABLE",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "name": "value",
+                    "mode": "NULLABLE",
+                    "type": "INTEGER"
+                  }
+                ]
+              },
+              {
+                "name": "RefSource",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "RefType",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "Note",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "MedlineJournalInfo",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+
+        "fields": [
+          {
+            "name": "NlmUniqueID",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "ISSNLinking",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "MedlineTA",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "Country",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "Article",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "VernacularTitle",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "DataBankList",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "CompleteYN",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "DataBank",
+                "mode": "REPEATED",
+                "type": "RECORD",
+                "fields": [
+                  {
+                    "name": "AccessionNumberList",
+                    "mode": "NULLABLE",
+                    "type": "RECORD",
+                    "fields": [
+                      {
+                        "name": "AccessionNumber",
+                        "mode": "REPEATED",
+                        "type": "STRING"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "DataBankName",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "PublicationTypeList",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "PublicationType",
+                "mode": "REPEATED",
+                "type": "RECORD",
+                "fields": [
+                  {
+                    "name": "UI",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "value",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "AuthorList",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "CompleteYN",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "Author",
+                "mode": "REPEATED",
+                "type": "RECORD",
+
+                "fields": [
+                  {
+                    "name": "CollectiveName",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "Suffix",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "Initials",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "Identifier",
+                    "mode": "REPEATED",
+                    "type": "RECORD",
+                    "fields": [
+                      {
+                        "name": "Source",
+                        "mode": "NULLABLE",
+                        "type": "STRING"
+                      },
+                      {
+                        "name": "value",
+                        "mode": "NULLABLE",
+                        "type": "STRING"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ForeName",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "LastName",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "EqualContrib",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "AffiliationInfo",
+                    "mode": "REPEATED",
+                    "type": "RECORD",
+                    "fields": [
+                      {
+                        "name": "Affiliation",
+                        "mode": "NULLABLE",
+                        "type": "STRING"
+                      },
+                      {
+                        "name": "Identifier",
+                        "mode": "REPEATED",
+                        "type": "RECORD",
+                        "fields": [
+                          {
+                            "name": "Source",
+                            "mode": "NULLABLE",
+                            "type": "STRING"
+                          },
+                          {
+                            "name": "value",
+                            "mode": "NULLABLE",
+                            "type": "STRING"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ValidYN",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "ArticleDate",
+            "mode": "REPEATED",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "Day",
+                "mode": "NULLABLE",
+                "type": "INTEGER"
+              },
+              {
+                "name": "Month",
+                "mode": "NULLABLE",
+                "type": "INTEGER"
+              },
+              {
+                "name": "Year",
+                "mode": "NULLABLE",
+                "type": "INTEGER"
+              },
+              {
+                "name": "DateType",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          },
+          {
+            "name": "Pagination",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "MedlinePgn",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          },
+          {
+            "name": "PubModel",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "ArticleTitle",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "GrantList",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+
+            "fields": [
+              {
+                "name": "CompleteYN",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "Grant",
+                "mode": "REPEATED",
+                "type": "RECORD",
+
+                "fields": [
+                  {
+                    "name": "Agency",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "Acronym",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "Country",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "GrantID",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Journal",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+
+            "fields": [
+              {
+                "name": "ISOAbbreviation",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "Title",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "JournalIssue",
+                "mode": "NULLABLE",
+                "type": "RECORD",
+                "fields": [
+                  {
+                    "name": "PubDate",
+                    "mode": "NULLABLE",
+                    "type": "RECORD",
+                    "fields": [
+                      {
+                        "name": "Season",
+                        "mode": "NULLABLE",
+                        "type": "STRING"
+                      },
+                      {
+                        "name": "MedlineDate",
+                        "mode": "NULLABLE",
+                        "type": "STRING"
+                      },
+                      {
+                        "name": "Day",
+                        "mode": "NULLABLE",
+                        "type": "INTEGER"
+                      },
+                      {
+                        "name": "Month",
+                        "mode": "NULLABLE",
+                        "type": "STRING"
+                      },
+                      {
+                        "name": "Year",
+                        "mode": "NULLABLE",
+                        "type": "INTEGER"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Volume",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "Issue",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "CitedMedium",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  }
+                ]
+              },
+              {
+                "name": "ISSN",
+                "mode": "NULLABLE",
+                "type": "RECORD",
+                "fields": [
+                  {
+                    "name": "IssnType",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "value",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Abstract",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "CopyrightInformation",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "AbstractText",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          },
+          {
+            "name": "Language",
+            "mode": "REPEATED",
+            "type": "STRING"
+          },
+          {
+            "name": "ELocationID",
+            "mode": "REPEATED",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "ValidYN",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "EIdType",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "value",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "KeywordList",
+        "mode": "REPEATED",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "Owner",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "Keyword",
+            "mode": "REPEATED",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "MajorTopicYN",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "value",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "SpaceFlightMission",
+        "mode": "REPEATED",
+        "type": "STRING"
+      },
+      {
+        "name": "DateCompleted",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "Day",
+            "mode": "NULLABLE",
+            "type": "INTEGER"
+          },
+          {
+            "name": "Month",
+            "mode": "NULLABLE",
+            "type": "INTEGER"
+          },
+          {
+            "name": "Year",
+            "mode": "NULLABLE",
+            "type": "INTEGER"
+          }
+        ]
+      },
+      {
+        "name": "CoiStatement",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "DateRevised",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "Day",
+            "mode": "NULLABLE",
+            "type": "INTEGER"
+          },
+          {
+            "name": "Month",
+            "mode": "NULLABLE",
+            "type": "INTEGER"
+          },
+          {
+            "name": "Year",
+            "mode": "NULLABLE",
+            "type": "INTEGER"
+          }
+        ]
+      },
+      {
+        "name": "PMID",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "Version",
+            "mode": "NULLABLE",
+            "type": "INTEGER"
+          },
+          {
+            "name": "value",
+            "mode": "NULLABLE",
+            "type": "INTEGER"
+          }
+        ]
+      },
+      {
+        "name": "VersionDate",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "GeneralNote",
+        "mode": "REPEATED",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "value",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "Owner",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "Owner",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "CitationSubset",
+        "mode": "REPEATED",
+        "type": "STRING"
+      },
+      {
+        "name": "InvestigatorList",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "Investigator",
+            "mode": "REPEATED",
+            "type": "RECORD",
+
+            "fields": [
+              {
+                "name": "Suffix",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "Initials",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "Identifier",
+                "mode": "REPEATED",
+                "type": "STRING"
+              },
+              {
+                "name": "ForeName",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "LastName",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "AffiliationInfo",
+                "mode": "REPEATED",
+                "type": "RECORD",
+                "fields": [
+                  {
+                    "name": "Affiliation",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "Identifier",
+                    "mode": "REPEATED",
+                    "type": "STRING"
+                  }
+                ]
+              },
+              {
+                "name": "ValidYN",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "MeshHeadingList",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "MeshHeading",
+            "mode": "REPEATED",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "DescriptorName",
+                "mode": "NULLABLE",
+                "type": "RECORD",
+                "fields": [
+                  {
+                    "name": "Type",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "UI",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "MajorTopicYN",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "value",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  }
+                ]
+              },
+              {
+                "name": "QualifierName",
+                "mode": "REPEATED",
+                "type": "RECORD",
+                "fields": [
+                  {
+                    "name": "UI",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "MajorTopicYN",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "value",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "OtherAbstract",
+        "mode": "REPEATED",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "AbstractText",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "Language",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "Type",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "OtherID",
+        "mode": "REPEATED",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "Source",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "value",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "Status",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      }
+    ]
+  }
+]
