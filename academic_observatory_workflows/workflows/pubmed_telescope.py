@@ -37,8 +37,6 @@ from Bio.Entrez.Parser import (
     ListElement,
     DictionaryElement,
     OrderedListElement,
-    IntegerElement,
-    NoneElement,
 )
 
 # Alternative method for injest
@@ -46,7 +44,6 @@ import xmlschema
 
 import gzip
 import json
-import tarfile
 
 # Parallelising libraries
 import concurrent.futures
@@ -106,7 +103,7 @@ class PubMedRelease(Release):
         """
 
         download_files_regex = r"*.xml.gz"
-        transform_files_regex = r"*.jsonl.gz"
+        transform_files_regex = r"*.jsonl"
 
         super().__init__(
             dag_id=dag_id,
@@ -177,6 +174,7 @@ class PubMedTelescope(Workflow):
             dag_id=dag_id,
             start_date=start_date,
             schedule_interval=schedule_interval,
+            catchup=catchup,
             airflow_vars=airflow_vars,
             workflow_id=workflow_id,
             # queue=queue,
@@ -215,7 +213,7 @@ class PubMedTelescope(Workflow):
 
         # If this is the first ever run of the telescope, download the "baseline" database and build on this.
         ## Use if first dag run later instead of this.
-        self.download_baseline = False
+        self.download_baseline = is_first_release(self.workflow_id)
 
         self.add_setup_task(self.check_dependencies)
         self.add_task(self.check_releases)  # check releases and get list of files to download
@@ -238,16 +236,19 @@ class PubMedTelescope(Workflow):
 
         :return: The Pubmed release instance
         """
-        release_date = make_release_date(**kwargs)
-        self.start_date, self.end_date, self.first_release = self.get_release_info(**kwargs)
+        release_date = kwargs["data_interval_end"]
 
-        kwargs["data_interval_start"] = self.start_date
+        self.data_interval_start = kwargs["data_interval_start"]
+        self.data_interval_end = kwargs["data_interval_end"]
+        self.first_release = is_first_release(self.workflow_id)
 
-        # TODO: Figure out why the end date for the release is so wrong - should be + 7 days but its well over 2 months after the start date.
-        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! dates are cooked. Need to fix !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        logging.info(
+            f"Start data date: {self.data_interval_start} End date: {self.data_interval_end} First release: {self.first_release}"
+        )
 
-        logging.info(f"Start date: {self.start_date} End date: {self.end_date} First release: {self.first_release}")
-        self.release_id = self.start_date.strftime("%Y_%m_%d") + "-" + self.end_date.strftime("%Y_%m_%d")
+        self.release_id = (
+            self.data_interval_start.strftime("%Y_%m_%d") + "-" + self.data_interval_end.strftime("%Y_%m_%d")
+        )
         logging.info(f"Release date interval: {self.release_id}")
 
         release = PubMedRelease(dag_id=self.dag_id, release_id=self.release_id)
@@ -255,42 +256,13 @@ class PubMedTelescope(Workflow):
         self.workflow_folder = make_workflow_folder(self.dag_id, release_date)
         self.download_folder = make_workflow_folder(self.dag_id, release_date, SubFolder.downloaded.value)
         self.transform_folder = make_workflow_folder(self.dag_id, release_date, SubFolder.transformed.value)
+
         return release
-
-    def get_release_info(self, **kwargs) -> Tuple[pendulum.DateTime, pendulum.DateTime, bool]:
-        """Return release information with the start and end date. [start date, end date) Includes start date, excludes end date.
-        :param kwargs: The context passed from the PythonOperator.
-        :return: None.
-        """
-
-        # Check if first release or not
-        first_release = is_first_release(self.workflow_id)
-        if first_release:
-            # When first release, set start date to the start of the DAG
-            # Can we get away with using data_interval_start instead?
-            start_date = pendulum.instance(kwargs["dag"].default_args["start_date"]).start_of("day")
-        else:
-            datasets = get_datasets(workflow_id=self.workflow_id)
-            try:
-                top_level_dataset = [
-                    dataset for dataset in datasets if dataset.dataset_type.type_id == self.dataset_type_id
-                ][0]
-            except IndexError:
-                raise AirflowException(
-                    f"No top level dataset type set, expecting dataset type with type_id: {self.dataset_type_id}"
-                )
-            releases = get_dataset_releases(dataset_id=top_level_dataset.id)
-            latest_release = get_latest_dataset_release(releases=releases)
-            start_date = pendulum.instance(latest_release.end_date).start_of("day")
-
-        # end_date = pendulum.instance(kwargs["dag"].default_args["start_date"]).start_of("day")
-        end_date = pendulum.instance(kwargs["data_interval_end"])
-        logging.info(f"Start date: {start_date}, end date: {end_date}, first release: {first_release}")
-
-        return start_date, end_date, first_release
 
     def check_releases(self, release: PubMedRelease, **kwargs):
         """Use previous releases of the Pubmed telescope to determine which files are needed from the FTP server for the new release.
+
+            and uses the data_interval_start and data_interval_end to determine what files are to be downloaded for this release.
 
         :param workflow_id:
         :param ftp_server_url: Pubmed FTP server address.
@@ -306,6 +278,7 @@ class PubMedTelescope(Workflow):
         ftp_conn.login()  # anonymous login (publicly available data)
 
         files_to_download = []
+
         if self.download_baseline:
             logging.info(f"This is the first release of the PubMed Telescope. Grabbing list of 'baseline' files. ")
 
@@ -321,7 +294,9 @@ class PubMedTelescope(Workflow):
 
             logging.info(f"List of files to download from the PubMed FTP server for 'baseline': {files_to_download}")
 
-        logging.info(f"Grabbing list of 'updatefiles' for this release: {self.start_date} to {self.end_date}")
+        logging.info(
+            f"Grabbing list of 'updatefiles' for this release: {self.data_interval_start} to {self.data_interval_end}"
+        )
 
         # Change to updatefiles directory
         ftp_conn.cwd(self.updatefiles_path)
@@ -336,7 +311,7 @@ class PubMedTelescope(Workflow):
             self.updatefiles_path + file
             for file in updatefiles_xml_gz
             if pendulum.from_format(ftp_conn.sendcmd("MDTM {}".format(file))[4:], "YYYYMMDDHHmmss")
-            in pendulum.period(self.start_date, self.end_date)
+            in pendulum.period(self.data_interval_start, self.data_interval_end)
         ]
 
         logging.info(
@@ -345,6 +320,7 @@ class PubMedTelescope(Workflow):
 
         files_to_download.extend(updatefiles_to_download)
 
+        # NEEDED ???????????????????????????????????????????????
         # TODO: Check release api for last downloaded files, need to look at "extra" param.
         # Get list of all releases, check that sequence of files from FTP are are consecutive from beginning to end.
         # throw an error if there's a file missing in the sequence.
@@ -362,7 +338,7 @@ class PubMedTelescope(Workflow):
         Unable to do this in parallel because their FTP server is not able to handle too many requests.
         """
 
-        # TODO: Consider parallelising this section if files to download > 100
+        # TODO: Consider parallelising this whole section if files to download > 100
 
         # Grab list of files to download from xcom
         ti: TaskInstance = kwargs["ti"]
@@ -377,9 +353,14 @@ class PubMedTelescope(Workflow):
         # Having to do this in serial because their FTP server chucks errors when downloading in parallel.
         downloaded_files_for_release = []
 
-        # for file_on_ftp in files_to_download:
         # For testing
-        for i in range(0, 4, 1):  # -  for testing
+        if len(files_to_download) < 4:
+            num_to_download = len(files_to_download)
+        else:
+            num_to_download = 4
+
+        # for file_on_ftp in files_to_download:
+        for i in range(0, num_to_download, 1):  # -  for testing
             file_on_ftp = files_to_download[i]
 
             file = file_on_ftp.split("/")[-1]
@@ -503,7 +484,7 @@ class PubMedTelescope(Workflow):
 
         # Push details of the files into one dictionary for ease of use later, datafiles: { filename: blah, path: blah, files_included: (list of pubmed indexes) }
 
-        # Grab list of files downloaded.
+        # Grab list of files downloaded from previous step.
         ti: TaskInstance = kwargs["ti"]
         downloaded_files_for_release = ti.xcom_pull(key="downloaded_files_for_release")
 
@@ -526,6 +507,26 @@ class PubMedTelescope(Workflow):
             self.transform_folder, f"book_document_deletions_{self.release_id}.jsonl"
         )
 
+        # process_files = {}
+        # process_files["article"]["additions"]["path"] = os.path.join(
+        #     self.transform_folder, f"pubmed_article_additions_{self.release_id}.jsonl"
+        # )
+        # process_files["article"]["deletions"]["path"] = os.path.join(
+        #     self.transform_folder, f"pubmed_article_deletions_{self.release_id}.jsonl"
+        # )
+        # process_files["book_article"]["additions"]["path"] = os.path.join(
+        #     self.transform_folder, f"pubmed_book_article_additions_{self.release_id}.jsonl"
+        # )
+        # process_files["book_document"]["additions"]["path"] = os.path.join(
+        #     self.transform_folder, f"book_document_additions_{self.release_id}.jsonl"
+        # )
+        # process_files["book_document"]["deletion"]["path"] = os.path.join(
+        #     self.transform_folder, f"book_document_deletion_{self.release_id}.jsonl"
+        # )
+
+        # process_files["chunk_size"] = 2  # integer value for the number of files per chunk
+        # process_files["chunk_parts"] = "a"  # list of pubmed files for this chunk
+
         pubmed_article_additions_for_release = []
         pubmed_article_deletions_for_release = []
 
@@ -538,29 +539,29 @@ class PubMedTelescope(Workflow):
         # TODO: Consider parallelising this section.
 
         # dictionary for a list of chunks to keep the number of files limited to < 4gb, to make parallelising easier and uploading to BQ faster.
+        file_chucks = {}
+        file_chucks["number_of_chunks"] = 4  # To be automatically calculated.
 
         # Loop through each of the PubMed database files and gather additions and deletions.
+
+        # For testing
+        if len(downloaded_files_for_release) < 4:
+            num_to_transform = len(downloaded_files_for_release)
+        else:
+            num_to_transform = 4
+
         # for file in downloaded_files_for_release:
-        for i in range(0, 4, 1):  # -  for testing
+        for i in range(0, num_to_transform, 1):  # -  for testing
             file = downloaded_files_for_release[i]  # -  for testing
 
             logging.info(f"Running through file - {file}")
 
             with gzip.open(file, "rb") as f_in:
-                # Use the BioPython library for reading in the Pubmed xml files and putting into a usable format.
+                # Use the BioPython library for reading in the Pubmed XML files.
                 data_dict_dirty = Entrez.read(f_in, validate=True)
 
-                # Need to have the XML attributes pulled out from the special Biopython classes.
+                # Need to have the XML attributes pulled out from the Biopython data classes.
                 data_dict = add_attributes_to_data_from_biopython_classes(data_dict_dirty)
-
-                # Using the XMLSchema library - Slowest option of the two by 10x but more robust as it checks against the XSD schema during the import.
-                # Please not that this parsing methoud does not work currently and the CustomStrEncoder below would need to be modified for it.
-                # Path to the XSD schemas needed for this method.
-                # pubmed_schema = xmlschema.XMLSchema(
-                #     os.path.join(self.schema_folder, "pubmed_xsd_schemas", "pubmed_230101.xsd")
-                # )
-                # data_dict_dirty_keys = pubmed_schema.to_dict(f_in)
-                # data_dict = change_keys(data_dict_dirty_keys, convert)
 
                 # Grab additions from file.
                 try:
@@ -627,8 +628,6 @@ class PubMedTelescope(Workflow):
             "Checking through the additions for this release to see if any deletions can be done before going onto BigQuery."
         )
 
-        # TODO: Do a check step to make sure there are no doubles of the deletes?? Each deletion *should* be unique in the DB.
-
         # TODO: Consider parallelising this section, and make it a function to clean up this section - initial baseline additions will be ~ 35 million entries and needs to be quicker for checking deletions.
 
         ### Pubmed Article pre-check for deletions
@@ -646,7 +645,7 @@ class PubMedTelescope(Workflow):
                         pubmed_article_deletions_with_dels_checked.remove(record_to_delete)
                         pubmed_article_additions_with_dels_checked.remove(article_addition_to_check)
 
-                        # logging.info(f"Removed the following record from additions list - {record_to_delete}")
+                        logging.info(f"Removed the following record from additions list - {record_to_delete}")
 
             logging.info(
                 f"There are {len(pubmed_article_deletions_with_dels_checked)} article deletions left to do on BQ and {len(pubmed_article_additions_with_dels_checked)} article additions to add to the snapshot for this release."
@@ -673,7 +672,7 @@ class PubMedTelescope(Workflow):
                         pubmed_book_article_deletions_with_dels_checked.remove(record_to_delete)
                         pubmed_book_article_additions_with_dels_checked.remove(article_addition_to_check)
 
-                        # logging.info(f"Removed the following record from additions list - {record_to_delete}")
+                        logging.info(f"Removed the following record from additions list - {record_to_delete}")
 
             logging.info(
                 f"There are {len(pubmed_book_article_deletions_with_dels_checked)} book article deletions left to do on BQ and {len(pubmed_book_article_additions_with_dels_checked)} book article additions to add to the snapshot for this release."
@@ -697,7 +696,7 @@ class PubMedTelescope(Workflow):
                         book_document_deletions_with_dels_checked.remove(record_to_delete)
                         book_document_additions_with_dels_checked.remove(book_addition_to_check)
 
-                        # logging.info(f"Removed the following record from additions list - {record_to_delete}")
+                        logging.info(f"Removed the following record from additions list - {record_to_delete}")
 
             logging.info(
                 f"There are {len(book_document_deletions_with_dels_checked)} BookDocument deletions left to do on BQ and {len(book_document_additions_with_dels_checked)} additions to add to the snapshot for this release."
@@ -786,14 +785,6 @@ class PubMedTelescope(Workflow):
 
         ti.xcom_push(key="transformed_files_to_updload_to_gcs", value=transformed_files_to_updload_to_gcs)
 
-        # ti.xcom_push(key="transform_pubmed_article_additions_for_release", value=pubmed_article_additions_file_path)
-        # ti.xcom_push(key="transform_pubmed_article_deletions_for_release", value=pubmed_article_deletions_file_path)
-
-        # ti.xcom_push(key="transform_pubmed_book_article_additions_for_release", value=pubmed_book_article_additions_file_path)
-
-        # ti.xcom_push(key="transform_book_document_additions_for_release", value=book_document_additions_file_path)
-        # ti.xcom_push(key="transform_book_document_deletions_for_release", value=book_document_deletions_file_path)
-
     def upload_transformed(self, release: PubMedRelease, **kwargs):
         """Upload the transformed and combined release files to GCS."""
 
@@ -806,8 +797,6 @@ class PubMedTelescope(Workflow):
             file = file_to_upload.split("/")[-1]
 
             try:
-                # TODO: how to get proper path of the GCS blobs?
-                # TODO: Add a retry loop ??
                 blob_name = f"telescopes/{self.dag_id}/{self.release_id}/{file}"
                 logging.info(f"Uploading file {file} to GCS bucket {self.transform_bucket} and {blob_name}")
                 success = upload_file_to_cloud_storage(
@@ -818,13 +807,10 @@ class PubMedTelescope(Workflow):
                 )
 
                 uploaded_transform_files.append(file_to_upload)
-
-                # get gcs uri from the upload of the blob??
             except:
                 raise AirflowException(f"Unable to upload file: {file} to GCS bucket {self.download_bucket}")
 
-        # save name of additons file that was uploaded into the task instance for
-        # Push list of uploaded transform files into the xcom, which will be imported from GCS to Bigquery.
+        # Push list of uploaded transform files into the xcom.
         ti.xcom_push(key="uploaded_transform_files", value=uploaded_transform_files)
 
     def bq_create_snapshot(self, release: PubMedRelease, **kwargs):
@@ -1059,7 +1045,28 @@ class CustomEncoder(json.JSONEncoder):
             # Loop through field names for the match fields to change to text.
             for k, v in list(obj.items()):
                 # TODO: Change this to an input of a List or Set for multiple fields if needed - hard coding bad.
-                if k == "AbstractText":  # or k == "GeneralNote":
+                if k in [
+                    "AbstractText",
+                    "Affiliation",
+                    "ArticleTitle",  # ? also has attributes
+                    "b",
+                    "BookTitle",  # ? also has attributes
+                    "Citation",
+                    "CoiStatement",
+                    "CollectionTitle",  # ? also has attributes
+                    "CollectiveName",
+                    "i",
+                    # "Keyword",
+                    "Param",  # ? also has attributes
+                    "PublisherName",
+                    "SectionTitle",
+                    "sub",
+                    "Suffix",
+                    "sup",
+                    "u",
+                    "VernacularTitle",
+                    "VolumeTitle",
+                ]:
                     new[k] = str(v)
                 else:
                     new[k] = self._transform_obj_data(v)
