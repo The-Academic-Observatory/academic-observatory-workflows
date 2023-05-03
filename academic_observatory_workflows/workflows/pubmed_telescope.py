@@ -145,6 +145,7 @@ class PubMedTelescope(Workflow):
         source_format: str,
         airflow_vars: List[str] = None,
         max_processes: int,
+        queue: str = "default",
         **kwargs,
     ):
         """Construct an PubMed Telescope instance.
@@ -177,7 +178,7 @@ class PubMedTelescope(Workflow):
             catchup=catchup,
             airflow_vars=airflow_vars,
             workflow_id=workflow_id,
-            # queue=queue,
+            queue=queue,
             # data_interval_start=data_interval_start,
             # dataset_id=dataset_id,
             # dataset_type_id=dataset_type_id,
@@ -354,10 +355,10 @@ class PubMedTelescope(Workflow):
         downloaded_files_for_release = []
 
         # For testing
-        if len(files_to_download) < 4:
+        if len(files_to_download) < 5:
             num_to_download = len(files_to_download)
         else:
-            num_to_download = 4
+            num_to_download = 5
 
         # for file_on_ftp in files_to_download:
         for i in range(0, num_to_download, 1):  # -  for testing
@@ -435,11 +436,6 @@ class PubMedTelescope(Workflow):
         ti: TaskInstance = kwargs["ti"]
         downloaded_files_for_release = ti.xcom_pull(key="downloaded_files_for_release")
 
-        # put the files into a tarball first before uploading?
-        # open tarbal
-        # for each file
-        # add to tarball
-
         uploaded_download_files = []
         for file_to_upload in downloaded_files_for_release:  # upload tarball of release files
             file = file_to_upload.split("/")[-1]
@@ -476,67 +472,61 @@ class PubMedTelescope(Workflow):
         Matches on both the version of the publication and the PMID number.
         """
 
-        # Read master dictionary from file.
-        # Not all of Pubmed has the fields in the XML files.
-
-        # If instance in dictionary exists, add to the matching master dict copy.
-        # read in the schema and make sure that they're the same
-
-        # Push details of the files into one dictionary for ease of use later, datafiles: { filename: blah, path: blah, files_included: (list of pubmed indexes) }
-
         # Grab list of files downloaded from previous step.
         ti: TaskInstance = kwargs["ti"]
         downloaded_files_for_release = ti.xcom_pull(key="downloaded_files_for_release")
 
-        # Make paths for the additions and deletions files.
-        pubmed_article_additions_file_path = os.path.join(
-            self.transform_folder, f"pubmed_article_additions_{self.release_id}.jsonl"
-        )
-        pubmed_article_deletions_file_path = os.path.join(
-            self.transform_folder, f"pubmed_article_deletions_{self.release_id}.jsonl"
-        )
-
-        pubmed_book_article_additions_file_path = os.path.join(
-            self.transform_folder, f"pubmed_book_article_additions_{self.release_id}.jsonl"
-        )
-
-        book_document_additions_file_path = os.path.join(
-            self.transform_folder, f"book_document_additions_{self.release_id}.jsonl"
-        )
-        book_document_deletions_file_path = os.path.join(
-            self.transform_folder, f"book_document_deletions_{self.release_id}.jsonl"
-        )
-
-        # process_files = {}
-        # process_files["article"]["additions"]["path"] = os.path.join(
-        #     self.transform_folder, f"pubmed_article_additions_{self.release_id}.jsonl"
-        # )
-        # process_files["article"]["deletions"]["path"] = os.path.join(
-        #     self.transform_folder, f"pubmed_article_deletions_{self.release_id}.jsonl"
-        # )
-        # process_files["book_article"]["additions"]["path"] = os.path.join(
-        #     self.transform_folder, f"pubmed_book_article_additions_{self.release_id}.jsonl"
-        # )
-        # process_files["book_document"]["additions"]["path"] = os.path.join(
-        #     self.transform_folder, f"book_document_additions_{self.release_id}.jsonl"
-        # )
-        # process_files["book_document"]["deletion"]["path"] = os.path.join(
-        #     self.transform_folder, f"book_document_deletion_{self.release_id}.jsonl"
-        # )
+        # List of objects to hold the data pulled from XML for additions, deletions, articles, bookarticles and bookdocuments.
+        pubmed_transform_list = [
+            {
+                "name": "pubmed_article",
+                "data": [],
+                "data_type": "additions",
+                "sub_key": "PubmedArticle",
+                "set_key": "PubmedArticleSet",
+                "pmid_key_loc": "MedlineCitation",
+                "output_file": os.path.join(self.transform_folder, f"pubmed_article_additions_{self.release_id}.jsonl"),
+            },
+            {
+                "name": "pubmed_book_article",
+                "data": [],
+                "data_type": "additions",
+                "sub_key": "PubmedBookArticle",
+                "set_key": "PubmedBookArticleSet",
+                "pmid_key_loc": "MedlineCitation",
+                "output_file": os.path.join(
+                    self.transform_folder, f"pubmed_book_article_additions_{self.release_id}.jsonl"
+                ),
+            },
+            {
+                "name": "book_document",
+                "data": [],
+                "data_type": "additions",
+                "sub_key": "BookDocument",
+                "set_key": "BookDocumentSet",
+                "pmid_key_loc": "BookDocument",
+                "output_file": os.path.join(self.transform_folder, f"book_document_additions_{self.release_id}.jsonl"),
+            },
+            {
+                "name": "pubmed_article",
+                "data": [],
+                "data_type": "deletions",
+                "sub_key": "DeleteCitation",
+                "set_key": None,
+                "output_file": os.path.join(self.transform_folder, f"pubmed_article_deletions_{self.release_id}.jsonl"),
+            },
+            {
+                "name": "book_document",
+                "data": [],
+                "data_type": "deletions",
+                "sub_key": "DeleteDocument",
+                "set_key": None,
+                "output_file": os.path.join(self.transform_folder, f"book_document_deletions_{self.release_id}.jsonl"),
+            },
+        ]
 
         # process_files["chunk_size"] = 2  # integer value for the number of files per chunk
         # process_files["chunk_parts"] = "a"  # list of pubmed files for this chunk
-
-        pubmed_article_additions_for_release = []
-        pubmed_article_deletions_for_release = []
-
-        pubmed_book_article_additions_for_release = []
-        # TODO: Check that pubmed_book_article_deletions are included in the pubmed_article_deletions or book_document_deletions ????????
-
-        book_document_additions_for_release = []
-        book_document_deletions_for_release = []
-
-        # TODO: Consider parallelising this section.
 
         # dictionary for a list of chunks to keep the number of files limited to < 4gb, to make parallelising easier and uploading to BQ faster.
         file_chucks = {}
@@ -545,244 +535,88 @@ class PubMedTelescope(Workflow):
         # Loop through each of the PubMed database files and gather additions and deletions.
 
         # For testing
-        if len(downloaded_files_for_release) < 4:
+        if len(downloaded_files_for_release) < 5:
             num_to_transform = len(downloaded_files_for_release)
         else:
-            num_to_transform = 4
+            num_to_transform = 5
+
+        # TODO: Parallelise this read in and pull out data step.
 
         # for file in downloaded_files_for_release:
         for i in range(0, num_to_transform, 1):  # -  for testing
-            file = downloaded_files_for_release[i]  # -  for testing
+            input_file = downloaded_files_for_release[i]  # -  for testing
 
-            logging.info(f"Running through file - {file}")
+            logging.info(f"Running through file - {input_file}")
 
-            with gzip.open(file, "rb") as f_in:
+            with gzip.open(input_file, "rb") as f_in:
                 # Use the BioPython library for reading in the Pubmed XML files.
                 data_dict_dirty = Entrez.read(f_in, validate=True)
 
                 # Need to have the XML attributes pulled out from the Biopython data classes.
                 data_dict = add_attributes_to_data_from_biopython_classes(data_dict_dirty)
 
-                # Grab additions from file.
-                try:
-                    logging.info(f"Extracting PubmedArticle records from file - {file}")
+                for i in range(len(pubmed_transform_list)):
+                    pubmed_data = pubmed_transform_list[i]
 
-                    try:
-                        additions = [addition for addition in data_dict["PubmedArticleSet"]["PubmedArticle"]]
-                    except:
-                        additions = [addition for addition in data_dict["PubmedArticle"]]
+                    # Retrieve additions from file.
+                    pubmed_data["data"] = pull_data_from_dict(
+                        filename=input_file,
+                        data_dict=data_dict,
+                        prev_retrieved=pubmed_data["data"],
+                        data_name=pubmed_data["data_type"],
+                        sub_set=pubmed_data["sub_key"],
+                        set_key=pubmed_data["set_key"],
+                    )
 
-                    pubmed_article_additions_for_release.extend(additions)
-                    logging.info(f"Pulled out {len(additions)} PubmedArticle additions from file - {file}")
-
-                except:
-                    logging.info(f"No PubmedArticle additions in file - {file}")
-
-                try:
-                    logging.info(f"Extracting PubmedBookArticle records from file - {file}")
-
-                    try:
-                        additions = [
-                            addition for addition in data_dict["PubmedBookBookArticleSet"]["PubmedBookArticle"]
-                        ]
-                    except:
-                        additions = [addition for addition in data_dict["PubmedBookArticle"]]
-                    pubmed_book_article_additions_for_release.extend(additions)
-
-                    logging.info(f"Pulled out {len(additions)} PubmedBookArticle additions from file - {file}")
-                except:
-                    logging.info(f"No PubmedBookArticle additions in file - {file}")
-
-                try:
-                    logging.info(f"Extracting BookDocument records from file - {file}")
-
-                    try:
-                        additions = [addition for addition in data_dict["BookDocumentSet"]["BookDocument"]]
-                    except:
-                        additions = [addition for addition in data_dict["BookDocument"]]
-                    book_document_additions_for_release.extend(additions)
-
-                    logging.info(f"Pulled out {len(additions)} BookDocument additions from file - {file}")
-                except:
-                    logging.info(f"No BookDocument additions in file - {file}")
-
-                # Grab deletions from file.
-
-                try:
-                    logging.info(f"Extracting DeleteCitation records from file - {file}")
-                    deletions = [deletion for deletion in data_dict["DeleteCitation"]]
-                    pubmed_article_deletions_for_release.extend(deletions)
-                    logging.info(f"Pulled out {len(deletions)} DeleteCitation records from file - {file}")
-                except:
-                    logging.info(f"No DeleteCitation records in file - {file}")
-
-                try:
-                    logging.info(f"Extracting DeleteDocument records from file - {file}")
-                    deletions = [deletion for deletion in data_dict["DeleteDocument"]]
-                    book_document_deletions_for_release.extend(deletions)
-                    logging.info(f"Pulled out {len(deletions)} DeleteDocument records from file - {file}")
-                except:
-                    logging.info(f"No DeleteDocument records in file - {file}")
+                    pubmed_transform_list[i] = pubmed_data
 
         logging.info(
             "Checking through the additions for this release to see if any deletions can be done before going onto BigQuery."
         )
 
-        # TODO: Consider parallelising this section, and make it a function to clean up this section - initial baseline additions will be ~ 35 million entries and needs to be quicker for checking deletions.
+        # TODO: Parallelse the deletion check step
+        # TODO: Make into a do loop??
 
-        ### Pubmed Article pre-check for deletions
-        try:
-            logging.info("Running though PubmedArticle record for deletions.")
+        # Check through for deletions for PubmedArticles and DeleteCitations
+        pubmed_transform_list[0]["data"], pubmed_transform_list[3]["data"] = check_for_deletions(
+            pubmed_transform_list[0]["sub_key"],
+            pubmed_transform_list[0]["pmid_key_loc"],
+            pubmed_transform_list[0]["data"],
+            pubmed_transform_list[3]["data"],
+        )
 
-            pubmed_article_additions_with_dels_checked = pubmed_article_additions_for_release.copy()
-            pubmed_article_deletions_with_dels_checked = pubmed_article_deletions_for_release.copy()
+        # Check through for deletions for PubmedBookArticles and DeleteCitations.
+        # TODO: PubmedBookArticles use the same DeleteCiation as the PubmedArticle - TO CHECK
+        pubmed_transform_list[1]["data"], pubmed_transform_list[3]["data"] = check_for_deletions(
+            pubmed_transform_list[1]["sub_key"],
+            pubmed_transform_list[1]["pmid_key_loc"],
+            pubmed_transform_list[1]["data"],
+            pubmed_transform_list[3]["data"],
+        )
 
-            # print(pubmed_article_additions_with_dels_checked[0])
-            for record_to_delete in pubmed_article_deletions_for_release:
-                for article_addition_to_check in pubmed_article_additions_for_release:
-                    to_check = article_addition_to_check["MedlineCitation"]["PMID"]
-                    if record_to_delete == to_check:
-                        pubmed_article_deletions_with_dels_checked.remove(record_to_delete)
-                        pubmed_article_additions_with_dels_checked.remove(article_addition_to_check)
+        # Check through for deletions for BookDocument and DeleteDocument.
+        pubmed_transform_list[2]["data"], pubmed_transform_list[4]["data"] = check_for_deletions(
+            pubmed_transform_list[2]["sub_key"],
+            pubmed_transform_list[2]["pmid_key_loc"],
+            pubmed_transform_list[2]["data"],
+            pubmed_transform_list[4]["data"],
+        )
 
-                        logging.info(f"Removed the following record from additions list - {record_to_delete}")
+        # TODO: Write out files in only 4gb chunks
+        for pubmed_data in pubmed_transform_list:
+            logging.info(f"Writing article additions to file - {pubmed_data['output_file']}")
 
-            logging.info(
-                f"There are {len(pubmed_article_deletions_with_dels_checked)} article deletions left to do on BQ and {len(pubmed_article_additions_with_dels_checked)} article additions to add to the snapshot for this release."
-            )
+            # Number of rows per chunk calc
+            # Remainder of rows goes into last file.
 
-        except:
-            logging.info("No PubMedArticle records to check against for deletion.")
+            with open(pubmed_data["output_file"], "wb") as f_out:
+                for line in pubmed_data["data"]:
+                    f_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
 
-        ### Pubmed Book Article pre-check for deletions
-        try:
-            logging.info("Running though PubmedBookArticle record for deletions.")
+        # List of all transformed files - to redo because of writing in chucks of 4gb
+        transformed_files_to_updload_to_gcs = [pubmed_data["output_file"] for pubmed_data in pubmed_transform_list]
 
-            # PubmedBookArticle uses the PMID from the DeleteCitation records.
-            pubmed_book_article_deletions_for_release = pubmed_article_deletions_with_dels_checked.copy()
-
-            pubmed_book_article_additions_with_dels_checked = pubmed_book_article_additions_for_release.copy()
-            pubmed_book_article_deletions_with_dels_checked = pubmed_book_article_deletions_for_release.copy()
-
-            # print(pubmed_book_article_additions_with_dels_checked[0])
-            for record_to_delete in pubmed_book_article_deletions_for_release:
-                for book_article_addition_to_check in pubmed_book_article_additions_for_release:
-                    to_check = book_article_addition_to_check["BookDocument"]["PMID"]
-                    if record_to_delete == to_check:
-                        pubmed_book_article_deletions_with_dels_checked.remove(record_to_delete)
-                        pubmed_book_article_additions_with_dels_checked.remove(article_addition_to_check)
-
-                        logging.info(f"Removed the following record from additions list - {record_to_delete}")
-
-            logging.info(
-                f"There are {len(pubmed_book_article_deletions_with_dels_checked)} book article deletions left to do on BQ and {len(pubmed_book_article_additions_with_dels_checked)} book article additions to add to the snapshot for this release."
-            )
-
-        except:
-            logging.info("No PubMedArticle records to check against for deletion.")
-
-        ### Book Document pre-check for deletions
-        try:
-            logging.info("Running though BookDocument for deletions.")
-
-            book_document_additions_with_dels_checked = book_document_additions_for_release.copy()
-            book_document_deletions_with_dels_checked = book_document_deletions_for_release.copy()
-
-            # print(book_document_additions_with_dels_checked[0])
-            for record_to_delete in book_document_deletions_for_release:
-                for book_addition_to_check in book_document_additions_for_release:
-                    to_check = book_addition_to_check["BookDocument"]["PMID"]
-                    if record_to_delete == to_check:
-                        book_document_deletions_with_dels_checked.remove(record_to_delete)
-                        book_document_additions_with_dels_checked.remove(book_addition_to_check)
-
-                        logging.info(f"Removed the following record from additions list - {record_to_delete}")
-
-            logging.info(
-                f"There are {len(book_document_deletions_with_dels_checked)} BookDocument deletions left to do on BQ and {len(book_document_additions_with_dels_checked)} additions to add to the snapshot for this release."
-            )
-        except:
-            logging.info("No BookDocument records to check against for deletion.")
-
-        ################################################################################################
-
-        # # Working on additions file
-        # logging.info(f"Removing bad characters from keys from additions file  data.")
-
-        # # Give each thread a chunk of the work to do.
-        # chunk_size = len(additions_with_dels_checked) // self.max_processes
-        # chunks = [additions_with_dels_checked[i : i + chunk_size] for i in range(0, len(additions_with_dels_checked), chunk_size)]
-
-        # additions_cleaned_fieldnames = []
-        # with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_processes) as executor:
-        #     # send off chunks to each of the threads
-        #     futures = [ executor.submit(rename_bad_keys_in_dict_list, chunk) for chunk in chunks]
-
-        #     for future in concurrent.futures.as_completed(futures):
-        #         fields_renamed = future.result()
-        #         additions_cleaned_fieldnames.extend(fields_renamed)
-
-        # # Working on deletions file
-        # logging.info(f"Removing bad characters from keys from deletions file data.")
-
-        # # Give each thread a chunk of the work to do.
-        # chunk_size = len(deletions_with_dels_checked) // self.max_processes
-        # chunks = [deletions_with_dels_checked[i : i + chunk_size] for i in range(0, len(deletions_with_dels_checked), chunk_size)]
-
-        # deletions_cleaned_fieldnames = []
-        # with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_processes) as executor:
-        #     # send off chunks to each of the threads
-        #     futures = [ executor.submit(rename_bad_keys_in_dict_list, chunk) for chunk in chunks]
-
-        #     for future in concurrent.futures.as_completed(futures):
-        #         fields_renamed = future.result()
-        #         deletions_cleaned_fieldnames.extend(fields_renamed)
-
-        ################################################################################################
-
-        # Write out the processed additions and deletions to file.
-        with open(pubmed_article_additions_file_path, "wb") as f_add_out, open(
-            pubmed_article_deletions_file_path, "wb"
-        ) as f_del_out:
-            logging.info(f"Writing article additions to file - {pubmed_article_additions_file_path}")
-            for line in pubmed_article_additions_with_dels_checked:
-                f_add_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
-                # Custom encoder used here so that the abstracts (AbstractText) are written as strings, not dictionary objects
-
-            logging.info(f"Writing article deletions to file - {pubmed_article_deletions_file_path}")
-            for line in pubmed_article_deletions_with_dels_checked:
-                f_del_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
-
-        with open(pubmed_book_article_additions_file_path, "wb") as f_add_out:
-            logging.info(f"Writing book additions to file - {pubmed_book_article_additions_file_path}")
-            for line in pubmed_book_article_additions_with_dels_checked:
-                f_add_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
-                # Custom encoder used here so that the abstracts (AbstractText) are written as strings, not dictionary objects
-
-        with open(book_document_additions_file_path, "wb") as f_add_out, open(
-            book_document_deletions_file_path, "wb"
-        ) as f_del_out:
-            logging.info(f"Writing book additions to file - {book_document_additions_file_path}")
-            for line in book_document_additions_with_dels_checked:
-                f_add_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
-                # Custom encoder used here so that the abstracts (AbstractText) are written as strings, not dictionary objects
-
-            logging.info(f"Writing book article deletions to file - {book_document_deletions_file_path}")
-            for line in book_document_deletions_with_dels_checked:
-                f_del_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
-
-        # Push list of transform files into the xcom
-
-        # TODO: Push these values into a list of strings for the file paths so the upload_transform function can just be a for loop.
-
-        transformed_files_to_updload_to_gcs = [
-            pubmed_article_additions_file_path,
-            pubmed_article_deletions_file_path,
-            pubmed_book_article_additions_file_path,
-            book_document_additions_file_path,
-            book_document_deletions_file_path,
-        ]
-
+        # Push list of transformed files into the Xcom for upload to GCS step.
         ti.xcom_push(key="transformed_files_to_updload_to_gcs", value=transformed_files_to_updload_to_gcs)
 
     def upload_transformed(self, release: PubMedRelease, **kwargs):
@@ -799,7 +633,7 @@ class PubMedTelescope(Workflow):
             try:
                 blob_name = f"telescopes/{self.dag_id}/{self.release_id}/{file}"
                 logging.info(f"Uploading file {file} to GCS bucket {self.transform_bucket} and {blob_name}")
-                success = upload_file_to_cloud_storage(
+                upload_file_to_cloud_storage(
                     bucket_name=self.transform_bucket,
                     blob_name=blob_name,
                     file_path=file_to_upload,
@@ -822,7 +656,9 @@ class PubMedTelescope(Workflow):
 
         ### MAJOR
         ### TODO: Make BQ json schema based on the pubmed_230101.xsd schema that includes all possible fields.
-        ###
+        ### TODO: - PubmedArticle - Done!
+        ###       - BookDocument
+        ###       - PubmedBookArticle
 
         if self.download_baseline or not bigquery_table_exists(self.project_id, self.dataset_id, self.table_id):
             logging.info("Create new Pubmed BQ table.")
@@ -975,6 +811,58 @@ def change_keys(obj, convert):
     return new
 
 
+def check_for_deletions(sub_set: str, pmid_key_loc: str, additions: List[Dict], deletions: List[Dict]):
+    """Run through the list of additions and deletions in memory first before uploading to BQ to save time/resources."""
+
+    # TODO: Need to parallelise this section. For initial baseline it will take many days to do.
+
+    try:
+        logging.info(f"Running though {sub_set} record for deletions.")
+
+        additions_with_dels_checked = additions.copy()
+        deletions_with_dels_checked = deletions.copy()
+
+        for record_to_delete in deletions:
+            for article_addition_to_check in additions:
+                to_check = article_addition_to_check[f"{pmid_key_loc}"]["PMID"]
+                if record_to_delete == to_check:
+                    additions_with_dels_checked.remove(record_to_delete)
+                    deletions_with_dels_checked.remove(article_addition_to_check)
+
+                    logging.info(f"Removed the following record from additions list - {record_to_delete}")
+
+        logging.info(
+            f"There are {len(deletions_with_dels_checked)} article deletions left to do on BQ and {len(additions_with_dels_checked)} article additions to add to the snapshot for this release."
+        )
+
+    except:
+        logging.info(f"No {sub_set} records to check against for deletions.")
+
+    return additions_with_dels_checked, deletions_with_dels_checked
+
+
+def pull_data_from_dict(
+    filename: str, data_dict: Dict, prev_retrieved: List[Dict], data_name: str, sub_set: str, set_key: str = None
+) -> List[Dict]:
+    """Attempt to pull a subset of data from the dictionary injested from the Pubmed XML files."""
+
+    try:
+        logging.info(f"Extracting {sub_set} records from file - {filename}")
+
+        try:
+            retrieved = [retrieve for retrieve in data_dict[set_key][sub_set]]
+        except:
+            retrieved = [retrieve for retrieve in data_dict[sub_set]]
+
+        prev_retrieved.extend(retrieved)
+        logging.info(f"Pulled out {len(retrieved)} {sub_set} {data_name} from file - {filename}")
+
+    except:
+        logging.info(f"No {sub_set} {data_name} in file - {filename}")
+
+    return prev_retrieved
+
+
 # TODO: Clean up this function if possible.
 def add_attributes_to_data_from_biopython_classes(obj):
     """Recursively travel down the data tree and add attributes from the biopython data classes as dictionary keys.
@@ -1092,6 +980,43 @@ class CustomEncoder(json.JSONEncoder):
     def encode(self, obj):
         transformed_obj = self._transform_obj_data(obj)
         return super(CustomEncoder, self).encode(transformed_obj)
+
+
+################################################################################################
+
+# # Working on additions file
+# logging.info(f"Removing bad characters from keys from additions file  data.")
+
+# # Give each thread a chunk of the work to do.
+# chunk_size = len(additions_with_dels_checked) // self.max_processes
+# chunks = [additions_with_dels_checked[i : i + chunk_size] for i in range(0, len(additions_with_dels_checked), chunk_size)]
+
+# additions_cleaned_fieldnames = []
+# with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_processes) as executor:
+#     # send off chunks to each of the threads
+#     futures = [ executor.submit(rename_bad_keys_in_dict_list, chunk) for chunk in chunks]
+
+#     for future in concurrent.futures.as_completed(futures):
+#         fields_renamed = future.result()
+#         additions_cleaned_fieldnames.extend(fields_renamed)
+
+# # Working on deletions file
+# logging.info(f"Removing bad characters from keys from deletions file data.")
+
+# # Give each thread a chunk of the work to do.
+# chunk_size = len(deletions_with_dels_checked) // self.max_processes
+# chunks = [deletions_with_dels_checked[i : i + chunk_size] for i in range(0, len(deletions_with_dels_checked), chunk_size)]
+
+# deletions_cleaned_fieldnames = []
+# with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_processes) as executor:
+#     # send off chunks to each of the threads
+#     futures = [ executor.submit(rename_bad_keys_in_dict_list, chunk) for chunk in chunks]
+
+#     for future in concurrent.futures.as_completed(futures):
+#         fields_renamed = future.result()
+#         deletions_cleaned_fieldnames.extend(fields_renamed)
+
+################################################################################################
 
 
 # Not used because FTP server can't download multiple files using multiple threads.
