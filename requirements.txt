@@ -10,3 +10,4 @@ Deprecated>1,<2
 limits>3,<4
 xmlschema>=2.2.2
 biopython>=1.81
+Pympler>=1.0.1

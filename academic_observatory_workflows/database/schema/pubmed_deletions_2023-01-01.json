@@ -1,0 +1,12 @@
+[
+  {
+    "name": "PMID",
+    "mode": "NULLABLE",
+    "type": "STRING"
+  },
+  {
+    "name": "Version",
+    "mode": "NULLABLE",
+    "type": "STRING"
+  }
+]
