@@ -37,7 +37,7 @@ The dataset is available through querying SPARQL, REST API, and the OpenCitation
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/open_citations_latest.csv
+   :file: ../schemas/open_citations/open_citations_latest.csv
    :width: 100%
    :header-rows: 1
 ```

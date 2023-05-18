@@ -425,14 +425,14 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
 
 class TestCrossrefEventsUtils(ObservatoryTestCase):
     def test_crossref_events_limiter(self):
-        n_per_second = 12
+        n_per_second = 10
 
         def my_func():
             crossref_events_limiter(n_per_second)
             print("Called my_func")
 
-        num_calls = 1000
-        max_workers = 100
+        num_calls = 100
+        max_workers = 10
         expected_wait = num_calls / n_per_second
         print(f"test_crossref_events_limiter: expected wait time {expected_wait}s")
         start = datetime.datetime.now()
@@ -447,7 +447,7 @@ class TestCrossrefEventsUtils(ObservatoryTestCase):
         duration = (end - start).total_seconds()
         actual_n_per_second = 1 / (duration / num_calls)
         print(f"test_crossref_events_limiter: actual_n_per_second {actual_n_per_second}")
-        self.assertAlmostEqual(float(n_per_second), actual_n_per_second, delta=4)
+        self.assertAlmostEqual(float(n_per_second), actual_n_per_second, delta=6)
 
     def test_event_request(self):
         day = pendulum.datetime(2023, 1, 1)

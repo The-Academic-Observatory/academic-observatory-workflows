@@ -514,7 +514,7 @@ class CrossrefEventsTelescope(Workflow):
             schema_file_path=self.schema_file_path,
             source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
             write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-            ignore_unknown_values=True,
+            ignore_unknown_values=False,
         )
         set_task_state(success, self.bq_load_main_table.__name__, release)
 

@@ -53,7 +53,7 @@ The corresponding table created in BigQuery are `crossref.crossref_events` and `
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/crossref_events_latest.csv
+   :file: ../schemas/crossref_events/crossref_events_latest.csv
    :width: 100%
    :header-rows: 1
 ```

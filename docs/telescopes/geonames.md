@@ -41,7 +41,7 @@ and [data details](https://download.geonames.org/export/dump/readme.txt)
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/geonames_latest.csv
+   :file: ../schemas/geonames/geonames_latest.csv
    :width: 100%
    :header-rows: 1
 ```

@@ -631,7 +631,7 @@ class UnpaywallTelescope(Workflow):
             source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
             table_description=self.table_description,
             write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-            ignore_unknown_values=True,
+            ignore_unknown_values=False,
         )
         set_task_state(success, self.bq_load_upsert_table.__name__, release)
 

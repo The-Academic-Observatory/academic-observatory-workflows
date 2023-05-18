@@ -58,7 +58,7 @@ The telescope downloads SCOPUS data in parallel sessions up to the number of API
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/scopus_latest.csv
+   :file: ../schemas/scopus/scopus_latest.csv
    :width: 100%
    :header-rows: 1
 ```

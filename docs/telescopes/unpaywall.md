@@ -74,7 +74,7 @@ The connection must be a valid URI supported by Airflow, but only the password c
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/unpaywall_latest.csv
+   :file: ../schemas/unpaywall/unpaywall_latest.csv
    :width: 100%
    :header-rows: 1
 ```

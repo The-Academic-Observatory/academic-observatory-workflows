@@ -42,7 +42,7 @@ See their [docs](https://ror.readme.io/docs/data-dump) for more information on t
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/ror_latest.csv
+   :file: ../schemas/ror/ror_latest.csv
    :width: 100%
    :header-rows: 1
 ```

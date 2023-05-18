@@ -16,7 +16,7 @@ and [data details](https://www.grid.ac/format)
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/grid_latest.csv
+   :file: ../schemas/grid/grid_latest.csv
    :width: 100%
    :header-rows: 1
 ```
