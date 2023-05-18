@@ -1,5 +1,152 @@
 [
   {
+    "name": "host_venue",
+    "type": "RECORD",
+    "description": "DEPRECATED",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "issn",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "issn_l",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "license",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "publisher",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "type",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "url",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "version",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization_name",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "publisher_id",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      }
+    ]
+  },
+  {
+    "name": "alternate_host_venues",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "DEPRECATED",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "issn",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "issn_l",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "license",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "publisher",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "type",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "url",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "version",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization_name",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "publisher_id",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      }
+    ]
+  },
+  {
     "name": "abstract_inverted_index",
     "type": "RECORD",
     "mode": "NULLABLE",
