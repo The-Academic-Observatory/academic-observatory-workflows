@@ -1,6 +1,6 @@
 [
   {
-    "name": "PMID",
+    "name": "value",
     "mode": "NULLABLE",
     "type": "STRING"
   },

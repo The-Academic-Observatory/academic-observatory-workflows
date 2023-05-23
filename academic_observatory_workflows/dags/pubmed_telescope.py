@@ -39,7 +39,7 @@ for workflow in workflows:
         schema_folder="none",
         source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
         workflow_id=workflow.id,
-        start_date=pendulum.datetime(2022, 12, 1),
+        start_date=pendulum.datetime(year=2022, month=11, day=27),
         schedule_interval="@weekly",
         catchup=True,
         ftp_server_url="ftp.ncbi.nlm.nih.gov",

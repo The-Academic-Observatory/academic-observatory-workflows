@@ -66,8 +66,6 @@ from google.cloud import bigquery
 from observatory.platform.utils.gc_utils import (
     bigquery_table_exists,
     create_bigquery_snapshot,
-    create_bigquery_dataset,
-    create_empty_bigquery_table,
     load_bigquery_table,
     run_bigquery_query,
 )
@@ -140,7 +138,7 @@ class PubMedTelescope(Workflow):
         *,
         dag_id: str,
         workflow_id: int,
-        start_date: str = pendulum.datetime(year=2022, month=12, day=1),  # When the baseline data became available.
+        start_date: str = pendulum.datetime(year=2022, month=11, day=27),  # When the baseline data became available.
         schedule_interval: str = "0 0 * * 0",  # weekly
         catchup: bool = True,
         ftp_server_url: str,
@@ -244,9 +242,10 @@ class PubMedTelescope(Workflow):
         self.add_task(self.download)
         self.add_task(self.upload_downloaded)
         self.add_task(self.transform)
-        self.add_task(self.merge_transform_files)
+        # self.add_task(self.merge_transform_files)
         self.add_task(self.upload_transformed)
-        self.add_task(self.bq_create_snapshot)
+        self.add_task(self.bq_ingest_release_tables)
+        # self.add_task(self.bq_create_snapshot)
         # self.add_task(self.add_release)
         # self.add_task(self.cleanup)
 
@@ -370,7 +369,6 @@ class PubMedTelescope(Workflow):
         files_to_download = ti.xcom_pull(key="files_to_download")
 
         # For testing
-
         if self.download_baseline:
             if len(files_to_download) < 3:
                 num_to_download = len(files_to_download)
@@ -538,10 +536,10 @@ class PubMedTelescope(Workflow):
                 "transform_files": [],
                 "merged_transform_files": [],
                 "uploaded_to_gcs": [],
-                "schema_file_path": os.path.join(
-                    self.schema_folder,
-                    "pubmed_articles_2023-01-01.json",  # use find schema function??
-                ),
+                "schema_file_path": os.path.join(default_schema_folder(), "pubmed_articles_2023-01-01.json"),
+                "table_id": "",
+                "table_row_count": None,
+                "table_description": "List citation records to be added to the main Pubmed snapshot.",
             },
             "pubmed_book_article_additions": {
                 "data_type": "additions",
@@ -552,10 +550,10 @@ class PubMedTelescope(Workflow):
                 "transform_files": [],
                 "merged_transform_files": [],
                 "uploaded_to_gcs": [],
-                "schema_file_path": os.path.join(
-                    self.schema_folder,
-                    "pubmed_book_articles_2023-01-01.json",
-                ),
+                "schema_file_path": os.path.join(default_schema_folder(), "pubmed_articles_2023-01-01.json"),
+                "table_id": "",
+                "table_row_count": None,
+                "table_description": "List citation records to be added to the main Pubmed snapshot.",
             },
             "book_document_additions": {
                 "data_type": "additions",
@@ -566,10 +564,10 @@ class PubMedTelescope(Workflow):
                 "transform_files": [],
                 "merged_transform_files": [],
                 "uploaded_to_gcs": [],
-                "schema_file_path": os.path.join(
-                    self.schema_folder,
-                    "pubmed_book_documents_2023-01-01.json",
-                ),
+                "schema_file_path": os.path.join(default_schema_folder(), "pubmed_articles_2023-01-01.json"),
+                "table_id": "",
+                "table_row_count": None,
+                "table_description": "List citation records to be added to the main Pubmed snapshot.",
             },
             "pubmed_article_deletions": {
                 "data_type": "deletions",
@@ -579,10 +577,10 @@ class PubMedTelescope(Workflow):
                 "transform_files": [],
                 "merged_transform_files": [],
                 "uploaded_to_gcs": [],
-                "schema_file_path": os.path.join(
-                    self.schema_folder,
-                    "pubmed_deletions_2023-01-01.json",
-                ),
+                "schema_file_path": os.path.join(default_schema_folder(), "pubmed_deletions_2023-01-01.json"),
+                "table_id": "",
+                "table_row_count": None,
+                "table_description": "List of PMIDs and version of the citation to delete from the main Pubmed snapshot.",
             },
             "book_document_deletions": {
                 "data_type": "deletions",
@@ -592,10 +590,10 @@ class PubMedTelescope(Workflow):
                 "transform_files": [],
                 "merged_transform_files": [],
                 "uploaded_to_gcs": [],
-                "schema_file_path": os.path.join(
-                    self.schema_folder,
-                    "pubmed_deletions_2023-01-01.json",
-                ),
+                "schema_file_path": os.path.join(default_schema_folder(), "pubmed_deletions_2023-01-01.json"),
+                "table_id": "",
+                "table_row_count": None,
+                "table_description": "List of PMIDs and version of the citation to delete from the main Pubmed snapshot.",
             },
         }
 
@@ -621,7 +619,8 @@ class PubMedTelescope(Workflow):
         ti.xcom_push(key="entity_list", value=entity_list)
 
     def merge_transform_files(self, release: PubMedRelease, **kwargs):
-        """Merge the transformed Pubmed files into appropriately sized chunks for upload GCS and import to BQ.
+        """
+        Merge the transformed Pubmed files into appropriately sized chunks for upload GCS and import to BQ.
 
         :return: None.
         """
@@ -704,7 +703,9 @@ class PubMedTelescope(Workflow):
         entity_list = ti.xcom_pull(key="entity_list")
 
         for name, entity in entity_list.items():
-            for file_to_upload in entity["merged_files"]:
+            entity["transform_files"].sort()
+
+            for file_to_upload in entity["transform_files"]:
                 file = file_to_upload.split("/")[-1]
 
                 try:
@@ -729,69 +730,164 @@ class PubMedTelescope(Workflow):
         # Push updated entity_lsit into the xcom.
         ti.xcom_push(key="entity_list", value=entity_list)
 
-    def bq_create_snapshot(self, release: PubMedRelease, **kwargs):
-        """TODO: Revise the doc string."""
+    def bq_ingest_release_tables(self, release: PubMedRelease, **kwargs):
+        """
+        Ingest data into tables for this particular release.
+
+        Use the list of files uploaded to Google Cloud Storage to import to Bigquery.
+
+        :return: None.
+        """
 
         # Pull files to transfer from GCS to BQ
         ti: TaskInstance = kwargs["ti"]
         entity_list = ti.xcom_pull(key="entity_list")
 
-        # Upload smaller release tables first before merging it to the large main snapshot table.
+        # Upload release tables for this data interval for snapshot step later.
         for name, entity in entity_list.items():
-            table_id = name + f"${self.data_interval_end.strftime('%Y%m%d')}"
-            logging.info(f"Creating table {table_id} ")
+            # Create table with shard date.
+            entity["table_id"] = bigquery_sharded_table_id(name, self.data_interval_end)
 
-            # TODO: Fix this in the transform definition.
-            if entity["data_type"] == "additions":
-                entity["schema_file_path"] = os.path.join(default_schema_folder(), "pubmed_articles_2023-01-01.json")
-            else:
-                entity["schema_file_path"] = os.path.join(default_schema_folder(), "pubmed_deletions_2023-01-01.json")
+            # TODO: Delete old tables with exact table_id just in case there was a bad previous run.
+
+            logging.info(f"Creating and adding to table: {entity['table_id']} ")
 
             for tranform_blob in entity["uploaded_to_gcs"]:
-                # Append each entity parts to it's own new table.
+                # Append each entity parts to it's own new table with a shard datetime.
+
+                # TODO: Add table partition expiration date when uploading.
                 success = load_bigquery_table(
                     tranform_blob,
                     self.dataset_id,
                     self.data_location,
-                    table_id,
+                    entity["table_id"],
                     entity["schema_file_path"],
                     self.source_format,
                     write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
                     project_id=self.project_id,
-                    table_description="",
-                    partition=True,
+                    table_description=entity["table_description"],
+                    partition=False,
                 )
                 if not success:
                     raise AirflowException(f"Unable to upload table {name}")
 
-            # Add table expiration date just in case.
-            bq_update_table_expiration_date(self.project_id, self.dataset_id, table_id, pendulum.now().add(months=1))
+            # TODO: Get number of rows of table from BQ for an assert?
 
-        # Notes for how to proceed with merging the adds and dels:
+            if success:
+                logging.info(f"Successfully added to table - {entity['table_id']} ")
 
-        # If main snapshot tables does not exist, copy the addtions to be the new one. (workflow hasnt been run before)
-        # Check if pubmed_articles_snapshot exists
-        # copy bq table
+                # Update the entity after a successful table upload.
+                entity_list[name] = entity
 
-        # Copy the snapshot table to make a working space
+        #  Update workflow metadata of tables.
+        entity_list = ti.xcom_push(key="entity_list", value=entity_list)
 
-        # Match any of the PMIDs from new addtions on the working space table to delete and then update those records.
-        # PMID and version must match.
-        # Delete the old records that were found in working.
+    def bq_create_snapshot_from_tables(self, release: PubMedRelease, **kwargs):
+        """
+        Create snapshot from the release tables transfered in previous section.
 
-        # Match the deletions in the working snapshot table and delete those records from that table.
+        :param release: Pubmed release.
+        :return: None.
+        """
 
-        # delete the old snapshot table.
+        # Pull workflow entity data
+        ti: TaskInstance = kwargs["ti"]
+        entity_list = ti.xcom_pull(key="entity_list")
 
-        # Rename working table to be the new snapshot table.
+        # Use the table from this workflow run to make the first snapshot.
+        # This should be just the baseline dataset, so there should be no deletions to the snapshot.
+        if self.download_baseline:
+            # Copy pubmed_article_addtions to snapshot table.
+            snapshot_table_id = bigquery_sharded_table_id("pubmed_article_snapshot", self.data_interval_end)
+
+            bq_query_create_baseline_snapshot = f"""
+            CREATE SNAPSHOT TABLE {self.project_id}.{self.dataset_id}.{snapshot_table_id}
+            CLONE {self.project_id}.{self.dataset_id}.{entity_list['pubmed_article_additions']['table_id']}
+            """
+
+            # Run bq query
+            bq_output = run_bigquery_query(bq_query_create_baseline_snapshot)
+
+            logging.info(f"Output from create snapshot query: {bq_output}")
+
+        else:
+            # TODO: Add this to the init
+            working_table = "pubmed_snapshot"
+
+            # Get last snapshot table name.
+            snapshot_table_old = bq_list_tables_in_dataset_with_prefix(self.project_id, self.dataset_id, working_table)[
+                0
+            ]
+
+            logging.info(f"Copy to working table - {snapshot_table_old}")
+
+            # Delete old working table due to possible old bad run.
+            working_table_id = "pubmed_snapshot_working"
+            bq_delete_table(self.project_id, self.dataset_id, working_table_id, not_found_okay=True)
+
+            # Copy old snapshot to a normal table to work on it. (snapshots are read-only)
+            copy_old_snapshot_to_regular = f"""
+            CREATE TABLE {self.project_id}.{self.dataset_id}.{working_table_id}
+            CLONE {self.project_id}.{self.dataset_id}.{snapshot_table_old}
+            """
+            bq_output = run_bigquery_query(copy_old_snapshot_to_regular)
+            logging.info(f"Output from copy snapshot query: {bq_output}")
+
+            # Remove the records that have updates from the incoming additions table
+            delete_records_from_working_from_additions = f"""
+            DELETE FROM `{self.project_id}.{self.dataset_id}.{working_table_id}`
+            WHERE MedlineCitation.PMID.value IN (
+            SELECT MedlineCitation.PMID.value
+            FROM `{self.project_id}.{self.dataset_id}.{entity_list['pubmed_article_additions']['table_id']}`
+            );
+            """
+            bq_output = run_bigquery_query(delete_records_from_working_from_additions)
+            logging.info(f"Output from 'delete records to be updated from additions table' query: {bq_output}")
+
+            # Insert the additions in to the working table.
+            insert_records_into_working_from_additions = f"""
+            INSERT INTO `{self.project_id}.{self.dataset_id}.{working_table_id}` 
+            SELECT * 
+            FROM `{self.project_id}.{self.dataset_id}.{entity_list['pubmed_article_additions']['table_id']}`
+            """
+            bq_output = run_bigquery_query(insert_records_into_working_from_additions)
+            logging.info(f"Output from 'insert records ' query: {bq_output}")
+
+            # Delete records using the deletions table, matching on the Version of the citation and the PMID.
+            delete_records_from_working_from_deletions = f"""
+            DELETE FROM `{self.project_id}.{self.dataset_id}.{working_table_id}`
+            WHERE (MedlineCitation.PMID.value, MedlineCitation.PMID.Vserion) IN (
+            SELECT (value, Version) 
+            FROM `{self.project_id}.{self.dataset_id}.{entity_list['pubmed_article_deletions']['table_id']}`
+            );
+            """
+            bq_output = run_bigquery_query(delete_records_from_working_from_deletions)
+            logging.info(f"Output from 'delete records from working table from deletions' query: {bq_output}")
+
+            # TODO: Update the working table description.
+
+            # Create new snapshot table from working
+            copy_working_into_new_snapshot = f"""
+            CREATE SNAPSHOT TABLE {self.project_id}.{self.dataset_id}.{working_table_id}
+            CLONE {self.project_id}.{self.dataset_id}.{snapshot_table_old}
+            """
+            bq_output = run_bigquery_query(copy_working_into_new_snapshot)
+            logging.info(f"Output from 'copy working into new snapshot' query: {bq_output}")
 
     def add_release(self, release: PubMedRelease, **kwargs):
-        """Add the release info to the API for crossreferencing in the future.
+        """Add the release info to the observatory API.
 
         :return: None.
         """
 
         # Add the PubMed release into to the API
+        # Include the following into the release info
+
+        # Index of pubmed files from their FTP server.
+        # data_interval_start and data_interval_end
+        # Names of tables made for this release
+        # Name of Snapshot (partition date)
+        # Create
 
     def cleanup(self, release: PubMedRelease, **kwargs):
         """Cleanup files and task instances from this release.
@@ -801,16 +897,18 @@ class PubMedTelescope(Workflow):
 
         # Loop through all of the download and transform files and confirm that data has been deleted from this workflow run.
 
+        # Remove the old snapshot table.
+
         # Remove all task instance data from this workflow run.
 
 
 def transform_pubmed_xml_file_to_jsonl(input_file: str, entity_list: Dict, transform_folder: str) -> Dict:
-    """Convert a single Pubmed XML file to JSONL, pulling out any of the PubmedArticle,
+    """
+    Convert a single Pubmed XML file to JSONL, pulling out any of the PubmedArticle,
     PubmedBookArticle, BookDocument, DeleteCitation, DeleteDocument.
 
     Used in parallelised section "transform". Each file is given to an individual process
-    to minimised the amount of RAM used at once in the workflow, rather than multple files
-    read in and transformed at once.
+    rather than multple files read in and transformed at once.
 
     :param input_file: Absolute path to the Pubmed xml.gz file.
     :param download_folder: Absolute path to the download folder set for the release.
@@ -876,7 +974,8 @@ def transform_pubmed_xml_file_to_jsonl(input_file: str, entity_list: Dict, trans
 
 # TODO: Clean up this function if possible. Too many messy if statements and is slow.
 def add_attributes_to_data_from_biopython_classes(obj):
-    """Recursively travel down the data tree and add attributes from the biopython data classes as dictionary keys.
+    """
+    Recursively travel down the data tree and add attributes from the biopython data classes as dictionary keys.
 
     :param obj: Input object, any type.
     :return new: Object with attributes added as keys.
@@ -931,11 +1030,33 @@ def add_attributes_to_data_from_biopython_classes(obj):
         return obj
 
 
-# TODO: Clean up the below and remove unnecessary comments about attributes
+# TODO: Clean up the below if possible and remove unnecessary comments about attributes
 class CustomEncoder(json.JSONEncoder):
 
     """Custom encoder for JSON dump for it to write a dictionary field as a string of text for a
     number of select key values in the Pubmed data"""
+
+    write_as_single_field = [
+        "AbstractText",  # ? also has attributes
+        "Affiliation",
+        "ArticleTitle",  # ? also has attributes
+        "b",
+        "BookTitle",  # ? also has attributes
+        "Citation",
+        "CoiStatement",
+        "CollectionTitle",  # ? also has attributes
+        "CollectiveName",
+        "i",
+        "Param",  # ? also has attributes
+        "PublisherName",
+        "SectionTitle",  # ? also has attributes
+        "sub",
+        "Suffix",
+        "sup",
+        "u",
+        "VernacularTitle",  # ? also has attributes
+        "VolumeTitle",
+    ]
 
     def _transform_obj_data(self, obj):
         if isinstance(obj, str):
@@ -944,28 +1065,7 @@ class CustomEncoder(json.JSONEncoder):
             new = {}
             # Loop through field names for the match fields to change to text.
             for k, v in list(obj.items()):
-                # TODO: Change this to an input of a List or Set for multiple fields if needed - hard coding bad.
-                if k in [
-                    "AbstractText",  # ? also has attributes
-                    "Affiliation",
-                    "ArticleTitle",  # ? also has attributes
-                    "b",
-                    "BookTitle",  # ? also has attributes
-                    "Citation",
-                    "CoiStatement",
-                    "CollectionTitle",  # ? also has attributes
-                    "CollectiveName",
-                    "i",
-                    "Param",  # ? also has attributes
-                    "PublisherName",
-                    "SectionTitle",  # ? also has attributes
-                    "sub",
-                    "Suffix",
-                    "sup",
-                    "u",
-                    "VernacularTitle",  # ? also has attributes
-                    "VolumeTitle",  # ? also has attributes
-                ]:
+                if k in self.write_as_single_field:
                     new[k] = str(v)
                 else:
                     new[k] = self._transform_obj_data(v)
@@ -1016,3 +1116,47 @@ def bq_update_table_expiration_date(
         table = bq_client.update_table(table, ["expires"])
     except:
         raise AirflowException(f"Unable to set expiration date of table {table_id} to {expiration_date}")
+
+
+def bq_delete_table(
+    project_id: str, dataset_id: str, table_id: str, partition_decorator: str = None, not_found_okay: bool = True
+):
+    """Delete a single table in Bigquery."""
+
+    # TODO: To add to gcs utils after the workflow restructure.
+
+    bq_client = bigquery.Client(project=project_id)
+    dataset = bigquery.DatasetReference(project_id, dataset_id)
+    table = bigquery.Table(dataset.table(table_id))
+
+    try:
+        bq_client.get_table(table)
+        if partition_decorator:
+            bq_client.delete_table(table, not_found_ok=False)
+        else:
+            bq_client.delete_table(table, tableId=partition_decorator, not_found_ok=not_found_okay)
+
+        logging.info(f"Deleted exising bigquery table: {table_id} {partition_decorator}")
+    except:
+        raise AirflowException(f"An error occured deleting table {table_id}")
+
+
+def bq_list_tables_in_dataset_with_prefix(project_id: str, dataset_id: str, prefix: str = "") -> List[str]:
+    # TODO: Add prefix or suffix for this function.
+
+    """List tables under a dataset in Bigquery.
+
+    :param project_id:
+    :param dataset_id:
+    :param prefix:
+
+    """
+
+    # TODO: To add to gcs utils after the workflow restructure.
+
+    bq_client = bigquery.Client(project=project_id)
+    tables = bq_client.list_tables(dataset_id)
+
+    return [
+        f"{table.project}.{table.dataset_id}.{table.table_id}" for table in tables if table.table_id.startswith(prefix)
+    ]

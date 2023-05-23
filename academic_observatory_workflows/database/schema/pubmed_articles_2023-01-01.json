@@ -326,12 +326,12 @@
           {
             "name": "Version",
             "mode": "NULLABLE",
-            "type": "INTEGER"
+            "type": "STRING"
           },
           {
             "name": "value",
             "mode": "NULLABLE",
-            "type": "INTEGER"
+            "type": "STRING"
           }
         ]
       },
@@ -901,12 +901,12 @@
                   {
                     "name": "Version",
                     "mode": "NULLABLE",
-                    "type": "INTEGER"
+                    "type": "STRING"
                   },
                   {
                     "name": "value",
                     "mode": "NULLABLE",
-                    "type": "INTEGER"
+                    "type": "STRING"
                   }
                 ]
               },
