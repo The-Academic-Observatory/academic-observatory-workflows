@@ -244,8 +244,8 @@ class PubMedTelescope(Workflow):
         self.add_task(self.transform)
         # self.add_task(self.merge_transform_files)
         self.add_task(self.upload_transformed)
-        self.add_task(self.bq_ingest_release_tables)
-        # self.add_task(self.bq_create_snapshot)
+        self.add_task(self.bq_ingest_update_tables)
+        self.add_task(self.bq_create_snapshot)
         # self.add_task(self.add_release)
         # self.add_task(self.cleanup)
 
@@ -526,8 +526,9 @@ class PubMedTelescope(Workflow):
         # List to hold metadata and file lists about how to pull the data from Pubmed.
 
         # TODO: Move this to the init?
+        # Only the article additions and deletions are populated in Pubmed.
         entity_list = {
-            "pubmed_article_additions": {
+            "article_additions": {
                 "data_type": "additions",
                 "sub_key": "PubmedArticle",
                 "set_key": "PubmedArticleSet",
@@ -537,39 +538,36 @@ class PubMedTelescope(Workflow):
                 "merged_transform_files": [],
                 "uploaded_to_gcs": [],
                 "schema_file_path": os.path.join(default_schema_folder(), "pubmed_articles_2023-01-01.json"),
-                "table_id": "",
+                "table_list": [],
                 "table_row_count": None,
-                "table_description": "List citation records to be added to the main Pubmed snapshot.",
             },
-            "pubmed_book_article_additions": {
-                "data_type": "additions",
-                "sub_key": "PubmedBookArticle",
-                "set_key": "PubmedBookArticleSet",
-                "pmid_key_loc": "MedlineCitation",
-                "output_file_base": f"pubmed_book_article_additions_{self.release_id}",
-                "transform_files": [],
-                "merged_transform_files": [],
-                "uploaded_to_gcs": [],
-                "schema_file_path": os.path.join(default_schema_folder(), "pubmed_articles_2023-01-01.json"),
-                "table_id": "",
-                "table_row_count": None,
-                "table_description": "List citation records to be added to the main Pubmed snapshot.",
-            },
-            "book_document_additions": {
-                "data_type": "additions",
-                "sub_key": "BookDocument",
-                "set_key": "BookDocumentSet",
-                "pmid_key_loc": "BookDocument",
-                "output_file_base": f"book_document_additions_{self.release_id}",
-                "transform_files": [],
-                "merged_transform_files": [],
-                "uploaded_to_gcs": [],
-                "schema_file_path": os.path.join(default_schema_folder(), "pubmed_articles_2023-01-01.json"),
-                "table_id": "",
-                "table_row_count": None,
-                "table_description": "List citation records to be added to the main Pubmed snapshot.",
-            },
-            "pubmed_article_deletions": {
+            # "pubmed_book_article_additions": {
+            #     "data_type": "additions",
+            #     "sub_key": "PubmedBookArticle",
+            #     "set_key": "PubmedBookArticleSet",
+            #     "pmid_key_loc": "MedlineCitation",
+            #     "output_file_base": f"pubmed_book_article_additions_{self.release_id}",
+            #     "transform_files": [],
+            #     "merged_transform_files": [],
+            #     "uploaded_to_gcs": [],
+            #     "schema_file_path": os.path.join(default_schema_folder(), "pubmed_articles_2023-01-01.json"),
+            #     "table_list": [],
+            #     "table_row_count": None,
+            # },
+            # "book_document_additions": {
+            #     "data_type": "additions",
+            #     "sub_key": "BookDocument",
+            #     "set_key": "BookDocumentSet",
+            #     "pmid_key_loc": "BookDocument",
+            #     "output_file_base": f"book_document_additions_{self.release_id}",
+            #     "transform_files": [],
+            #     "merged_transform_files": [],
+            #     "uploaded_to_gcs": [],
+            #     "schema_file_path": os.path.join(default_schema_folder(), "pubmed_articles_2023-01-01.json"),
+            #     "table_list": [],
+            #     "table_row_count": None,
+            # },
+            "article_deletions": {
                 "data_type": "deletions",
                 "sub_key": "PMID",
                 "set_key": "DeleteCitation",
@@ -578,23 +576,21 @@ class PubMedTelescope(Workflow):
                 "merged_transform_files": [],
                 "uploaded_to_gcs": [],
                 "schema_file_path": os.path.join(default_schema_folder(), "pubmed_deletions_2023-01-01.json"),
-                "table_id": "",
+                "table_list": [],
                 "table_row_count": None,
-                "table_description": "List of PMIDs and version of the citation to delete from the main Pubmed snapshot.",
             },
-            "book_document_deletions": {
-                "data_type": "deletions",
-                "sub_key": "PMID",
-                "set_key": "DeleteDocument",
-                "output_file_base": f"book_document_deletions_{self.release_id}",
-                "transform_files": [],
-                "merged_transform_files": [],
-                "uploaded_to_gcs": [],
-                "schema_file_path": os.path.join(default_schema_folder(), "pubmed_deletions_2023-01-01.json"),
-                "table_id": "",
-                "table_row_count": None,
-                "table_description": "List of PMIDs and version of the citation to delete from the main Pubmed snapshot.",
-            },
+            # "book_document_deletions": {
+            #     "data_type": "deletions",
+            #     "sub_key": "PMID",
+            #     "set_key": "DeleteDocument",
+            #     "output_file_base": f"book_document_deletions_{self.release_id}",
+            #     "transform_files": [],
+            #     "merged_transform_files": [],
+            #     "uploaded_to_gcs": [],
+            #     "schema_file_path": os.path.join(default_schema_folder(), "pubmed_deletions_2023-01-01.json"),
+            #     "table_list": [],
+            #     "table_row_count": None,
+            # },
         }
 
         # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
@@ -724,13 +720,16 @@ class PubMedTelescope(Workflow):
                 except:
                     raise AirflowException(f"Unable to upload file: {file} to GCS bucket {self.transform_bucket}")
 
+            # Sort list for later
+            entity["uploaded_to_gcs"].sort()
+
             # Update entity_list with the new list of GCS blobs.
             entity_list[name] = entity
 
         # Push updated entity_lsit into the xcom.
         ti.xcom_push(key="entity_list", value=entity_list)
 
-    def bq_ingest_release_tables(self, release: PubMedRelease, **kwargs):
+    def bq_ingest_update_tables(self, release: PubMedRelease, **kwargs):
         """
         Ingest data into tables for this particular release.
 
@@ -745,36 +744,56 @@ class PubMedTelescope(Workflow):
 
         # Upload release tables for this data interval for snapshot step later.
         for name, entity in entity_list.items():
-            # Create table with shard date.
-            entity["table_id"] = bigquery_sharded_table_id(name, self.data_interval_end)
+            entity["table_list"] = []
 
-            # TODO: Delete old tables with exact table_id just in case there was a bad previous run.
+            if self.download_baseline:
+                # Create the baseline table.
+                table_id = f"{name}_baseline"
+                table_description = "Baseline table of the Pubmed database."
 
-            logging.info(f"Creating and adding to table: {entity['table_id']} ")
+                # Delete old baseline table just in case there was a bad previous run.
+                bq_delete_table(
+                    project_id=self.project_id, dataset_id=self.dataset_id, table_id=table_id, not_found_okay=True
+                )
 
-            for tranform_blob in entity["uploaded_to_gcs"]:
-                # Append each entity parts to it's own new table with a shard datetime.
+            for transform_blob in entity["uploaded_to_gcs"]:
+                if not self.download_baseline:
+                    # Create a partition table for each of the updates.
+                    file_index = transform_blob.split("_")[-1].split(".")[0]
+                    table_id = f"{name}_{file_index}"
+                    table_description = f"Update table from file {file_index}"
+                    # Delete old tables with exact table_id just in case there was a bad previous run.
+                    bq_delete_table(
+                        project_id=self.project_id, dataset_id=self.dataset_id, table_id=table_id, not_found_okay=True
+                    )
 
-                # TODO: Add table partition expiration date when uploading.
+                logging.info(f"Uploading to table - {table_id}")
+
                 success = load_bigquery_table(
-                    tranform_blob,
+                    transform_blob,
                     self.dataset_id,
                     self.data_location,
-                    entity["table_id"],
+                    table_id,
                     entity["schema_file_path"],
                     self.source_format,
                     write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
                     project_id=self.project_id,
-                    table_description=entity["table_description"],
+                    table_description=table_description,
                     partition=False,
                 )
-                if not success:
-                    raise AirflowException(f"Unable to upload table {name}")
+
+                if success:
+                    if not table_id in entity["table_list"]:
+                        entity["table_list"].append(table_id)
+                else:
+                    raise AirflowException(f"Unable to upload table {table_id}")
 
             # TODO: Get number of rows of table from BQ for an assert?
 
             if success:
-                logging.info(f"Successfully added to table - {entity['table_id']} ")
+                logging.info(
+                    f"""Successfully uploaded to table - {name} { f"with {len(entity['table_list'])} partitions" if not self.download_baseline else ""}"""
+                )
 
                 # Update the entity after a successful table upload.
                 entity_list[name] = entity
@@ -782,7 +801,7 @@ class PubMedTelescope(Workflow):
         #  Update workflow metadata of tables.
         entity_list = ti.xcom_push(key="entity_list", value=entity_list)
 
-    def bq_create_snapshot_from_tables(self, release: PubMedRelease, **kwargs):
+    def bq_create_snapshot(self, release: PubMedRelease, **kwargs):
         """
         Create snapshot from the release tables transfered in previous section.
 
@@ -794,85 +813,138 @@ class PubMedTelescope(Workflow):
         ti: TaskInstance = kwargs["ti"]
         entity_list = ti.xcom_pull(key="entity_list")
 
+        # TODO: Add this to the init
+        snapshot_table = "article_snapshots"
+        working_table = "working_table"
+
         # Use the table from this workflow run to make the first snapshot.
         # This should be just the baseline dataset, so there should be no deletions to the snapshot.
         if self.download_baseline:
-            # Copy pubmed_article_addtions to snapshot table.
-            snapshot_table_id = bigquery_sharded_table_id("pubmed_article_snapshot", self.data_interval_end)
+            # Copy baseline to make the first snapshot table.
+            first_snapshot_table_id = bigquery_sharded_table_id(snapshot_table, self.data_interval_end)
 
             bq_query_create_baseline_snapshot = f"""
-            CREATE SNAPSHOT TABLE {self.project_id}.{self.dataset_id}.{snapshot_table_id}
-            CLONE {self.project_id}.{self.dataset_id}.{entity_list['pubmed_article_additions']['table_id']}
+            CREATE SNAPSHOT TABLE `{self.project_id}.{self.dataset_id}.{first_snapshot_table_id}`
+            CLONE `{self.project_id}.{self.dataset_id}.{entity_list['article_additions']['table_list'][0]}`
             """
 
-            # Run bq query
+            # Run bq query to create snapshot
             bq_output = run_bigquery_query(bq_query_create_baseline_snapshot)
-
             logging.info(f"Output from create snapshot query: {bq_output}")
 
+            # Delete the baseline temporary table.
+            bq_delete_table(
+                project_id=self.project_id,
+                dataset_id=self.dataset_id,
+                table_id=entity_list["article_additions"]["table_list"][0],
+                not_found_okay=True,
+            )
+
+            # Delete the baseline temporary table.
+            bq_delete_table(
+                project_id=self.project_id,
+                dataset_id=self.dataset_id,
+                table_id=entity_list["article_deletions"]["table_list"][0],
+                not_found_okay=True,
+            )
+
         else:
-            # TODO: Add this to the init
-            working_table = "pubmed_snapshot"
-
             # Get last snapshot table name.
-            snapshot_table_old = bq_list_tables_in_dataset_with_prefix(self.project_id, self.dataset_id, working_table)[
-                0
-            ]
+            snapshot_table_list = bq_list_tables_in_dataset_with_prefix(
+                self.project_id, self.dataset_id, snapshot_table
+            )
+            snapshot_table_list.sort()
+            snapshot_table_old = snapshot_table_list[-1]
 
-            logging.info(f"Copy to working table - {snapshot_table_old}")
+            working_table_id = bigquery_sharded_table_id(working_table, self.data_interval_end)
+            logging.info(f"Copy {snapshot_table_old} to working table {working_table_id} ")
 
-            # Delete old working table due to possible old bad run.
-            working_table_id = "pubmed_snapshot_working"
-            bq_delete_table(self.project_id, self.dataset_id, working_table_id, not_found_okay=True)
+            # Delete old working table from old bad runs.
+            bq_delete_table(
+                project_id=self.project_id, dataset_id=self.dataset_id, table_id=working_table_id, not_found_okay=True
+            )
 
-            # Copy old snapshot to a normal table to work on it. (snapshots are read-only)
+            # Copy old snapshot to a working table, snapshots are read-only.
             copy_old_snapshot_to_regular = f"""
-            CREATE TABLE {self.project_id}.{self.dataset_id}.{working_table_id}
-            CLONE {self.project_id}.{self.dataset_id}.{snapshot_table_old}
+            CREATE TABLE `{self.project_id}.{self.dataset_id}.{working_table_id}`
+            CLONE `{snapshot_table_old}`
             """
+
             bq_output = run_bigquery_query(copy_old_snapshot_to_regular)
             logging.info(f"Output from copy snapshot query: {bq_output}")
 
-            # Remove the records that have updates from the incoming additions table
-            delete_records_from_working_from_additions = f"""
-            DELETE FROM `{self.project_id}.{self.dataset_id}.{working_table_id}`
-            WHERE MedlineCitation.PMID.value IN (
-            SELECT MedlineCitation.PMID.value
-            FROM `{self.project_id}.{self.dataset_id}.{entity_list['pubmed_article_additions']['table_id']}`
-            );
-            """
-            bq_output = run_bigquery_query(delete_records_from_working_from_additions)
-            logging.info(f"Output from 'delete records to be updated from additions table' query: {bq_output}")
+            entity_list["article_additions"]["table_list"].sort()
+            entity_list["article_deletions"]["table_list"].sort()
 
-            # Insert the additions in to the working table.
-            insert_records_into_working_from_additions = f"""
-            INSERT INTO `{self.project_id}.{self.dataset_id}.{working_table_id}` 
-            SELECT * 
-            FROM `{self.project_id}.{self.dataset_id}.{entity_list['pubmed_article_additions']['table_id']}`
-            """
-            bq_output = run_bigquery_query(insert_records_into_working_from_additions)
-            logging.info(f"Output from 'insert records ' query: {bq_output}")
+            logging.info(f'Addition table list to apply to working: {entity_list["article_additions"]["table_list"]}')
+            logging.info(f'Deletion table list to apply to working: {entity_list["article_deletions"]["table_list"]}')
 
-            # Delete records using the deletions table, matching on the Version of the citation and the PMID.
-            delete_records_from_working_from_deletions = f"""
-            DELETE FROM `{self.project_id}.{self.dataset_id}.{working_table_id}`
-            WHERE (MedlineCitation.PMID.value, MedlineCitation.PMID.Vserion) IN (
-            SELECT (value, Version) 
-            FROM `{self.project_id}.{self.dataset_id}.{entity_list['pubmed_article_deletions']['table_id']}`
-            );
-            """
-            bq_output = run_bigquery_query(delete_records_from_working_from_deletions)
-            logging.info(f"Output from 'delete records from working table from deletions' query: {bq_output}")
+            if len(entity_list["article_additions"]["table_list"]) != len(
+                entity_list["article_deletions"]["table_list"]
+            ):
+                raise AirflowException("Number of addition and deletion record tables are not the same.")
+
+            # There should be the same number of addtitons and deletions tables for the release.
+            for i in range(len(entity_list["article_additions"]["table_list"])):
+                # Remove the records that have updates from the incoming additions table.
+                # This will be done with an upsert merge with the next version of the workflows.
+                delete_records_from_working_from_additions = f"""
+                DELETE FROM `{self.project_id}.{self.dataset_id}.{working_table_id}`
+                WHERE MedlineCitation.PMID.value IN (
+                SELECT MedlineCitation.PMID.value
+                FROM `{self.project_id}.{self.dataset_id}.{entity_list['article_additions']['table_list'][i]}`)
+                """
+                bq_output = run_bigquery_query(delete_records_from_working_from_additions)
+                logging.info(f"Output from 'delete_records_from_working_from_additions' query: {bq_output}")
+
+                # TODO: Check that theres no same PMID in additions release table, as there might be PMID=PMID but Version += 1
+                # Check for duplicates and only keep the one with the highest version number.
+
+                # Insert the additions in to the working table.
+                insert_records_into_working_from_additions = f"""
+                INSERT INTO `{self.project_id}.{self.dataset_id}.{working_table_id}` 
+                SELECT * 
+                FROM `{self.project_id}.{self.dataset_id}.{entity_list['article_additions']['table_list'][i]}`
+                """
+                bq_output = run_bigquery_query(insert_records_into_working_from_additions)
+                logging.info(f"Output from 'insert_records_into_working_from_additions' query: {bq_output}")
+
+                # Delete the addition table from dataset.
+                bq_delete_table(
+                    project_id=self.project_id,
+                    dataset_id=self.dataset_id,
+                    table_id=entity_list["article_additions"]["table_list"][i],
+                    not_found_okay=False,
+                )
+
+                # Delete records using the deletions table, matching on the PMID and Version.
+                delete_records_from_working_from_deletions = f"""
+                DELETE FROM `{self.project_id}.{self.dataset_id}.{working_table_id}`
+                WHERE (MedlineCitation.PMID.value, MedlineCitation.PMID.Version) IN (
+                SELECT (value, Version) 
+                FROM `{self.project_id}.{self.dataset_id}.{entity_list['article_deletions']['table_list'][i]}`)
+                """
+                bq_output = run_bigquery_query(delete_records_from_working_from_deletions)
+                logging.info(f"Output from 'delete_records_from_working_from_deletions' query: {bq_output}")
+
+                # Delete the deletion table from dataset.
+                bq_delete_table(
+                    project_id=self.project_id,
+                    dataset_id=self.dataset_id,
+                    table_id=entity_list["article_deletions"]["table_list"][i],
+                    not_found_okay=False,
+                )
 
             # TODO: Update the working table description.
 
             # Create new snapshot table from working
+            snapshot_table_new = bigquery_sharded_table_id(snapshot_table, self.data_interval_end)
             copy_working_into_new_snapshot = f"""
-            CREATE SNAPSHOT TABLE {self.project_id}.{self.dataset_id}.{working_table_id}
-            CLONE {self.project_id}.{self.dataset_id}.{snapshot_table_old}
+            CREATE SNAPSHOT TABLE `{self.project_id}.{self.dataset_id}.{snapshot_table_new}`
+            CLONE `{self.project_id}.{self.dataset_id}.{working_table_id}`
             """
             bq_output = run_bigquery_query(copy_working_into_new_snapshot)
-            logging.info(f"Output from 'copy working into new snapshot' query: {bq_output}")
+            logging.info(f"Output from 'copy_working_into_new_snapshot' query: {bq_output}")
 
     def add_release(self, release: PubMedRelease, **kwargs):
         """Add the release info to the observatory API.
@@ -1130,11 +1202,11 @@ def bq_delete_table(
     table = bigquery.Table(dataset.table(table_id))
 
     try:
-        bq_client.get_table(table)
+        # bq_client.get_table(table)
         if partition_decorator:
-            bq_client.delete_table(table, not_found_ok=False)
-        else:
             bq_client.delete_table(table, tableId=partition_decorator, not_found_ok=not_found_okay)
+        else:
+            bq_client.delete_table(table, not_found_ok=not_found_okay)
 
         logging.info(f"Deleted exising bigquery table: {table_id} {partition_decorator}")
     except:
