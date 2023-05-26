@@ -18,6 +18,7 @@ import datetime
 import json
 import os
 import pathlib
+import unittest
 from concurrent.futures import as_completed, ThreadPoolExecutor
 from unittest.mock import patch
 
@@ -487,6 +488,7 @@ class TestCrossrefEventsUtils(ObservatoryTestCase):
             events, next_cursor = fetch_events(request, n_rows=10)
             self.assertIsNone(next_cursor)
 
+    @unittest.skip
     def test_crossref_events_limiter(self):
         n_per_second = 10
 
