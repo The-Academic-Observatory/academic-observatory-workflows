@@ -27,7 +27,7 @@ jobs:
           python -m pip install --upgrade pip
 
           cd ..
-          git clone -b feature/workflow-config-file https://github.com/The-Academic-Observatory/observatory-platform.git
+          git clone https://github.com/The-Academic-Observatory/observatory-platform.git
           cd observatory-platform
           pip install -e observatory-api
           pip install -e observatory-platform
