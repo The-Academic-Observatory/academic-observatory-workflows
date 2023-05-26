@@ -83,6 +83,20 @@ class OpenAlexEntity:
         prev_end_date: Optional[pendulum.DateTime],
         release: OpenAlexRelease = None,
     ):
+        """This class represents the data and settings related to an OpenAlex entity or table.
+
+        :param entity_name: the name of the entity, e.g. authors, institutions etc.
+        :param transform: whether the data for the entity needs to be downloaded and transformed locally, or whether
+        it can be loaded straight into BigQuery.
+        :param start_date: the start date of the files covered by this release (inclusive).
+        :param end_date: the end date of the files covered by this release (inclusive).
+        :param manifest: the Redshift manifest provided by OpenAlex for this entity.
+        :param merged_ids: the MergedIds provided by OpenAlex for this entity.
+        :param is_first_run: whether this is the first run or not.
+        :param prev_end_date: the previous end date.
+        :param release: the release object.
+        """
+
         self.entity_name = entity_name
         self.transform = transform
         self.start_date = start_date
@@ -320,6 +334,7 @@ class OpenAlexTelescope(Workflow):
                 ("authors", False),
                 ("publishers", False),
                 ("sources", False),
+                ("funders", False),
             ]
 
         super().__init__(
@@ -367,25 +382,9 @@ class OpenAlexTelescope(Workflow):
         self.add_task(self.aws_to_gcs_transfer)
 
         # Download concepts, institutions and works which need to be pre-processed
-        # Gsutil is used instead of the standard Google Cloud Python library, because it is faster at downloading files
-        # than the Google Cloud Python library.
         for entity_name, transform in self.entities:
             if transform:
-                output_folder = "{{ release.download_folder }}/data/" + entity_name + "/"
-                bucket_path = "{{ release.gcs_openalex_data_uri }}data/" + entity_name + "/*"
-                self.add_operator(
-                    WorkflowBashOperator(
-                        workflow=self,
-                        task_id=f"download_{entity_name}",
-                        bash_command="mkdir -p "
-                        + output_folder
-                        + " && gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}"
-                        + " && gsutil -m -q cp -L {{ release.log_path }} -r "
-                        + bucket_path
-                        + " "
-                        + output_folder,
-                    )
-                )
+                self.add_operator(make_download_bash_op(self, entity_name))
         self.add_task(self.transform)
 
         # Upsert records
@@ -750,6 +749,32 @@ class OpenAlexTelescope(Workflow):
         """Delete all files, folders and XComs associated with this release."""
 
         cleanup(dag_id=self.dag_id, execution_date=kwargs["logical_date"], workflow_folder=release.workflow_folder)
+
+
+def make_download_bash_op(workflow: Workflow, entity_name: str) -> WorkflowBashOperator:
+    """Download files for an entity from the bucket.
+
+    Gsutil is used instead of the standard Google Cloud Python library, because it is faster at downloading files
+    than the Google Cloud Python library.
+
+    :param workflow: the workflow.
+    :param entity_name: the name of the OpenAlex entity, e.g. authors, institutions etc.
+    :return: a WorkflowBashOperator instance.
+    """
+
+    output_folder = "{{ release.download_folder }}/data/" + entity_name + "/"
+    bucket_path = "{{ release.gcs_openalex_data_uri }}data/" + entity_name + "/*"
+    return WorkflowBashOperator(
+        workflow=workflow,
+        task_id=f"download_{entity_name}",
+        bash_command="mkdir -p "
+        + output_folder
+        + " && gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}"
+        + " && gsutil -m -q cp -L {{ release.log_path }} -r "
+        + bucket_path
+        + " "
+        + output_folder,
+    )
 
 
 def parse_release_msg(msg: Dict):

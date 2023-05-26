@@ -17,11 +17,15 @@
 import datetime
 import json
 import os
+import pathlib
 from concurrent.futures import as_completed, ThreadPoolExecutor
+from unittest.mock import patch
 
 import pendulum
 import responses
+import vcr
 from airflow.utils.state import State
+from click.testing import CliRunner
 from google.cloud.exceptions import NotFound
 
 from academic_observatory_workflows.config import test_fixtures_folder
@@ -33,6 +37,8 @@ from academic_observatory_workflows.workflows.crossref_events_telescope import (
     parse_release_msg,
     EventRequest,
     crossref_events_limiter,
+    download_events,
+    fetch_events,
 )
 from observatory.platform.api import get_dataset_releases
 from observatory.platform.files import list_files
@@ -424,6 +430,63 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
 
 
 class TestCrossrefEventsUtils(ObservatoryTestCase):
+    @patch("academic_observatory_workflows.workflows.crossref_events_telescope.fetch_events")
+    def test_download_events(self, m_fetch_events):
+        m_fetch_events.return_value = ([], None)
+        request = EventRequest(Action.create, pendulum.datetime(2023, 5, 1), "test@test.com")
+        n_rows = 10
+
+        # No files
+        # Hasn't been run before
+        with CliRunner().isolated_filesystem() as download_folder:
+            download_events(request, download_folder, n_rows)
+            assert m_fetch_events.call_count == 1
+
+        # Data file and cursor file
+        # The data file was party downloaded because cursor still exists
+        m_fetch_events.reset_mock()
+        with CliRunner().isolated_filesystem() as download_folder:
+            pathlib.Path(pathlib.Path(download_folder) / "created-2023-05-01.jsonl").touch()
+            pathlib.Path(pathlib.Path(download_folder) / "created-2023-05-01-cursor.txt").touch()
+            download_events(request, download_folder, n_rows)
+            assert m_fetch_events.call_count == 1
+
+        # Data file and no cursor file
+        # The data file was fully downloaded and cursor file removed
+        m_fetch_events.reset_mock()
+        with CliRunner().isolated_filesystem() as download_folder:
+            pathlib.Path(pathlib.Path(download_folder) / "created-2023-05-01.jsonl").touch()
+            download_events(request, download_folder, n_rows)
+            assert m_fetch_events.call_count == 0
+
+    def test_fetch_events(self):
+        dt = pendulum.datetime(2023, 5, 1)
+        mailto = "agent@observatory.academy"
+
+        # Create events
+        with vcr.use_cassette(test_fixtures_folder("crossref_events", "test_fetch_events_create.yaml")):
+            request = EventRequest(Action.create, dt, mailto)
+            events1, next_cursor1 = fetch_events(request, n_rows=10)
+            self.assertEqual(10, len(events1))
+            self.assertIsNotNone(next_cursor1)
+            events2, next_cursor2 = fetch_events(request, next_cursor1, n_rows=10)
+            self.assertEqual(10, len(events2))
+            self.assertIsNotNone(next_cursor2)
+
+        # Edit events
+        with vcr.use_cassette(test_fixtures_folder("crossref_events", "test_fetch_events_edit.yaml")):
+            request = EventRequest(Action.edit, dt, mailto)
+            events, next_cursor = fetch_events(request, n_rows=10)
+            self.assertEqual(0, len(events))
+            self.assertIsNone(next_cursor)
+
+        # Delete events
+        with vcr.use_cassette(test_fixtures_folder("crossref_events", "test_fetch_events_delete.yaml")):
+            request = EventRequest(Action.delete, dt, mailto)
+            self.assertEqual(0, len(events))
+            events, next_cursor = fetch_events(request, n_rows=10)
+            self.assertIsNone(next_cursor)
+
     def test_crossref_events_limiter(self):
         n_per_second = 10
 

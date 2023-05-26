@@ -707,7 +707,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         include_prior_dates=False,
                     )
                     actual_entities = parse_release_msg(msg)
-                    self.assertEqual(6, len(actual_entities))
+                    self.assertEqual(7, len(actual_entities))
                     self.assertEqual(expected_entities, actual_entities)
 
                     ti = env.run_task(workflow.create_datasets.__name__)
@@ -916,7 +916,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         include_prior_dates=False,
                     )
                     actual_entities = parse_release_msg(msg)
-                    self.assertEqual(6, len(actual_entities))
+                    self.assertEqual(7, len(actual_entities))
                     self.assertEqual(expected_entities, actual_entities)
 
                     ti = env.run_task(workflow.create_datasets.__name__)
@@ -977,6 +977,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         "publishers": 2,
                         "sources": 3,
                         "works": 3,
+                        "funders": 2,
                     }
                     for entity in expected_entities:
                         expected_rows = expected_row_index[entity.entity_name]
@@ -1005,6 +1006,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         "publishers": 5,
                         "sources": 4,
                         "works": 4,
+                        "funders": 5,
                     }
                     for entity in expected_entities:
                         expected_rows = expected_row_index[entity.entity_name]

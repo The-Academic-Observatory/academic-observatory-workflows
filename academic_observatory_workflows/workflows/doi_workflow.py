@@ -350,7 +350,7 @@ def get_snapshot_date(project_id: str, dataset_id: str, table_id: str, snapshot_
         shard_date = table_shard_dates[0]
     else:
         raise AirflowException(
-            f"{project_id}.{dataset_id}.{table_id} " f"with a table shard date <= {snapshot_date} not found"
+            f"{table_id} with a table shard date <= {snapshot_date} not found"
         )
 
     return shard_date

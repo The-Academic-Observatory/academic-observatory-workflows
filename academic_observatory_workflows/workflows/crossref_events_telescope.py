@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime
 import logging
 import os
+import pathlib
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed, ThreadPoolExecutor
 from datetime import timedelta
@@ -62,8 +63,8 @@ from observatory.platform.workflows.workflow import Workflow, ChangefileRelease,
 CROSSREF_EVENTS_HOST = "https://api.eventdata.crossref.org/v1/events"
 DATE_FORMAT = "YYYY-MM-DD"
 
-backend = storage_from_string("memory://")
-moving_window = FixedWindowElasticExpiryRateLimiter(backend)
+BACKEND = storage_from_string("memory://")
+MOVING_WINDOW = FixedWindowElasticExpiryRateLimiter(BACKEND)
 
 
 class CrossrefEventsRelease(ChangefileRelease):
@@ -754,14 +755,23 @@ def download_events(request: EventRequest, download_folder: str, n_rows: int):
         logging.info(f"{request}: skipped, already finished")
         return
 
-    # If data file exists then the previous request must have failed
-    # Remove them both and start again
-    if os.path.isfile(data_path) and os.path.isfile(cursor_path):
+    # If cursor exists then the previous request must have failed
+    # Remove data file and cursor and start again
+    if os.path.isfile(cursor_path):
         logging.warning(f"{request}: deleting data and trying again")
         logging.warning(f"{request}: deleting {data_path}")
-        os.remove(data_path)
+        try:
+            os.remove(data_path)
+        except FileNotFoundError:
+            pass
         logging.warning(f"{request}: deleting {cursor_path}")
-        os.remove(cursor_path)
+        try:
+            os.remove(cursor_path)
+        except FileNotFoundError:
+            pass
+
+    # Create empty cursor file before doing anything else
+    pathlib.Path(cursor_path).touch()
 
     logging.info(f"{request}: downloading")
     next_cursor = None
@@ -829,12 +839,12 @@ def crossref_events_limiter(calls_per_second: int = 10):
     item = RateLimitItemPerSecond(calls_per_second)  # 10 per second
 
     while True:
-        if not moving_window.test(item, identifier):
+        if not MOVING_WINDOW.test(item, identifier):
             time.sleep(0.01)
         else:
             break
 
-    moving_window.hit(item, identifier)
+    MOVING_WINDOW.hit(item, identifier)
 
 
 def transform_events(download_path: str, transform_folder: str):

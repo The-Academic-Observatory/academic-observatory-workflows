@@ -576,6 +576,12 @@
     "description": "True if we know this work has been retracted. This field has high precision but low recall. In other words, if is_retracted is  true, the article is definitely retracted. But if is_retracted is False,  it still might be retracted, but we just don't know. This is because unfortunately, the open sources for retraction data aren't currently very comprehensive, and the more comprehensive ones aren't sufficiently open for us to use here."
   },
   {
+    "name": "language",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The language of the work in ISO 639-1 format. The language is automatically detected using the information we have about the work. We use the langdetect software library on the words in the work's abstract, or the title if we do not have the abstract. The source code for this procedure is here. Keep in mind that this method is not perfect, and that in some cases the language of the title or abstract could be different from the body of the work."
+  },
+  {
     "name": "locations",
     "type": "RECORD",
     "mode": "REPEATED",

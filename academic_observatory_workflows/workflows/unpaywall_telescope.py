@@ -76,6 +76,13 @@ CHANGEFILES_DOWNLOAD_URL = "https://api.unpaywall.org/daily-feed/changefile"
 
 class Changefile:
     def __init__(self, filename: str, changefile_date: pendulum.DateTime, changefile_release: ChangefileRelease = None):
+        """Holds the metadata about a single Unpaywall changefile.
+
+        :param filename: the name of the changefile.
+        :param changefile_date: the date of the changefile.
+        :param changefile_release: the ChangefileRelease object.
+        """
+
         self.filename = filename
         self.changefile_date = changefile_date
         self.changefile_release = changefile_release
@@ -210,7 +217,24 @@ class UnpaywallTelescope(Workflow):
         start_date: pendulum.DateTime = pendulum.datetime(2021, 7, 2),
         schedule_interval: str = "@daily",
     ):
-        """Unpaywall Data Feed telescope."""
+        """The Unpaywall Data Feed Telescope.
+
+        :param dag_id: the id of the DAG.
+        :param cloud_workspace: the cloud workspace settings.
+        :param bq_dataset_id: the BigQuery dataset id.
+        :param bq_table_name: the BigQuery table name.
+        :param api_dataset_id: the API dataset id.
+        :param schema_folder: the schema folder.
+        :param dataset_description: a description for the BigQuery dataset.
+        :param table_description: a description for the table.
+        :param primary_key: the primary key to use for merging changefiles.
+        :param snapshot_expiry_days: the number of days to keep snapshots.
+        :param http_header: the http header to use when making requests to Unpaywall.
+        :param unpaywall_conn_id: Unpaywall connection key.
+        :param observatory_api_conn_id: the Observatory API connection key.
+        :param start_date: the start date of the DAG.
+        :param schedule_interval: the schedule interval of the DAG.
+        """
 
         super().__init__(
             dag_id=dag_id,
