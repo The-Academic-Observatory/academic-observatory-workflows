@@ -45,9 +45,6 @@ from Bio.Entrez.Parser import (
 # Multithreading libraries
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-# To determine the size of an object in memory
-from pympler import asizeof
-
 # Airflow modules
 from airflow import AirflowException
 from airflow.models.taskinstance import TaskInstance
@@ -65,7 +62,6 @@ from google.cloud import bigquery
 
 from observatory.platform.utils.gc_utils import (
     bigquery_table_exists,
-    create_bigquery_snapshot,
     load_bigquery_table,
     run_bigquery_query,
 )
@@ -149,15 +145,10 @@ class PubMedTelescope(Workflow):
         queue: str = "default",
         max_processes: int = 4,  # Limited to 4 due to RAM
         batch_size: int = 4,
-        transform_file_size: float = 4096,  # 4 Gb, in Megabytes
-        dataset_description: str = "PubMed Medline Citaition Lists",
+        dataset_description: str = "PubMed Citation Lists",
         dataset_id: str = None,
         data_location: str = Variable.get(AirflowVars.DATA_LOCATION),
-        merge_partition_field: str = None,
         source_format: str,
-        schema_folder: str = default_schema_folder(),
-        dataset_type_id: str = None,
-        table_id: str,
         **kwargs,
     ):
         """Construct an PubMed Telescope instance.
@@ -203,10 +194,9 @@ class PubMedTelescope(Workflow):
         self.data_location = data_location
         self.dataset_description = dataset_description
         self.dataset_id = dataset_id
-        self.table_id = table_id
-        self.full_table_id = f"{self.project_id}.{self.dataset_id}.{self.table_id}"
         self.source_format = source_format
         self.schema_folder = default_schema_folder()
+        self.main_table = "articles"
 
         # Workflow parameters
         self.workflow_id = workflow_id
@@ -222,10 +212,6 @@ class PubMedTelescope(Workflow):
         self.max_processes = max_processes
         self.batch_size = batch_size
 
-        # Rough size of what the output file size should be for the merged files.
-        # 1 Gb = 1024 Megabytes = 1024^2 Kilobytes = 1024^3 Bytes = 1073741824 Bytes
-        self.transform_file_size = transform_file_size  #  Megabytes
-
         # After how many downloads to reset the connection to Pubmed's FTP server.
         self.reset_ftp_counter = reset_ftp_counter
 
@@ -235,19 +221,19 @@ class PubMedTelescope(Workflow):
         # TODO: Make condition for when the new baseline is out - after the release date for it each year.
         # if present day after the new baseline date then download baseline or
         # this is the very first release for the telescope
-        # self.download_baseline = is_first_release(self.workflow_id)
 
         self.add_setup_task(self.check_dependencies)
         self.add_task(self.check_releases)
         self.add_task(self.download)
         self.add_task(self.upload_downloaded)
         self.add_task(self.transform)
-        # self.add_task(self.merge_transform_files)
         self.add_task(self.upload_transformed)
         self.add_task(self.bq_ingest_update_tables)
-        self.add_task(self.bq_create_snapshot)
+        self.add_task(self.bq_add_updates_to_main_table)
         # self.add_task(self.add_release)
-        # self.add_task(self.cleanup)
+        self.add_task(self.cleanup)
+
+        # self.add_task(self.add_release)
 
     def make_release(self, **kwargs) -> PubMedRelease:
         """Creates a new Pubmed release instance
@@ -286,18 +272,7 @@ class PubMedTelescope(Workflow):
         return release
 
     def check_releases(self, release: PubMedRelease, **kwargs):
-        """Use previous releases of the Pubmed telescope to determine which files are needed from the FTP server for the new release.
-
-            and uses the data_interval_start and data_interval_end to determine what files are to be downloaded for this release.
-
-        :param workflow_id:
-        :param ftp_server_url: Pubmed FTP server address.
-        :param start_date: start of release period.
-        :param start_date: end of release period.
-        :param baseline_path: Path on the Pubmed FTP server to the 'baseline' files.
-        :param updatefiles_path: Path on the Pubmed FTP server to the 'updatefiles_path' files.
-        :return: List of files to download from the PubMed FTP server.
-        """
+        """TODO: Update this doc string"""
 
         # Open FTP connection to PubMed servers.
         ftp_conn = ftplib.FTP(self.ftp_server_url, timeout=1000000.0)
@@ -320,36 +295,47 @@ class PubMedTelescope(Workflow):
 
             logging.info(f"List of files to download from the PubMed FTP server for 'baseline': {files_to_download}")
 
-        logging.info(
-            f"Grabbing list of 'updatefiles' for this release: {self.data_interval_start} to {self.data_interval_end}"
-        )
+        else:
+            logging.info(
+                f"Grabbing list of 'updatefiles' for this release: {self.data_interval_start} to {self.data_interval_end}"
+            )
 
-        # Change to updatefiles directory
-        ftp_conn.cwd(self.updatefiles_path)
+            # Change to updatefiles directory
+            ftp_conn.cwd(self.updatefiles_path)
 
-        # Find all the xml.gz files available from the server.
-        updatefiles_list = ftp_conn.nlst()
-        updatefiles_xml_gz = [file for file in updatefiles_list if (file.split(".")[-1] == "gz" in file)]
-        updatefiles_xml_gz.sort()
+            # Find all the xml.gz files available from the server.
+            updatefiles_list = ftp_conn.nlst()
+            updatefiles_xml_gz = [file for file in updatefiles_list if (file.split(".")[-1] == "gz" in file)]
+            updatefiles_xml_gz.sort()
 
-        # Only return list of update files that are within the release period.
-        updatefiles_to_download = [
-            self.updatefiles_path + file
-            for file in updatefiles_xml_gz
-            if pendulum.from_format(ftp_conn.sendcmd("MDTM {}".format(file))[4:], "YYYYMMDDHHmmss")
-            in pendulum.period(self.data_interval_start, self.data_interval_end)
-        ]
+            # Only return list of update files that are within the release period.
+            updatefiles_to_download = [
+                self.updatefiles_path + file
+                for file in updatefiles_xml_gz
+                if pendulum.from_format(ftp_conn.sendcmd("MDTM {}".format(file))[4:], "YYYYMMDDHHmmss")
+                in pendulum.period(self.data_interval_start, self.data_interval_end)
+            ]
 
-        logging.info(
-            f"List of files to download from the PubMed FTP server for 'updatefiles': {updatefiles_to_download}"
-        )
+            # Check that all update files that will be used are sequential.
+            updatefiles_to_download.sort()
+            file_index_last = int(re.findall(r"\d{4}", updatefiles_to_download[0].split("/")[-1].split(".")[0])[0])
+            logging.info(f"file_index_last: {file_index_last}")
+            for i in range(1, len(updatefiles_to_download), 1):
+                file_index = int(re.findall(r"\d{4}", updatefiles_to_download[i].split("/")[-1].split(".")[0])[0])
+                if file_index != file_index_last + 1:
+                    raise AirflowException(
+                        f"The update files are not going to be sequential. Please investigate download {file_index} and {file_index_last+1}"
+                    )
+                else:
+                    file_index_last = file_index
 
-        files_to_download.extend(updatefiles_to_download)
+            # TODO: Check that last release index is file_index_last + 1
 
-        # NEEDED ???????????????????????????????????????????????
-        # TODO: Check release api for last downloaded files, need to look at "extra" param.
-        # Get list of all releases, check that sequence of files from FTP are are consecutive from beginning to end.
-        # throw an error if there's a file missing in the sequence.
+            logging.info(
+                f"List of files to download from the PubMed FTP server for 'updatefiles': {updatefiles_to_download}"
+            )
+
+            files_to_download.extend(updatefiles_to_download)
 
         # Close the connection to the FTP server.
         ftp_conn.close()
@@ -404,7 +390,7 @@ class PubMedTelescope(Workflow):
                 ftp_conn.login()
 
                 logging.info(
-                    f"FTP connection to Pubmed's servers has been reset after {self.reset_ftp_counter} to avoid issues."
+                    f"FTP connection to Pubmed's servers has been reset after {self.reset_ftp_counter} downloads to avoid issues."
                 )
 
             file = file_on_ftp.split("/")[-1]
@@ -481,7 +467,7 @@ class PubMedTelescope(Workflow):
     def upload_downloaded(self, release: PubMedRelease, **kwargs):
         """Put all downloaded files onto GCS."""
 
-        # Pull list of transform files from xcom
+        # Pull list of downloaded files from xcom
         ti: TaskInstance = kwargs["ti"]
         downloaded_files_for_release = ti.xcom_pull(key="downloaded_files_for_release")
 
@@ -594,8 +580,8 @@ class PubMedTelescope(Workflow):
         }
 
         # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
-        for i, chunk in enumerate(get_chunks(input_list=downloaded_files_for_release, chunk_size=2)):
-            with ProcessPoolExecutor(max_workers=2) as executor:
+        for i, chunk in enumerate(get_chunks(input_list=downloaded_files_for_release, chunk_size=4)):
+            with ProcessPoolExecutor(max_workers=4) as executor:
                 logging.info(f"In chunk {i} and processing files: {chunk}")
 
                 futures = [
@@ -612,80 +598,6 @@ class PubMedTelescope(Workflow):
                         entity_list[name]["transform_files"].extend(entity["transform_files"])
 
         # Push updated entity metadata into the Xcom
-        ti.xcom_push(key="entity_list", value=entity_list)
-
-    def merge_transform_files(self, release: PubMedRelease, **kwargs):
-        """
-        Merge the transformed Pubmed files into appropriately sized chunks for upload GCS and import to BQ.
-
-        :return: None.
-        """
-
-        # TODO: Rewrite this section for size on disk vs number of entries in files and avg size per row
-        # Amount of ram used is silly.
-
-        # Pull entity list from Xcom
-        ti: TaskInstance = kwargs["ti"]
-        entity_list = ti.xcom_pull(key="entity_list")
-
-        logging.info(f"Merging Pubmed transform files into {self.transform_file_size} Megabyte sized files.")
-
-        for name, entity in entity_list.items():
-            # Initialise list
-            merged_files = []
-
-            # Part number of the larger file chunks.
-            part_num = 1
-
-            entity["transform_files"].sort()
-
-            logging.info(f"List of transformed files from {name} {entity['transform_files']}")
-
-            data = []
-            for file in entity["transform_files"]:
-                logging.info(f"Reading file into memory - {file}")
-
-                # Open file in memory
-                with open(file, "r") as f_in:
-                    new_data = [json.loads(line) for line in f_in]
-
-                # Append it onto existing data object.
-                data.extend(new_data)
-
-                current_size = asizeof.asizeof(data) / (8.0 * 1024.0**2)
-
-                logging.info(f"Current data size: {current_size} Mb")
-
-                # If the size of the data is greater than this, write out to file and clear variable from memeory
-                # OR if the file is the last one, write it out to file regardless.
-
-                if current_size >= self.transform_file_size or file == entity["transform_files"][-1]:
-                    # Make proper name for larger file of chunk.
-                    merged_file = os.path.join(
-                        self.transform_folder,
-                        f"{name}_{self.release_id}_part_{part_num}.jsonl",
-                    )
-
-                    logging.info(f"Writing out to file: {merged_file}")
-
-                    # Write out to file as compressed *.jsonl.gz
-                    with open(merged_file, "wb") as f_out:
-                        for line in data:
-                            f_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
-
-                    # Clear object in memeory (necessary??)
-                    data = []
-
-                    # Save file name to be put into entity list.
-                    merged_files.append(merged_file)
-
-                    # Increase part number for next file
-                    part_num += 1
-
-            # Export list of merged files to transform list
-            entity_list[name]["merged_files"] = merged_files
-
-        # Push updated entity_list with merged files list into the xcom.
         ti.xcom_push(key="entity_list", value=entity_list)
 
     def upload_transformed(self, release: PubMedRelease, **kwargs):
@@ -733,7 +645,7 @@ class PubMedTelescope(Workflow):
         """
         Ingest data into tables for this particular release.
 
-        Use the list of files uploaded to Google Cloud Storage to import to Bigquery.
+        If first run of the workflow, it will only upload the baseline table.
 
         :return: None.
         """
@@ -742,68 +654,101 @@ class PubMedTelescope(Workflow):
         ti: TaskInstance = kwargs["ti"]
         entity_list = ti.xcom_pull(key="entity_list")
 
-        # Upload release tables for this data interval for snapshot step later.
-        for name, entity in entity_list.items():
-            entity["table_list"] = []
+        # If its the first run of the workflow, only upload the baseline table to the main table.
+        if self.download_baseline:
+            # Delete old baseline table just in case there was a bad previous run.
+            bq_delete_table(
+                project_id=self.project_id, dataset_id=self.dataset_id, table_id=self.main_table, not_found_okay=True
+            )
 
-            if self.download_baseline:
-                # Create the baseline table.
-                table_id = f"{name}_baseline"
-                table_description = "Baseline table of the Pubmed database."
+            logging.info(f"Uploading to table - {self.main_table}")
 
-                # Delete old baseline table just in case there was a bad previous run.
-                bq_delete_table(
-                    project_id=self.project_id, dataset_id=self.dataset_id, table_id=table_id, not_found_okay=True
-                )
-
-            for transform_blob in entity["uploaded_to_gcs"]:
-                if not self.download_baseline:
-                    # Create a partition table for each of the updates.
-                    file_index = transform_blob.split("_")[-1].split(".")[0]
-                    table_id = f"{name}_{file_index}"
-                    table_description = f"Update table from file {file_index}"
-                    # Delete old tables with exact table_id just in case there was a bad previous run.
-                    bq_delete_table(
-                        project_id=self.project_id, dataset_id=self.dataset_id, table_id=table_id, not_found_okay=True
-                    )
-
-                logging.info(f"Uploading to table - {table_id}")
-
+            for transform_blob in entity_list["article_additions"]["uploaded_to_gcs"]:
                 success = load_bigquery_table(
                     transform_blob,
                     self.dataset_id,
                     self.data_location,
-                    table_id,
-                    entity["schema_file_path"],
+                    self.main_table,
+                    entity_list["article_additions"]["schema_file_path"],
                     self.source_format,
                     write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
                     project_id=self.project_id,
-                    table_description=table_description,
+                    table_description="Baseline table of the Pubmed database.",
                     partition=False,
                 )
 
-                if success:
-                    if not table_id in entity["table_list"]:
-                        entity["table_list"].append(table_id)
-                else:
-                    raise AirflowException(f"Unable to upload table {table_id}")
-
-            # TODO: Get number of rows of table from BQ for an assert?
-
             if success:
-                logging.info(
-                    f"""Successfully uploaded to table - {name} { f"with {len(entity['table_list'])} partitions" if not self.download_baseline else ""}"""
-                )
+                entity_list["article_additions"]["table_list"].append(self.main_table)
+            else:
+                raise AirflowException(f"Unable to upload table {self.main_table}")
 
-                # Update the entity after a successful table upload.
-                entity_list[name] = entity
+        # Not the first workflow run, only ingest update tables into BQ.
+        else:
+            ## There has to be a better way to do this.
+            ## Currently it just uploads to the table pubmed_(something)_(file_index)
+            ## but we cannot shard on dates are there are sometimes multiple update files per day
+            ## and we are unable to merge the updatefiles as they are dependant on order.
+            ## so there will be 7-10 ish files stuck in the dataset until the cleanup step.
+
+            ## Figure out if -
+            ## Dates can still be used for the shards and if the updatefiles on same day interfere with each other
+            ## OR other shard methods
+            ## OR keep as it is.
+
+            # Upload release tables for this data interval.
+            for name, entity in entity_list.items():
+                entity["table_list"] = []
+
+                for transform_blob in entity["uploaded_to_gcs"]:
+                    # Create a table for each of the pubmed updates.
+
+                    file_index = transform_blob.split("_")[-1].split(".")[0]
+                    table_id = f"{name}_{file_index}"
+                    table_description = f"Update table from file {file_index}"
+
+                    # Delete old tables with exact table_id just in case there was a bad previous run.
+                    # We don't want to append add dupliactes to the tables.
+                    bq_delete_table(
+                        project_id=self.project_id, dataset_id=self.dataset_id, table_id=table_id, not_found_okay=True
+                    )
+
+                    logging.info(f"Uploading to table - {table_id}")
+
+                    success = load_bigquery_table(
+                        transform_blob,
+                        self.dataset_id,
+                        self.data_location,
+                        table_id,
+                        entity["schema_file_path"],
+                        self.source_format,
+                        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+                        project_id=self.project_id,
+                        table_description=table_description,
+                        partition=False,
+                    )
+
+                    if success:
+                        if not table_id in entity["table_list"]:
+                            entity["table_list"].append(table_id)
+                    else:
+                        raise AirflowException(f"Unable to upload table {table_id}")
+
+                # TODO: Get number of rows of table from BQ for an assert?
+
+                if success:
+                    logging.info(
+                        f"""Successfully uploaded to table - {name} with {len(entity['table_list'])} tables. """
+                    )
+
+                    # Update the entity after a successful table upload.
+                    entity_list[name] = entity
 
         #  Update workflow metadata of tables.
         entity_list = ti.xcom_push(key="entity_list", value=entity_list)
 
-    def bq_create_snapshot(self, release: PubMedRelease, **kwargs):
+    def bq_add_updates_to_main_table(self, release: PubMedRelease, **kwargs):
         """
-        Create snapshot from the release tables transfered in previous section.
+        Updates the main table with the additions and deletions from the update files.
 
         :param release: Pubmed release.
         :return: None.
@@ -813,138 +758,82 @@ class PubMedTelescope(Workflow):
         ti: TaskInstance = kwargs["ti"]
         entity_list = ti.xcom_pull(key="entity_list")
 
-        # TODO: Add this to the init
-        snapshot_table = "article_snapshots"
-        working_table = "working_table"
-
         # Use the table from this workflow run to make the first snapshot.
         # This should be just the baseline dataset, so there should be no deletions to the snapshot.
         if self.download_baseline:
-            # Copy baseline to make the first snapshot table.
-            first_snapshot_table_id = bigquery_sharded_table_id(snapshot_table, self.data_interval_end)
+            # TODO: Asssert that the main table exists.
 
-            bq_query_create_baseline_snapshot = f"""
-            CREATE SNAPSHOT TABLE `{self.project_id}.{self.dataset_id}.{first_snapshot_table_id}`
-            CLONE `{self.project_id}.{self.dataset_id}.{entity_list['article_additions']['table_list'][0]}`
-            """
-
-            # Run bq query to create snapshot
-            bq_output = run_bigquery_query(bq_query_create_baseline_snapshot)
-            logging.info(f"Output from create snapshot query: {bq_output}")
-
-            # Delete the baseline temporary table.
-            bq_delete_table(
-                project_id=self.project_id,
-                dataset_id=self.dataset_id,
-                table_id=entity_list["article_additions"]["table_list"][0],
-                not_found_okay=True,
-            )
-
-            # Delete the baseline temporary table.
-            bq_delete_table(
-                project_id=self.project_id,
-                dataset_id=self.dataset_id,
-                table_id=entity_list["article_deletions"]["table_list"][0],
-                not_found_okay=True,
-            )
+            logging.info(f"Table {self.main_table} has already been created in the previous step.")
 
         else:
-            # Get last snapshot table name.
-            snapshot_table_list = bq_list_tables_in_dataset_with_prefix(
-                self.project_id, self.dataset_id, snapshot_table
-            )
-            snapshot_table_list.sort()
-            snapshot_table_old = snapshot_table_list[-1]
+            if len(entity_list["article_additions"]["table_list"]) != len(
+                entity_list["article_deletions"]["table_list"]
+            ):
+                # Stop workflow as something has gone wrong in the upload table step.
+                raise AirflowException("Number of addition and deletion record tables are not the same.")
 
-            working_table_id = bigquery_sharded_table_id(working_table, self.data_interval_end)
-            logging.info(f"Copy {snapshot_table_old} to working table {working_table_id} ")
+            num_update_tables = len(entity_list["article_additions"]["table_list"])
 
-            # Delete old working table from old bad runs.
-            bq_delete_table(
-                project_id=self.project_id, dataset_id=self.dataset_id, table_id=working_table_id, not_found_okay=True
-            )
-
-            # Copy old snapshot to a working table, snapshots are read-only.
-            copy_old_snapshot_to_regular = f"""
-            CREATE TABLE `{self.project_id}.{self.dataset_id}.{working_table_id}`
-            CLONE `{snapshot_table_old}`
+            # Create a snapshot of main table just in case something happens with the below updates and deletes
+            # and we can revert if necessary.
+            # This will be replaced in the new workflow.
+            backup_table_id = bigquery_sharded_table_id(f"{self.main_table}_backup", self.data_interval_start)
+            create_backup_table = f"""
+            CREATE SNAPSHOT TABLE `{self.project_id}.{self.dataset_id}.{backup_table_id}`
+            CLONE `{self.project_id}.{self.dataset_id}.{self.main_table}`
             """
-
-            bq_output = run_bigquery_query(copy_old_snapshot_to_regular)
-            logging.info(f"Output from copy snapshot query: {bq_output}")
+            bq_output = run_bigquery_query(create_backup_table)
+            logging.info(f"Output from 'create_backup_table' query: {bq_output}")
 
             entity_list["article_additions"]["table_list"].sort()
             entity_list["article_deletions"]["table_list"].sort()
 
-            logging.info(f'Addition table list to apply to working: {entity_list["article_additions"]["table_list"]}')
-            logging.info(f'Deletion table list to apply to working: {entity_list["article_deletions"]["table_list"]}')
+            logging.info(
+                f'Addition table list to apply to main_table: {entity_list["article_additions"]["table_list"]}'
+            )
+            logging.info(
+                f'Deletion table list to apply to main_table: {entity_list["article_deletions"]["table_list"]}'
+            )
 
-            if len(entity_list["article_additions"]["table_list"]) != len(
-                entity_list["article_deletions"]["table_list"]
-            ):
-                raise AirflowException("Number of addition and deletion record tables are not the same.")
+            for i in range(num_update_tables):
+                logging.info(f"Currently doing - {entity_list['article_additions']['table_list'][i]}")
 
-            # There should be the same number of addtitons and deletions tables for the release.
-            for i in range(len(entity_list["article_additions"]["table_list"])):
                 # Remove the records that have updates from the incoming additions table.
                 # This will be done with an upsert merge with the next version of the workflows.
-                delete_records_from_working_from_additions = f"""
-                DELETE FROM `{self.project_id}.{self.dataset_id}.{working_table_id}`
+                delete_records_from_main_table_from_incoming_additions = f"""
+                DELETE FROM `{self.project_id}.{self.dataset_id}.{self.main_table}`
                 WHERE MedlineCitation.PMID.value IN (
                 SELECT MedlineCitation.PMID.value
                 FROM `{self.project_id}.{self.dataset_id}.{entity_list['article_additions']['table_list'][i]}`)
                 """
-                bq_output = run_bigquery_query(delete_records_from_working_from_additions)
-                logging.info(f"Output from 'delete_records_from_working_from_additions' query: {bq_output}")
+                bq_output = run_bigquery_query(delete_records_from_main_table_from_incoming_additions)
+                logging.info(f"Output from 'delete_records_from_main_table_from_incoming_additions' query: {bq_output}")
 
-                # TODO: Check that theres no same PMID in additions release table, as there might be PMID=PMID but Version += 1
-                # Check for duplicates and only keep the one with the highest version number.
-
-                # Insert the additions in to the working table.
-                insert_records_into_working_from_additions = f"""
-                INSERT INTO `{self.project_id}.{self.dataset_id}.{working_table_id}` 
+                # Insert the additions in to the main table.
+                insert_records_into_main_table_from_incoming_additions = f"""
+                INSERT INTO `{self.project_id}.{self.dataset_id}.{self.main_table}` 
                 SELECT * 
                 FROM `{self.project_id}.{self.dataset_id}.{entity_list['article_additions']['table_list'][i]}`
                 """
-                bq_output = run_bigquery_query(insert_records_into_working_from_additions)
-                logging.info(f"Output from 'insert_records_into_working_from_additions' query: {bq_output}")
+                bq_output = run_bigquery_query(insert_records_into_main_table_from_incoming_additions)
+                logging.info(f"Output from 'insert_records_into_main_table_from_incoming_additions' query: {bq_output}")
 
-                # Delete the addition table from dataset.
-                bq_delete_table(
-                    project_id=self.project_id,
-                    dataset_id=self.dataset_id,
-                    table_id=entity_list["article_additions"]["table_list"][i],
-                    not_found_okay=False,
-                )
+                logging.info(f"Currently doing - {entity_list['article_deletions']['table_list'][i]}")
 
-                # Delete records using the deletions table, matching on the PMID and Version.
-                delete_records_from_working_from_deletions = f"""
-                DELETE FROM `{self.project_id}.{self.dataset_id}.{working_table_id}`
+                # Delete records from the main table using the incoming deletions, matching on the PMID and Version.
+                delete_records_from_main_table_from_incoming_deletions = f"""
+                DELETE FROM `{self.project_id}.{self.dataset_id}.{self.main_table}`
                 WHERE (MedlineCitation.PMID.value, MedlineCitation.PMID.Version) IN (
                 SELECT (value, Version) 
                 FROM `{self.project_id}.{self.dataset_id}.{entity_list['article_deletions']['table_list'][i]}`)
                 """
-                bq_output = run_bigquery_query(delete_records_from_working_from_deletions)
-                logging.info(f"Output from 'delete_records_from_working_from_deletions' query: {bq_output}")
+                bq_output = run_bigquery_query(delete_records_from_main_table_from_incoming_deletions)
+                logging.info(f"Output from 'delete_records_from_main_table_from_incoming_deletions' query: {bq_output}")
 
-                # Delete the deletion table from dataset.
-                bq_delete_table(
-                    project_id=self.project_id,
-                    dataset_id=self.dataset_id,
-                    table_id=entity_list["article_deletions"]["table_list"][i],
-                    not_found_okay=False,
-                )
+                # TODO: Update the table description with the new update file index.
+                # description = f"""Pubmed Article table with baseline files pubmed23n0001-pubmed23n1167 and updatefiles from pubmed23n1168-pubmed23nxxxx"""
 
-            # TODO: Update the working table description.
-
-            # Create new snapshot table from working
-            snapshot_table_new = bigquery_sharded_table_id(snapshot_table, self.data_interval_end)
-            copy_working_into_new_snapshot = f"""
-            CREATE SNAPSHOT TABLE `{self.project_id}.{self.dataset_id}.{snapshot_table_new}`
-            CLONE `{self.project_id}.{self.dataset_id}.{working_table_id}`
-            """
-            bq_output = run_bigquery_query(copy_working_into_new_snapshot)
-            logging.info(f"Output from 'copy_working_into_new_snapshot' query: {bq_output}")
+                # TODO: Do a check step on the main table to ensure that it's been done right?
 
     def add_release(self, release: PubMedRelease, **kwargs):
         """Add the release info to the observatory API.
@@ -962,16 +851,50 @@ class PubMedTelescope(Workflow):
         # Create
 
     def cleanup(self, release: PubMedRelease, **kwargs):
-        """Cleanup files and task instances from this release.
+        """Cleanup files from this workflow run.
+
+        Delete local download files, tranform files and left over tables in BQ.
 
         :return: None.
         """
 
-        # Loop through all of the download and transform files and confirm that data has been deleted from this workflow run.
+        # Pull from Xcom
+        ti: TaskInstance = kwargs["ti"]
+        downloaded_files_for_release = ti.xcom_pull(key="downloaded_files_for_release")
+        entity_list = ti.xcom_pull(key="entity_list")
 
-        # Remove the old snapshot table.
+        logging.info(f"Deleting the locally downloaded files for this release.")
+        for file in downloaded_files_for_release:
+            logging.info(f"Deleting file = {file}")
+            try:
+                os.remove(file)
+            except:
+                logging.info(f"File {file} does not exist.")
 
-        # Remove all task instance data from this workflow run.
+        for name, entity in entity_list.items():
+            # For each entity, delete the transform files (local) and tables (on BQ)
+
+            logging.info(f"Deleting local transform files for - {name}")
+            for transform_file in entity["transform_files"]:
+                logging.info(f"Deleting file = {file}")
+                try:
+                    os.remove(transform_file)
+                except:
+                    logging.info(f"File {transform_file} does not exist.")
+
+            if not self.download_baseline:
+                logging.info(f"Deleting the update tables for - {name}")
+                # Delete the update tables from BQ, not the main table.
+                for table in entity["table_list"]:
+                    # Delete the addition table from dataset.
+                    bq_delete_table(
+                        project_id=self.project_id,
+                        dataset_id=self.dataset_id,
+                        table_id=table,
+                        not_found_okay=False,
+                    )
+
+        # TODO: Remove all task instance data from this workflow run.
 
 
 def transform_pubmed_xml_file_to_jsonl(input_file: str, entity_list: Dict, transform_folder: str) -> Dict:
@@ -1031,11 +954,12 @@ def transform_pubmed_xml_file_to_jsonl(input_file: str, entity_list: Dict, trans
             )
             data_part = []
 
-        output_file = os.path.join(transform_folder, entity["output_file_base"] + "_" + pubmed_file_id + ".jsonl")
+        output_file = os.path.join(transform_folder, entity["output_file_base"] + "_" + pubmed_file_id + ".jsonl.gz")
 
         logging.info(f"Writing {name} {data_type} to file - {output_file}")
 
-        with open(output_file, "wb") as f_out:
+        # Write to compressed *.jsonl.gz
+        with gzip.open(output_file, "w") as f_out:
             for line in data_part:
                 f_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
 
