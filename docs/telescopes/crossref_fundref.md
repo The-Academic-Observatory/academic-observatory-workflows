@@ -37,7 +37,7 @@ The corresponding table created in BigQuery is `crossref.crossref_fundrefYYYYMMD
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/crossref_fundref_latest.csv
+   :file: ../schemas/crossref_fundref/crossref_fundref_latest.csv
    :width: 100%
    :header-rows: 1
 ```

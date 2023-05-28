@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Tuan Chien
+# Author: Tuan Chien, James Diprose
 
 
 import calendar
@@ -24,37 +24,44 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from queue import Empty, Queue
 from threading import Event
 from time import sleep
-from typing import Any, Dict, List, Tuple, Type, Union
+from typing import Any, List, Tuple, Type, Union, Dict
 from urllib.parse import quote_plus
 
-import jsonlines
 import pendulum
 from airflow import AirflowException
-from airflow.models import Variable
-from google.cloud.bigquery import WriteDisposition
+from google.cloud.bigquery import WriteDisposition, SourceFormat
 from ratelimit import limits, sleep_and_retry
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
-from observatory.platform.utils.config_utils import find_schema
-from observatory.platform.utils.airflow_utils import (
-    AirflowConns,
-    AirflowVars,
-    get_airflow_connection_password,
+from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+from observatory.api.client.model.dataset_release import DatasetRelease
+from observatory.platform.airflow import get_airflow_connection_password
+from observatory.platform.api import make_observatory_api, build_schedule
+from observatory.platform.bigquery import (
+    bq_find_schema,
+    bq_load_table,
+    bq_sharded_table_id,
+    bq_create_dataset,
 )
-from observatory.platform.utils.file_utils import load_file, write_to_file
-from observatory.platform.utils.url_utils import get_user_agent
-from observatory.platform.utils.workflow_utils import (
-    blob_name,
-    bq_load_shard,
-    build_schedule,
+from observatory.platform.config import AirflowConns
+from observatory.platform.files import (
+    save_jsonl_gz,
+    list_files,
+    load_file,
+    write_to_file,
     get_as_list,
     get_entry_or_none,
+    clean_dir,
 )
-from observatory.platform.workflows.snapshot_telescope import (
+from observatory.platform.gcs import gcs_blob_name_from_path, gcs_upload_files, gcs_blob_uri
+from observatory.platform.observatory_config import CloudWorkspace
+from observatory.platform.utils.url_utils import get_user_agent
+from observatory.platform.workflows.workflow import (
+    Workflow,
     SnapshotRelease,
-    SnapshotTelescope,
+    cleanup,
+    set_task_state,
+    make_snapshot_date,
 )
-from academic_observatory_workflows.dag_tag import Tag
 
 
 class ScopusRelease(SnapshotRelease):
@@ -62,179 +69,87 @@ class ScopusRelease(SnapshotRelease):
         self,
         *,
         dag_id: str,
-        release_date: pendulum.DateTime,
-        api_keys: List[str],
-        institution_ids: List[str],
-        earliest_date: pendulum.DateTime,
-        view: str,
+        run_id: str,
+        snapshot_date: pendulum.DateTime,
     ):
-        """Construct a ScopusRelease instance.
+        """Construct a WebOfScienceRelease instance.
+
         :param dag_id: The DAG ID.
-        :param release_date: Release date.
-        :param api_keys: List of available API keys to use.
-        :param institution_ids: List of institution IDs to query.
-        :param earliest_date: Earliest date to query from.
-        :param view: The view type.  Standard or complete. See https://dev.elsevier.com/sc_search_views.html
+        :param run_id: The DAG run ID.
+        :param snapshot_date: Release date.
         """
 
         super().__init__(
             dag_id=dag_id,
-            release_date=release_date,
+            run_id=run_id,
+            snapshot_date=snapshot_date,
         )
-
-        self.table_id = ScopusTelescope.DAG_ID
-        self.api_keys = api_keys
-        self.institution_ids = institution_ids
-        self.earliest_date = earliest_date
-        self.view = view
-
-    def download(self):
-        """Download snapshot from SCOPUS for the given institution."""
-
-        start_date = self.earliest_date
-        end_date = self.release_date.subtract(days=1).end_of("day")
-
-        schedule = build_schedule(start_date, end_date)
-        taskq = Queue()
-        for period in schedule:
-            taskq.put(period)
-
-        workers = list()
-        for i, key in enumerate(self.api_keys):
-            worker = ScopusUtilWorker(
-                client_id=i,
-                client=ScopusClient(api_key=key, view=self.view),
-                quota_reset_date=self.release_date,
-                quota_remaining=ScopusUtilWorker.DEFAULT_KEY_QUOTA,
-            )
-            workers.append(worker)
-
-        ScopusUtility.download_parallel(
-            workers=workers,
-            taskq=taskq,
-            conn=self.dag_id,
-            institution_ids=self.institution_ids,
-            download_dir=self.download_folder,
-        )
-
-    def transform(self):
-        """Transform the data into database format."""
-
-        for file in self.download_files:
-            records = json.loads(load_file(file))
-            harvest_datetime = self._get_harvest_datetime(file)
-            entries = self._transform_to_db_format(records=records, harvest_datetime=harvest_datetime)
-            self._write_transform_files(entries=entries, file=file)
-
-    def _transform_to_db_format(self, records: List[dict], harvest_datetime: str) -> List[dict]:
-        """Convert the json response to the expected schema.
-        :param records: List of the records as json.
-        :param harvest_datetime: Timestamp of when the API call was made.
-        :return: List of transformed entries.
-        """
-
-        entries = []
-        for data in records:
-            entry = ScopusJsonParser.parse_json(
-                data=data,
-                harvest_datetime=harvest_datetime,
-                release_date=self.release_date.date().isoformat(),
-                institution_ids=self.institution_ids,
-            )
-
-            entries.append(entry)
-
-        return entries
-
-    def _write_transform_files(self, *, entries: Union[dict, list], file: str):
-        """Save the schema compatible dictionaries as jsonlines.
-        :param entries: List of schema compatible entries.
-        :param file: The filepath to the xml file of API response.
-        """
-
-        # Strip out the harvest time stamp from the filename so that schema detection works
-        filename = os.path.basename(file)
-        filename = f"{filename[:23]}.jsonl"
-        filename = f"{ScopusTelescope.DAG_ID}.{filename}"
-        dst_file = os.path.join(self.transform_folder, filename)
-        logging.info(f"Writing file {dst_file}")
-
-        with jsonlines.open(dst_file, mode="w") as writer:
-            writer.write_all(entries)
-
-    def _get_harvest_datetime(self, filepath: str) -> str:
-        """Get the harvest datetime from the filename. <startdate>_<enddate>_<timestamp>.json
-        :param filepath: JSON file path.
-        :return: Harvest datetime string.
-        """
-
-        filename = os.path.basename(filepath)
-        file_tokens = filename.split("_")
-        return file_tokens[2][:-5]
+        self.download_file_regex = r".*\.json"
+        self.transform_file_name = "scopus.jsonl.gz"
+        self.transform_file_path = os.path.join(self.transform_folder, self.transform_file_name)
 
 
-class ScopusTelescope(SnapshotTelescope):
-    DAG_ID = "scopus"
-    TABLE_DESCRIPTION = "The Scopus citation database: https://www.scopus.com"
+class ScopusTelescope(Workflow):
     SCHEMA_VERSION_ALT = "http://www.elsevier.com/xml/ani/ani515.xsd"
 
     def __init__(
         self,
         *,
         dag_id: str,
-        airflow_conns: List[AirflowConns],
-        airflow_vars: List[AirflowVars],
+        cloud_workspace: CloudWorkspace,
         institution_ids: List[str],
+        scopus_conn_ids: List[str],
         view: str = "STANDARD",
         earliest_date: pendulum.DateTime = pendulum.datetime(1800, 1, 1),
+        bq_dataset_id: str = "elsevier",
+        bq_table_name: str = "scopus",
+        api_dataset_id: str = "scopus",
+        schema_folder: str = os.path.join(default_schema_folder(), "scopus"),
+        dataset_description: str = "The Scopus citation database: https://www.scopus.com",
+        table_description: str = "The Scopus citation database: https://www.scopus.com",
+        observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
         schedule_interval: str = "@monthly",
-        dataset_id: str = "elsevier",
-        schema_folder: str = default_schema_folder(),
-        org_name: str = "Curtin University",
-        workflow_id: int = None,
     ):
         """Scopus telescope.
         :param dag_id: the id of the DAG.
+        :param cloud_workspace: the cloud workspace settings.
+        :param institution_ids: list of institution IDs to use for the Scopus search query.
+        :param scopus_conn_ids: list of Scopus Airflow Connection IDs.
+        :param view: The view type. Standard or complete. See https://dev.elsevier.com/sc_search_views.html
+        :param earliest_date: earliest date to query for results.
+        :param bq_dataset_id: the BigQuery dataset id.
+        :param bq_table_name: the BigQuery table name.
+        :param api_dataset_id: the Dataset ID to use when storing releases.
+        :param schema_folder: the SQL schema path.
+        :param dataset_description: description for the BigQuery dataset.
+        :param table_description: description for the BigQuery table.
+        :param observatory_api_conn_id: the Observatory API connection key.
         :param start_date: the start date of the DAG.
         :param schedule_interval: the schedule interval of the DAG.
-        :param dataset_id: the dataset id.
-        :param schema_folder: the SQL schema path.
-        :param airflow_vars: list of airflow variable keys to check the existence of
-        :param airflow_conns: list of airflow connection ids to check the existence of
-        :param institution_ids: list of institution IDs to use for the WoS search query.
-        :param view: The view type.  Standard or complete. See https://dev.elsevier.com/sc_search_views.html
-        :param earliest_date: earliest date to query for results.
-        :param org_name: Organisation name in the API associated with this Telescope instance.
-        :param workflow_id: api workflow id.
         """
 
-        load_bigquery_table_kwargs = {"write_disposition": WriteDisposition.WRITE_APPEND, "ignore_unknown_values": True}
-
         super().__init__(
-            dag_id,
-            start_date,
-            schedule_interval,
-            dataset_id,
-            schema_folder,
+            dag_id=dag_id,
+            start_date=start_date,
+            schedule_interval=schedule_interval,
             catchup=False,
-            table_descriptions={dag_id: ScopusTelescope.TABLE_DESCRIPTION},
-            airflow_vars=airflow_vars,
-            airflow_conns=airflow_conns,
-            workflow_id=workflow_id,
-            load_bigquery_table_kwargs=load_bigquery_table_kwargs,
+            airflow_conns=[observatory_api_conn_id] + scopus_conn_ids,
             tags=[Tag.academic_observatory],
         )
 
-        if len(airflow_conns) == 0:
-            raise AirflowException("You need to supply at least one Airflow connection with a SCOPUS API key.")
-
-        if len(institution_ids) == 0:
-            raise AirflowException("You must specify at least one institution id to query.")
-
+        self.cloud_workspace = cloud_workspace
         self.institution_ids = institution_ids
+        self.scopus_conn_ids = scopus_conn_ids
         self.earliest_date = earliest_date
         self.view = view
+        self.bq_dataset_id = bq_dataset_id
+        self.bq_table_name = bq_table_name
+        self.api_dataset_id = api_dataset_id
+        self.schema_folder = schema_folder
+        self.dataset_description = dataset_description
+        self.table_description = table_description
+        self.observatory_api_conn_id = observatory_api_conn_id
 
         self.add_setup_task(self.check_dependencies)
         self.add_task(self.download)
@@ -242,8 +157,8 @@ class ScopusTelescope(SnapshotTelescope):
         self.add_task(self.transform)
         self.add_task(self.upload_transformed)
         self.add_task(self.bq_load)
-        self.add_task(self.cleanup)
         self.add_task(self.add_new_dataset_releases)
+        self.add_task(self.cleanup)
 
     @property
     def api_keys(self) -> List[str]:
@@ -252,10 +167,9 @@ class ScopusTelescope(SnapshotTelescope):
         :return: List of API keys to use.
         """
 
-        keys = [get_airflow_connection_password(conn) for conn in self.airflow_conns]
-        return keys
+        return [get_airflow_connection_password(conn) for conn in self.scopus_conn_ids]
 
-    def make_release(self, **kwargs) -> List[ScopusRelease]:
+    def make_release(self, **kwargs) -> ScopusRelease:
         """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is
         called in 'task_callable'.
 
@@ -265,45 +179,134 @@ class ScopusTelescope(SnapshotTelescope):
         :return: a list of GeonamesRelease instances.
         """
 
-        return [
-            ScopusRelease(
-                dag_id=self.dag_id,
-                release_date=pendulum.now("UTC"),
-                api_keys=self.api_keys,
-                institution_ids=self.institution_ids,
-                earliest_date=self.earliest_date,
-                view=self.view,
-            )
-        ]
+        snapshot_date = make_snapshot_date(**kwargs)
+        return ScopusRelease(
+            dag_id=self.dag_id,
+            run_id=kwargs["run_id"],
+            snapshot_date=snapshot_date,
+        )
 
-    def bq_load(self, releases: List[SnapshotRelease], **kwargs):
+    def download(self, release: ScopusRelease, **kwargs):
+        """Download snapshot from SCOPUS for the given institution."""
+
+        clean_dir(release.download_folder)
+        schedule = build_schedule(self.earliest_date, release.snapshot_date)
+        taskq = Queue()
+        for period in schedule:
+            taskq.put(period)
+
+        workers = list()
+        for i, key in enumerate(self.api_keys):
+            worker = ScopusUtilWorker(
+                client_id=i,
+                client=ScopusClient(api_key=key, view=self.view),
+                quota_reset_date=release.snapshot_date,
+                quota_remaining=ScopusUtilWorker.DEFAULT_KEY_QUOTA,
+            )
+            workers.append(worker)
+
+        ScopusUtility.download_parallel(
+            workers=workers,
+            taskq=taskq,
+            conn=self.dag_id,
+            institution_ids=self.institution_ids,
+            download_dir=release.download_folder,
+        )
+
+    def upload_downloaded(self, release: ScopusRelease, **kwargs):
+        """Upload data to Cloud Storage."""
+
+        file_list = list_files(release.download_folder, release.download_file_regex)
+        success = gcs_upload_files(bucket_name=self.cloud_workspace.download_bucket, file_paths=file_list)
+        set_task_state(success, self.upload_downloaded.__name__, release)
+
+    def transform(self, release: ScopusRelease, **kwargs):
+        """Transform the data into database format."""
+
+        clean_dir(release.transform_folder)
+        data = []
+        file_list = list_files(release.download_folder, release.download_file_regex)
+        for file in file_list:
+            records = json.loads(load_file(file))
+            data += transform_to_db_format(
+                records=records, snapshot_date=release.snapshot_date, institution_ids=self.institution_ids
+            )
+        save_jsonl_gz(release.transform_file_path, data)
+
+    def upload_transformed(self, release: ScopusRelease, **kwargs) -> None:
+        """Upload the transformed data to Cloud Storage."""
+
+        success = gcs_upload_files(
+            bucket_name=self.cloud_workspace.transform_bucket, file_paths=[release.transform_file_path]
+        )
+        set_task_state(success, self.upload_transformed.__name__, release)
+
+    def bq_load(self, release: ScopusRelease, **kwargs):
         """Task to load each transformed release to BigQuery.
-        The table_id is set to the file name without the extension.
-        :param releases: a list of releases.
-        :return: None.
-        """
+        The table_id is set to the file name without the extension."""
 
-        # Load each transformed release
-        for release in releases:
-            transform_blob = f"{blob_name(release.transform_folder)}/*"
-            table_description = self.table_descriptions.get(self.dag_id, "")
-            schema_file_path = find_schema(
-                self.schema_folder, ScopusTelescope.DAG_ID, release_date=release.release_date
-            )
-            bq_load_shard(
-                schema_file_path=schema_file_path,
-                project_id=Variable.get(AirflowVars.PROJECT_ID),
-                data_location=Variable.get(AirflowVars.DATA_LOCATION),
-                transform_bucket=Variable.get(AirflowVars.TRANSFORM_BUCKET),
-                release_date=release.release_date,
-                transform_blob=transform_blob,
-                dataset_id=self.dataset_id,
-                table_id=ScopusTelescope.DAG_ID,
-                source_format=self.source_format,
-                dataset_description=self.dataset_description,
-                table_description=table_description,
-                **self.load_bigquery_table_kwargs,
-            )
+        bq_create_dataset(
+            project_id=self.cloud_workspace.output_project_id,
+            dataset_id=self.bq_dataset_id,
+            location=self.cloud_workspace.data_location,
+            description=self.dataset_description,
+        )
+
+        uri = gcs_blob_uri(self.cloud_workspace.transform_bucket, gcs_blob_name_from_path(release.transform_file_path))
+        schema_file_path = bq_find_schema(
+            path=self.schema_folder, table_name=self.bq_table_name, release_date=release.snapshot_date
+        )
+        table_id = bq_sharded_table_id(
+            self.cloud_workspace.output_project_id, self.bq_dataset_id, self.bq_table_name, release.snapshot_date
+        )
+        success = bq_load_table(
+            uri=uri,
+            table_id=table_id,
+            schema_file_path=schema_file_path,
+            source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
+            table_description=self.table_description,
+            write_disposition=WriteDisposition.WRITE_APPEND,
+            ignore_unknown_values=True,
+        )
+        set_task_state(success, self.bq_load.__name__, release)
+
+    def add_new_dataset_releases(self, release: ScopusRelease, **kwargs) -> None:
+        """Adds release information to API."""
+
+        dataset_release = DatasetRelease(
+            dag_id=self.dag_id,
+            dataset_id=self.api_dataset_id,
+            dag_run_id=release.run_id,
+            snapshot_date=release.snapshot_date,
+            data_interval_start=kwargs["data_interval_start"],
+            data_interval_end=kwargs["data_interval_end"],
+        )
+        api = make_observatory_api(observatory_api_conn_id=self.observatory_api_conn_id)
+        api.post_dataset_release(dataset_release)
+
+    def cleanup(self, release: ScopusRelease, **kwargs) -> None:
+        """Delete all files, folders and XComs associated with this release."""
+
+        cleanup(dag_id=self.dag_id, execution_date=kwargs["execution_date"], workflow_folder=release.workflow_folder)
+
+
+def transform_to_db_format(records: List[dict], snapshot_date: pendulum.Date, institution_ids: List[str]) -> List[dict]:
+    """Convert the json response to the expected schema.
+    :param records: List of the records as json.
+    :param snapshot_date: release date.
+    :param institution_ids: list of institutions.
+    :return: List of transformed entries.
+    """
+
+    entries = []
+    for data in records:
+        entry = ScopusJsonParser.parse_json(
+            data=data,
+            snapshot_date=snapshot_date,
+            institution_ids=institution_ids,
+        )
+        entries.append(entry)
+    return entries
 
 
 class ScopusClientThrottleLimits:
@@ -753,19 +756,18 @@ class ScopusJsonParser:
         return identifier
 
     @staticmethod
-    def parse_json(*, data: dict, harvest_datetime: str, release_date: str, institution_ids: List[str]) -> dict:
+    def parse_json(*, data: dict, snapshot_date: pendulum.DateTime, institution_ids: List[str]) -> dict:
         """Turn json data into db schema format.
 
         :param data: json response from SCOPUS.
         :param harvest_datetime: isoformat string of time the fetch took place.
-        :param release_date: DAG execution date.
+        :param snapshot_date: DAG execution date.
         :param institution_ids: List of institution ids used in the query.
         :return: dict of data in right field format.
         """
 
         entry = dict()
-        entry["harvest_datetime"] = harvest_datetime  # Time of harvest (datetime string)
-        entry["release_date"] = release_date  # Release date (date string)
+        entry["snapshot_date"] = snapshot_date.date().isoformat()  # Release date (date string)
         entry["institution_ids"] = institution_ids
 
         entry["title"] = get_entry_or_none(data, "dc:title")  # Article title

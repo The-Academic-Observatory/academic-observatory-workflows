@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Tuan Chien
+# Author: Tuan Chien, James Diprose
 
 
 import logging
@@ -20,42 +20,248 @@ import os
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from math import floor
-from typing import Any, Dict, List, Tuple, Type, Union
+from typing import Any, List, Tuple, Type, Union, Dict
 
 import backoff
-import jsonlines
 import pendulum
 import xmltodict
 from airflow.exceptions import AirflowException
-from airflow.models import Variable
-from google.cloud.bigquery import WriteDisposition
+from google.cloud.bigquery import SourceFormat, WriteDisposition
 from ratelimit import limits, sleep_and_retry
 from suds import WebFault
 from wos import WosClient
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
-from observatory.platform.utils.config_utils import find_schema
-from observatory.platform.utils.airflow_utils import (
-    AirflowConns,
-    AirflowVars,
+from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+from observatory.api.client.model.dataset_release import DatasetRelease
+from observatory.platform.airflow import (
     get_airflow_connection_login,
     get_airflow_connection_password,
 )
-from observatory.platform.utils.file_utils import load_file, write_to_file
-from observatory.platform.utils.workflow_utils import (
-    blob_name,
-    bq_load_shard,
-    build_schedule,
+from observatory.platform.api import make_observatory_api, build_schedule
+from observatory.platform.bigquery import (
+    bq_find_schema,
+    bq_load_table,
+    bq_sharded_table_id,
+    bq_create_dataset,
+)
+from observatory.platform.config import AirflowConns
+from observatory.platform.files import (
+    save_jsonl_gz,
+    list_files,
+    load_file,
+    write_to_file,
     get_as_list,
     get_as_list_or_none,
-    get_chunks,
     get_entry_or_none,
+    get_chunks,
+    clean_dir,
 )
-from observatory.platform.workflows.snapshot_telescope import (
-    SnapshotRelease,
-    SnapshotTelescope,
-)
-from academic_observatory_workflows.dag_tag import Tag
+from observatory.platform.gcs import gcs_blob_name_from_path, gcs_upload_files, gcs_blob_uri
+from observatory.platform.observatory_config import CloudWorkspace
+from observatory.platform.workflows.workflow import Workflow, SnapshotRelease, cleanup, set_task_state, make_snapshot_date
+
+
+class WebOfScienceRelease(SnapshotRelease):
+    API_URL = "http://scientific.thomsonreuters.com"
+    EXPECTED_SCHEMA = "http://scientific.thomsonreuters.com/schema/wok5.4/public/FullRecord"
+
+    def __init__(
+        self,
+        *,
+        dag_id: str,
+        run_id: str,
+        snapshot_date: pendulum.DateTime,
+    ):
+        """Construct a WebOfScienceRelease instance.
+
+        :param dag_id: The DAG ID.
+        :param snapshot_date: Release date.
+        """
+
+        super().__init__(
+            dag_id=dag_id,
+            run_id=run_id,
+            snapshot_date=snapshot_date,
+        )
+        self.download_file_regex = r".*\.xml"
+        self.transform_file_name = "wos.jsonl.gz"
+        self.transform_file_path = os.path.join(self.transform_folder, self.transform_file_name)
+
+
+class WebOfScienceTelescope(Workflow):
+    SCHEMA_VERSION_ALT = "http://scientific.thomsonreuters.com/schema/wok5.4/public/FullRecord"
+
+    def __init__(
+        self,
+        *,
+        dag_id: str,
+        cloud_workspace: CloudWorkspace,
+        institution_ids: List[str],
+        wos_conn_id: str,
+        earliest_date: pendulum.DateTime = pendulum.datetime(1800, 1, 1),
+        bq_dataset_id: str = "clarivate",
+        bq_table_name: str = "web_of_science",
+        api_dataset_id: str = "web_of_science",
+        schema_folder: str = os.path.join(default_schema_folder(), "web_of_science"),
+        dataset_description: str = "The Web of Science citation database: https://clarivate.com/webofsciencegroup/solutions/web-of-science",
+        table_description: str = "The Web of Science citation database: https://clarivate.com/webofsciencegroup/solutions/web-of-science",
+        observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
+        start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
+        schedule_interval: str = "@monthly",
+    ):
+        """Web of Science telescope.
+
+        :param dag_id: the id of the DAG.
+        :param cloud_workspace: the cloud workspace settings.
+        :param institution_ids: list of institution IDs to use for the WoS search query.
+        :param wos_conn_id: the WoS connection ID.
+        :param earliest_date: the earliest date to query for results.
+        :param bq_dataset_id: the BigQuery dataset id.
+        :param bq_table_name: the BigQuery table name.
+        :param api_dataset_id: the Dataset ID to use when storing releases.
+        :param schema_folder: the SQL schema path.
+        :param dataset_description: description for the BigQuery dataset.
+        :param table_description: description for the BigQuery table.
+        :param observatory_api_conn_id: the Observatory API connection key.
+        :param start_date: the start date of the DAG.
+        :param schedule_interval: the schedule interval of the DAG.
+        """
+
+        super().__init__(
+            dag_id=dag_id,
+            start_date=start_date,
+            schedule_interval=schedule_interval,
+            catchup=False,
+            airflow_conns=[observatory_api_conn_id, wos_conn_id],
+            tags=[Tag.academic_observatory],
+        )
+        self.cloud_workspace = cloud_workspace
+        self.institution_ids = institution_ids
+        self.wos_conn_id = wos_conn_id
+        self.earliest_date = earliest_date
+        self.bq_dataset_id = bq_dataset_id
+        self.bq_table_name = bq_table_name
+        self.api_dataset_id = api_dataset_id
+        self.schema_folder = schema_folder
+        self.dataset_description = dataset_description
+        self.table_description = table_description
+        self.observatory_api_conn_id = observatory_api_conn_id
+
+        self.add_setup_task(self.check_dependencies)
+        self.add_task(self.download)
+        self.add_task(self.upload_downloaded)
+        self.add_task(self.transform)
+        self.add_task(self.upload_transformed)
+        self.add_task(self.bq_load)
+        self.add_task(self.add_new_dataset_releases)
+        self.add_task(self.cleanup)
+
+    def make_release(self, **kwargs) -> WebOfScienceRelease:
+        """Make a list of WebOfScienceRelease instances.
+
+        :param kwargs: the context passed from the Airflow Operator.
+        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
+        to this argument.
+        :return: WebOfScienceRelease instance.
+        """
+
+        snapshot_date = make_snapshot_date(**kwargs)
+        return WebOfScienceRelease(
+            dag_id=self.dag_id,
+            run_id=kwargs["run_id"],
+            snapshot_date=snapshot_date,
+        )
+
+    def download(self, release: WebOfScienceRelease, **kwargs):
+        """Download a Web of Science live snapshot."""
+
+        clean_dir(release.download_folder)
+        schedule = build_schedule(self.earliest_date, release.snapshot_date)
+        login = get_airflow_connection_login(self.wos_conn_id)
+        password = get_airflow_connection_password(self.wos_conn_id)
+        WosUtility.download_wos_parallel(
+            login=login,
+            password=password,
+            schedule=schedule,
+            conn=self.dag_id,
+            institution_ids=self.institution_ids,
+            download_dir=release.download_folder,
+        )
+
+    def upload_downloaded(self, release: WebOfScienceRelease, **kwargs):
+        """Upload data to Cloud Storage."""
+
+        file_list = list_files(release.download_folder, release.download_file_regex)
+        success = gcs_upload_files(bucket_name=self.cloud_workspace.download_bucket, file_paths=file_list)
+        set_task_state(success, self.upload_downloaded.__name__, release)
+
+    def transform(self, release: WebOfScienceRelease, **kwargs):
+        """Convert the XML response into BQ friendly jsonlines."""
+
+        clean_dir(release.transform_folder)
+        data = []
+        file_list = list_files(release.download_folder, release.download_file_regex)
+        for xml_file in file_list:
+            records = transform_xml_to_json(xml_file)
+            data += transform_to_db_format(
+                records=records, snapshot_date=release.snapshot_date, institution_ids=self.institution_ids
+            )
+        save_jsonl_gz(release.transform_file_path, data)
+
+    def upload_transformed(self, release: WebOfScienceRelease, **kwargs) -> None:
+        """Upload the transformed data to Cloud Storage."""
+
+        success = gcs_upload_files(
+            bucket_name=self.cloud_workspace.transform_bucket, file_paths=[release.transform_file_path]
+        )
+        set_task_state(success, self.upload_downloaded.__name__, release)
+
+    def bq_load(self, release: WebOfScienceRelease, **kwargs):
+        """Loads data into BigQuery."""
+
+        bq_create_dataset(
+            project_id=self.cloud_workspace.output_project_id,
+            dataset_id=self.bq_dataset_id,
+            location=self.cloud_workspace.data_location,
+            description=self.dataset_description,
+        )
+
+        uri = gcs_blob_uri(self.cloud_workspace.transform_bucket, gcs_blob_name_from_path(release.transform_file_path))
+        schema_file_path = bq_find_schema(
+            path=self.schema_folder, table_name=self.bq_table_name, release_date=release.snapshot_date
+        )
+        table_id = bq_sharded_table_id(
+            self.cloud_workspace.output_project_id, self.bq_dataset_id, self.bq_table_name, release.snapshot_date
+        )
+        success = bq_load_table(
+            uri=uri,
+            table_id=table_id,
+            schema_file_path=schema_file_path,
+            source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
+            table_description=self.table_description,
+            write_disposition=WriteDisposition.WRITE_APPEND,
+            ignore_unknown_values=True,
+        )
+        set_task_state(success, self.bq_load.__name__, release)
+
+    def add_new_dataset_releases(self, release: WebOfScienceRelease, **kwargs) -> None:
+        """Adds release information to API."""
+
+        dataset_release = DatasetRelease(
+            dag_id=self.dag_id,
+            dataset_id=self.api_dataset_id,
+            dag_run_id=release.run_id,
+            snapshot_date=release.snapshot_date,
+            data_interval_start=kwargs["data_interval_start"],
+            data_interval_end=kwargs["data_interval_end"],
+        )
+        api = make_observatory_api(observatory_api_conn_id=self.observatory_api_conn_id)
+        api.post_dataset_release(dataset_release)
+
+    def cleanup(self, release: WebOfScienceRelease, **kwargs) -> None:
+        """Delete all files, folders and XComs associated with this release."""
+
+        cleanup(dag_id=self.dag_id, execution_date=kwargs["execution_date"], workflow_folder=release.workflow_folder)
 
 
 class WosUtilConst:
@@ -151,7 +357,7 @@ class WosUtility:
     @staticmethod
     def download_wos_period(
         *, client: WosClient, conn: str, period: pendulum.Period, institution_ids: List[str], download_dir: str
-    ) -> List[str]:
+    ):
         """Download records for a stated date range.
 
         :param client: WebClient object.
@@ -184,7 +390,7 @@ class WosUtility:
         conn: str,
         institution_ids: List[str],
         download_dir: str,
-    ) -> List[str]:
+    ):
         """Download one batch of WoS snapshots. Throttling limits are more conservative than WoS limits.
         Throttle limits may or may not be enforced. Probably depends on how executors spin up tasks.
 
@@ -239,7 +445,7 @@ class WosUtility:
         conn: str,
         institution_ids: List[str],
         download_dir: str,
-    ) -> List[str]:
+    ):
         """Download WoS snapshot with parallel sessions. Using threads.
 
         :param login: WoS login
@@ -358,7 +564,7 @@ class WosNameAttributes:
 
 
 class WosJsonParser:
-    """Helper methods to process the the converted json from Web of Science."""
+    """Helper methods to process the converted json from Web of Science."""
 
     @staticmethod
     def get_identifiers(data: dict) -> Dict[str, Any]:
@@ -710,19 +916,17 @@ class WosJsonParser:
         return category_info
 
     @staticmethod
-    def parse_json(*, data: dict, harvest_datetime: str, release_date: str, institution_ids: List[str]) -> dict:
+    def parse_json(*, data: dict, snapshot_date: pendulum.DateTime, institution_ids: List[str]) -> dict:
         """Turn json data into db schema format.
 
         :param data: dictionary of web response.
-        :param harvest_datetime: isoformat string of time the fetch took place.
-        :param release_date: Dataset release date.
+        :param snapshot_date: Dataset release date.
         :param institution_ids: List of institution ids used in the query.
         :return: dict of data in right field format.
         """
 
         entry = dict()
-        entry["harvest_datetime"] = harvest_datetime
-        entry["release_date"] = release_date
+        entry["snapshot_date"] = snapshot_date.date().isoformat()
         entry["identifiers"] = WosJsonParser.get_identifiers(data)
         entry["pub_info"] = WosJsonParser.get_pub_info(data)
         entry["title"] = WosJsonParser.get_title(data)
@@ -740,258 +944,46 @@ class WosJsonParser:
         return entry
 
 
-class WebOfScienceRelease(SnapshotRelease):
-    API_URL = "http://scientific.thomsonreuters.com"
-    EXPECTED_SCHEMA = "http://scientific.thomsonreuters.com/schema/wok5.4/public/FullRecord"
+def schema_check(schema: str):
+    """Check that the schema hasn't changed. Throw on different schema.
 
-    def __init__(
-        self,
-        *,
-        dag_id: str,
-        release_date: pendulum.DateTime,
-        login: str,
-        password: str,
-        institution_ids: List[str],
-        earliest_date: pendulum.DateTime,
-    ):
-        """Construct an UnpaywallSnapshotRelease instance.
+    :param schema: Schema string from HTTP response.
+    """
 
-        :param dag_id: The DAG ID.
-        :param release_date: Release date.
-        :param login: WoS login.
-        :param password: WoS password.
-        :param institution_ids: List of institution IDs to query.
-        :param earliest_date: Earliest date to query from.
-        """
-
-        super().__init__(
-            dag_id=dag_id,
-            release_date=release_date,
+    if schema != WebOfScienceRelease.EXPECTED_SCHEMA:
+        raise AirflowException(
+            f"Schema change detected. Expected: {WebOfScienceRelease.EXPECTED_SCHEMA}, received: {schema}"
         )
 
-        self.table_id = WebOfScienceTelescope.DAG_ID
-        self.login = login
-        self.password = password
-        self.institution_ids = institution_ids
-        self.earliest_date = earliest_date
 
-    def download(self):
-        """Download a Web of Science live snapshot."""
+def transform_xml_to_json(xml_file: str) -> Union[dict, list]:
+    """Transform XML response to JSON. Throw if schema has changed.
 
-        self.harvest_datetime = pendulum.now("UTC")
-        schedule = build_schedule(self.earliest_date, self.release_date)
-        WosUtility.download_wos_parallel(
-            login=self.login,
-            password=self.password,
-            schedule=schedule,
-            conn=self.dag_id,
-            institution_ids=self.institution_ids,
-            download_dir=self.download_folder,
+    :param xml_file: XML file of the API response.
+    :return: Converted dict or list of the response.
+    """
+
+    xml_data = load_file(xml_file)
+    records, schema = WosUtility.parse_query(xml_data)
+    schema_check(schema)
+    return records
+
+
+def transform_to_db_format(records: list, snapshot_date: pendulum.Date, institution_ids: List[str]) -> List[dict]:
+    """Convert the json response to the expected schema.
+
+    :param records: List of the records as json.
+    :param harvest_datetime: Timestamp of when the API call was made.
+    :return: List of transformed entries.
+    """
+
+    entries = []
+    for data in records:
+        entry = WosJsonParser.parse_json(
+            data=data,
+            snapshot_date=snapshot_date,
+            institution_ids=institution_ids,
         )
+        entries.append(entry)
 
-    def transform(self):
-        """Convert the XML response into BQ friendly jsonlines."""
-
-        for xml_file in self.download_files:
-            records = self._transform_xml_to_json(xml_file)
-            harvest_datetime = self._get_harvest_datetime(xml_file)
-            entries = self._transform_to_db_format(records=records, harvest_datetime=harvest_datetime)
-            self._write_transform_files(entries=entries, xml_file=xml_file)
-
-    def _schema_check(self, schema: str):
-        """Check that the schema hasn't changed. Throw on different schema.
-
-        :param schema: Schema string from HTTP response.
-        """
-
-        if schema != WebOfScienceRelease.EXPECTED_SCHEMA:
-            raise AirflowException(
-                f"Schema change detected. Expected: {WebOfScienceRelease.EXPECTED_SCHEMA}, received: {schema}"
-            )
-
-    def _get_harvest_datetime(self, filepath: str) -> str:
-        """Get the harvest datetime from the filename. <startdate>_<enddate>_<page>_<timestamp>.xml
-
-        :param filepath: XML file path.
-        :return: Harvest datetime string.
-        """
-
-        filename = os.path.basename(filepath)
-        file_tokens = filename.split("_")
-        return file_tokens[3][:-4]
-
-    def _transform_xml_to_json(self, xml_file: str) -> Union[dict, list]:
-        """Transform XML response to JSON. Throw if schema has changed.
-
-        :param xml_file: XML file of the API response.
-        :return: Converted dict or list of the response.
-        """
-
-        xml_data = load_file(xml_file)
-        records, schema = WosUtility.parse_query(xml_data)
-        self._schema_check(schema)
-        return records
-
-    def _transform_to_db_format(self, records: list, harvest_datetime: str) -> List[dict]:
-        """Convert the json response to the expected schema.
-
-        :param records: List of the records as json.
-        :param harvest_datetime: Timestamp of when the API call was made.
-        :return: List of transformed entries.
-        """
-
-        entries = []
-        for data in records:
-            entry = WosJsonParser.parse_json(
-                data=data,
-                harvest_datetime=harvest_datetime,
-                release_date=self.release_date.date().isoformat(),
-                institution_ids=self.institution_ids,
-            )
-
-            entries.append(entry)
-
-        return entries
-
-    def _write_transform_files(self, *, entries: Union[Dict, List], xml_file: str):
-        """Save the schema compatible dictionaries as jsonlines.
-
-        :param entries: List of schema compatible entries.
-        :param xml_file: The filepath to the xml file of API response.
-        :param index: Index to use as the end of the name.
-        """
-
-        # Strip out the harvest time stamp from the filename so that schema detection works
-        filename = os.path.basename(xml_file)
-        filename = f"{filename[:23]}.jsonl"
-        filename = f"{WebOfScienceTelescope.DAG_ID}.{filename}"
-        dst_file = os.path.join(self.transform_folder, filename)
-
-        with jsonlines.open(dst_file, mode="w") as writer:
-            writer.write_all(entries)
-
-
-class WebOfScienceTelescope(SnapshotTelescope):
-    DAG_ID = "web_of_science"
-    TABLE_DESCRIPTION = (
-        "The Web of Science citation database: https://clarivate.com/webofsciencegroup/solutions/web-of-science"
-    )
-    SCHEMA_VERSION_ALT = "http://scientific.thomsonreuters.com/schema/wok5.4/public/FullRecord"
-
-    def __init__(
-        self,
-        *,
-        dag_id: str,
-        airflow_conns: List[AirflowConns],
-        airflow_vars: List[AirflowVars],
-        institution_ids: List[str],
-        workflow_id: int = None,
-        earliest_date: pendulum.DateTime = pendulum.datetime(1800, 1, 1),
-        start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
-        schedule_interval: str = "@monthly",
-        dataset_id: str = "clarivate",
-        schema_folder: str = default_schema_folder(),
-        catchup: bool = False,
-        org_name: str = "Curtin University",
-    ):
-        """Web of Science telescope.
-
-        :param dag_id: the id of the DAG.
-        :param start_date: the start date of the DAG.
-        :param schedule_interval: the schedule interval of the DAG.
-        :param dataset_id: the dataset id.
-        :param schema_folder: the SQL schema path.
-        :param airflow_vars: list of airflow variable keys to check the existence of
-        :param airflow_conns: list of airflow connection ids to check the existence of
-        :param institution_ids: list of institution IDs to use for the WoS search query.
-        :param workflow_id: API workflow id.
-        :param earliest_date: earliest date to query for results.
-        :param catchup: whether to use catchup on missed runs.
-        :param org_name: Organisation name in the API associated with this Telescope instance.
-        """
-
-        load_bigquery_table_kwargs = {"write_disposition": WriteDisposition.WRITE_APPEND, "ignore_unknown_values": True}
-
-        super().__init__(
-            dag_id,
-            start_date,
-            schedule_interval,
-            dataset_id,
-            schema_folder,
-            table_descriptions={dag_id: WebOfScienceTelescope.TABLE_DESCRIPTION},
-            catchup=catchup,
-            airflow_vars=airflow_vars,
-            airflow_conns=airflow_conns,
-            load_bigquery_table_kwargs=load_bigquery_table_kwargs,
-            workflow_id=workflow_id,
-            tags=[Tag.academic_observatory],
-        )
-
-        if len(airflow_conns) == 0:
-            raise AirflowException("You need to supply an Airflow connection with the login credentials.")
-
-        if len(institution_ids) == 0:
-            raise AirflowException("You need to supply at least one institution id to search for in the query.")
-
-        self.institution_ids = institution_ids
-        self.earliest_date = earliest_date
-
-        self.add_setup_task(self.check_dependencies)
-        self.add_task(self.download)
-        self.add_task(self.upload_downloaded)
-        self.add_task(self.transform)
-        self.add_task(self.upload_transformed)
-        self.add_task(self.bq_load)
-        self.add_task(self.cleanup)
-        self.add_task(self.add_new_dataset_releases)
-
-    def make_release(self, **kwargs) -> List[WebOfScienceRelease]:
-        """Make a list of WebOfScienceRelease instances.
-
-        :param kwargs: The context passed from the PythonOperator.
-        :return: WebOfScienceRelease instance.
-        """
-
-        release_date = pendulum.now("UTC")
-        conn = self.airflow_conns[0]
-        login = get_airflow_connection_login(conn)
-        password = get_airflow_connection_password(conn)
-
-        release = WebOfScienceRelease(
-            dag_id=self.dag_id,
-            release_date=release_date,
-            login=login,
-            password=password,
-            institution_ids=self.institution_ids,
-            earliest_date=self.earliest_date,
-        )
-        return [release]
-
-    def bq_load(self, releases: List[SnapshotRelease], **kwargs):
-        """Task to load each transformed release to BigQuery.
-        The table_id is set to the file name without the extension.
-        :param releases: a list of releases.
-        :return: None.
-        """
-
-        # Load each transformed release
-        for release in releases:
-            transform_blob = f"{blob_name(release.transform_folder)}/*"
-            table_description = self.table_descriptions.get(self.dag_id, "")
-            schema_file_path = find_schema(
-                self.schema_folder, WebOfScienceTelescope.DAG_ID, release_date=release.release_date
-            )
-            bq_load_shard(
-                schema_file_path=schema_file_path,
-                project_id=Variable.get(AirflowVars.PROJECT_ID),
-                data_location=Variable.get(AirflowVars.DATA_LOCATION),
-                transform_bucket=Variable.get(AirflowVars.TRANSFORM_BUCKET),
-                release_date=release.release_date,
-                transform_blob=transform_blob,
-                dataset_id=self.dataset_id,
-                table_id=WebOfScienceTelescope.DAG_ID,
-                source_format=self.source_format,
-                dataset_description=self.dataset_description,
-                table_description=table_description,
-                **self.load_bigquery_table_kwargs,
-            )
+    return entries

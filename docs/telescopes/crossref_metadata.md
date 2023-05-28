@@ -55,7 +55,7 @@ crossref: http://:<token>@
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/crossref_metadata_latest.csv
+   :file: ../schemas/crossref_metadata/crossref_metadata_latest.csv
    :width: 100%
    :header-rows: 1
 ```

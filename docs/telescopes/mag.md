@@ -23,42 +23,42 @@ and [data details](https://docs.microsoft.com/en-us/academic-services/graph/refe
 ### Affiliations
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagAffiliations_latest.csv
+   :file: ../schemas/mag/MagAffiliations_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### AuthorExtendedAttributes
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagAuthorExtendedAttributes_latest.csv
+   :file: ../schemas/mag/MagAuthorExtendedAttributes_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### Authors
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagAuthors_latest.csv
+   :file: ../schemas/mag/MagAuthors_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### ConferenceInstances
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagConferenceInstances_latest.csv
+   :file: ../schemas/mag/MagConferenceInstances_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### ConferenceSeries
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagConferenceSeries_latest.csv
+   :file: ../schemas/mag/MagConferenceSeries_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### EntityRelatedEntites
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagEntityRelatedEntities_latest.csv
+   :file: ../schemas/mag/MagEntityRelatedEntities_latest.csv
    :width: 100%
    :header-rows: 1
 ```
@@ -66,56 +66,56 @@ and [data details](https://docs.microsoft.com/en-us/academic-services/graph/refe
 ### FieldOfStudyChildren
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagFieldOfStudyChildren_latest.csv
+   :file: ../schemas/mag/MagFieldOfStudyChildren_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### FieldOfStudyExtendedAttributes
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagFieldOfStudyExtendedAttributes_latest.csv
+   :file: ../schemas/mag/MagFieldOfStudyExtendedAttributes_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### FieldsOfStudy
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagFieldsOfStudy_latest.csv
+   :file: ../schemas/mag/MagFieldsOfStudy_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### Journals
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagJournals_latest.csv
+   :file: ../schemas/mag/MagJournals_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### PaperAbstractsInvertedIndex
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagPaperAbstractsInvertedIndex_latest.csv
+   :file: ../schemas/mag/MagPaperAbstractsInvertedIndex_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### PaperAuthorAffiliations
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagPaperAuthorAffiliations_latest.csv
+   :file: ../schemas/mag/MagPaperAuthorAffiliations_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### PaperCitationContexts
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagPaperCitationContexts_latest.csv
+   :file: ../schemas/mag/MagPaperCitationContexts_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### PaperExtendedAttributes
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagPaperExtendedAttributes_latest.csv
+   :file: ../schemas/mag/MagPaperExtendedAttributes_latest.csv
    :width: 100%
    :header-rows: 1
 ```
@@ -123,62 +123,62 @@ and [data details](https://docs.microsoft.com/en-us/academic-services/graph/refe
 ### PaperFieldsOfStudy
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagPaperFieldsOfStudy_latest.csv
+   :file: ../schemas/mag/MagPaperFieldsOfStudy_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### PaperLanguages
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagPaperLanguages_latest.csv
+   :file: ../schemas/mag/MagPaperLanguages_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### PaperMeSH
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagPaperMeSH_latest.csv
+   :file: ../schemas/mag/MagPaperMeSH_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### PaperRecommendations
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagPaperRecommendations_latest.csv
+   :file: ../schemas/mag/MagPaperRecommendations_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### PaperReferences
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagPaperReferences_latest.csv
+   :file: ../schemas/mag/MagPaperReferences_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### PaperResources
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagPaperResources_latest.csv
+   :file: ../schemas/mag/MagPaperResources_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### Papers
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagPapers_latest.csv
+   :file: ../schemas/mag/MagPapers_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### PaperUrls
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagPaperUrls_latest.csv
+   :file: ../schemas/mag/MagPaperUrls_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 ### RelatedFieldOfStudy
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/MagRelatedFieldOfStudy_latest.csv
+   :file: ../schemas/mag/MagRelatedFieldOfStudy_latest.csv
    :width: 100%
    :header-rows: 1

@@ -1,0 +1,226 @@
+[
+  {
+    "name": "alternate_titles",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "A list of alternate titles for this funder."
+  },
+  {
+    "name": "cited_by_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "The total number Works that cite a work linked to this funder."
+  },
+  {
+    "name": "country_code",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The country where this funder is located, represented as an ISO two-letter country code."
+  },
+  {
+    "name": "counts_by_year",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "oa_works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "year",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      }
+    ],
+    "description": "The values of works_count and cited_by_count for each of the last ten years, binned by year. To put it another way: for every listed year, you can see how many new works are linked to this funder, and how many times any work linked to this funder was cited.\nYears with zero citations and zero works have been removed so you will need to add those back in if you need them."
+  },
+  {
+    "name": "created_date",
+    "type": "DATE",
+    "mode": "NULLABLE",
+    "description": "The date this Funder object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
+  },
+  {
+    "name": "description",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "A short description of this funder, taken from Wikidata."
+  },
+  {
+    "name": "display_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The primary name of the funder."
+  },
+  {
+    "name": "homepage_url",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The URL for this funder's primary homepage."
+  },
+  {
+    "name": "id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The OpenAlex ID for this funder."
+  },
+  {
+    "name": "ids",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "openalex",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this funder's OpenAlex ID"
+      },
+      {
+        "name": "ror",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this funder's ROR ID"
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this funder's Wikidata ID"
+      }
+    ],
+    "description": "All the external identifiers that we know about for this funder. IDs are expressed as URIs whenever possible."
+  },
+  {
+    "name": "image_thumbnail_url",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Same as image_url, but it's a smaller image.\nThis is usually a hotlink to a wikimedia image. You can change the width=300 parameter in the URL if you want a different thumbnail size."
+  },
+  {
+    "name": "image_url",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "URL where you can get an image representing this funder. Usually this a hotlink to a Wikimedia image, and usually it's a seal or logo."
+  },
+  {
+    "name": "roles",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "role",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      }
+    ],
+    "description": "List of role objects, which include the role (one of institution, funder, or publisher), the id (OpenAlex ID), and the works_count.\nIn many cases, a single organization does not fit neatly into one role. For example, Yale University is a single organization that is a research university, funds research studies, and publishes an academic journal. The roles property links the OpenAlex entities together for a single organization, and includes counts for the works associated with each role.\nThe roles list of an entity (Funder, Publisher, or Institution) always includes itself. In the case where an organization only has one role, the roles will be a list of length one, with itself as the only item."
+  },
+  {
+    "name": "summary_stats",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "2yr_cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "2yr_h_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "2yr_i10_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "2yr_mean_citedness",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": "The 2-year mean citedness for this funder. Also known as impact factor."
+      },
+      {
+        "name": "2yr_works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "h_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The h-index for this funder."
+      },
+      {
+        "name": "i10_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The i-10 index for this funder."
+      },
+      {
+        "name": "oa_percent",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      }
+    ],
+    "description": "Citation metrics for this funder. While the h-index and the i-10 index are normally author-level metrics and the 2-year mean citedness is normally a journal-level metric, they can be calculated for any set of papers, so we include them for funders."
+  },
+  {
+    "name": "updated_date",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "The last time anything in this funder object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  },
+  {
+    "name": "works_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "The number of works linked to this funder."
+  }
+]

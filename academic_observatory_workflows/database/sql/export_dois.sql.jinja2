@@ -36,5 +36,5 @@ SELECT
   ARRAY(SELECT identifier FROM UNNEST( affiliations.funders ) WHERE identifier IS NOT NULL) as funders,
   ARRAY(SELECT OriginalAuthor FROM UNNEST( mag.authors.authors ) WHERE OriginalAuthor IS NOT NULL) as authors
 FROM 
-  `{{ project_id }}.{{ dataset_id }}.{{ table_name }}`
+  `{{ table_id }}`
 WHERE crossref.published_year > 2000

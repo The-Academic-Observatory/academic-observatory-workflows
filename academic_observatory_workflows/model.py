@@ -32,9 +32,9 @@ from faker import Faker
 from pendulum import DateTime
 
 from academic_observatory_workflows.config import schema_folder, test_fixtures_folder
-from observatory.platform.utils.file_utils import load_jsonl
-from observatory.platform.utils.test_utils import Table, bq_load_tables
-from observatory.platform.utils.config_utils import find_schema
+from observatory.platform.bigquery import bq_find_schema
+from observatory.platform.files import load_jsonl
+from observatory.platform.observatory_environment import Table, bq_load_tables
 
 LICENSES = ["cc-by", None]
 
@@ -1119,8 +1119,7 @@ def bq_load_observatory_dataset(
     bucket_name: str,
     dataset_id_all: str,
     dataset_id_settings: str,
-    release_date: DateTime,
-    data_location: str,
+    snapshot_date: DateTime,
     project_id: str,
 ):
     """Load the fake Observatory Dataset in BigQuery.
@@ -1130,8 +1129,7 @@ def bq_load_observatory_dataset(
     :param bucket_name: the Google Cloud Storage bucket name.
     :param dataset_id_all: the dataset id for all data tables.
     :param dataset_id_settings: the dataset id for settings tables.
-    :param release_date: the release date for the observatory dataset.
-    :param data_location: the location of the BigQuery dataset.
+    :param snapshot_date: the release date for the observatory dataset.
     :param project_id: api project id.
     :return: None.
     """
@@ -1152,8 +1150,7 @@ def bq_load_observatory_dataset(
     groupings = load_jsonl(os.path.join(test_doi_path, "groupings.jsonl"))
     mag_affiliation_override = load_jsonl(os.path.join(test_doi_path, "mag_affiliation_override.jsonl"))
 
-    analysis_schema_path = schema_folder()
-    openalex_schema_path = os.path.join(analysis_schema_path, "openalex")
+    schema_path = schema_folder()
     with CliRunner().isolated_filesystem() as t:
         tables = [
             Table(
@@ -1161,50 +1158,67 @@ def bq_load_observatory_dataset(
                 False,
                 dataset_id_settings,
                 repository,
-                find_schema(path=analysis_schema_path, table_name="repository"),
+                bq_find_schema(path=os.path.join(schema_path, "doi"), table_name="repository"),
             ),
             Table(
                 "crossref_events",
                 False,
                 dataset_id_all,
                 crossref_events,
-                find_schema(path=analysis_schema_path, table_name="crossref_events", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "crossref_events"),
+                    table_name="crossref_events",
+                ),
             ),
             Table(
                 "crossref_metadata",
                 True,
                 dataset_id_all,
                 crossref_metadata,
-                find_schema(path=analysis_schema_path, table_name="crossref_metadata", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "crossref_metadata"),
+                    table_name="crossref_metadata",
+                    release_date=snapshot_date,
+                ),
             ),
             Table(
                 "crossref_fundref",
                 True,
                 dataset_id_all,
                 crossref_fundref,
-                find_schema(path=analysis_schema_path, table_name="crossref_fundref", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "crossref_fundref"),
+                    table_name="crossref_fundref",
+                    release_date=snapshot_date,
+                ),
             ),
             Table(
                 "Affiliations",
                 True,
                 dataset_id_all,
                 mag.affiliations,
-                find_schema(path=analysis_schema_path, table_name="MagAffiliations", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"), table_name="MagAffiliations", release_date=snapshot_date
+                ),
             ),
             Table(
                 "FieldsOfStudy",
                 True,
                 dataset_id_all,
                 mag.fields_of_study,
-                find_schema(path=analysis_schema_path, table_name="MagFieldsOfStudy", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"), table_name="MagFieldsOfStudy", release_date=snapshot_date
+                ),
             ),
             Table(
                 "PaperAuthorAffiliations",
                 True,
                 dataset_id_all,
                 mag.paper_author_affiliations,
-                find_schema(
-                    path=analysis_schema_path, table_name="MagPaperAuthorAffiliations", release_date=release_date
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"),
+                    table_name="MagPaperAuthorAffiliations",
+                    release_date=snapshot_date,
                 ),
             ),
             Table(
@@ -1212,66 +1226,76 @@ def bq_load_observatory_dataset(
                 True,
                 dataset_id_all,
                 mag.paper_fields_of_study,
-                find_schema(path=analysis_schema_path, table_name="MagPaperFieldsOfStudy", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"),
+                    table_name="MagPaperFieldsOfStudy",
+                    release_date=snapshot_date,
+                ),
             ),
             Table(
                 "Papers",
                 True,
                 dataset_id_all,
                 mag.papers,
-                find_schema(path=analysis_schema_path, table_name="MagPapers", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"), table_name="MagPapers", release_date=snapshot_date
+                ),
             ),
             Table(
                 "open_citations",
                 True,
                 dataset_id_all,
                 open_citations,
-                find_schema(path=analysis_schema_path, table_name="open_citations", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "open_citations"),
+                    table_name="open_citations",
+                    release_date=snapshot_date,
+                ),
             ),
             Table(
                 "unpaywall",
                 False,
                 dataset_id_all,
                 unpaywall,
-                find_schema(path=analysis_schema_path, table_name="unpaywall"),
+                bq_find_schema(path=os.path.join(schema_path, "unpaywall"), table_name="unpaywall"),
             ),
             Table(
                 "ror",
                 True,
                 dataset_id_all,
                 ror,
-                find_schema(path=analysis_schema_path, table_name="ror", release_date=release_date),
+                bq_find_schema(path=os.path.join(schema_path, "ror"), table_name="ror", release_date=snapshot_date),
             ),
             Table(
                 "country",
                 False,
                 dataset_id_settings,
                 country,
-                find_schema(path=analysis_schema_path, table_name="country"),
+                bq_find_schema(path=os.path.join(schema_path, "doi"), table_name="country"),
             ),
             Table(
                 "groupings",
                 False,
                 dataset_id_settings,
                 groupings,
-                find_schema(path=analysis_schema_path, table_name="groupings"),
+                bq_find_schema(path=os.path.join(schema_path, "doi"), table_name="groupings"),
             ),
             Table(
                 "mag_affiliation_override",
                 False,
                 dataset_id_settings,
                 mag_affiliation_override,
-                find_schema(
-                    path=analysis_schema_path, table_name="mag_affiliation_override"
-                ),
+                bq_find_schema(path=os.path.join(schema_path, "doi"), table_name="mag_affiliation_override"),
             ),
             Table(
                 "PaperAbstractsInvertedIndex",
                 True,
                 dataset_id_all,
                 [],
-                find_schema(
-                    path=analysis_schema_path, table_name="MagPaperAbstractsInvertedIndex", release_date=release_date
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"),
+                    table_name="MagPaperAbstractsInvertedIndex",
+                    release_date=snapshot_date,
                 ),
             ),
             Table(
@@ -1279,29 +1303,39 @@ def bq_load_observatory_dataset(
                 True,
                 dataset_id_all,
                 [],
-                find_schema(path=analysis_schema_path, table_name="MagJournals", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"), table_name="MagJournals", release_date=snapshot_date
+                ),
             ),
             Table(
                 "ConferenceInstances",
                 True,
                 dataset_id_all,
                 [],
-                find_schema(path=analysis_schema_path, table_name="MagConferenceInstances", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"),
+                    table_name="MagConferenceInstances",
+                    release_date=snapshot_date,
+                ),
             ),
             Table(
                 "ConferenceSeries",
                 True,
                 dataset_id_all,
                 [],
-                find_schema(path=analysis_schema_path, table_name="MagConferenceSeries", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"), table_name="MagConferenceSeries", release_date=snapshot_date
+                ),
             ),
             Table(
                 "FieldOfStudyExtendedAttributes",
                 True,
                 dataset_id_all,
                 [],
-                find_schema(
-                    path=analysis_schema_path, table_name="MagFieldOfStudyExtendedAttributes", release_date=release_date
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"),
+                    table_name="MagFieldOfStudyExtendedAttributes",
+                    release_date=snapshot_date,
                 ),
             ),
             Table(
@@ -1309,8 +1343,10 @@ def bq_load_observatory_dataset(
                 True,
                 dataset_id_all,
                 [],
-                find_schema(
-                    path=analysis_schema_path, table_name="MagPaperExtendedAttributes", release_date=release_date
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"),
+                    table_name="MagPaperExtendedAttributes",
+                    release_date=snapshot_date,
                 ),
             ),
             Table(
@@ -1318,44 +1354,49 @@ def bq_load_observatory_dataset(
                 True,
                 dataset_id_all,
                 [],
-                find_schema(path=analysis_schema_path, table_name="MagPaperResources", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"), table_name="MagPaperResources", release_date=snapshot_date
+                ),
             ),
             Table(
                 "PaperUrls",
                 True,
                 dataset_id_all,
                 [],
-                find_schema(path=analysis_schema_path, table_name="MagPaperUrls", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"), table_name="MagPaperUrls", release_date=snapshot_date
+                ),
             ),
             Table(
                 "PaperMeSH",
                 True,
                 dataset_id_all,
                 [],
-                find_schema(path=analysis_schema_path, table_name="MagPaperMeSH", release_date=release_date),
+                bq_find_schema(
+                    path=os.path.join(schema_path, "mag"), table_name="MagPaperMeSH", release_date=snapshot_date
+                ),
             ),
             Table(
                 "orcid",
                 False,
                 dataset_id_all,
                 [],
-                find_schema(path=analysis_schema_path, table_name="orcid", release_date=release_date),
+                bq_find_schema(path=os.path.join(schema_path, "orcid"), table_name="orcid", release_date=snapshot_date),
             ),
             Table(
-                "Work",
+                "works",
                 False,
                 dataset_id_all,
                 openalex,
-                find_schema(path=openalex_schema_path, table_name="Work"),
+                bq_find_schema(path=os.path.join(schema_path, "openalex"), table_name="works"),
             ),
         ]
 
         bq_load_tables(
+            project_id=project_id,
             tables=tables,
             bucket_name=bucket_name,
-            release_date=release_date,
-            data_location=data_location,
-            project_id=project_id,
+            snapshot_date=snapshot_date,
         )
 
 

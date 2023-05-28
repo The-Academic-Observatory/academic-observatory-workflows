@@ -1,0 +1,17 @@
+[
+  {
+    "name": "merge_date",
+    "type": "DATE",
+    "description": "The date of the merge."
+  },
+  {
+    "name": "id",
+    "type": "STRING",
+    "description": "The OpenAlex ID of the entity that was deleted."
+  },
+  {
+    "name": "merge_into_id",
+    "type": "STRING",
+    "description": "The OpenAlex ID of the entity that the deleted entity's data was merged into."
+  }
+]

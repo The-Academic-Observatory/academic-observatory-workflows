@@ -12,20 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Tuan Chien
-
+import datetime
 import json
 import os
 import unittest
 from queue import Empty, Queue
 from threading import Event, Thread
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import pendulum
+import time_machine
 from airflow import AirflowException
 from airflow.models import Connection
 from airflow.utils.state import State
-from freezegun import freeze_time
 
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.scopus_telescope import (
@@ -36,31 +36,236 @@ from academic_observatory_workflows.workflows.scopus_telescope import (
     ScopusUtility,
     ScopusUtilWorker,
 )
-from observatory.api.client import ApiClient, Configuration
-from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
-from observatory.api.client.model.dataset import Dataset
-from observatory.api.client.model.dataset_type import DatasetType
-from observatory.api.client.model.organisation import Organisation
-from observatory.api.client.model.table_type import TableType
-from observatory.api.client.model.workflow import Workflow
-from observatory.api.client.model.workflow_type import WorkflowType
-from observatory.platform.utils.airflow_utils import AirflowConns
-from observatory.platform.utils.airflow_utils import AirflowVars
-from observatory.platform.utils.api import make_observatory_api
-from observatory.platform.utils.gc_utils import run_bigquery_query
-from observatory.platform.utils.release_utils import get_dataset_releases
-from observatory.platform.utils.test_utils import (
+from observatory.platform.api import get_dataset_releases
+from observatory.platform.bigquery import bq_sharded_table_id
+from observatory.platform.files import list_files
+from observatory.platform.gcs import gcs_blob_name_from_path
+from observatory.platform.observatory_config import Workflow
+from observatory.platform.observatory_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
-    module_file_path,
     find_free_port,
 )
 from observatory.platform.utils.url_utils import get_user_agent
-from observatory.platform.utils.workflow_utils import (
-    bigquery_sharded_table_id,
-    blob_name,
-    make_dag_id,
-)
+
+
+# Author: Tuan Chien, James Diprose
+
+
+class TestScopusTelescope(ObservatoryTestCase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.maxDiff = None  # so that entire diff from assertions are compared and returned
+        self.dag_id = "scopus_curtin"
+        self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
+        self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
+
+    def test_dag_structure(self):
+        """Test that the DAG has the correct structure."""
+
+        workflow = ScopusTelescope(
+            dag_id=self.dag_id,
+            cloud_workspace=self.fake_cloud_workspace,
+            institution_ids=["10"],
+            scopus_conn_ids=["conn"],
+        )
+
+        dag = workflow.make_dag()
+        self.assert_dag_structure(
+            {
+                "check_dependencies": ["download"],
+                "download": ["upload_downloaded"],
+                "upload_downloaded": ["transform"],
+                "transform": ["upload_transformed"],
+                "upload_transformed": ["bq_load"],
+                "bq_load": ["add_new_dataset_releases"],
+                "add_new_dataset_releases": ["cleanup"],
+                "cleanup": [],
+            },
+            dag,
+        )
+
+    def test_dag_load(self):
+        """Test that workflow can be loaded from a DAG bag."""
+
+        # Success
+        env = ObservatoryEnvironment(
+            workflows=[
+                Workflow(
+                    dag_id=self.dag_id,
+                    name="Scopus Telescope Curtin University",
+                    class_name="academic_observatory_workflows.workflows.scopus_telescope.ScopusTelescope",
+                    cloud_workspace=self.fake_cloud_workspace,
+                    kwargs=dict(
+                        institution_ids=["10"],
+                        scopus_conn_ids=["conn"],
+                        earliest_date=pendulum.datetime(2021, 1, 1),
+                    ),
+                )
+            ]
+        )
+
+        with env.create():
+            self.assert_dag_load_from_config(self.dag_id)
+
+        # Failure to load caused by missing kwargs
+        env = ObservatoryEnvironment(
+            workflows=[
+                Workflow(
+                    dag_id=self.dag_id,
+                    name="Scopus Telescope Curtin University",
+                    class_name="academic_observatory_workflows.workflows.scopus_telescope.ScopusTelescope",
+                    cloud_workspace=self.fake_cloud_workspace,
+                    kwargs=dict(),
+                )
+            ]
+        )
+
+        with env.create():
+            with self.assertRaises(AssertionError) as cm:
+                self.assert_dag_load_from_config(self.dag_id)
+            msg = cm.exception.args[0]
+            self.assertTrue("missing 2 required keyword-only arguments" in msg)
+            self.assertTrue("institution_ids" in msg)
+            self.assertTrue("scopus_conn_ids" in msg)
+
+    def test_telescope(self):
+        """Test workflow end to end"""
+
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
+        bq_dataset_id = env.add_dataset()
+
+        with env.create():
+            # Add login/pass connection
+            conn_id = "scopus_curtin_university"
+            conn = Connection(conn_id=conn_id, uri=f"http://login:password@localhost")
+            env.add_connection(conn)
+
+            execution_date = pendulum.datetime(2021, 1, 1)
+            workflow = ScopusTelescope(
+                dag_id=self.dag_id,
+                cloud_workspace=env.cloud_workspace,
+                institution_ids=["123"],
+                scopus_conn_ids=[conn_id],
+                bq_dataset_id=bq_dataset_id,
+                earliest_date=execution_date,
+            )
+            dag = workflow.make_dag()
+
+            with env.create_dag_run(dag, execution_date) as dag_run:
+                snapshot_date = pendulum.datetime(2021, 2, 1)
+                release = ScopusRelease(
+                    dag_id=self.dag_id,
+                    run_id=dag_run.run_id,
+                    snapshot_date=snapshot_date,
+                )
+
+                # Check dependencies
+                ti = env.run_task(workflow.check_dependencies.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # Download
+                with patch(
+                    "academic_observatory_workflows.workflows.scopus_telescope.ScopusUtility.make_query"
+                ) as m_search:
+                    # Load mocked data
+                    fixture_file = os.path.join(test_fixtures_folder("scopus"), "test.json")
+                    with open(fixture_file, "r") as f:
+                        results_str = f.read()
+                    results_len = 1
+                    m_search.return_value = results_str, results_len
+                    ti = env.run_task(workflow.download.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                download_files = list_files(release.download_folder, release.download_file_regex)
+                self.assertEqual(1, len(download_files))
+                self.assertEqual(1, m_search.call_count)
+
+                # Upload downloaded
+                ti = env.run_task(workflow.upload_downloaded.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                for file_path in download_files:
+                    self.assert_blob_integrity(env.download_bucket, gcs_blob_name_from_path(file_path), file_path)
+
+                # Transform
+                ti = env.run_task(workflow.transform.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assertTrue(os.path.isfile(release.transform_file_path))
+
+                # Upload transformed
+                ti = env.run_task(workflow.upload_transformed.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_blob_integrity(
+                    env.transform_bucket,
+                    gcs_blob_name_from_path(release.transform_file_path),
+                    release.transform_file_path,
+                )
+
+                # bq_load
+                ti = env.run_task(workflow.bq_load.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                table_id = bq_sharded_table_id(
+                    self.project_id, workflow.bq_dataset_id, workflow.bq_table_name, release.snapshot_date
+                )
+                expected_rows = 1
+                self.assert_table_integrity(table_id, expected_rows)
+                self.assert_table_content(
+                    table_id,
+                    [
+                        {
+                            "snapshot_date": datetime.date(2021, 2, 1),
+                            "institution_ids": [123],
+                            "title": "Article title",
+                            "identifier": "SCOPUS_ID:000000",
+                            "creator": "Name F.",
+                            "publication_name": "Journal of Things",
+                            "cover_date": datetime.date(2021, 10, 31),
+                            "doi": ["10.0000/00"],
+                            "eissn": [],
+                            "issn": ["00000000"],
+                            "isbn": [],
+                            "aggregation_type": "Journal",
+                            "pubmed_id": None,
+                            "pii": "S00000",
+                            "eid": "somedoi",
+                            "subtype_description": "Article",
+                            "open_access": 0,
+                            "open_access_flag": False,
+                            "citedby_count": 0,
+                            "source_id": 1,
+                            "affiliations": [
+                                {
+                                    "name": "WA School of Things",
+                                    "city": "Kalgoorlie",
+                                    "country": "Australia",
+                                    "id": None,
+                                    "name_variant": None,
+                                }
+                            ],
+                            "orcid": None,
+                            "authors": [],
+                            "abstract": None,
+                            "keywords": [],
+                            "article_number": "1",
+                            "fund_agency_ac": None,
+                            "fund_agency_id": None,
+                            "fund_agency_name": None,
+                        }
+                    ],
+                    "identifier",
+                )
+
+                # Test that DatasetRelease is added to database
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
+                self.assertEqual(len(dataset_releases), 0)
+                ti = env.run_task(workflow.add_new_dataset_releases.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
+                self.assertEqual(len(dataset_releases), 1)
+
+                # Test that all workflow data deleted
+                ti = env.run_task(workflow.cleanup.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_cleanup(release.workflow_folder)
 
 
 class TestScopusUtility(unittest.TestCase):
@@ -246,7 +451,7 @@ class TestScopusUtilWorker(unittest.TestCase):
         self.assertEqual(num_results, 2)
         self.assertEqual(results, "[{}, {}]")
 
-    @freeze_time("2021-02-01")
+    @time_machine.travel(datetime.datetime(2021, 2, 1))
     @patch("academic_observatory_workflows.workflows.scopus_telescope.write_to_file")
     def test_download_period(self, m_write_file):
         conn = "conn_id"
@@ -265,21 +470,21 @@ class TestScopusUtilWorker(unittest.TestCase):
         self.assertEqual(args[0], json.dumps(results))
         self.assertEqual(args[1], "/tmp/2021-01-01_2021-02-01_2021-02-01T00:00:00+00:00.json")
 
-    @freeze_time("2021-02-02")
+    @time_machine.travel(datetime.datetime(2021, 2, 2))
     def test_sleep_if_needed_needed(self):
         reset_date = pendulum.datetime(2021, 2, 2, 0, 0, 1)
         with patch("academic_observatory_workflows.workflows.scopus_telescope.logging.info") as m_log:
             ScopusUtility.sleep_if_needed(reset_date=reset_date, conn="conn")
             self.assertEqual(m_log.call_count, 1)
 
-    @freeze_time("2021-02-02")
+    @time_machine.travel(datetime.datetime(2021, 2, 2))
     def test_sleep_if_needed_not_needed(self):
         reset_date = pendulum.datetime(2021, 2, 1)
         with patch("academic_observatory_workflows.workflows.scopus_telescope.logging.info") as m_log:
             ScopusUtility.sleep_if_needed(reset_date=reset_date, conn="conn")
             self.assertEqual(m_log.call_count, 0)
 
-    @freeze_time("2021-02-02")
+    @time_machine.travel(datetime.datetime(2021, 2, 2))
     def test_update_reset_date(self):
         conn = "conn_id"
         worker = MagicMock()
@@ -555,16 +760,13 @@ class TestScopusJsonParser(unittest.TestCase):
     def test_parse_json(self):
         """Test the parser."""
 
-        harvest_datetime = pendulum.now("UTC").isoformat()
-        release_date = "2018-01-01"
+        snapshot_date = pendulum.datetime(2018, 1, 1)
         entry = ScopusJsonParser.parse_json(
             data=self.data,
-            harvest_datetime=harvest_datetime,
-            release_date=release_date,
+            snapshot_date=snapshot_date,
             institution_ids=self.institution_ids,
         )
-        self.assertEqual(entry["harvest_datetime"], harvest_datetime)
-        self.assertEqual(entry["release_date"], release_date)
+        self.assertEqual(entry["snapshot_date"], snapshot_date.date().isoformat())
         self.assertEqual(entry["title"], "arttitle")
         self.assertEqual(entry["identifier"], "scopusid")
         self.assertEqual(entry["creator"], "firstauth")
@@ -616,317 +818,3 @@ class TestScopusJsonParser(unittest.TestCase):
 
         self.assertEqual(len(entry["institution_ids"]), 1)
         self.assertEqual(entry["institution_ids"], self.institution_ids)
-
-
-class TestScopusTelescope(ObservatoryTestCase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
-        self.host = "localhost"
-        self.api_port = find_free_port()
-        self.data_location = "us"
-        self.org_name = "Curtin University"
-        self.conn_id = "scopus_curtin_university"
-        self.earliest_date = pendulum.datetime(2021, 1, 1)
-
-        self.fixture_dir = test_fixtures_folder("scopus")
-        self.fixture_file = os.path.join(self.fixture_dir, "test.json")
-        with open(self.fixture_file, "r") as f:
-            self.results_str = f.read()
-        self.results_len = 1
-
-        # API environment
-        configuration = Configuration(host=f"http://{self.host}:{self.api_port}")
-        api_client = ApiClient(configuration)
-        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
-
-    def setup_connections(self, env):
-        # Add Observatory API connection
-        conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.api_port}")
-        env.add_connection(conn)
-
-        # Add login/pass connection
-        conn = Connection(conn_id=self.conn_id, uri=f"http://login:password@localhost")
-        env.add_connection(conn)
-
-    def setup_api(self, extra=None):
-        dt = pendulum.now("UTC")
-
-        name = "Scopus Telescope"
-        workflow_type = WorkflowType(name=name, type_id=ScopusTelescope.DAG_ID)
-        self.api.put_workflow_type(workflow_type)
-
-        organisation = Organisation(
-            name="Curtin University",
-            project_id="project",
-            download_bucket="download_bucket",
-            transform_bucket="transform_bucket",
-        )
-        self.api.put_organisation(organisation)
-
-        if extra is None:
-            extra = {
-                "airflow_connections": [self.conn_id],
-                "earliest_date": self.earliest_date.isoformat(),
-                "institution_ids": ["123"],
-                "view": "STANDARD",
-            }
-        telescope = Workflow(
-            name=name,
-            workflow_type=WorkflowType(id=1),
-            organisation=Organisation(id=1),
-            extra=extra,
-        )
-        self.api.put_workflow(telescope)
-
-        table_type = TableType(
-            type_id="partitioned",
-            name="partitioned bq table",
-        )
-        self.api.put_table_type(table_type)
-
-        dataset_type = DatasetType(
-            type_id="scopus",
-            name="scopus",
-            table_type=TableType(id=1),
-        )
-        self.api.put_dataset_type(dataset_type)
-
-        dataset = Dataset(
-            name="Scopus Dataset",
-            address="project.dataset.table",
-            service="bigquery",
-            workflow=Workflow(id=1),
-            dataset_type=DatasetType(id=1),
-        )
-        self.api.put_dataset(dataset)
-
-    def get_telescope(self, dataset_id):
-        api = make_observatory_api()
-        workflow_type = api.get_workflow_type(type_id=ScopusTelescope.DAG_ID)
-        telescopes = api.get_workflows(workflow_type_id=workflow_type.id, limit=1000)
-        self.assertEqual(len(telescopes), 1)
-
-        workflow = telescopes[0]
-        dag_id = make_dag_id(ScopusTelescope.DAG_ID, workflow.organisation.name)
-        airflow_conns = workflow.extra.get("airflow_connections")
-        institution_ids = workflow.extra.get("institution_ids")
-        earliest_date_str = workflow.extra.get("earliest_date")
-        earliest_date = pendulum.parse(earliest_date_str)
-
-        airflow_vars = [
-            AirflowVars.DATA_PATH,
-            AirflowVars.DATA_LOCATION,
-        ]
-
-        telescope = ScopusTelescope(
-            dag_id=dag_id,
-            dataset_id=dataset_id,
-            airflow_conns=airflow_conns,
-            airflow_vars=airflow_vars,
-            institution_ids=institution_ids,
-            earliest_date=earliest_date,
-            workflow_id=1,
-        )
-
-        return telescope
-
-    def test_ctor(self):
-        self.assertRaises(
-            AirflowException,
-            ScopusTelescope,
-            dag_id="dag",
-            dataset_id="dataset",
-            airflow_conns=[],
-            airflow_vars=[],
-            institution_ids=[],
-            earliest_date=pendulum.now("UTC"),
-        )
-
-        self.assertRaises(
-            AirflowException,
-            ScopusTelescope,
-            dag_id="dag",
-            dataset_id="dataset",
-            airflow_conns=["conn"],
-            airflow_vars=[],
-            institution_ids=[],
-            earliest_date=pendulum.now("UTC"),
-        )
-
-    @patch("observatory.platform.utils.release_utils.make_observatory_api")
-    def test_dag_structure(self, m_makeapi):
-        """Test that the ScopusTelescope DAG has the correct structure.
-
-        :return: None
-        """
-
-        m_makeapi.return_value = self.api
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
-        with env.create():
-            self.setup_connections(env)
-            self.setup_api()
-            dag = ScopusTelescope(
-                dag_id="dag",
-                airflow_conns=["conn"],
-                airflow_vars=[],
-                institution_ids=["10"],
-                earliest_date=pendulum.now("UTC"),
-                view="standard",
-            ).make_dag()
-            self.assert_dag_structure(
-                {
-                    "check_dependencies": ["download"],
-                    "download": ["upload_downloaded"],
-                    "upload_downloaded": ["transform"],
-                    "transform": ["upload_transformed"],
-                    "upload_transformed": ["bq_load"],
-                    "bq_load": ["cleanup"],
-                    "cleanup": ["add_new_dataset_releases"],
-                    "add_new_dataset_releases": [],
-                },
-                dag,
-            )
-
-    @patch("observatory.platform.utils.release_utils.make_observatory_api")
-    def test_dag_load(self, m_makeapi):
-        """Test that the DAG can be loaded from a DAG bag."""
-
-        m_makeapi.return_value = self.api
-        dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
-
-        with env.create():
-            self.setup_connections(env)
-            self.setup_api()
-
-            dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
-            dag_id = make_dag_id(ScopusTelescope.DAG_ID, self.org_name)
-            self.assert_dag_load(dag_id, dag_file)
-
-    @patch("observatory.platform.utils.release_utils.make_observatory_api")
-    def test_dag_load_missing_params(self, m_makeapi):
-        """Test that the DAG can be loaded from a DAG bag."""
-
-        m_makeapi.return_value = self.api
-        dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
-        extra = {
-            "airflow_connections": [self.conn_id],
-            "institution_ids": ["123"],
-            "earliest_date": self.earliest_date.isoformat(),
-        }
-
-        with env.create():
-            self.setup_connections(env)
-            self.setup_api(extra=extra)
-
-            dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "scopus_telescope.py")
-            dag_id = make_dag_id(ScopusTelescope.DAG_ID, self.org_name)
-            self.assertRaises(AssertionError, self.assert_dag_load, dag_id, dag_file)
-
-    @patch("academic_observatory_workflows.workflows.web_of_science_telescope.pendulum.now")
-    @patch("observatory.platform.utils.release_utils.make_observatory_api")
-    def test_telescope(self, m_makeapi, m_pendnow):
-        m_makeapi.return_value = self.api
-        m_pendnow.return_value = pendulum.datetime(2021, 2, 1)
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.api_port)
-
-        with env.create():
-            self.setup_connections(env)
-            self.setup_api()
-            dataset_id = env.add_dataset()
-
-            execution_date = pendulum.datetime(2021, 1, 1)
-            telescope = self.get_telescope(dataset_id)
-            dag = telescope.make_dag()
-
-            release_date = pendulum.datetime(2021, 2, 1)
-            release = ScopusRelease(
-                dag_id=make_dag_id(ScopusTelescope.DAG_ID, self.org_name),
-                release_date=release_date,
-                api_keys=["1"],
-                institution_ids=["123"],
-                view="standard",
-                earliest_date=pendulum.datetime(2021, 1, 1),
-            )
-
-            with env.create_dag_run(dag, execution_date):
-                # check dependencies
-                ti = env.run_task(telescope.check_dependencies.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                # download
-                with patch(
-                    "academic_observatory_workflows.workflows.scopus_telescope.ScopusUtility.make_query"
-                ) as m_search:
-                    m_search.return_value = self.results_str, self.results_len
-                    ti = env.run_task(telescope.download.__name__)
-                    self.assertEqual(ti.state, State.SUCCESS)
-                    self.assertEqual(len(release.download_files), 1)
-                    self.assertEqual(m_search.call_count, 1)
-
-                # upload downloaded
-                ti = env.run_task(telescope.upload_downloaded.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-                self.assert_blob_integrity(
-                    env.download_bucket, blob_name(release.download_files[0]), release.download_files[0]
-                )
-
-                # transform
-                ti = env.run_task(telescope.transform.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                # upload_transformed
-                ti = env.run_task(telescope.upload_transformed.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-                for file in release.transform_files:
-                    self.assert_blob_integrity(env.transform_bucket, blob_name(file), file)
-
-                # bq_load
-                ti = env.run_task(telescope.bq_load.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                table_id = (
-                    f"{self.project_id}.{dataset_id}."
-                    f"{bigquery_sharded_table_id(ScopusTelescope.DAG_ID, release.release_date)}"
-                )
-                expected_rows = 1
-                self.assert_table_integrity(table_id, expected_rows)
-
-                # Sample some fields to check in the first row
-                sql = f"SELECT * FROM {self.project_id}.{dataset_id}.scopus20210201"
-                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
-                    records = list(run_bigquery_query(sql))
-                self.assertEqual(records[0]["aggregation_type"], "Journal")
-                self.assertEqual(records[0]["source_id"], 1)
-                self.assertEqual(records[0]["eid"], "somedoi")
-                self.assertEqual(records[0]["pii"], "S00000")
-                self.assertEqual(records[0]["identifier"], "SCOPUS_ID:000000")
-                self.assertEqual(records[0]["doi"], ["10.0000/00"])
-                self.assertEqual(records[0]["publication_name"], "Journal of Things")
-                self.assertEqual(records[0]["institution_ids"], [123])
-                self.assertEqual(records[0]["creator"], "Name F.")
-                self.assertEqual(records[0]["article_number"], "1")
-                self.assertEqual(records[0]["title"], "Article title")
-                self.assertEqual(records[0]["issn"], ["00000000"])
-                self.assertEqual(records[0]["subtype_description"], "Article")
-                self.assertEqual(records[0]["citedby_count"], 0)
-
-                # cleanup
-                download_folder, extract_folder, transform_folder = (
-                    release.download_folder,
-                    release.extract_folder,
-                    release.transform_folder,
-                )
-                env.run_task(telescope.cleanup.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-                self.assert_cleanup(download_folder, extract_folder, transform_folder)
-
-                # add_dataset_release_task
-                dataset_releases = get_dataset_releases(dataset_id=1)
-                self.assertEqual(len(dataset_releases), 0)
-                ti = env.run_task("add_new_dataset_releases")
-                self.assertEqual(ti.state, State.SUCCESS)
-                dataset_releases = get_dataset_releases(dataset_id=1)
-                self.assertEqual(len(dataset_releases), 1)

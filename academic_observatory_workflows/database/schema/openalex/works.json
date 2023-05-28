@@ -1,0 +1,883 @@
+[
+  {
+    "name": "host_venue",
+    "type": "RECORD",
+    "description": "DEPRECATED",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "issn",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "issn_l",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "license",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "publisher",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "type",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "url",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "version",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization_name",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "publisher_id",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      }
+    ]
+  },
+  {
+    "name": "alternate_host_venues",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "DEPRECATED",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "issn",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "issn_l",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "license",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "publisher",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "type",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "url",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "version",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization_name",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "publisher_id",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      }
+    ]
+  },
+  {
+    "name": "abstract_inverted_index",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "keys",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "Custom field created by COKI. Originally each word in the abstract was a key and the indices of where this word occurred inside the abstract the corresponding value."
+      },
+      {
+        "name": "values",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "Custom field created by COKI. Originally each word in the abstract was a key and the indices of where this word occurred inside the abstract the corresponding value."
+      }
+    ],
+    "description": "The abstract of the work, as an inverted index, which encodes information about the abstract's words and their positions within the text. Like Microsoft Academic Graph, OpenAlex doesn't include plaintext abstracts due to legal constraints."
+  },
+  {
+    "name": "authorships",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "author",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The name of the author as a single string."
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The OpenAlex ID for this author."
+          },
+          {
+            "name": "orcid",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The ORCID for this author. ORCID global and unique ID for authors."
+          }
+        ],
+        "description": "An author of this work, as a dehydrated Author object."
+      },
+      {
+        "name": "author_position",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "A summarized description of this author's position in the work's author list. Possible values are first, middle, and last. It's not strictly necessary, because author order is already implicitly recorded by the list order of Authorship objects; however it's useful in some contexts to have this as a categorical value."
+      },
+      {
+        "name": "institutions",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          {
+            "name": "country_code",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The country where this institution is located, represented as an ISO two-letter country code."
+          },
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The primary name of the institution."
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The OpenAlex ID for this institution."
+          },
+          {
+            "name": "ror",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The ROR ID for this institution. The ROR (Research Organization Registry) identifier is a globally unique ID for research organization. ROR is the successor to GRiD, which is no longer being updated."
+          },
+          {
+            "name": "type",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The institution's primary type, using the ROR \"type\" controlled vocabulary. Possible values are: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, and Other."
+          }
+        ],
+        "description": "The institutional affiliations this author claimed in the context of this work, as dehydrated Institution objects."
+      },
+      {
+        "name": "is_corresponding",
+        "type": "BOOLEAN",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "raw_affiliation_string",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "This author's affiliation as it originally came to us (on a webpage or in an API), as a raw unformatted string. "
+      },
+      {
+        "name": "raw_affiliation_strings",
+        "type": "STRING",
+        "mode": "REPEATED"
+      }
+    ],
+    "description": "List of Authorship objects, each representing an author and their institution."
+  },
+  {
+    "name": "best_oa_location",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "mode": "NULLABLE",
+        "description": "True if this work is Open Access (OA)."
+      },
+      {
+        "name": "landing_page_url",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The landing page URL for this location."
+      },
+      {
+        "name": "license",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The location's publishing license. This can be a Create Commons license such as cc0 or cc-by, a publisher-specific license, or null which means we are not able to determine a license for this location."
+      },
+      {
+        "name": "source",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The name of the source."
+          },
+          {
+            "name": "host_organization",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The host organization for this source as an OpenAlex ID. This will be an Institution.id if the source is a repository, and a Publisher.id if the source is a journal, conference, or eBook platform (based on the type field)."
+          },
+          {
+            "name": "host_organization_name",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The display_name from the host_organization, shown for convenience."
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The OpenAlex ID for this source."
+          },
+          {
+            "name": "issn",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "The ISSNs used by this source. Many publications have multiple ISSNs (see above), so ISSN-L should be used when possible."
+          },
+          {
+            "name": "issn_l",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The ISSN-L identifying this source. This is the Canonical External ID for sources."
+          },
+          {
+            "name": "publisher",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": ""
+          },
+          {
+            "name": "publisher_id",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": ""
+          },
+          {
+            "name": "type",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The type of source."
+          }
+        ],
+        "description": "Information about the source of this location, as a DehydratedSource object."
+      },
+      {
+        "name": "pdf_url",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "A URL where you can find this location as a PDF."
+      },
+      {
+        "name": "version",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The version of the work, based on the DRIVER Guidelines versioning scheme."
+      }
+    ],
+    "description": "A Location object with the best available open access location for this work."
+  },
+  {
+    "name": "biblio",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "first_page",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "issue",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "last_page",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "volume",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ],
+    "description": "Old-timey bibliographic info for this work. This is mostly useful only in citation/reference contexts. These are all strings because sometimes you'll get fun values like \"Spring\" and \"Inside cover.\""
+  },
+  {
+    "name": "cited_by_api_url",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "cited_by_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "The number of citations to this work. These are the times that other works have cited this work: Other works \u279e This work."
+  },
+  {
+    "name": "concepts",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The English-language label of the concept."
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The OpenAlex ID for this concept."
+      },
+      {
+        "name": "level",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The level in the concept tree where this concept lives."
+      },
+      {
+        "name": "score",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": "The strength of the connection between the work and this concept (higher is stronger)."
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The Wikidata ID for this concept. "
+      }
+    ],
+    "description": "List of dehydrated Concept objects. \nEach Concept object in the list also has one additional property"
+  },
+  {
+    "name": "counts_by_year",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The number of times this work is cited in this year."
+      },
+      {
+        "name": "year",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The year."
+      }
+    ],
+    "description": "Works.cited_by_count for each of the last ten years, binned by year. To put it another way: each year, you can see how many times this work was cited."
+  },
+  {
+    "name": "created_date",
+    "type": "DATE",
+    "mode": "NULLABLE",
+    "description": "The date this Work object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
+  },
+  {
+    "name": "display_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Exactly the same as Work.title. It's useful for Works to include a display_name property, since all the other entities have one."
+  },
+  {
+    "name": "doi",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The DOI for the work. Occasionally, a work has more than one DOI--for example, there might be one DOI for a preprint version hosted on bioRxiv, and another DOI for the published version. However, this field always has just one DOI, the DOI for the published work. If you want DOIs for other versions, you can find them in the Work.alternate_host_venues list."
+  },
+  {
+    "name": "funders",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "awards",
+        "type": "STRING",
+        "mode": "REPEATED"
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "ids",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "openalex",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "ror",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "wikidata",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The OpenAlex ID for this work."
+  },
+  {
+    "name": "ids",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "doi",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The DOI. Same as Work.doi"
+      },
+      {
+        "name": "mag",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The Microsoft Academic Graph ID"
+      },
+      {
+        "name": "openalex",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The OpenAlex ID. Same as Work.id"
+      },
+      {
+        "name": "pmcid",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "the Pubmed Central identifier"
+      },
+      {
+        "name": "pmid",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The Pubmed Identifier"
+      }
+    ],
+    "description": "All the persistent identifiers (PIDs) that we know about for this work, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible."
+  },
+  {
+    "name": "is_paratext",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE",
+    "description": "True if we think this work is paratext. In our context, paratext is stuff that's in scholarly venue (like a journal) but is about the venue rather than a scholarly work properly speaking.  Some examples and nonexamples: -yep it's paratext: front cover, back cover, table of contents, editorial board listing, issue information,  masthead. -no,  not paratext: research paper, dataset, letters to the editor, figures. Turns out there is a lot of paratext in registries like Crossref. That's not a bad thing... but we've found that it's good to have a way to filter it out.\nWe determine is_paratext algorithmically using title heuristics. "
+  },
+  {
+    "name": "is_retracted",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE",
+    "description": "True if we know this work has been retracted. This field has high precision but low recall. In other words, if is_retracted is  true, the article is definitely retracted. But if is_retracted is False,  it still might be retracted, but we just don't know. This is because unfortunately, the open sources for retraction data aren't currently very comprehensive, and the more comprehensive ones aren't sufficiently open for us to use here."
+  },
+  {
+    "name": "language",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The language of the work in ISO 639-1 format. The language is automatically detected using the information we have about the work. We use the langdetect software library on the words in the work's abstract, or the title if we do not have the abstract. The source code for this procedure is here. Keep in mind that this method is not perfect, and that in some cases the language of the title or abstract could be different from the body of the work."
+  },
+  {
+    "name": "locations",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "mode": "NULLABLE",
+        "description": "True if this work is Open Access (OA)."
+      },
+      {
+        "name": "landing_page_url",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The landing page URL for this location."
+      },
+      {
+        "name": "license",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The location's publishing license. This can be a Create Commons license such as cc0 or cc-by, a publisher-specific license, or null which means we are not able to determine a license for this location."
+      },
+      {
+        "name": "pdf_url",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "A URL where you can find this location as a PDF."
+      },
+      {
+        "name": "source",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The name of the source."
+          },
+          {
+            "name": "host_organization",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The host organization for this source as an OpenAlex ID. This will be an Institution.id if the source is a repository, and a Publisher.id if the source is a journal, conference, or eBook platform (based on the type field)."
+          },
+          {
+            "name": "host_organization_name",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The display_name from the host_organization, shown for convenience."
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The OpenAlex ID for this source."
+          },
+          {
+            "name": "issn",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "The ISSNs used by this source. Many publications have multiple ISSNs (see above), so ISSN-L should be used when possible."
+          },
+          {
+            "name": "issn_l",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The ISSN-L identifying this source. This is the Canonical External ID for sources."
+          },
+          {
+            "name": "publisher",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The publisher name."
+          },
+          {
+            "name": "publisher_id",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The OpenAlex publisher ID."
+          },
+          {
+            "name": "type",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The type of source."
+          }
+        ]
+      },
+      {
+        "name": "version",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The version of the work, based on the DRIVER Guidelines versioning scheme. Possible values are: publishedVersion: The document’s version of record. This is the most authoritative version.\nacceptedVersion: The document after having completed peer review and being officially accepted for publication. It will lack publisher formatting, but the content should be interchangeable with the that of the publishedVersion.\nsubmittedVersion: the document as submitted to the publisher by the authors, but before peer-review. Its content may differ significantly from that of the accepted article."
+      }
+    ],
+    "description": "A list of Location objects describing all unique places where this work lives."
+  },
+  {
+    "name": "mesh",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "descriptor_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "descriptor_ui",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "is_major_topic",
+        "type": "BOOLEAN",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "qualifier_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "qualifier_ui",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ],
+    "description": "List of MeSH tag objects. Only works found in PubMed have MeSH tags; for all other works, this is an empty list."
+  },
+  {
+    "name": "open_access",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "mode": "NULLABLE",
+        "description": "True if this work is Open Access (OA). There are many ways to define OA. OpenAlex uses a broad definition: having a URL where you can read the fulltext of this work without needing to pay money or log in. You can use the alternate_host_venues and oa_status fields to narrow your results further, accommodating any definition of OA you like."
+      },
+      {
+        "name": "oa_status",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The Open Access (OA) status of this work. Possible values are: -gold: Published in an OA journal that is indexed by the DOAJ. -green: Toll-access on the publisher landing page, but there is a free copy in an OA repository. -hybrid: Free under an open license in a toll-access journal. -bronze: Free to read on the publisher landing page, but without any identifiable license. -closed: All other articles."
+      },
+      {
+        "name": "oa_url",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The best Open Access (OA) URL for this work. Although there are many ways to define OA, in this context an OA URL is one where you can read the fulltext of this work without needing to pay money or log in. The \"best\" such URL is the one closest to the version of record. This URL might be a direct link to a PDF, or it might be to a landing page that links to the free PDF"
+      }
+    ],
+    "description": "Information about the access status of this work, as an OpenAccess object."
+  },
+  {
+    "name": "primary_location",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "mode": "NULLABLE",
+        "description": "True if this work is Open Access (OA)."
+      },
+      {
+        "name": "landing_page_url",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The landing page URL for this location."
+      },
+      {
+        "name": "license",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The location's publishing license. This can be a Create Commons license such as cc0 or cc-by, a publisher-specific license, or null which means we are not able to determine a license for this location."
+      },
+      {
+        "name": "pdf_url",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "A URL where you can find this location as a PDF."
+      },
+      {
+        "name": "source",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The name of the source."
+          },
+          {
+            "name": "host_organization",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The host organization for this source as an OpenAlex ID. This will be an Institution.id if the source is a repository, and a Publisher.id if the source is a journal, conference, or eBook platform (based on the type field)."
+          },
+          {
+            "name": "host_organization_name",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The display_name from the host_organization, shown for convenience."
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The OpenAlex ID for this source."
+          },
+          {
+            "name": "issn",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "The ISSNs used by this source. Many publications have multiple ISSNs (see above), so ISSN-L should be used when possible."
+          },
+          {
+            "name": "issn_l",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The ISSN-L identifying this source. This is the Canonical External ID for sources."
+          },
+          {
+            "name": "publisher",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The publisher name."
+          },
+          {
+            "name": "publisher_id",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The OpenAlex ID of the publisher."
+          },
+          {
+            "name": "type",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The type of source."
+          }
+        ]
+      },
+      {
+        "name": "version",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The version of the work, based on the DRIVER Guidelines versioning scheme. Possible values are:.\npublishedVersion: The document’s version of record. This is the most authoritative version.\nacceptedVersion: The document after having completed peer review and being officially accepted for publication. It will lack publisher formatting, but the content should be interchangeable with the that of the publishedVersion.\nsubmittedVersion: the document as submitted to the publisher by the authors, but before peer-review. Its content may differ significantly from that of the accepted article."
+      }
+    ],
+    "description": "A Location object with the primary location of this work."
+  },
+  {
+    "name": "publication_date",
+    "type": "DATE",
+    "mode": "NULLABLE",
+    "description": "The day when this work was published, formatted as an ISO 8601 date.\nWhere different publication dates exist, we select the earliest available date of electronic publication. \nThis date applies to the version found at Work.url. The other versions, found in Work.alternate_host_venues, may have been published at different (earlier) dates."
+  },
+  {
+    "name": "publication_year",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "The year this work was published."
+  },
+  {
+    "name": "referenced_works",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "OpenAlex IDs for works that this work cites. These are citations that go from this work out to another work: This work \u279e Other works."
+  },
+  {
+    "name": "related_works",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "OpenAlex IDs for works related to this work. "
+  },
+  {
+    "name": "title",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The title of this work."
+  },
+  {
+    "name": "type",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The type or genre of the work. This field uses Crossref's \"type\" controlled vocabulary; you can see all possible values via the Crossref api here: https://api.crossref.org/types. Where possible, we just pass along Crossref's type value for each work. When that's impossible (eg the work isn't in Crossref), we do our best to figure out the type ourselves. Unfortunately the accuracy of Crossref's data for this isn't great, and ours isn't much better. We're working to develop better type classification."
+  },
+  {
+    "name": "updated_date",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "The last time anything in this Work object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  }
+]

@@ -12,520 +12,558 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Aniek Roelofs
+# Author: Aniek Roelofs, James Diprose
 
+import datetime
+import json
 import os
+import pathlib
+import unittest
+from concurrent.futures import as_completed, ThreadPoolExecutor
 from unittest.mock import patch
 
 import pendulum
+import responses
 import vcr
-from airflow.exceptions import AirflowSkipException
-from airflow.models import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
-from google.cloud import bigquery
-from importlib_metadata import metadata
+from google.cloud.exceptions import NotFound
 
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.crossref_events_telescope import (
     CrossrefEventsRelease,
     CrossrefEventsTelescope,
-    parse_event_url,
-    transform_batch,
+    Action,
+    make_day_requests,
+    parse_release_msg,
+    EventRequest,
+    crossref_events_limiter,
+    download_events,
+    fetch_events,
 )
-from observatory.api.client import ApiClient, Configuration
-from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
-from observatory.api.client.model.dataset import Dataset
-from observatory.api.client.model.dataset_type import DatasetType
-from observatory.api.client.model.organisation import Organisation
-from observatory.api.client.model.table_type import TableType
-from observatory.api.client.model.workflow import Workflow
-from observatory.api.client.model.workflow_type import WorkflowType
-from observatory.api.testing import ObservatoryApiEnvironment
-from observatory.platform.utils.airflow_utils import AirflowConns
-from observatory.platform.utils.release_utils import get_dataset_releases
-from observatory.platform.utils.test_utils import (
+from observatory.platform.api import get_dataset_releases
+from observatory.platform.files import list_files
+from observatory.platform.gcs import gcs_blob_name_from_path
+from observatory.platform.observatory_config import Workflow
+from observatory.platform.observatory_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
-    module_file_path,
     find_free_port,
+    load_and_parse_json,
 )
-from observatory.platform.utils.url_utils import get_user_agent, retry_get_url
-from observatory.platform.utils.workflow_utils import blob_name, create_date_table_id
 
 
 class TestCrossrefEventsTelescope(ObservatoryTestCase):
-    """Tests for the Crossref Events telescope"""
-
     def __init__(self, *args, **kwargs):
-        """Constructor which sets up variables used by tests.
-        :param args: arguments.
-        :param kwargs: keyword arguments.
-        """
         super(TestCrossrefEventsTelescope, self).__init__(*args, **kwargs)
+        self.dag_id = "crossref_events"
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
 
-        self.first_execution_date = pendulum.datetime(year=2018, month=5, day=21)
-        self.first_cassette = test_fixtures_folder("crossref_events", "crossref_events1.yaml")
-
-        self.second_execution_date = pendulum.datetime(year=2018, month=5, day=28)
-        self.second_cassette = test_fixtures_folder("crossref_events", "crossref_events2.yaml")
-
-        # additional tests setup
-        self.start_date = pendulum.datetime(2021, 5, 6)
-        self.end_date = pendulum.datetime(2021, 5, 13)
-        self.release = CrossrefEventsRelease(
-            CrossrefEventsTelescope.DAG_ID,
-            self.start_date,
-            self.end_date,
-            False,
-            "mailto",
-            max_threads=21,
-            max_processes=1,
-        )
-        # Patch the retry_get_url method to change its defaults
-        # This is necessary as retrying the http request will break the VCR cassette call
-        new_defaults = list(retry_get_url.__defaults__)
-        new_defaults[0] = 0  # num_retries = 0
-        self.retry_get_url_patch = patch(
-            "academic_observatory_workflows.workflows.crossref_events_telescope.retry_get_url.__defaults__",
-            tuple(new_defaults),
-        )
-
-        # API environment
-        self.host = "localhost"
-        self.port = find_free_port()
-        configuration = Configuration(host=f"http://{self.host}:{self.port}")
-        api_client = ApiClient(configuration)
-        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
-        self.env = ObservatoryApiEnvironment(host=self.host, port=self.port)
-        self.org_name = "Curtin University"
-
-    def setup_api(self):
-        dt = pendulum.now("UTC")
-
-        name = "Crossref Events Telescope"
-        workflow_type = WorkflowType(name=name, type_id=CrossrefEventsTelescope.DAG_ID)
-        self.api.put_workflow_type(workflow_type)
-
-        organisation = Organisation(
-            name="Curtin University",
-            project_id="project",
-            download_bucket="download_bucket",
-            transform_bucket="transform_bucket",
-        )
-        self.api.put_organisation(organisation)
-
-        telescope = Workflow(
-            name=name,
-            workflow_type=WorkflowType(id=1),
-            organisation=Organisation(id=1),
-            extra={},
-        )
-        self.api.put_workflow(telescope)
-
-        table_type = TableType(
-            type_id="partitioned",
-            name="partitioned bq table",
-        )
-        self.api.put_table_type(table_type)
-
-        dataset_type = DatasetType(
-            type_id=CrossrefEventsTelescope.DAG_ID,
-            name="ds type",
-            extra={},
-            table_type=TableType(id=1),
-        )
-        self.api.put_dataset_type(dataset_type)
-
-        dataset = Dataset(
-            name="Crossref Events Dataset",
-            address="project.dataset.table",
-            service="bigquery",
-            workflow=Workflow(id=1),
-            dataset_type=DatasetType(id=1),
-        )
-        self.api.put_dataset(dataset)
-
-    def setup_connections(self, env):
-        # Add Observatory API connection
-        conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.port}")
-        env.add_connection(conn)
-
     def test_dag_structure(self):
-        """Test that the Crossref Events DAG has the correct structure.
-        :return: None
-        """
+        """Test that the Crossref Events DAG has the correct structure."""
 
-        dag = CrossrefEventsTelescope(workflow_id=0).make_dag()
+        workflow = CrossrefEventsTelescope(
+            dag_id=self.dag_id,
+            cloud_workspace=self.fake_cloud_workspace,
+        )
+        dag = workflow.make_dag()
         self.assert_dag_structure(
             {
-                "check_dependencies": ["download"],
+                "wait_for_prev_dag_run": ["check_dependencies"],
+                "check_dependencies": ["fetch_releases"],
+                "fetch_releases": ["create_datasets"],
+                "create_datasets": ["bq_create_main_table_snapshot"],
+                "bq_create_main_table_snapshot": ["download"],
                 "download": ["upload_downloaded"],
-                "upload_downloaded": ["transform"],
-                "transform": ["upload_transformed"],
-                "upload_transformed": ["bq_load_partition"],
-                "bq_load_partition": ["bq_delete_old"],
-                "bq_delete_old": ["bq_append_new"],
-                "bq_append_new": ["cleanup"],
-                "cleanup": ["add_new_dataset_releases"],
-                "add_new_dataset_releases": [],
+                "upload_downloaded": ["transform_snapshot"],
+                "transform_snapshot": ["transform_created_edited"],
+                "transform_created_edited": ["transform_deleted"],
+                "transform_deleted": ["upload_transformed"],
+                "upload_transformed": ["bq_load_main_table"],
+                "bq_load_main_table": ["bq_load_upsert_table"],
+                "bq_load_upsert_table": ["bq_upsert_records"],
+                "bq_upsert_records": ["bq_load_delete_table"],
+                "bq_load_delete_table": ["bq_delete_records"],
+                "bq_delete_records": ["add_new_dataset_releases"],
+                "add_new_dataset_releases": ["cleanup"],
+                "cleanup": ["dag_run_complete"],
+                "dag_run_complete": [],
             },
             dag,
         )
 
     def test_dag_load(self):
-        """Test that the Crossref Events DAG can be loaded from a DAG bag.
-        :return: None
-        """
+        """Test that the Crossref Events DAG can be loaded from a DAG bag."""
 
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
+        env = ObservatoryEnvironment(
+            workflows=[
+                Workflow(
+                    dag_id=self.dag_id,
+                    name="Crossref Events Telescope",
+                    class_name="academic_observatory_workflows.workflows.crossref_events_telescope.CrossrefEventsTelescope",
+                    cloud_workspace=self.fake_cloud_workspace,
+                )
+            ]
+        )
 
         with env.create():
-            self.setup_connections(env)
-            self.setup_api()
-            dag_file = os.path.join(
-                module_file_path("academic_observatory_workflows.dags"), "crossref_events_telescope.py"
-            )
-            self.assert_dag_load("crossref_events", dag_file)
+            self.assert_dag_load_from_config(self.dag_id)
 
     def test_telescope(self):
-        """Test the Crossref Events telescope end to end.
-        :return: None.
-        """
-        # Setup Observatory environment
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
-        dataset_id = env.add_dataset()
+        """Test the Crossref Events telescope end to end."""
 
-        # Setup Telescope
-        telescope = CrossrefEventsTelescope(dataset_id=dataset_id, workflow_id=1)
-        telescope.max_threads = 1
-        telescope.max_processes = 1
-        dag = telescope.make_dag()
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
+        bq_dataset_id = env.add_dataset()
 
-        # Create the Observatory environment and run tests
         with env.create(task_logging=True):
-            self.setup_connections(env)
-            self.setup_api()
-            # first run
-            with env.create_dag_run(dag, self.first_execution_date) as dag_run:
-                # Test that all dependencies are specified: no error should be thrown
-                env.run_task(telescope.check_dependencies.__name__)
+            start_date = pendulum.datetime(2023, 4, 30)
+            end_date = pendulum.datetime(2023, 5, 7)
+            workflow = CrossrefEventsTelescope(
+                dag_id=self.dag_id,
+                cloud_workspace=env.cloud_workspace,
+                bq_dataset_id=bq_dataset_id,
+                max_threads=3,
+                max_processes=3,
+                events_start_date=start_date,
+                n_rows=3,  # needs to be 3 because that is what the mocked data uses
+            )
+            dag = workflow.make_dag()
 
-                start_date, end_date, first_release = telescope.get_release_info(
-                    dag=dag,
-                    data_interval_end=pendulum.datetime(2018, 5, 20),
-                )
-
-                self.assertEqual(start_date, dag.default_args["start_date"])
-                self.assertEqual(pendulum.instance(end_date), pendulum.datetime(2018, 5, 20))
-                self.assertTrue(first_release)
-
-                # use release info for other tasks
+            # This run just calls create events
+            with env.create_dag_run(dag, start_date) as dag_run:
                 release = CrossrefEventsRelease(
-                    telescope.dag_id,
-                    start_date,
-                    end_date,
-                    first_release,
-                    telescope.mailto,
-                    telescope.max_threads,
-                    telescope.max_processes,
+                    dag_id=self.dag_id,
+                    run_id=dag_run.run_id,
+                    cloud_workspace=workflow.cloud_workspace,
+                    bq_dataset_id=workflow.bq_dataset_id,
+                    bq_table_name=workflow.bq_table_name,
+                    start_date=start_date,
+                    end_date=end_date,
+                    prev_end_date=pendulum.instance(datetime.datetime.min),
+                    is_first_run=True,
+                    mailto=workflow.mailto,
                 )
 
-                # Test download task
-                vcr_ = vcr.VCR(ignore_localhost=True)
-                with vcr_.use_cassette(self.first_cassette):
-                    with self.retry_get_url_patch:
-                        env.run_task(telescope.download.__name__)
-                self.assertEqual(6, len(release.download_files))
-                for file in release.download_files:
-                    if "2018-05-14" in file:
-                        download_hash = "9a18d1002a5395de3cbcd9c61fb28c83"
-                    else:
-                        download_hash = "ad9cf98aab232eee7edf12375f016770"
-                    self.assert_file_integrity(file, download_hash, "md5")
+                # Wait for the previous DAG run to finish
+                ti = env.run_task("wait_for_prev_dag_run")
+                self.assertEqual(State.SUCCESS, ti.state)
 
-                # Test that files uploaded
-                env.run_task(telescope.upload_downloaded.__name__)
-                for file in release.download_files:
-                    self.assert_blob_integrity(env.download_bucket, blob_name(file), file)
+                # Check dependencies are met
+                ti = env.run_task(workflow.check_dependencies.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
 
-                # Test that files transformed
-                env.run_task(telescope.transform.__name__)
-                self.assertEqual(6, len(release.transform_files))
-                for file in release.transform_files:
-                    if "2018-05-14" in file:
-                        transform_hash = "3e953d2424fe37739790bbc5c2410824"
-                    else:
-                        transform_hash = "d5e0a887656d1786a9e7c4dbdbf77ba1"
-                    self.assert_file_integrity(file, transform_hash, "md5")
-
-                # Test that transformed files uploaded
-                env.run_task(telescope.upload_transformed.__name__)
-                for file in release.transform_files:
-                    self.assert_blob_integrity(env.transform_bucket, blob_name(file), file)
-
-                # Test that load partition task is skipped for the first release
-                ti = env.run_task(telescope.bq_load_partition.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                # Test delete old task is skipped for the first release
-                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
-                    ti = env.run_task(telescope.bq_delete_old.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                # Test append new creates table
-                env.run_task(telescope.bq_append_new.__name__)
-                main_table_id, partition_table_id = release.dag_id, f"{release.dag_id}_partitions"
-                table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
-                expected_rows = 68
-                self.assert_table_integrity(table_id, expected_rows)
-
-                # Test that all telescope data deleted
-                download_folder, extract_folder, transform_folder = (
-                    release.download_folder,
-                    release.extract_folder,
-                    release.transform_folder,
+                # Fetch releases and check that we have received the expected information from the xcom
+                task_id = workflow.fetch_releases.__name__
+                ti = env.run_task(task_id)
+                self.assertEqual(State.SUCCESS, ti.state)
+                msg = ti.xcom_pull(
+                    key=workflow.RELEASE_INFO,
+                    task_ids=task_id,
+                    include_prior_dates=False,
                 )
-                env.run_task(telescope.cleanup.__name__)
-                self.assert_cleanup(download_folder, extract_folder, transform_folder)
+                actual_start_date, actual_end_date, actual_is_first_run, actual_prev_end_date = parse_release_msg(msg)
+                self.assertEqual(release.start_date, actual_start_date)
+                self.assertEqual(release.end_date, actual_end_date)
+                self.assertTrue(actual_is_first_run)
+                self.assertEqual(release.prev_end_date, actual_prev_end_date)
 
-                # add_dataset_release_task
-                dataset_releases = get_dataset_releases(dataset_id=1)
+                # Create datasets
+                ti = env.run_task(workflow.create_datasets.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # Create snapshot: no table created on this run
+                ti = env.run_task(workflow.bq_create_main_table_snapshot.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # Create mocked responses for run 1
+                # Creates on this run
+                with responses.RequestsMock(assert_all_requests_are_fired=True) as rsps:
+                    with open(test_fixtures_folder(self.dag_id, "run1-responses.json"), mode="r") as f:
+                        data = json.load(f)
+                    for url, json_data in data.items():
+                        rsps.add(
+                            responses.GET,
+                            url,
+                            json=json_data,
+                            status=200,
+                        )
+                    ti = env.run_task(workflow.download.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for day in release.day_requests:
+                        self.assertTrue(
+                            os.path.isfile(os.path.join(release.download_folder, day.created.data_file_name))
+                        )
+
+                ti = env.run_task(workflow.upload_downloaded.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                for day in release.day_requests:
+                    file_path = os.path.join(release.download_folder, day.created.data_file_name)
+                    self.assert_blob_integrity(env.download_bucket, gcs_blob_name_from_path(file_path), file_path)
+
+                ti = env.run_task(workflow.transform_snapshot.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assertEqual(7, len(list_files(release.transform_folder, release.transform_files_regex)))
+
+                ti = env.run_task(workflow.transform_created_edited.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assertFalse(os.path.isfile(release.upsert_table_file_path))
+
+                ti = env.run_task(workflow.transform_deleted.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assertFalse(os.path.isfile(release.delete_table_file_path))
+
+                ti = env.run_task(workflow.upload_transformed.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                for day in release.day_requests:
+                    file_path = os.path.join(release.transform_folder, day.created.data_file_name)
+                    self.assert_blob_integrity(env.transform_bucket, gcs_blob_name_from_path(file_path), file_path)
+
+                ti = env.run_task(workflow.bq_load_main_table.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_table_integrity(release.bq_main_table_id, expected_rows=42)
+
+                ti = env.run_task(workflow.bq_load_upsert_table.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                with self.assertRaises(NotFound):
+                    self.bigquery_client.get_table(release.bq_upsert_table_id)
+
+                ti = env.run_task(workflow.bq_upsert_records.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_table_integrity(release.bq_main_table_id, expected_rows=42)
+
+                ti = env.run_task(workflow.bq_load_delete_table.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                with self.assertRaises(NotFound):
+                    self.bigquery_client.get_table(release.bq_delete_table_id)
+
+                ti = env.run_task(workflow.bq_delete_records.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_table_integrity(release.bq_main_table_id, expected_rows=42)
+
+                # Assert that we have correct dataset state
+                expected_content = load_and_parse_json(
+                    test_fixtures_folder(self.dag_id, "run1-expected.json"),
+                    date_fields={"occurred_at", "timestamp", "updated_date"},
+                )
+                self.assert_table_content(release.bq_main_table_id, expected_content, workflow.primary_key)
+
+                # Final tasks
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
                 self.assertEqual(len(dataset_releases), 0)
-                ti = env.run_task("add_new_dataset_releases")
-                self.assertEqual(ti.state, State.SUCCESS)
-                dataset_releases = get_dataset_releases(dataset_id=1)
+                ti = env.run_task(workflow.add_new_dataset_releases.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
                 self.assertEqual(len(dataset_releases), 1)
 
-            # second run
-            with env.create_dag_run(dag, self.second_execution_date) as dag_run:
-                # Test that all dependencies are specified: no error should be thrown
-                env.run_task(telescope.check_dependencies.__name__)
+                # Test that all workflow data deleted
+                ti = env.run_task(workflow.cleanup.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_cleanup(release.workflow_folder)
 
-                start_date, end_date, first_release = telescope.get_release_info(
-                    dag=dag,
-                    data_interval_end=pendulum.datetime(2018, 5, 27),
-                )
+                ti = env.run_task("dag_run_complete")
+                self.assertEqual(State.SUCCESS, ti.state)
 
-                self.assertEqual(release.end_date, start_date)
-                self.assertEqual(pendulum.datetime(2018, 5, 27), end_date)
-                self.assertFalse(first_release)
-
-                # use release info for other tasks
+            # Create, update and delete
+            start_date = pendulum.datetime(2023, 5, 7)
+            end_date = pendulum.datetime(2023, 5, 14)
+            with env.create_dag_run(dag, start_date) as dag_run:
                 release = CrossrefEventsRelease(
-                    telescope.dag_id,
-                    start_date,
-                    end_date,
-                    first_release,
-                    telescope.mailto,
-                    telescope.max_threads,
-                    telescope.max_processes,
+                    dag_id=self.dag_id,
+                    run_id=dag_run.run_id,
+                    cloud_workspace=workflow.cloud_workspace,
+                    bq_dataset_id=workflow.bq_dataset_id,
+                    bq_table_name=workflow.bq_table_name,
+                    start_date=start_date,
+                    end_date=end_date,
+                    prev_end_date=start_date,
+                    is_first_run=True,
+                    mailto=workflow.mailto,
                 )
 
-                # Test download task
-                with vcr_.use_cassette(self.second_cassette):
-                    env.run_task(telescope.download.__name__)
+                # Wait for the previous DAG run to finish
+                ti = env.run_task("wait_for_prev_dag_run")
+                self.assertEqual(State.SUCCESS, ti.state)
 
-                self.assertEqual(20, len(release.download_files))
-                for file in release.download_files:
-                    if "edited" in file:
-                        download_hash = "b1c8c856c29365efeeef8a7c1ccba7da"
-                    elif "deleted" in file:
-                        download_hash = "8d52425faa9192e8748865b8c53c2b3d"
-                    else:
-                        download_hash = "01aa964587e6296df5697d13a122e8ce"
-                    self.assert_file_integrity(file, download_hash, "md5")
+                # Check dependencies are met
+                ti = env.run_task(workflow.check_dependencies.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
 
-                # Test that file uploaded
-                env.run_task(telescope.upload_downloaded.__name__)
-                for file in release.download_files:
-                    self.assert_blob_integrity(env.download_bucket, blob_name(file), file)
-
-                # Test that file transformed
-                env.run_task(telescope.transform.__name__)
-
-                self.assertEqual(20, len(release.transform_files))
-                for file in release.transform_files:
-                    if "edited" in file:
-                        transform_hash = "902437a731a4aed529f4e0d176d2222b"
-                    elif "deleted" in file:
-                        transform_hash = "10b6d1911aaaad14204d867884722da4"
-                    else:
-                        transform_hash = "513d71d356d8356d1365d1dd25b1f71a"
-                    self.assert_file_integrity(file, transform_hash, "md5")
-
-                # Test that transformed file uploaded
-                env.run_task(telescope.upload_transformed.__name__)
-                for file in release.transform_files:
-                    self.assert_blob_integrity(env.transform_bucket, blob_name(file), file)
-
-                # Test that load partition task creates partition
-                env.run_task(telescope.bq_load_partition.__name__)
-                main_table_id, partition_table_id = release.dag_id, f"{release.dag_id}_partitions"
-                table_id = create_date_table_id(partition_table_id, release.end_date, bigquery.TimePartitioningType.DAY)
-                table_id = f"{self.project_id}.{telescope.dataset_id}.{table_id}"
-                expected_rows = 82
-                self.assert_table_integrity(table_id, expected_rows)
-
-                # Test task deleted rows from main table
-                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
-                    env.run_task(telescope.bq_delete_old.__name__)
-                table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
-                expected_rows = 60
-                self.assert_table_integrity(table_id, expected_rows)
-
-                # Test append new adds rows to table
-                env.run_task(telescope.bq_append_new.__name__)
-                table_id = f"{self.project_id}.{telescope.dataset_id}.{main_table_id}"
-                expected_rows = 142
-                self.assert_table_integrity(table_id, expected_rows)
-
-                # Test that all telescope data deleted
-                download_folder, extract_folder, transform_folder = (
-                    release.download_folder,
-                    release.extract_folder,
-                    release.transform_folder,
+                # Fetch releases and check that we have received the expected information from the xcom
+                task_id = workflow.fetch_releases.__name__
+                ti = env.run_task(task_id)
+                self.assertEqual(State.SUCCESS, ti.state)
+                msg = ti.xcom_pull(
+                    key=workflow.RELEASE_INFO,
+                    task_ids=task_id,
+                    include_prior_dates=False,
                 )
-                env.run_task(telescope.cleanup.__name__)
-                self.assert_cleanup(download_folder, extract_folder, transform_folder)
+                actual_start_date, actual_end_date, actual_is_first_run, actual_prev_end_date = parse_release_msg(msg)
+                self.assertEqual(release.start_date, actual_start_date)
+                self.assertEqual(release.end_date, actual_end_date)
+                self.assertFalse(actual_is_first_run)
+                self.assertEqual(release.prev_end_date, actual_prev_end_date)
 
-                # add_dataset_release_task
-                dataset_releases = get_dataset_releases(dataset_id=1)
+                # Create datasets
+                ti = env.run_task(workflow.create_datasets.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # Create snapshot
+                ti = env.run_task(workflow.bq_create_main_table_snapshot.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # Create mocked responses for run 2
+                # Creates, updates and deletes on this run
+                with responses.RequestsMock(assert_all_requests_are_fired=True) as rsps:
+                    with open(test_fixtures_folder(self.dag_id, "run2-responses.json"), mode="r") as f:
+                        data = json.load(f)
+                    for url, json_data in data.items():
+                        rsps.add(
+                            responses.GET,
+                            url,
+                            json=json_data,
+                            status=200,
+                        )
+                    ti = env.run_task(workflow.download.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    expected_file_names = [
+                        "created-2023-05-07.jsonl",
+                        "created-2023-05-08.jsonl",
+                        "created-2023-05-09.jsonl",
+                        "created-2023-05-10.jsonl",
+                        "created-2023-05-11.jsonl",
+                        "created-2023-05-12.jsonl",
+                        "created-2023-05-13.jsonl",
+                        "deleted-2023-05-07.jsonl",
+                        "deleted-2023-05-13.jsonl",
+                        "edited-2023-05-07.jsonl",
+                        "edited-2023-05-13.jsonl",
+                    ]
+                    for file_name in expected_file_names:
+                        self.assertTrue(os.path.isfile(os.path.join(release.download_folder, file_name)))
+                    for file_name in [
+                        "edited-2023-05-08.jsonl",
+                        "edited-2023-05-09.jsonl",
+                        "edited-2023-05-10.jsonl",
+                        "edited-2023-05-11.jsonl",
+                        "edited-2023-05-12.jsonl",
+                        "deleted-2023-05-08.jsonl",
+                        "deleted-2023-05-09.jsonl",
+                        "deleted-2023-05-10.jsonl",
+                        "deleted-2023-05-11.jsonl",
+                        "deleted-2023-05-12.jsonl",
+                    ]:
+                        self.assertFalse(os.path.isfile(os.path.join(release.download_folder, file_name)))
+
+                ti = env.run_task(workflow.upload_downloaded.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                for file_name in expected_file_names:
+                    file_path = os.path.join(release.download_folder, file_name)
+                    self.assert_blob_integrity(env.download_bucket, gcs_blob_name_from_path(file_path), file_path)
+
+                ti = env.run_task(workflow.transform_snapshot.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assertEqual(0, len(list_files(release.transform_folder, release.transform_files_regex)))
+
+                ti = env.run_task(workflow.transform_created_edited.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assertTrue(os.path.isfile(release.upsert_table_file_path))
+
+                ti = env.run_task(workflow.transform_deleted.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assertTrue(os.path.isfile(release.delete_table_file_path))
+
+                ti = env.run_task(workflow.upload_transformed.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_blob_integrity(
+                    env.transform_bucket,
+                    gcs_blob_name_from_path(release.upsert_table_file_path),
+                    release.upsert_table_file_path,
+                )
+                self.assert_blob_integrity(
+                    env.transform_bucket,
+                    gcs_blob_name_from_path(release.delete_table_file_path),
+                    release.delete_table_file_path,
+                )
+
+                ti = env.run_task(workflow.bq_load_main_table.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_table_integrity(release.bq_main_table_id, expected_rows=42)
+
+                ti = env.run_task(workflow.bq_load_upsert_table.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_table_integrity(release.bq_upsert_table_id, expected_rows=42)
+
+                ti = env.run_task(workflow.bq_upsert_records.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_table_integrity(release.bq_main_table_id, expected_rows=84)
+
+                ti = env.run_task(workflow.bq_load_delete_table.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_table_integrity(release.bq_delete_table_id, expected_rows=2)
+
+                ti = env.run_task(workflow.bq_delete_records.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_table_integrity(release.bq_main_table_id, expected_rows=82)
+
+                # Assert that we have correct dataset state
+                expected_content = load_and_parse_json(
+                    test_fixtures_folder(self.dag_id, "run2-expected.json"),
+                    date_fields={"occurred_at", "timestamp", "updated_date"},
+                )
+                self.assert_table_content(release.bq_main_table_id, expected_content, workflow.primary_key)
+
+                # Final tasks
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
                 self.assertEqual(len(dataset_releases), 1)
-                ti = env.run_task("add_new_dataset_releases")
-                self.assertEqual(ti.state, State.SUCCESS)
-                dataset_releases = get_dataset_releases(dataset_id=1)
+                ti = env.run_task(workflow.add_new_dataset_releases.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
                 self.assertEqual(len(dataset_releases), 2)
 
-    def test_urls(self):
-        """Test the urls property of release
-        :return: None.
-        """
-        events_url = (
-            "https://api.eventdata.crossref.org/v1/events?mailto={mail_to}"
-            "&from-collected-date={start_date}&until-collected-date={end_date}&rows=1000"
+                # Test that all workflow data deleted
+                ti = env.run_task(workflow.cleanup.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_cleanup(release.workflow_folder)
+
+                ti = env.run_task("dag_run_complete")
+                self.assertEqual(State.SUCCESS, ti.state)
+
+
+class TestCrossrefEventsUtils(ObservatoryTestCase):
+    @patch("academic_observatory_workflows.workflows.crossref_events_telescope.fetch_events")
+    def test_download_events(self, m_fetch_events):
+        m_fetch_events.return_value = ([], None)
+        request = EventRequest(Action.create, pendulum.datetime(2023, 5, 1), "test@test.com")
+        n_rows = 10
+
+        # No files
+        # Hasn't been run before
+        with CliRunner().isolated_filesystem() as download_folder:
+            download_events(request, download_folder, n_rows)
+            assert m_fetch_events.call_count == 1
+
+        # Data file and cursor file
+        # The data file was party downloaded because cursor still exists
+        m_fetch_events.reset_mock()
+        with CliRunner().isolated_filesystem() as download_folder:
+            pathlib.Path(pathlib.Path(download_folder) / "created-2023-05-01.jsonl").touch()
+            pathlib.Path(pathlib.Path(download_folder) / "created-2023-05-01-cursor.txt").touch()
+            download_events(request, download_folder, n_rows)
+            assert m_fetch_events.call_count == 1
+
+        # Data file and no cursor file
+        # The data file was fully downloaded and cursor file removed
+        m_fetch_events.reset_mock()
+        with CliRunner().isolated_filesystem() as download_folder:
+            pathlib.Path(pathlib.Path(download_folder) / "created-2023-05-01.jsonl").touch()
+            download_events(request, download_folder, n_rows)
+            assert m_fetch_events.call_count == 0
+
+    def test_fetch_events(self):
+        dt = pendulum.datetime(2023, 5, 1)
+        mailto = "agent@observatory.academy"
+
+        # Create events
+        with vcr.use_cassette(test_fixtures_folder("crossref_events", "test_fetch_events_create.yaml")):
+            request = EventRequest(Action.create, dt, mailto)
+            events1, next_cursor1 = fetch_events(request, n_rows=10)
+            self.assertEqual(10, len(events1))
+            self.assertIsNotNone(next_cursor1)
+            events2, next_cursor2 = fetch_events(request, next_cursor1, n_rows=10)
+            self.assertEqual(10, len(events2))
+            self.assertIsNotNone(next_cursor2)
+
+        # Edit events
+        with vcr.use_cassette(test_fixtures_folder("crossref_events", "test_fetch_events_edit.yaml")):
+            request = EventRequest(Action.edit, dt, mailto)
+            events, next_cursor = fetch_events(request, n_rows=10)
+            self.assertEqual(0, len(events))
+            self.assertIsNone(next_cursor)
+
+        # Delete events
+        with vcr.use_cassette(test_fixtures_folder("crossref_events", "test_fetch_events_delete.yaml")):
+            request = EventRequest(Action.delete, dt, mailto)
+            self.assertEqual(0, len(events))
+            events, next_cursor = fetch_events(request, n_rows=10)
+            self.assertIsNone(next_cursor)
+
+    @unittest.skip
+    def test_crossref_events_limiter(self):
+        n_per_second = 10
+
+        def my_func():
+            crossref_events_limiter(n_per_second)
+            print("Called my_func")
+
+        num_calls = 100
+        max_workers = 10
+        expected_wait = num_calls / n_per_second
+        print(f"test_crossref_events_limiter: expected wait time {expected_wait}s")
+        start = datetime.datetime.now()
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for event in range(num_calls):
+                futures.append(executor.submit(my_func))
+            for future in as_completed(futures):
+                future.result()
+
+        end = datetime.datetime.now()
+        duration = (end - start).total_seconds()
+        actual_n_per_second = 1 / (duration / num_calls)
+        print(f"test_crossref_events_limiter: actual_n_per_second {actual_n_per_second}")
+        self.assertAlmostEqual(float(n_per_second), actual_n_per_second, delta=6)
+
+    def test_event_request(self):
+        day = pendulum.datetime(2023, 1, 1)
+        mailto = "test@test.com"
+        request = EventRequest(Action.create, day, mailto)
+        self.assertEqual("created-2023-01-01.jsonl", request.data_file_name)
+        self.assertEqual("created-2023-01-01-cursor.txt", request.cursor_file_name)
+        self.assertEqual(
+            "https://api.eventdata.crossref.org/v1/events?from-collected-date=2023-01-01&until-collected-date=2023-01-01&mailto=test%40test.com&rows=10",
+            request.make_url(rows=10),
         )
-        edited_url = (
-            "https://api.eventdata.crossref.org/v1/events/edited?"
-            "mailto={mail_to}&from-updated-date={start_date}"
-            "&until-updated-date={end_date}&rows=1000"
-        )
-        deleted_url = (
-            "https://api.eventdata.crossref.org/v1/events/deleted?"
-            "mailto={mail_to}&from-updated-date={start_date}"
-            "&until-updated-date={end_date}&rows=1000"
+        self.assertEqual(
+            "https://api.eventdata.crossref.org/v1/events?from-collected-date=2023-01-01&until-collected-date=2023-01-01&mailto=test%40test.com&rows=10&cursor=abcde",
+            request.make_url(rows=10, cursor="abcde"),
         )
 
-        self.release.first_release = True
-        urls = self.release.urls
-        self.assertEqual(7, len(urls))
-        for url in urls:
-            event_type, date = parse_event_url(url)
-            self.assertEqual(event_type, "events")
-            expected_url = events_url.format(mail_to=self.release.mailto, start_date=date, end_date=date)
-            self.assertEqual(expected_url, url)
+        request = EventRequest(Action.edit, day, mailto)
+        self.assertEqual("edited-2023-01-01.jsonl", request.data_file_name)
+        self.assertEqual("edited-2023-01-01-cursor.txt", request.cursor_file_name)
+        self.assertEqual(
+            "https://api.eventdata.crossref.org/v1/events/edited?from-updated-date=2023-01-01&until-updated-date=2023-01-01&mailto=test%40test.com&rows=10",
+            request.make_url(rows=10),
+        )
+        self.assertEqual(
+            "https://api.eventdata.crossref.org/v1/events/edited?from-updated-date=2023-01-01&until-updated-date=2023-01-01&mailto=test%40test.com&rows=10&cursor=abcde",
+            request.make_url(rows=10, cursor="abcde"),
+        )
 
-        self.release.first_release = False
-        urls = self.release.urls
-        self.assertEqual(21, len(urls))
-        for url in urls:
-            event_type, date = parse_event_url(url)
-            if event_type == "events":
-                expected_url = events_url.format(mail_to=self.release.mailto, start_date=date, end_date=date)
-            elif event_type == "edited":
-                expected_url = edited_url.format(mail_to=self.release.mailto, start_date=date, end_date=date)
-            else:
-                expected_url = deleted_url.format(mail_to=self.release.mailto, start_date=date, end_date=date)
-            self.assertEqual(expected_url, url)
+        request = EventRequest(Action.delete, day, mailto)
+        self.assertEqual("deleted-2023-01-01.jsonl", request.data_file_name)
+        self.assertEqual("deleted-2023-01-01-cursor.txt", request.cursor_file_name)
+        self.assertEqual(
+            "https://api.eventdata.crossref.org/v1/events/deleted?from-updated-date=2023-01-01&until-updated-date=2023-01-01&mailto=test%40test.com&rows=10",
+            request.make_url(rows=10),
+        )
+        self.assertEqual(
+            "https://api.eventdata.crossref.org/v1/events/deleted?from-updated-date=2023-01-01&until-updated-date=2023-01-01&mailto=test%40test.com&rows=10&cursor=abcde",
+            request.make_url(rows=10, cursor="abcde"),
+        )
 
-    @patch.object(CrossrefEventsRelease, "download_batch")
-    @patch("observatory.platform.utils.workflow_utils.Variable.get")
-    def test_download(self, mock_variable_get, mock_download_batch):
-        """Test the download method of the release in parallel mode
-        :return: None.
-        """
-        mock_variable_get.return_value = "data"
-        with CliRunner().isolated_filesystem():
-            # Test download without any events returned
-            with self.assertRaises(AirflowSkipException):
-                self.release.download()
-
-            # Test download with events returned
-            mock_download_batch.reset_mock()
-            events_path = os.path.join(self.release.download_folder, "events.jsonl")
-            with open(events_path, "w") as f:
-                f.write("[{'test': 'test'}]\n")
-
-            self.release.download()
-            self.assertEqual(len(self.release.urls), mock_download_batch.call_count)
-
-    @patch("academic_observatory_workflows.workflows.crossref_events_telescope.download_events")
-    @patch("observatory.platform.utils.workflow_utils.Variable.get")
-    def test_download_batch(self, mock_variable_get, mock_download_events):
-        """Test download_batch function
-        :return: None.
-        """
-        mock_variable_get.return_value = os.path.join(os.getcwd(), "data")
-        self.release.first_release = True
-        batch_number = 0
-        url = self.release.urls[batch_number]
-        headers = {"User-Agent": get_user_agent(package_name="academic_observatory_workflows")}
-        with CliRunner().isolated_filesystem():
-            events_path = self.release.batch_path(url)
-            cursor_path = self.release.batch_path(url, cursor=True)
-
-            # Test with existing cursor path
-            with open(cursor_path, "w") as f:
-                f.write("cursor")
-            mock_download_events.return_value = (None, 10, 10)
-            self.release.download_batch(batch_number, url)
-            self.assertFalse(os.path.exists(cursor_path))
-            mock_download_events.assert_called_once_with(url, headers, events_path, cursor_path)
-
-            # Test with no existing previous files
-            mock_download_events.reset_mock()
-            mock_download_events.return_value = (None, 10, 10)
-            self.release.download_batch(batch_number, url)
-            mock_download_events.assert_called_once_with(url, headers, events_path, cursor_path)
-
-            # Test with events path and no cursor path, so previous successful attempt
-            mock_download_events.reset_mock()
-            with open(events_path, "w") as f:
-                f.write("events")
-            self.release.download_batch(batch_number, url)
-            mock_download_events.assert_not_called()
-            os.remove(events_path)
-
-    @patch("observatory.platform.utils.workflow_utils.Variable.get")
-    def test_transform_batch(self, mock_variable_get):
-        """Test the transform_batch method of the release
-        :return: None.
-        """
-
-        with CliRunner().isolated_filesystem() as t:
-            mock_variable_get.return_value = os.path.join(t, "data")
-
-            # Use release info so that we can download the right data
-            release = CrossrefEventsRelease(
-                "crossref_events",
-                pendulum.datetime(2018, 5, 14),
-                pendulum.datetime(2018, 5, 19),
-                True,
-                metadata("academic_observatory_workflows").get("Author-email"),
-                max_threads=1,
-                max_processes=1,
-            )
-
-            # Download files
-            with vcr.use_cassette(self.first_cassette):
-                with self.retry_get_url_patch:
-                    release.download()
-
-            # Transform batch
-            for file_path in release.download_files:
-                transform_batch(file_path, release.transform_folder)
-
-            # Assert all transformed
-            self.assertEqual(len(release.download_files), len(release.transform_files))
+    def test_make_day_requests(self):
+        requests = make_day_requests(pendulum.datetime(2023, 1, 1), pendulum.datetime(2023, 1, 7), "test@test.com")
+        self.assertEqual(6, len(requests))
+        self.assertEqual(
+            [
+                pendulum.datetime(2023, 1, 1),
+                pendulum.datetime(2023, 1, 2),
+                pendulum.datetime(2023, 1, 3),
+                pendulum.datetime(2023, 1, 4),
+                pendulum.datetime(2023, 1, 5),
+                pendulum.datetime(2023, 1, 6),
+            ],
+            [req.date for req in requests],
+        )

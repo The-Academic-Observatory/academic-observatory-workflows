@@ -12,992 +12,367 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Aniek Roelofs
+# Author: Aniek Roelofs, James Diprose
 
+import copy
 import datetime
 import gzip
-import io
 import json
 import os
-from subprocess import Popen
-from types import SimpleNamespace
-from unittest.mock import Mock, call, patch
+import pathlib
+import tempfile
+from typing import Dict
+from unittest.mock import patch
 
+import boto3
 import pendulum
-from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.models import Connection
 from airflow.utils.state import State
-from botocore.response import StreamingBody
 from click.testing import CliRunner
-from dateutil import tz
+from google.cloud.exceptions import NotFound
 
-from academic_observatory_workflows.api_type_ids import DatasetTypeId
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.openalex_telescope import (
     OpenAlexRelease,
     OpenAlexTelescope,
-    run_subprocess_cmd,
     transform_file,
+    ManifestEntry,
+    Manifest,
+    Meta,
+    MergedId,
     transform_object,
+    s3_uri_parts,
+    OpenAlexEntity,
+    fetch_manifest,
+    fetch_merged_ids,
+    parse_release_msg,
 )
-from observatory.api.client import ApiClient, Configuration
-from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
-from observatory.api.client.model.dataset import Dataset
-from observatory.api.client.model.dataset_type import DatasetType
-from observatory.api.client.model.organisation import Organisation
-from observatory.api.client.model.table_type import TableType
-from observatory.api.client.model.workflow import Workflow
-from observatory.api.client.model.workflow_type import WorkflowType
-from observatory.api.testing import ObservatoryApiEnvironment
-from observatory.platform.utils.airflow_utils import AirflowConns
-from observatory.platform.utils.gc_utils import (
-    upload_file_to_cloud_storage,
-)
-from observatory.platform.utils.jinja2_utils import render_template
-from observatory.platform.utils.release_utils import get_dataset_releases
-from observatory.platform.utils.test_utils import (
+from observatory.platform.api import get_dataset_releases
+from observatory.platform.bigquery import bq_table_id, bq_sharded_table_id
+from observatory.platform.files import save_jsonl_gz, load_file
+from observatory.platform.gcs import gcs_blob_name_from_path
+from observatory.platform.observatory_config import Workflow, CloudWorkspace
+from observatory.platform.observatory_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
-    module_file_path,
-    find_free_port
+    aws_bucket_test_env,
+    find_free_port,
+    load_and_parse_json,
 )
 
 
-class TestOpenAlexTelescope(ObservatoryTestCase):
-    """Tests for the OpenAlex telescope"""
-
+class TestOpenAlexUtils(ObservatoryTestCase):
     def __init__(self, *args, **kwargs):
-        """Constructor which sets up variables used by tests.
-        :param args: arguments.
-        :param kwargs: keyword arguments.
-        """
-        super(TestOpenAlexTelescope, self).__init__(*args, **kwargs)
-        self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
-        self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
+        super(TestOpenAlexUtils, self).__init__(*args, **kwargs)
+        self.dag_id = "openalex"
+        self.aws_key = (os.getenv("AWS_ACCESS_KEY_ID"), os.getenv("AWS_SECRET_ACCESS_KEY"))
+        self.aws_region_name = os.getenv("AWS_DEFAULT_REGION")
 
-        self.manifest_obj_path = test_fixtures_folder("openalex", "manifest_object.json.jinja2")
-        self.entities = {
-            "authors": {
-                "download_path": test_fixtures_folder("openalex", "authors.jsonl"),
-            },
-            "concepts": {
-                "download_path": test_fixtures_folder("openalex", "concepts.jsonl"),
-                "download_hash": "14bd0919",
-                "transform_hash": "4bb6fe07",
-            },
-            "institutions": {
-                "download_path": test_fixtures_folder("openalex", "institutions.jsonl"),
-                "download_hash": "b23bb91c",
-                "transform_hash": "a9cfff73",
-            },
-            "venues": {
-                "download_path": test_fixtures_folder("openalex", "venues.jsonl"),
-            },
-            "works": {
-                "download_path": test_fixtures_folder("openalex", "works.jsonl"),
-                "download_hash": "806d7995",
-                "transform_hash": "0a783ffc",
-            },
-        }
+    def test_s3_uri_parts(self):
+        # Bucket and object
+        bucket_name, object_key = s3_uri_parts("s3://mybucketname/path/to/object.txt")
+        self.assertEqual("mybucketname", bucket_name)
+        self.assertEqual("path/to/object.txt", object_key)
 
-        self.first_run = {
-            "execution_date": pendulum.datetime(year=2022, month=1, day=2),
-            "manifest_date": "2021-12-17",
-            "manifest_unchanged_hash": "6400ca22b963599af6bad9db030fe11a",
-            "manifest_transform_hash": "9ab1f7c9eb0adbdaf07baaf8b97a110e",
-            "table_bytes": {
-                "Author": 3965,
-                "Concept": 3947,
-                "Institution": 3259,
-                "Venue": 2108,
-                "Work": 12657,
-            },
-        }
-        self.second_run = {
-            "execution_date": pendulum.datetime(year=2022, month=1, day=9),
-            "manifest_date": "2022-01-17",
-            "manifest_unchanged_hash": "50e2eff06007a32c4394df8df7f5e907",
-            "manifest_transform_hash": "f4cea919d06caa0811ad5976bf98986a",
-            "table_bytes": {
-                "Author": 7930,
-                "Concept": 7894,
-                "Institution": 6518,
-                "Venue": 4216,
-                "Work": 25314,
-            },
-        }
+        # Just bucket
+        bucket_name, object_key = s3_uri_parts("s3://mybucketname")
+        self.assertEqual("mybucketname", bucket_name)
+        self.assertIsNone(object_key)
 
-        self.third_run = {
-            "execution_date": pendulum.datetime(year=2022, month=1, day=16),
-            "manifest_date": "2022-01-17",
-            "manifest_unchanged_hash": "50e2eff06007a32c4394df8df7f5e907",
-            "manifest_transform_hash": "f4cea919d06caa0811ad5976bf98986a",
-            "table_bytes": {
-                "Author": 7930,
-                "Concept": 7894,
-                "Institution": 6518,
-                "Venue": 4216,
-                "Work": 25314,
-            },
-        }
+        # No s3://
+        with self.assertRaises(ValueError):
+            s3_uri_parts("mybucketname/path/to/object.txt")
 
-        self.fourth_run = {
-            "execution_date": pendulum.datetime(year=2022, month=1, day=23),
-            "manifest_date": "2022-01-18",
-            "manifest_unchanged_hash": "50e2eff06007a32c4394df8df7f5e907",
-            "manifest_transform_hash": "f4cea919d06caa0811ad5976bf98986a",
-            "table_bytes": {
-                "Author": 7930,
-                "Concept": 7894,
-                "Institution": 6518,
-                "Venue": 4216,
-                "Work": 25314,
-            },
-        }
+    def test_meta(self):
+        # Equal
+        self.assertEqual(Meta(7073, 4), Meta(7073, 4))
 
-        # API environment
-        self.host = "localhost"
-        self.port = find_free_port()
-        configuration = Configuration(host=f"http://{self.host}:{self.port}")
-        api_client = ApiClient(configuration)
-        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
-        self.env = ObservatoryApiEnvironment(host=self.host, port=self.port)
-        self.org_name = "Curtin University"
+        # Not equal
+        self.assertNotEqual(Meta(7073, 3), Meta(7073, 4))
+        self.assertNotEqual(Meta(7072, 4), Meta(7073, 4))
 
-    def setup_api(self):
-        name = "OpenAlex Telescope"
-        workflow_type = WorkflowType(name=name, type_id=OpenAlexTelescope.DAG_ID)
-        self.api.put_workflow_type(workflow_type)
+        # From Dict
+        meta = Meta.from_dict(dict(content_length=7073, record_count=4))
+        self.assertIsInstance(meta, Meta)
+        self.assertEqual(Meta(7073, 4), meta)
 
-        organisation = Organisation(
-            name="Curtin University",
-            project_id="project",
-            download_bucket="download_bucket",
-            transform_bucket="transform_bucket",
-        )
-        self.api.put_organisation(organisation)
+        # To Dict
+        obj = Meta(7073, 4).to_dict()
+        self.assertIsInstance(obj, dict)
+        self.assertEqual(dict(content_length=7073, record_count=4), obj)
 
-        telescope = Workflow(
-            name=name,
-            workflow_type=WorkflowType(id=1),
-            organisation=Organisation(id=1),
-            extra={},
+    def test_manifest_entry(self):
+        # Test manifest equality
+        manifest_a = Manifest(
+            [
+                ManifestEntry("s3://openalex/data/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4)),
+                ManifestEntry("s3://openalex/data/works/updated_date=2022-12-21/part_000.gz", Meta(9018, 8)),
+                ManifestEntry("s3://openalex/data/works/updated_date=2022-12-22/part_000.gz", Meta(4035, 4)),
+            ],
+            Meta(20126, 16),
         )
-        self.api.put_workflow(telescope)
-
-        table_type = TableType(
-            type_id="partitioned",
-            name="partitioned bq table",
+        manifest_b = Manifest(
+            [
+                ManifestEntry("s3://openalex/data/works/updated_date=2022-12-21/part_000.gz", Meta(9018, 8)),
+                ManifestEntry("s3://openalex/data/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4)),
+                ManifestEntry("s3://openalex/data/works/updated_date=2022-12-22/part_000.gz", Meta(4035, 4)),
+            ],
+            Meta(20126, 16),
         )
-        self.api.put_table_type(table_type)
-
-        dataset_type1 = DatasetType(
-            type_id=DatasetTypeId.openalex,
-            name="OpenAlex",
-            extra={},
-            table_type=TableType(id=1),
-        )
-        dataset_type2 = DatasetType(
-            type_id=DatasetTypeId.openalex_institution,
-            name="OpenAlex Institution",
-            extra={},
-            table_type=TableType(id=1),
-        )
-        dataset_type3 = DatasetType(
-            type_id=DatasetTypeId.openalex_author,
-            name="OpenAlex Author",
-            extra={},
-            table_type=TableType(id=1),
-        )
-        dataset_type4 = DatasetType(
-            type_id=DatasetTypeId.openalex_concept,
-            name="OpenAlex Concept",
-            extra={},
-            table_type=TableType(id=1),
-        )
-        dataset_type5 = DatasetType(
-            type_id=DatasetTypeId.openalex_venue,
-            name="OpenAlex Venue",
-            extra={},
-            table_type=TableType(id=1),
-        )
-        dataset_type6 = DatasetType(
-            type_id=DatasetTypeId.openalex_work,
-            name="OpenAlex Work",
-            extra={},
-            table_type=TableType(id=1),
-        )
-        self.api.put_dataset_type(dataset_type1)
-        self.api.put_dataset_type(dataset_type2)
-        self.api.put_dataset_type(dataset_type3)
-        self.api.put_dataset_type(dataset_type4)
-        self.api.put_dataset_type(dataset_type5)
-        self.api.put_dataset_type(dataset_type6)
-
-        dataset1 = Dataset(
-            name="OpenAlex Dataset",
-            address="project.dataset.table",
-            service="bigquery",
-            workflow=Workflow(id=1),
-            dataset_type=DatasetType(id=1),
-        )
-        dataset2 = Dataset(
-            name="OpenAlex Institution Dataset",
-            address="project.dataset.table",
-            service="bigquery",
-            workflow=Workflow(id=1),
-            dataset_type=DatasetType(id=2),
-        )
-        dataset3 = Dataset(
-            name="OpenAlex Author Dataset",
-            address="project.dataset.table",
-            service="bigquery",
-            workflow=Workflow(id=1),
-            dataset_type=DatasetType(id=3),
-        )
-        dataset4 = Dataset(
-            name="OpenAlex Concept Dataset",
-            address="project.dataset.table",
-            service="bigquery",
-            workflow=Workflow(id=1),
-            dataset_type=DatasetType(id=4),
-        )
-        dataset5 = Dataset(
-            name="OpenAlex Venue Dataset",
-            address="project.dataset.table",
-            service="bigquery",
-            workflow=Workflow(id=1),
-            dataset_type=DatasetType(id=5),
-        )
-        dataset6 = Dataset(
-            name="OpenAlex Work Dataset",
-            address="project.dataset.table",
-            service="bigquery",
-            workflow=Workflow(id=1),
-            dataset_type=DatasetType(id=6),
-        )
-        self.api.put_dataset(dataset1)
-        self.api.put_dataset(dataset2)
-        self.api.put_dataset(dataset3)
-        self.api.put_dataset(dataset4)
-        self.api.put_dataset(dataset5)
-        self.api.put_dataset(dataset6)
-
-    def setup_connections(self, env):
-        # Add Observatory API connection
-        conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.port}")
-        env.add_connection(conn)
-
-    def test_dag_structure(self):
-        """Test that the OpenAlex DAG has the correct structure.
-        :return: None
-        """
-
-        dag = OpenAlexTelescope(workflow_id=0).make_dag()
-        self.assert_dag_structure(
-            {
-                "check_dependencies": ["write_transfer_manifest"],
-                "write_transfer_manifest": ["upload_transfer_manifest"],
-                "upload_transfer_manifest": ["transfer"],
-                "transfer": ["download_transferred"],
-                "download_transferred": ["transform"],
-                "transform": ["upload_transformed"],
-                "upload_transformed": ["bq_append_new"],
-                "bq_append_new": ["bq_delete_old"],
-                "bq_delete_old": ["bq_create_snapshot"],
-                "bq_create_snapshot": ["add_new_dataset_releases"],
-                "add_new_dataset_releases": [],
-            },
-            dag,
+        manifest_c = Manifest(
+            [
+                ManifestEntry("s3://openalex/data/works/updated_date=2023-03-28/part_013.gz", Meta(866388416, 721951)),
+                ManifestEntry("s3://openalex/data/works/updated_date=2023-03-28/part_014.gz", Meta(860530408, 709123)),
+                ManifestEntry("s3://openalex/data/works/updated_date=2023-03-28/part_015.gz", Meta(321944435, 262846)),
+            ],
+            Meta(2048863259, 1693920),
         )
 
-    @patch("observatory.platform.utils.release_utils.make_observatory_api")
-    def test_dag_load(self, m_makeapi):
-        """Test that the OpenAlex DAG can be loaded from a DAG bag.
-        :return: None
-        """
+        # Assert that two manifest instances with the same data are equal
+        self.assertEqual(manifest_a, copy.copy(manifest_a))
 
-        m_makeapi.return_value = self.api
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
+        # Assert that two manifest instances with entries in a different order are not equal
+        self.assertNotEqual(manifest_a, manifest_b)
 
-        with env.create():
-            self.setup_connections(env)
-            self.setup_api()
-            dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "openalex_telescope.py")
-            self.assert_dag_load("openalex", dag_file)
+        # Assert that two manifest instances with completely different data are not equal
+        self.assertNotEqual(manifest_a, manifest_c)
 
-    @patch("observatory.platform.utils.release_utils.make_observatory_api")
-    @patch("academic_observatory_workflows.workflows.openalex_telescope.aws_to_google_cloud_storage_transfer")
-    @patch("academic_observatory_workflows.workflows.openalex_telescope.boto3.client")
-    def test_telescope(self, mock_client, mock_transfer, m_makeapi):
-        """Test the OpenAlex telescope end to end.
-        :return: None.
-        """
-        m_makeapi.return_value = self.api
+        # Assert that manifest ManifestEntry parses updated_date and file_name properly
+        entry = ManifestEntry("s3://openalex/data/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))
+        self.assertEqual(pendulum.datetime(2022, 12, 20), entry.updated_date)
+        self.assertEqual("part_000.gz", entry.file_name)
 
-        # Setup Observatory environment
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
-        dataset_id = env.add_dataset()
+        # object_key
+        manifest_entry = ManifestEntry("s3://openalex/data/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))
+        self.assertEqual("data/works/updated_date=2022-12-20/part_000.gz", manifest_entry.object_key)
 
-        # Setup Telescope
-        telescope = OpenAlexTelescope(dataset_id=dataset_id, workflow_id=1)
-        dag = telescope.make_dag()
+        # updated_date
+        self.assertEqual(pendulum.datetime(2022, 12, 20), manifest_entry.updated_date)
 
-        # Create the Observatory environment and run tests
-        with env.create():
-            self.setup_api()
+        # file_name
+        self.assertEqual("part_000.gz", manifest_entry.file_name)
 
-            # Add connection
-            conn = Connection(
-                conn_id=OpenAlexTelescope.AIRFLOW_CONN_AWS, uri="aws://UWLA41aAhdja:AJLD91saAJSKAL0AjAhkaka@"
+        # from_dict
+        manifest_entry_dict = dict(
+            url="s3://openalex/data/works/updated_date=2022-12-20/part_000.gz",
+            meta=dict(content_length=7073, record_count=4),
+        )
+        obj = ManifestEntry.from_dict(manifest_entry_dict)
+
+        self.assertIsInstance(obj, ManifestEntry)
+        self.assertEqual(manifest_entry, obj)
+
+        # to_dict
+        obj = manifest_entry.to_dict()
+        self.assertIsInstance(obj, dict)
+        self.assertEqual(
+            manifest_entry_dict,
+            obj,
+        )
+
+    def test_manifest(self):
+        # Equality
+        self.assertEqual(
+            Manifest(
+                [ManifestEntry("s3://openalex/data/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))],
+                Meta(7073, 4),
+            ),
+            Manifest(
+                [ManifestEntry("s3://openalex/data/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))],
+                Meta(7073, 4),
+            ),
+        )
+        self.assertNotEqual(
+            Manifest(
+                [ManifestEntry("s3://openalex/data/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))],
+                Meta(7073, 2),
+            ),
+            Manifest(
+                [ManifestEntry("s3://openalex/data/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))],
+                Meta(7073, 3),
+            ),
+        )
+
+        # from_dict
+        manifest = Manifest(
+            [ManifestEntry("s3://openalex/data/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))],
+            Meta(7073, 4),
+        )
+        manifest_dict = dict(
+            entries=[
+                dict(
+                    url="s3://openalex/data/works/updated_date=2022-12-20/part_000.gz",
+                    meta=dict(content_length=7073, record_count=4),
+                )
+            ],
+            meta=dict(content_length=7073, record_count=4),
+        )
+        obj = Manifest.from_dict(manifest_dict)
+        self.assertIsInstance(obj, Manifest)
+        self.assertEqual(manifest, obj)
+
+        # to_dict
+        obj = manifest.to_dict()
+        self.assertIsInstance(obj, dict)
+        self.assertEqual(
+            manifest_dict,
+            obj,
+        )
+
+    def test_merged_id(self):
+        # Equality
+        self.assertEqual(
+            MergedId("s3://openalex/data/merged_ids/authors/2022-10-12.csv.gz", 1000),
+            MergedId("s3://openalex/data/merged_ids/authors/2022-10-12.csv.gz", 1000),
+        )
+        self.assertNotEqual(
+            MergedId("s3://openalex/data/merged_ids/authors/2022-10-11.csv.gz", 1000),
+            MergedId("s3://openalex/data/merged_ids/authors/2022-10-12.csv.gz", 1000),
+        )
+        self.assertNotEqual(
+            MergedId("s3://openalex/data/merged_ids/authors/2022-10-12.csv.gz", 1000),
+            MergedId("s3://openalex/data/merged_ids/authors/2022-10-12.csv.gz", 1001),
+        )
+
+        # object_key
+        merged_id = MergedId("s3://openalex/data/merged_ids/authors/2022-10-12.csv.gz", 1000)
+        self.assertEqual("data/merged_ids/authors/2022-10-12.csv.gz", merged_id.object_key)
+
+        # updated_date
+        self.assertEqual(pendulum.datetime(2022, 10, 12), merged_id.updated_date)
+
+        # file_name
+        self.assertEqual("2022-10-12.csv.gz", merged_id.file_name)
+
+        # from_dict
+        merged_id_dict = dict(url="s3://openalex/data/merged_ids/authors/2022-10-12.csv.gz", content_length=1000)
+        obj = MergedId.from_dict(merged_id_dict)
+        self.assertIsInstance(obj, MergedId)
+        self.assertEqual(merged_id, obj)
+
+        # to_dict
+        obj = merged_id.to_dict()
+        self.assertIsInstance(obj, dict)
+        self.assertEqual(
+            merged_id_dict,
+            obj,
+        )
+
+    @patch("observatory.platform.airflow.Variable.get")
+    def test_openalex_entity(self, m_variable_get):
+        with CliRunner().isolated_filesystem() as t:
+            m_variable_get.return_value = t
+            dag_id = "openalex"
+            workflow = OpenAlexTelescope(
+                dag_id=dag_id,
+                cloud_workspace=CloudWorkspace(
+                    project_id="project-id",
+                    download_bucket="download_bucket",
+                    transform_bucket="transform_bucket",
+                    data_location="us",
+                ),
             )
-            env.add_connection(conn)
+            is_first_run = True
+            entity = OpenAlexEntity(
+                "authors",
+                False,
+                pendulum.datetime(2023, 1, 1),
+                pendulum.datetime(2023, 1, 31),
+                Manifest(
+                    [ManifestEntry("s3://openalex/data/authors/updated_date=2023-01-28/part_000.gz", Meta(7073, 4))],
+                    Meta(7073, 4),
+                ),
+                [MergedId("s3://openalex/data/merged_ids/authors/2023-01-28.csv.gz", 1000)],
+                is_first_run,
+                pendulum.datetime(2022, 12, 1),
+            )
+            release = OpenAlexRelease(
+                dag_id=dag_id,
+                run_id="scheduled__2023-02-01T00:00:00+00:00",
+                cloud_workspace=workflow.cloud_workspace,
+                bq_dataset_id=workflow.bq_dataset_id,
+                entities=[entity],
+                start_date=pendulum.datetime(2023, 1, 1),
+                end_date=pendulum.datetime(2023, 1, 31),
+                is_first_run=is_first_run,
+                schema_folder=workflow.schema_folder,
+            )
+            entity.release = release
+            entity.workflow = workflow
 
-            run = self.first_run
-            with env.create_dag_run(dag, run["execution_date"]):
-                # Test that all dependencies are specified: no error should be thrown
-                env.run_task(telescope.check_dependencies.__name__)
-                start_date, end_date, first_release = telescope.get_release_info(
-                    dag=dag,
-                    data_interval_end=pendulum.datetime(year=2021, month=12, day=26),
-                )
-                self.assertEqual(dag.default_args["start_date"], start_date)
-                self.assertEqual(pendulum.datetime(year=2021, month=12, day=26), end_date)
-                self.assertTrue(first_release)
-
-                # Use release info for other tasks
-                release = OpenAlexRelease(
-                    telescope.dag_id,
-                    telescope.workflow_id,
-                    telescope.dataset_type_id,
-                    start_date,
-                    end_date,
-                    first_release,
-                    max_processes=1,
-                )
-
-                # Mock response of get_object on last_modified file, mocking lambda file
-                side_effect = []
-                for entity in self.entities:
-                    manifest_content = render_template(
-                        self.manifest_obj_path, entity=entity, date=run["manifest_date"]
-                    ).encode()
-                    side_effect.append({"Body": StreamingBody(io.BytesIO(manifest_content), len(manifest_content))})
-                mock_client().get_object.side_effect = side_effect
-
-                # Test write transfer manifest task
-                env.run_task(telescope.write_transfer_manifest.__name__)
-                self.assert_file_integrity(
-                    release.transfer_manifest_path_unchanged, run["manifest_unchanged_hash"], "md5"
-                )
-                self.assert_file_integrity(
-                    release.transfer_manifest_path_transform, run["manifest_transform_hash"], "md5"
-                )
-
-                # Test upload transfer manifest task
-                env.run_task(telescope.upload_transfer_manifest.__name__)
-                self.assert_blob_integrity(
-                    env.download_bucket,
-                    release.transfer_manifest_blob_unchanged,
-                    release.transfer_manifest_path_unchanged,
-                )
-                self.assert_blob_integrity(
-                    env.download_bucket,
-                    release.transfer_manifest_blob_transform,
-                    release.transfer_manifest_path_transform,
-                )
-
-                # Test transfer task
-                mock_transfer.reset_mock()
-                mock_transfer.return_value = True, 2
-                env.run_task(telescope.transfer.__name__)
-                self.assertEqual(3, mock_transfer.call_count)
-                try:
-                    self.assertTupleEqual(mock_transfer.call_args_list[0][0], (conn.login, conn.password))
-                    self.assertTupleEqual(mock_transfer.call_args_list[1][0], (conn.login, conn.password))
-                    self.assertTupleEqual(mock_transfer.call_args_list[2][0], (conn.login, conn.password))
-                except AssertionError:
-                    raise AssertionError("AWS key id and secret not passed correctly to transfer function")
-                self.assertDictEqual(
-                    mock_transfer.call_args_list[0][1],
-                    {
-                        "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                        "include_prefixes": [],
-                        "gc_project_id": self.project_id,
-                        "gc_bucket": release.download_bucket,
-                        "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/unchanged/",
-                        "description": f"Transfer OpenAlex data from Airflow telescope to {release.download_bucket}",
-                        "transfer_manifest": f"gs://{release.download_bucket}/{release.transfer_manifest_blob_unchanged}",
-                    },
-                )
-                self.assertDictEqual(
-                    mock_transfer.call_args_list[1][1],
-                    {
-                        "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                        "include_prefixes": [],
-                        "gc_project_id": self.project_id,
-                        "gc_bucket": release.transform_bucket,
-                        "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/",
-                        "description": f"Transfer OpenAlex data from Airflow telescope to {release.transform_bucket}",
-                        "transfer_manifest": f"gs://{release.download_bucket}/{release.transfer_manifest_blob_unchanged}",
-                    },
-                )
-                self.assertDictEqual(
-                    mock_transfer.call_args_list[2][1],
-                    {
-                        "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                        "include_prefixes": [],
-                        "gc_project_id": self.project_id,
-                        "gc_bucket": release.download_bucket,
-                        "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/transform/",
-                        "description": f"Transfer OpenAlex data from Airflow telescope to {release.download_bucket}",
-                        "transfer_manifest": f"gs://{release.download_bucket}/{release.transfer_manifest_blob_transform}",
-                    },
-                )
-
-                # Upload files to bucket, to mock transfer
-                for entity, info in self.entities.items():
-                    gzip_path = f"{entity}.jsonl.gz"
-                    with open(info["download_path"], "rb") as f_in, gzip.open(gzip_path, "wb") as f_out:
-                        f_out.writelines(f_in)
-
-                    if entity == "authors" or entity == "venues":
-                        download_blob = (
-                            f"telescopes/{release.dag_id}/{release.release_id}/unchanged/"
-                            f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
-                        )
-                        transform_blob = (
-                            f"telescopes/{release.dag_id}/{release.release_id}/"
-                            f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
-                        )
-                        upload_file_to_cloud_storage(release.download_bucket, download_blob, gzip_path)
-                        upload_file_to_cloud_storage(release.transform_bucket, transform_blob, gzip_path)
-                    else:
-                        download_blob = (
-                            f"telescopes/{release.dag_id}/{release.release_id}/transform/"
-                            f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
-                        )
-                        upload_file_to_cloud_storage(release.download_bucket, download_blob, gzip_path)
-
-                # Test that file was downloaded
-                env.run_task(telescope.download_transferred.__name__)
-                self.assertEqual(3, len(release.download_files))
-                for file in release.download_files:
-                    entity = file.split("/")[-3]
-                    self.assert_file_integrity(file, self.entities[entity]["download_hash"], "gzip_crc")
-
-                # Test that files transformed
-                env.run_task(telescope.transform.__name__)
-                self.assertEqual(3, len(release.transform_files))
-                # Sort lines so that gzip crc is always the same
-                for file in release.transform_files:
-                    entity = file.split("/")[-3]
-                    with gzip.open(file, "rb") as f_in:
-                        lines = sorted(f_in.readlines())
-                    with gzip.open(file, "wb") as f_out:
-                        f_out.writelines(lines)
-                    self.assert_file_integrity(file, self.entities[entity]["transform_hash"], "gzip_crc")
-
-                # Test that transformed files uploaded
-                env.run_task(telescope.upload_transformed.__name__)
-                for entity, info in self.entities.items():
-                    if entity in ["concepts", "institutions", "works"]:
-                        file = [file for file in release.transform_files if entity in file][0]
-                    else:
-                        file = f"{entity}.jsonl.gz"
-                    blob = f"telescopes/{release.dag_id}/{release.release_id}/data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
-                    self.assert_blob_integrity(env.transform_bucket, blob, file)
-
-                # Get bq load info for BQ tasks
-                bq_load_info = telescope.get_bq_load_info(release)
-
-                # Test append new creates table
-                env.run_task(telescope.bq_append_new.__name__)
-                for _, table, _ in bq_load_info:
-                    table_id = f"{self.project_id}.{telescope.dataset_id}.{table}"
-                    expected_bytes = run["table_bytes"][table]
-                    self.assert_table_bytes(table_id, expected_bytes)
-
-                # Test delete old task is skipped for the first release
-                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
-                    ti = env.run_task(telescope.bq_delete_old.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                # Test create bigquery snapshot
-                ti = env.run_task(telescope.bq_create_snapshot.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                # Test adding of dataset releases as well as cleanup
-                download_folder, extract_folder, transform_folder = (
-                    release.download_folder,
-                    release.extract_folder,
-                    release.transform_folder,
-                )
-
-                openalex_dataset_releases = get_dataset_releases(dataset_id=1)
-                institution_dataset_releases = get_dataset_releases(dataset_id=2)
-                author_dataset_releases = get_dataset_releases(dataset_id=3)
-                self.assertListEqual([], openalex_dataset_releases)
-                self.assertListEqual([], institution_dataset_releases)
-                self.assertListEqual([], author_dataset_releases)
-
-                ti = env.run_task(telescope.add_new_dataset_releases.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                openalex_dataset_releases = get_dataset_releases(dataset_id=1)
-                institution_dataset_releases = get_dataset_releases(dataset_id=2)
-                author_dataset_releases = get_dataset_releases(dataset_id=3)
-                self.assertEqual(1, len(openalex_dataset_releases))
-                self.assertEqual(1, len(institution_dataset_releases))
-                self.assertEqual(1, len(author_dataset_releases))
-                self.assertEqual(release.end_date, openalex_dataset_releases[0].end_date)
-                self.assertEqual(
-                    pendulum.from_format("2021-12-01", "YYYY-MM-DD"), openalex_dataset_releases[0].start_date
-                )
-                self.assertEqual(
-                    pendulum.from_format("2021-12-26", "YYYY-MM-DD"), openalex_dataset_releases[0].end_date
-                )
-                self.assertEqual(
-                    pendulum.from_format("2021-12-01", "YYYY-MM-DD"), author_dataset_releases[0].start_date
-                )
-                self.assertEqual(pendulum.from_format("2021-12-17", "YYYY-MM-DD"), author_dataset_releases[0].end_date)
-                self.assertEqual(
-                    pendulum.from_format("2021-12-01", "YYYY-MM-DD"), institution_dataset_releases[0].start_date
-                )
-                self.assertEqual(
-                    pendulum.from_format("2021-12-17", "YYYY-MM-DD"), institution_dataset_releases[0].end_date
-                )
-                self.assert_cleanup(download_folder, extract_folder, transform_folder)
-
-            run = self.second_run
-            with env.create_dag_run(dag, run["execution_date"]) as dag_run:
-                # Test that all dependencies are specified: no error should be thrown
-                env.run_task(telescope.check_dependencies.__name__)
-                start_date, end_date, first_release = telescope.get_release_info(
-                    dag=dag,
-                    data_interval_end=pendulum.datetime(year=2022, month=1, day=2),
-                )
-                self.assertEqual(release.end_date, start_date)
-                self.assertEqual(pendulum.datetime(year=2022, month=1, day=2), end_date)
-                self.assertFalse(first_release)
-
-                # Use release info for other tasks
-                release = OpenAlexRelease(
-                    telescope.dag_id,
-                    telescope.workflow_id,
-                    telescope.dataset_type_id,
-                    start_date,
-                    end_date,
-                    first_release,
-                    max_processes=1,
-                )
-
-                # Mock response of get_object on last_modified file, mocking lambda file
-                side_effect = []
-                for entity in self.entities:
-                    manifest_content = render_template(
-                        self.manifest_obj_path, entity=entity, date=run["manifest_date"]
-                    ).encode()
-                    side_effect.append({"Body": StreamingBody(io.BytesIO(manifest_content), len(manifest_content))})
-                mock_client().get_object.side_effect = side_effect
-
-                # Test write transfer manifest task
-                env.run_task(telescope.write_transfer_manifest.__name__)
-                self.assert_file_integrity(
-                    release.transfer_manifest_path_unchanged, run["manifest_unchanged_hash"], "md5"
-                )
-                self.assert_file_integrity(
-                    release.transfer_manifest_path_transform, run["manifest_transform_hash"], "md5"
-                )
-
-                # Test upload transfer manifest task
-                env.run_task(telescope.upload_transfer_manifest.__name__)
-                self.assert_blob_integrity(
-                    env.download_bucket,
-                    release.transfer_manifest_blob_unchanged,
-                    release.transfer_manifest_path_unchanged,
-                )
-                self.assert_blob_integrity(
-                    env.download_bucket,
-                    release.transfer_manifest_blob_transform,
-                    release.transfer_manifest_path_transform,
-                )
-
-                # Test transfer task
-                mock_transfer.reset_mock()
-                mock_transfer.return_value = True, 2
-                env.run_task(telescope.transfer.__name__)
-                self.assertEqual(3, mock_transfer.call_count)
-                try:
-                    self.assertTupleEqual(mock_transfer.call_args_list[0][0], (conn.login, conn.password))
-                    self.assertTupleEqual(mock_transfer.call_args_list[1][0], (conn.login, conn.password))
-                    self.assertTupleEqual(mock_transfer.call_args_list[2][0], (conn.login, conn.password))
-                except AssertionError:
-                    raise AssertionError("AWS key id and secret not passed correctly to transfer function")
-
-                self.assertDictEqual(
-                    mock_transfer.call_args_list[0][1],
-                    {
-                        "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                        "include_prefixes": [],
-                        "gc_project_id": self.project_id,
-                        "gc_bucket": release.download_bucket,
-                        "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/unchanged/",
-                        "description": f"Transfer OpenAlex data from Airflow telescope to {release.download_bucket}",
-                        "transfer_manifest": f"gs://{release.download_bucket}/{release.transfer_manifest_blob_unchanged}",
-                    },
-                )
-                self.assertDictEqual(
-                    mock_transfer.call_args_list[1][1],
-                    {
-                        "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                        "include_prefixes": [],
-                        "gc_project_id": self.project_id,
-                        "gc_bucket": release.transform_bucket,
-                        "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/",
-                        "description": f"Transfer OpenAlex data from Airflow telescope to {release.transform_bucket}",
-                        "transfer_manifest": f"gs://{release.download_bucket}/{release.transfer_manifest_blob_unchanged}",
-                    },
-                )
-                self.assertDictEqual(
-                    mock_transfer.call_args_list[2][1],
-                    {
-                        "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                        "include_prefixes": [],
-                        "gc_project_id": self.project_id,
-                        "gc_bucket": release.download_bucket,
-                        "gc_bucket_path": f"telescopes/{release.dag_id}/{release.release_id}/transform/",
-                        "description": f"Transfer OpenAlex data from Airflow telescope to {release.download_bucket}",
-                        "transfer_manifest": f"gs://{release.download_bucket}/{release.transfer_manifest_blob_transform}",
-                    },
-                )
-
-                # Upload files to bucket, to mock transfer
-                for entity, info in self.entities.items():
-                    gzip_path = f"{entity}.jsonl.gz"
-                    with open(info["download_path"], "rb") as f_in, gzip.open(gzip_path, "wb") as f_out:
-                        f_out.writelines(f_in)
-
-                    if entity == "authors" or entity == "venues":
-                        download_blob = (
-                            f"telescopes/{release.dag_id}/{release.release_id}/unchanged/"
-                            f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
-                        )
-                        transform_blob = (
-                            f"telescopes/{release.dag_id}/{release.release_id}/"
-                            f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
-                        )
-                        upload_file_to_cloud_storage(release.download_bucket, download_blob, gzip_path)
-                        upload_file_to_cloud_storage(release.transform_bucket, transform_blob, gzip_path)
-                    else:
-                        download_blob = (
-                            f"telescopes/{release.dag_id}/{release.release_id}/transform/"
-                            f"data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
-                        )
-                        upload_file_to_cloud_storage(release.download_bucket, download_blob, gzip_path)
-
-                # Test that file was downloaded
-                env.run_task(telescope.download_transferred.__name__)
-                self.assertEqual(3, len(release.download_files))
-                for file in release.download_files:
-                    entity = file.split("/")[-3]
-                    self.assert_file_integrity(file, self.entities[entity]["download_hash"], "gzip_crc")
-
-                # Test that files transformed
-                env.run_task(telescope.transform.__name__)
-                self.assertEqual(3, len(release.transform_files))
-                # Sort lines so that gzip crc is always the same
-                for file in release.transform_files:
-                    entity = file.split("/")[-3]
-                    with gzip.open(file, "rb") as f_in:
-                        lines = sorted(f_in.readlines())
-                    with gzip.open(file, "wb") as f_out:
-                        f_out.writelines(lines)
-                    self.assert_file_integrity(file, self.entities[entity]["transform_hash"], "gzip_crc")
-
-                # Test that transformed files uploaded
-                env.run_task(telescope.upload_transformed.__name__)
-                for entity, info in self.entities.items():
-                    if entity in ["concepts", "institutions", "works"]:
-                        file = [file for file in release.transform_files if entity in file][0]
-                    else:
-                        file = f"{entity}.jsonl.gz"
-                    blob = f"telescopes/{release.dag_id}/{release.release_id}/data/{entity}/updated_date={run['manifest_date']}/0000_part_00.gz"
-                    self.assert_blob_integrity(env.transform_bucket, blob, file)
-
-                # Get bq load info for BQ tasks
-                bq_load_info = telescope.get_bq_load_info(release)
-
-                # Test append new creates table
-                env.run_task(telescope.bq_append_new.__name__)
-                for _, table, _ in bq_load_info:
-                    table_id = f"{self.project_id}.{telescope.dataset_id}.{table}"
-                    expected_bytes = run["table_bytes"][table]
-                    self.assert_table_bytes(table_id, expected_bytes)
-
-                # Test that old rows are deleted from table
-                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
-                    env.run_task(telescope.bq_delete_old.__name__)
-                for _, table, _ in bq_load_info:
-                    table_id = f"{self.project_id}.{telescope.dataset_id}.{table}"
-                    expected_bytes = self.first_run["table_bytes"][table]
-                    self.assert_table_bytes(table_id, expected_bytes)
-
-                # Test create bigquery snapshot
-                ti = env.run_task(telescope.bq_create_snapshot.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                # Test adding of dataset releases and cleanup of local files
-                download_folder, extract_folder, transform_folder = (
-                    release.download_folder,
-                    release.extract_folder,
-                    release.transform_folder,
-                )
-
-                openalex_dataset_releases = get_dataset_releases(dataset_id=1)
-                institution_dataset_releases = get_dataset_releases(dataset_id=2)
-                author_dataset_releases = get_dataset_releases(dataset_id=3)
-                self.assertEqual(1, len(openalex_dataset_releases))
-                self.assertEqual(1, len(institution_dataset_releases))
-                self.assertEqual(1, len(author_dataset_releases))
-
-                ti = env.run_task(telescope.add_new_dataset_releases.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-                openalex_dataset_releases = get_dataset_releases(dataset_id=1)
-                institution_dataset_releases = get_dataset_releases(dataset_id=2)
-                author_dataset_releases = get_dataset_releases(dataset_id=3)
-                self.assertEqual(2, len(openalex_dataset_releases))
-                self.assertEqual(2, len(institution_dataset_releases))
-                self.assertEqual(2, len(author_dataset_releases))
-                self.assertEqual(release.end_date, openalex_dataset_releases[1].end_date)
-                self.assertEqual(
-                    pendulum.from_format("2021-12-26", "YYYY-MM-DD"), openalex_dataset_releases[1].start_date
-                )
-                self.assertEqual(
-                    pendulum.from_format("2022-01-02", "YYYY-MM-DD"), openalex_dataset_releases[1].end_date
-                )
-                self.assertEqual(
-                    pendulum.from_format("2021-12-17", "YYYY-MM-DD"), author_dataset_releases[1].start_date
-                )
-                self.assertEqual(pendulum.from_format("2022-1-17", "YYYY-MM-DD"), author_dataset_releases[1].end_date)
-                self.assertEqual(
-                    pendulum.from_format("2021-12-17", "YYYY-MM-DD"), institution_dataset_releases[1].start_date
-                )
-                self.assertEqual(
-                    pendulum.from_format("2022-1-17", "YYYY-MM-DD"), institution_dataset_releases[1].end_date
-                )
-
-                self.assert_cleanup(download_folder, extract_folder, transform_folder)
-
-            run = self.third_run
-            with env.create_dag_run(dag, run["execution_date"]) as dag_run:
-                # Test that all dependencies are specified: no error should be thrown
-                env.run_task(telescope.check_dependencies.__name__)
-
-                # Mock response of get_object on last_modified file, mocking lambda file
-                side_effect = []
-                for entity in self.entities:
-                    manifest_content = render_template(
-                        self.manifest_obj_path, entity=entity, date=run["manifest_date"]
-                    ).encode()
-                    side_effect.append({"Body": StreamingBody(io.BytesIO(manifest_content), len(manifest_content))})
-                mock_client().get_object.side_effect = side_effect
-
-                # Test write transfer manifest task
-                ti = env.run_task(telescope.write_transfer_manifest.__name__)
-                self.assertEqual(ti.state, State.SKIPPED)
-
-            run = self.fourth_run
-            with env.create_dag_run(dag, run["execution_date"]) as dag_run:
-                # Test that all dependencies are specified: no error should be thrown
-                env.run_task(telescope.check_dependencies.__name__)
-
-                # Mock response of get_object on last_modified file, mocking lambda file
-                side_effect = []
-                for entity in self.entities:
-                    manifest_content = render_template(
-                        self.manifest_obj_path, entity=entity, date=run["manifest_date"]
-                    ).encode()
-                    side_effect.append({"Body": StreamingBody(io.BytesIO(manifest_content), len(manifest_content))})
-                mock_client().get_object.side_effect = side_effect
-
-                # Test write transfer manifest task
-                ti = env.run_task(telescope.write_transfer_manifest.__name__)
-                self.assertEqual(ti.state, State.SUCCESS)
-
-    @patch("academic_observatory_workflows.workflows.openalex_telescope.get_dataset_releases")
-    @patch("academic_observatory_workflows.workflows.openalex_telescope.get_datasets")
-    @patch("academic_observatory_workflows.workflows.openalex_telescope.boto3.client")
-    @patch("academic_observatory_workflows.workflows.openalex_telescope.get_aws_conn_info")
-    @patch("academic_observatory_workflows.workflows.openalex_telescope.Variable.get")
-    def test_write_transfer_manifest(
-        self, mock_variable_get, mock_aws_info, mock_boto3, mock_get_datasets, mock_get_releases
-    ):
-        """Test write_transfer_manifest method of the OpenAlex release.
-
-        :param mock_variable_get: Mock Airflow Variable get() method
-        :param mock_boto3: Mock the boto3 client
-        :return: None.
-        """
-        mock_get_datasets.return_value = [
-            SimpleNamespace(name="OpenAlex Dataset", dataset_type=SimpleNamespace(type_id="openalex"), id=1),
-            SimpleNamespace(
-                name="OpenAlex Author Dataset", dataset_type=SimpleNamespace(type_id="openalex_author"), id=2
-            ),
-            SimpleNamespace(
-                name="OpenAlex Concept Dataset", dataset_type=SimpleNamespace(type_id="openalex_concept"), id=3
-            ),
-            SimpleNamespace(
-                name="OpenAlex Institution Dataset", dataset_type=SimpleNamespace(type_id="openalex_institution"), id=4
-            ),
-            SimpleNamespace(
-                name="OpenAlex Venue Dataset", dataset_type=SimpleNamespace(type_id="openalex_venue"), id=5
-            ),
-            SimpleNamespace(name="OpenAlex Work Dataset", dataset_type=SimpleNamespace(type_id="openalex_work"), id=6),
-        ]
-        mock_variable_get.return_value = "data"
-        mock_aws_info.return_value = "key_id", "secret_key"
-        # Mock response of get_object on last_modified file, mocking lambda file
-        side_effect = []
-        for tests in range(2):
-            for entity in self.entities:
-                manifest_content = render_template(self.manifest_obj_path, entity=entity, date="2022-01-01").encode()
-                side_effect.append({"Body": StreamingBody(io.BytesIO(manifest_content), len(manifest_content))})
-        mock_boto3().get_object.side_effect = side_effect
-
-        start_date = pendulum.DateTime(2022, 1, 1, tzinfo=pendulum.tz.UTC)
-        end_date = pendulum.DateTime(2022, 1, 1, tzinfo=pendulum.tz.UTC)
-
-        with CliRunner().isolated_filesystem():
-            # Test with entries in manifest objects that are after end date of latest release
-            mock_get_releases.return_value = [{"end_date": datetime.datetime(2021, 1, 1, tzinfo=tz.UTC)}]
-            release = OpenAlexRelease("dag_id", 1, OpenAlexTelescope.DAG_ID, start_date, end_date, False, 1)
-
-            release.write_transfer_manifest()
-            self.assert_file_integrity(
-                release.transfer_manifest_path_unchanged, "fe8442cd31fec1c335379033afebc1ea", "md5"
-            ),
-            self.assert_file_integrity(
-                release.transfer_manifest_path_transform, "42fb45119bd34709001fd6c90a6ef60e", "md5"
+            # table_description
+            self.assertEqual(
+                "OpenAlex authors table: https://docs.openalex.org/api-entities/authors", entity.table_description
             )
 
-            # Test with entries in manifest objects that are before end date of latest release
-            mock_get_releases.return_value = [{"end_date": datetime.datetime(2022, 2, 1, tzinfo=tz.UTC)}]
-            release = OpenAlexRelease("dag_id", 1, OpenAlexTelescope.DAG_ID, start_date, end_date, False, 1)
+            # schema_file_path
+            self.assertTrue(entity.schema_file_path.endswith("authors.json"))
 
-            with self.assertRaises(AirflowSkipException):
-                release.write_transfer_manifest()
+            # upsert_uri
+            self.assertTrue(entity.upsert_uri.endswith("data/authors/*"))
 
-    @patch("academic_observatory_workflows.workflows.openalex_telescope.aws_to_google_cloud_storage_transfer")
-    @patch("academic_observatory_workflows.workflows.openalex_telescope.get_aws_conn_info")
-    @patch("academic_observatory_workflows.workflows.openalex_telescope.Variable.get")
-    def test_transfer(self, mock_variable_get, mock_aws_info, mock_transfer):
-        """Test transfer method of the OpenAlex release.
+            # merged_ids_uri
+            self.assertTrue(entity.merged_ids_uri.endswith("data/merged_ids/authors/*"))
 
-        :param mock_variable_get: Mock Airflow Variable get() method
-        :param mock_aws_info: Mock getting AWS info
-        :param mock_transfer: Mock the transfer function called inside release.transfer()
-        :return: None.
-        """
-        mock_variable_get.side_effect = lambda x: {
-            "download_bucket": "download-bucket",
-            "transform_bucket": "transform-bucket",
-            "project_id": "project_id",
-            "data_path": "data",
-        }[x]
-        mock_aws_info.return_value = "key_id", "secret_key"
-        mock_transfer.return_value = True, 3
+            # merged_ids_schema_file_path
+            self.assertTrue(entity.merged_ids_schema_file_path.endswith("merged_ids.json"))
 
-        with CliRunner().isolated_filesystem():
-            # Create release
-            start_date = pendulum.DateTime(2022, 1, 1)
-            end_date = pendulum.DateTime(2022, 2, 1)
-            release = OpenAlexRelease("dag_id", 1, "dataset_type_id", start_date, end_date, False, 1)
+            # bq_main_table_id
+            self.assertEqual("project-id.openalex.authors", entity.bq_main_table_id)
 
-            # Create transfer manifest files
-            with open(release.transfer_manifest_path_unchanged, "w") as f:
-                f.write('"prefix1"\n"prefix2"\n')
-            with open(release.transfer_manifest_path_transform, "w") as f:
-                f.write("")
+            # bq_upsert_table_id
+            self.assertEqual("project-id.openalex.authors_upsert", entity.bq_upsert_table_id)
 
-            # Test successful transfer with prefixes for unchanged, no prefixes for transform
-            release.transfer(max_retries=1)
-            self.assertEqual(3, len(mock_transfer.call_args_list))
-            self.assertDictEqual(
-                {
-                    "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                    "include_prefixes": [],
-                    "gc_project_id": "project_id",
-                    "gc_bucket": "download-bucket",
-                    "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/unchanged/",
-                    "description": "Transfer OpenAlex data from Airflow telescope to download-bucket",
-                    "transfer_manifest": "gs://download-bucket/telescopes/dag_id/2022_01_01-2022_02_01/transfer_manifest_unchanged.csv",
-                },
-                mock_transfer.call_args_list[0][1],
+            # bq_snapshot_table_id
+            self.assertEqual("project-id.openalex.authors_snapshot20221201", entity.bq_snapshot_table_id)
+
+            # current_entries
+            self.assertEqual(
+                [ManifestEntry("s3://openalex/data/authors/updated_date=2023-01-28/part_000.gz", Meta(7073, 4))],
+                entity.current_entries,
             )
-            self.assertDictEqual(
-                {
-                    "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                    "include_prefixes": [],
-                    "gc_project_id": "project_id",
-                    "gc_bucket": "transform-bucket",
-                    "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/",
-                    "description": "Transfer OpenAlex data from Airflow telescope to transform-bucket",
-                    "transfer_manifest": "gs://download-bucket/telescopes/dag_id/2022_01_01-2022_02_01/transfer_manifest_unchanged.csv",
-                },
-                mock_transfer.call_args_list[1][1],
+
+            # has_merged_ids
+            self.assertFalse(entity.has_merged_ids)
+            self.assertEqual(0, len(entity.current_merged_ids))
+            entity.is_first_run = False
+            self.assertTrue(entity.has_merged_ids)
+            self.assertEqual(1, len(entity.current_merged_ids))
+            self.assertEqual(
+                [MergedId("s3://openalex/data/merged_ids/authors/2023-01-28.csv.gz", 1000)], entity.current_merged_ids
             )
-            self.assertDictEqual(
-                {
-                    "aws_bucket": OpenAlexTelescope.AWS_BUCKET,
-                    "include_prefixes": [],
-                    "gc_project_id": "project_id",
-                    "gc_bucket": "download-bucket",
-                    "gc_bucket_path": "telescopes/dag_id/2022_01_01-2022_02_01/transform/",
-                    "description": "Transfer OpenAlex data from Airflow telescope to download-bucket",
-                    "transfer_manifest": "gs://download-bucket/telescopes/dag_id/2022_01_01-2022_02_01/transfer_manifest_transform.csv",
-                },
-                mock_transfer.call_args_list[2][1],
-            )
-            mock_transfer.reset_mock()
 
-            # Test failed transfer
-            mock_transfer.return_value = False, 4
-            with self.assertRaises(AirflowException):
-                release.transfer(1)
+    def test_fetch_manifest(self):
+        manifest_path = test_fixtures_folder(self.dag_id, "manifest")
+        with aws_bucket_test_env(prefix=self.dag_id, region_name=self.aws_region_name) as bucket_name:
+            s3 = boto3.client("s3")
+            s3_object_key = "data/publishers/manifest"
+            with open(manifest_path, "rb") as f:
+                s3.upload_fileobj(f, bucket_name, s3_object_key)
 
-    @patch("academic_observatory_workflows.workflows.openalex_telescope.wait_for_process")
-    @patch("academic_observatory_workflows.workflows.openalex_telescope.logging.info")
-    def test_run_subprocess_cmd(self, mock_logging, mock_wait_for_proc):
-        """Test the run_subprocess_cmd function.
+            actual = fetch_manifest(bucket=bucket_name, aws_key=self.aws_key, entity_name="publishers")
+            with open(manifest_path, "r") as f:
+                expected = Manifest.from_dict(json.load(f))
+            self.assertEqual(expected, actual)
 
-        :return: None.
-        """
-        # Mock logging
-        mock_wait_for_proc.return_value = ("out", "err")
+    def test_fetch_merged_ids(self):
+        with aws_bucket_test_env(prefix=self.dag_id, region_name=self.aws_region_name) as bucket_name:
+            # Create empty files on bucket to act as merged_ids and expected MergedIds
+            s3 = boto3.client("s3")
+            file_names = ["2023-01-19.csv.gz", "2023-03-23.csv.gz", "2023-03-28.csv.gz"]
+            expected = []
+            for file_name in file_names:
+                object_key = f"data/merged_ids/authors/{file_name}"
+                s3.put_object(Bucket=bucket_name, Key=object_key, Body=b"")
+                expected.append(MergedId(f"s3://{bucket_name}/{object_key}", 0))
 
-        # Set up parameters
-        args = ["run", "unittest"]
-        proc = Mock(spec=Popen)
-
-        # Test when return code is 0
-        proc.returncode = 0
-        run_subprocess_cmd(proc, args)
-        expected_logs = ["Executing bash command: run unittest", "out", "err", "Finished cmd successfully"]
-        self.assertListEqual([call(log) for log in expected_logs], mock_logging.call_args_list)
-
-        # Test when return code is 1
-        proc.returncode = 1
-        with self.assertRaises(AirflowException):
-            run_subprocess_cmd(proc, args)
+            actual = fetch_merged_ids(bucket=bucket_name, aws_key=self.aws_key, entity_name="authors")
+            self.assertEqual(expected, actual)
 
     @patch("academic_observatory_workflows.workflows.openalex_telescope.transform_object")
     def test_transform_file(self, mock_transform_object):
-        """Test the transform_file function.
+        """Test the transform_file function."""
 
-        :return: None.
-        """
         mock_transform_object.return_value = {}
         with CliRunner().isolated_filesystem() as t:
             transform_path = "transform/out.jsonl.gz"
@@ -1037,10 +412,8 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             mock_transform_object.assert_called_once_with(concepts, "international")
 
     def test_transform_object(self):
-        """Test the transform_object function.
+        """Test the transform_object function."""
 
-        :return: None.
-        """
         # Test object with nested "international" fields
         obj1 = {
             "international": {
@@ -1099,3 +472,569 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         obj4 = {"abstract_inverted_index": None}
         transform_object(obj4, "abstract_inverted_index")
         self.assertDictEqual({"abstract_inverted_index": None}, obj4)
+
+
+def upload_folder_to_s3(bucket_name: str, folder_path: str, s3_prefix=None):
+    s3 = boto3.client("s3")
+    for root, dirs, files in os.walk(folder_path):
+        for filename in files:
+            local_path = os.path.join(root, filename)
+            s3_path = os.path.relpath(local_path, folder_path)
+
+            if s3_prefix:
+                s3_path = os.path.join(s3_prefix, s3_path)
+
+            s3.upload_file(local_path, bucket_name, s3_path)
+            print(f"Uploaded {local_path} to s3://{bucket_name}/{s3_path}")
+
+
+def create_openalex_dataset(input_path: pathlib.Path, bucket_name: str) -> Dict:
+    """Create an OpenAlex dataset based on data from the fixtures folder, uploading it to AWS S3 storage.
+
+    :param input_path: the input path of the dataset in the fixtures folder.
+    :param bucket_name: the AWS S3 bucket name.
+    :return: a manifest index, with entity name as key and manfiest as value, to use for testing.
+    """
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        entry_index = {}
+
+        # Create part files and merged_ids
+        for root, dirs, files in os.walk(str(input_path)):
+            for filename in files:
+                if "expected" not in pathlib.Path(root).parts:
+                    file_path = pathlib.Path(root) / filename
+                    s3_object_key = pathlib.Path(root).relative_to(input_path)
+                    output_root = pathlib.Path(temp_dir) / s3_object_key
+
+                    os.makedirs(str(output_root), exist_ok=True)
+
+                    # For JSON: convert to JSONL, save without extension and gzip
+                    if file_path.suffix == ".json":
+                        file_name = f"{file_path.stem}.gz"
+                        output_path = output_root / file_name
+                        data = json.loads(load_file(file_path))
+                        save_jsonl_gz(str(output_path), data)
+
+                        # Build manifest entries
+                        entity_name = output_root.parts[-2]
+                        if entity_name not in entry_index:
+                            entry_index[entity_name] = []
+                        entry_index[entity_name].append(
+                            ManifestEntry(
+                                f"s3://{bucket_name}/{s3_object_key}/{file_name}",
+                                Meta(content_length=os.path.getsize(output_path), record_count=len(data)),
+                            )
+                        )
+
+                    # For CSV: gzip
+                    elif file_path.suffix == ".csv":
+                        output_path = output_root / f"{file_path.stem}.csv.gz"
+                        data = load_file(file_path)
+                        with gzip.open(output_path, "wt") as f:
+                            f.write(data)
+
+        # Create and save manifests
+        manifest_index = {}
+        for entity_name, entries in entry_index.items():
+            content_length, record_count = 0, 0
+            for entry in entries:
+                content_length += entry.meta.content_length
+                record_count += entry.meta.record_count
+
+            manifest = Manifest(entries, Meta(content_length=content_length, record_count=record_count))
+            manifest_index[entity_name] = manifest
+            output_path = pathlib.Path(temp_dir) / "data" / entity_name / "manifest"
+            with open(output_path, mode="w") as f:
+                json.dump(manifest.to_dict(), f, indent=2)
+
+        # Upload data to s3
+        upload_folder_to_s3(bucket_name, temp_dir)
+
+        return manifest_index
+
+
+class TestOpenAlexTelescope(ObservatoryTestCase):
+    """Tests for the OpenAlex telescope"""
+
+    def __init__(self, *args, **kwargs):
+        super(TestOpenAlexTelescope, self).__init__(*args, **kwargs)
+        self.dag_id = "openalex"
+        self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
+        self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
+        self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
+        self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+        self.aws_region_name = os.getenv("AWS_DEFAULT_REGION")
+
+    def test_dag_structure(self):
+        """Test that the DAG has the correct structure."""
+
+        dag = OpenAlexTelescope(
+            dag_id=self.dag_id,
+            cloud_workspace=self.fake_cloud_workspace,
+        ).make_dag()
+        self.assert_dag_structure(
+            {
+                "wait_for_prev_dag_run": ["check_dependencies"],
+                "check_dependencies": ["fetch_releases"],
+                "fetch_releases": ["create_datasets"],
+                "create_datasets": ["bq_create_main_table_snapshots"],
+                "bq_create_main_table_snapshots": ["aws_to_gcs_transfer"],
+                "aws_to_gcs_transfer": ["download_concepts"],
+                "download_concepts": ["download_institutions"],
+                "download_institutions": ["download_works"],
+                "download_works": ["transform"],
+                "transform": ["upload_upsert_files"],
+                "upload_upsert_files": ["bq_load_upsert_tables"],
+                "bq_load_upsert_tables": ["bq_upsert_records"],
+                "bq_upsert_records": ["bq_load_delete_tables"],
+                "bq_load_delete_tables": ["bq_delete_records"],
+                "bq_delete_records": ["add_new_dataset_releases"],
+                "add_new_dataset_releases": ["cleanup"],
+                "cleanup": ["dag_run_complete"],
+                "dag_run_complete": [],
+            },
+            dag,
+        )
+
+    def test_dag_load(self):
+        """Test that the OpenAlex DAG can be loaded from a DAG bag."""
+
+        env = ObservatoryEnvironment(
+            workflows=[
+                Workflow(
+                    dag_id=self.dag_id,
+                    name="OpenAlex Telescope",
+                    class_name="academic_observatory_workflows.workflows.openalex_telescope.OpenAlexTelescope",
+                    cloud_workspace=self.fake_cloud_workspace,
+                )
+            ]
+        )
+
+        with env.create():
+            self.assert_dag_load_from_config(self.dag_id)
+
+    def test_telescope(self):
+        """Test the OpenAlex telescope end to end."""
+
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
+        bq_dataset_id = env.add_dataset()
+
+        # Create the Observatory environment and run tests
+        with env.create(task_logging=True):
+            workflow = OpenAlexTelescope(
+                dag_id=self.dag_id,
+                cloud_workspace=env.cloud_workspace,
+                bq_dataset_id=bq_dataset_id,
+            )
+            conn = Connection(
+                conn_id=workflow.aws_conn_id,
+                conn_type="aws",
+                login=self.aws_access_key_id,
+                password=self.aws_secret_access_key,
+            )
+            env.add_connection(conn)
+            dag = workflow.make_dag()
+
+            # Create bucket and dataset for use in first and second run
+            with aws_bucket_test_env(prefix=self.dag_id, region_name=self.aws_region_name) as bucket_name:
+                # Create data
+                workflow.aws_openalex_bucket = bucket_name
+                manifest_index = create_openalex_dataset(
+                    pathlib.Path(test_fixtures_folder(self.dag_id, "2023-04-02")),
+                    bucket_name,
+                )
+                # fmt: off
+                merged_ids_index = {
+                    "authors": [MergedId(f"s3://{bucket_name}/data/merged_ids/authors/2023-04-02.csv.gz", 99)],
+                    "institutions": [MergedId(f"s3://{bucket_name}/data/merged_ids/institutions/2023-04-02.csv.gz", 97)],
+                    "sources": [MergedId(f"s3://{bucket_name}/data/merged_ids/sources/2023-04-02.csv.gz", 100)],
+                    "works": [MergedId(f"s3://{bucket_name}/data/merged_ids/works/2023-04-02.csv.gz", 100)],
+                }
+                # fmt: on
+
+                # Create expected data
+                data_interval_start = pendulum.datetime(2023, 4, 2)
+                is_first_run = True
+                expected_entities = []
+                for entity_name, transform in workflow.entities:
+                    expected_entities.append(
+                        OpenAlexEntity(
+                            entity_name,
+                            transform,
+                            data_interval_start,
+                            data_interval_start,
+                            manifest_index[entity_name],
+                            merged_ids_index.get(entity_name, []),
+                            is_first_run,
+                            pendulum.instance(datetime.datetime.min),
+                        )
+                    )
+
+                # First run: snapshot
+                with env.create_dag_run(dag, data_interval_start) as dag_run:
+                    # Mocked and expected data
+                    release = OpenAlexRelease(
+                        dag_id=self.dag_id,
+                        run_id=dag_run.run_id,
+                        cloud_workspace=workflow.cloud_workspace,
+                        bq_dataset_id=workflow.bq_dataset_id,
+                        entities=expected_entities,
+                        start_date=data_interval_start,
+                        end_date=data_interval_start,
+                        is_first_run=True,
+                        schema_folder=workflow.schema_folder,
+                    )
+                    for entity in expected_entities:
+                        entity.workflow = workflow
+                        entity.release = release
+
+                    # Wait for the previous DAG run to finish
+                    ti = env.run_task("wait_for_prev_dag_run")
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check dependencies
+                    ti = env.run_task(workflow.check_dependencies.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Fetch releases and check that we have received the expected snapshot date and changefiles
+                    task_id = workflow.fetch_releases.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    msg = ti.xcom_pull(
+                        key=workflow.RELEASE_INFO,
+                        task_ids=task_id,
+                        include_prior_dates=False,
+                    )
+                    actual_entities = parse_release_msg(msg)
+                    self.assertEqual(7, len(actual_entities))
+                    self.assertEqual(expected_entities, actual_entities)
+
+                    ti = env.run_task(workflow.create_datasets.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    ti = env.run_task(workflow.bq_create_main_table_snapshots.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    ti = env.run_task(workflow.aws_to_gcs_transfer.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    base_folder = gcs_blob_name_from_path(release.download_folder)
+                    for entity in expected_entities:
+                        for entry in entity.current_entries:
+                            actual_path = os.path.join(base_folder, entry.object_key)
+                            self.assert_blob_exists(env.download_bucket, actual_path)
+                        for merged_id in entity.current_merged_ids:
+                            actual_path = os.path.join(base_folder, merged_id.object_key)
+                            self.assert_blob_exists(env.download_bucket, actual_path)
+
+                    # Download entities that we need to transform
+                    for i, (entity_name, transform) in enumerate(workflow.entities):
+                        if transform:
+                            ti = env.run_task(f"download_{entity_name}")
+                            self.assertEqual(State.SUCCESS, ti.state)
+                            for entry in expected_entities[i].current_entries:
+                                file_path = os.path.join(release.download_folder, entry.object_key)
+                                self.assertTrue(os.path.isfile(file_path))
+
+                    ti = env.run_task(workflow.transform.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for entity in expected_entities:
+                        if entity.transform:
+                            for entry in entity.current_entries:
+                                file_path = os.path.join(release.transform_folder, entry.object_key)
+                                self.assertTrue(os.path.isfile(file_path))
+
+                    ti = env.run_task(workflow.upload_upsert_files.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for entity in expected_entities:
+                        if entity.transform:
+                            for entry in entity.current_entries:
+                                file_path = os.path.join(release.transform_folder, entry.object_key)
+                                self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
+
+                    ti = env.run_task(workflow.bq_load_upsert_tables.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for entity in expected_entities:
+                        self.assert_table_integrity(entity.bq_upsert_table_id, 4)
+
+                    ti = env.run_task(workflow.bq_upsert_records.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for entity in expected_entities:
+                        self.assert_table_integrity(entity.bq_main_table_id, 4)
+
+                    # These two don't do anything on the first run
+                    ti = env.run_task(workflow.bq_load_delete_tables.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for entity in expected_entities:
+                        with self.assertRaises(NotFound):
+                            self.bigquery_client.get_table(entity.bq_delete_table_id)
+
+                    ti = env.run_task(workflow.bq_delete_records.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for entity in expected_entities:
+                        self.assert_table_integrity(entity.bq_main_table_id, 4)
+
+                    # Assert content
+                    for entity_name, _ in workflow.entities:
+                        table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, entity_name)
+                        expected_data = load_and_parse_json(
+                            test_fixtures_folder(self.dag_id, "2023-04-02", "expected", f"{entity_name}.json"),
+                            date_fields={"created_date", "updated_date", "publication_date"},
+                        )
+                        self.assert_table_content(table_id, expected_data, "id")
+
+                    # Check that there is one dataset release per entity after add_new_dataset_releases
+                    for entity_name, _ in workflow.entities:
+                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
+                        self.assertEqual(len(dataset_releases), 0)
+                    ti = env.run_task(workflow.add_new_dataset_releases.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for entity_name, _ in workflow.entities:
+                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
+                        self.assertEqual(len(dataset_releases), 1)
+
+                    # Test that all workflow data deleted
+                    ti = env.run_task(workflow.cleanup.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    self.assert_cleanup(release.workflow_folder)
+
+                    ti = env.run_task("dag_run_complete")
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                # Second run: no updates
+                data_interval_start = pendulum.datetime(2023, 4, 9)
+                with env.create_dag_run(dag, data_interval_start):
+                    # Check that first three tasks are successful
+                    task_ids = ["wait_for_prev_dag_run", "check_dependencies", "fetch_releases"]
+                    for task_id in task_ids:
+                        ti = env.run_task(task_id)
+                        self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that all subsequent tasks are skipped
+                    task_ids = ["create_datasets", "bq_create_main_table_snapshots", "aws_to_gcs_transfer"]
+                    task_ids += [f"download_{entity_name}" for entity_name, transform in workflow.entities if transform]
+                    task_ids += [
+                        "transform",
+                        "upload_upsert_files",
+                        "bq_load_upsert_tables",
+                        "bq_upsert_records",
+                        "bq_load_delete_tables",
+                        "bq_delete_records",
+                        "add_new_dataset_releases",
+                        "cleanup",
+                    ]
+                    for task_id in task_ids:
+                        ti = env.run_task(task_id)
+                        self.assertEqual(State.SKIPPED, ti.state)
+
+                    # Check that tables all still have the same number of rows
+                    for entity in expected_entities:
+                        self.assert_table_integrity(entity.bq_main_table_id, 4)
+
+                    # Check that only 1 dataset release exists for each entity
+                    for entity_name, _ in workflow.entities:
+                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
+                        self.assertEqual(len(dataset_releases), 1)
+
+            # Create bucket and dataset for use in third run
+            with aws_bucket_test_env(prefix=self.dag_id, region_name=self.aws_region_name) as bucket_name:
+                workflow.aws_openalex_bucket = bucket_name
+                manifest_index = create_openalex_dataset(
+                    pathlib.Path(test_fixtures_folder(self.dag_id, "2023-04-16")),
+                    bucket_name,
+                )
+                merged_ids_index = {
+                    "authors": [
+                        MergedId(f"s3://{bucket_name}/data/merged_ids/authors/2023-04-02.csv.gz", 99),
+                        MergedId(f"s3://{bucket_name}/data/merged_ids/authors/2023-04-16.csv.gz", 95),
+                    ],
+                    "institutions": [
+                        MergedId(f"s3://{bucket_name}/data/merged_ids/institutions/2023-04-02.csv.gz", 97),
+                        MergedId(f"s3://{bucket_name}/data/merged_ids/institutions/2023-04-16.csv.gz", 97),
+                    ],
+                    "sources": [
+                        MergedId(f"s3://{bucket_name}/data/merged_ids/sources/2023-04-02.csv.gz", 100),
+                        MergedId(f"s3://{bucket_name}/data/merged_ids/sources/2023-04-16.csv.gz", 95),
+                    ],
+                    "works": [
+                        MergedId(f"s3://{bucket_name}/data/merged_ids/works/2023-04-02.csv.gz", 100),
+                        MergedId(f"s3://{bucket_name}/data/merged_ids/works/2023-04-16.csv.gz", 98),
+                    ],
+                }
+                # Create expected data
+                prev_end_date = pendulum.datetime(2023, 4, 2)
+                data_interval_start = pendulum.datetime(2023, 4, 16)
+                is_first_run = False
+                expected_entities = []
+                for entity_name, transform in workflow.entities:
+                    expected_entities.append(
+                        OpenAlexEntity(
+                            entity_name,
+                            transform,
+                            data_interval_start,
+                            data_interval_start,
+                            manifest_index[entity_name],
+                            merged_ids_index.get(entity_name, []),
+                            is_first_run,
+                            prev_end_date,
+                        )
+                    )
+
+                # Third run: changefiles
+                with env.create_dag_run(dag, data_interval_start) as dag_run:
+                    # Mocked and expected data
+                    release = OpenAlexRelease(
+                        dag_id=self.dag_id,
+                        run_id=dag_run.run_id,
+                        cloud_workspace=workflow.cloud_workspace,
+                        bq_dataset_id=workflow.bq_dataset_id,
+                        entities=expected_entities,
+                        start_date=data_interval_start,
+                        end_date=data_interval_start,
+                        is_first_run=True,
+                        schema_folder=workflow.schema_folder,
+                    )
+                    for entity in expected_entities:
+                        entity.workflow = workflow
+                        entity.release = release
+
+                    # Wait for the previous DAG run to finish
+                    ti = env.run_task("wait_for_prev_dag_run")
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check dependencies
+                    ti = env.run_task(workflow.check_dependencies.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Fetch releases and check that we have received the expected snapshot date and changefiles
+                    task_id = workflow.fetch_releases.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    msg = ti.xcom_pull(
+                        key=workflow.RELEASE_INFO,
+                        task_ids=task_id,
+                        include_prior_dates=False,
+                    )
+                    actual_entities = parse_release_msg(msg)
+                    self.assertEqual(7, len(actual_entities))
+                    self.assertEqual(expected_entities, actual_entities)
+
+                    ti = env.run_task(workflow.create_datasets.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    ti = env.run_task(workflow.bq_create_main_table_snapshots.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for entity in expected_entities:
+                        self.assertEqual(
+                            bq_sharded_table_id(
+                                self.project_id, workflow.bq_dataset_id, f"{entity.entity_name}_snapshot", prev_end_date
+                            ),
+                            entity.bq_snapshot_table_id,
+                        )
+                        self.assert_table_integrity(entity.bq_snapshot_table_id, 4)
+
+                    ti = env.run_task(workflow.aws_to_gcs_transfer.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    base_folder = gcs_blob_name_from_path(release.download_folder)
+                    for entity in expected_entities:
+                        for entry in entity.current_entries:
+                            actual_path = os.path.join(base_folder, entry.object_key)
+                            self.assert_blob_exists(env.download_bucket, actual_path)
+                        for merged_id in entity.current_merged_ids:
+                            actual_path = os.path.join(base_folder, merged_id.object_key)
+                            self.assert_blob_exists(env.download_bucket, actual_path)
+
+                    for i, (entity_name, transform) in enumerate(workflow.entities):
+                        if transform:
+                            ti = env.run_task(f"download_{entity_name}")
+                            self.assertEqual(State.SUCCESS, ti.state)
+                            for entry in expected_entities[i].current_entries:
+                                file_path = os.path.join(release.download_folder, entry.object_key)
+                                self.assertTrue(os.path.isfile(file_path))
+
+                    ti = env.run_task(workflow.transform.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for entity in expected_entities:
+                        if entity.transform:
+                            for entry in entity.current_entries:
+                                file_path = os.path.join(release.transform_folder, entry.object_key)
+                                self.assertTrue(os.path.isfile(file_path))
+
+                    ti = env.run_task(workflow.upload_upsert_files.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for entity in expected_entities:
+                        if entity.transform:
+                            for entry in entity.current_entries:
+                                file_path = os.path.join(release.transform_folder, entry.object_key)
+                                self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
+
+                    ti = env.run_task(workflow.bq_load_upsert_tables.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    expected_row_index = {
+                        "authors": 3,
+                        "concepts": 2,
+                        "institutions": 3,
+                        "publishers": 2,
+                        "sources": 3,
+                        "works": 3,
+                        "funders": 2,
+                    }
+                    for entity in expected_entities:
+                        expected_rows = expected_row_index[entity.entity_name]
+                        self.assert_table_integrity(entity.bq_upsert_table_id, expected_rows)
+
+                    ti = env.run_task(workflow.bq_upsert_records.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for entity in expected_entities:
+                        self.assert_table_integrity(entity.bq_main_table_id, 5)
+
+                    ti = env.run_task(workflow.bq_load_delete_tables.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for entity in expected_entities:
+                        if entity.has_merged_ids:
+                            self.assert_table_integrity(entity.bq_delete_table_id, 1)
+                        else:
+                            with self.assertRaises(NotFound):
+                                self.bigquery_client.get_table(entity.bq_delete_table_id)
+
+                    ti = env.run_task(workflow.bq_delete_records.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    expected_row_index = {
+                        "authors": 4,
+                        "concepts": 5,
+                        "institutions": 4,
+                        "publishers": 5,
+                        "sources": 4,
+                        "works": 4,
+                        "funders": 5,
+                    }
+                    for entity in expected_entities:
+                        expected_rows = expected_row_index[entity.entity_name]
+                        self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
+
+                    # Assert content
+                    for entity_name, _ in workflow.entities:
+                        table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, entity_name)
+                        expected_data = load_and_parse_json(
+                            test_fixtures_folder(self.dag_id, "2023-04-16", "expected", f"{entity_name}.json"),
+                            date_fields={"created_date", "updated_date", "publication_date"},
+                        )
+                        self.assert_table_content(table_id, expected_data, "id")
+
+                    # Check that there is one dataset release per entity after add_new_dataset_releases
+                    for entity_name, _ in workflow.entities:
+                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
+                        self.assertEqual(len(dataset_releases), 1)
+                    ti = env.run_task(workflow.add_new_dataset_releases.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    for entity_name, _ in workflow.entities:
+                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
+                        self.assertEqual(len(dataset_releases), 2)
+
+                    # Test that all workflow data deleted
+                    ti = env.run_task(workflow.cleanup.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    self.assert_cleanup(release.workflow_folder)
+
+                    ti = env.run_task("dag_run_complete")
+                    self.assertEqual(State.SUCCESS, ti.state)

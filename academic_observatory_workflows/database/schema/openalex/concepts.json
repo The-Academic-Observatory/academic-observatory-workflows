@@ -1,0 +1,286 @@
+[
+  {
+    "name": "ancestors",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The English-language label of the concept."
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The OpenAlex ID for this concept."
+      },
+      {
+        "name": "level",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The level in the concept tree where this concept lives."
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The Wikidata ID for this concept. "
+      }
+    ],
+    "description": "List of concepts that this concept descends from, as dehydrated Concept objects. See the concept tree section for more details on how the different layers of concepts work together."
+  },
+  {
+    "name": "cited_by_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "The number citations to works that have been tagged with this concept. Or less formally: the number of citations to this concept. For example, if there are just two works tagged with this concept and one of them has been cited 10 times, and the other has been cited 1 time, cited_by_count for this concept would be 11."
+  },
+  {
+    "name": "counts_by_year",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The number citations to works that have been tagged with this concept. Or less formally: the number of citations to this concept. For example, if there are just two works tagged with this concept and one of them has been cited 10 times, and the other has been cited 1 time, cited_by_count for this concept would be 11."
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The number of works tagged with this concept."
+      },
+      {
+        "name": "year",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The year."
+      }
+    ],
+    "description": "The values of works_count and cited_by_count for each of the last ten years, binned by year. To put it another way: for every listed year, you can see how many new works were tagged with this concept, and how many times any work tagged with this concept got cited."
+  },
+  {
+    "name": "created_date",
+    "type": "DATE",
+    "mode": "NULLABLE",
+    "description": "The date this Concept object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
+  },
+  {
+    "name": "description",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "A brief description of this concept."
+  },
+  {
+    "name": "display_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The English-language label of the concept."
+  },
+  {
+    "name": "id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The OpenAlex ID for this concept."
+  },
+  {
+    "name": "ids",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "mag",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "this concept's Microsoft Academic Graph ID"
+      },
+      {
+        "name": "openalex",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this concept's OpenAlex ID. Same as Concept.id"
+      },
+      {
+        "name": "umls_aui",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "this concept's Unified Medical Language System Atom Unique Identifiers"
+      },
+      {
+        "name": "umls_cui",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "this concept's Unified Medical Language System Concept Unique Identifiers"
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this concept's Wikidata ID. Same as Concept.wikidata"
+      },
+      {
+        "name": "wikipedia",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this concept's Wikipedia page URL"
+      }
+    ],
+    "description": "All the persistent identifiers (PIDs) that we know about for this venue, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible. umls_aui and umls_cui refer to the Unified Medical Language System Atom Unique Identifier and Concept Unique Identifier respectively. These are lists. The other IDs are all strings, except except for mag, which is a long integer."
+  },
+  {
+    "name": "image_thumbnail_url",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Same as image_url, but it's a smaller image."
+  },
+  {
+    "name": "image_url",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "URL where you can get an image representing this concept, where available. Usually this is hosted on Wikipedia."
+  },
+  {
+    "name": "international",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "keys",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "The language codes in wikidata language code format."
+          },
+          {
+            "name": "values",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "The translated display_names in each language."
+          }
+        ],
+        "description": "This concept's display name in many languages, derived from article titles on each language's wikipedia."
+      },
+      {
+        "name": "description",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "keys",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "The language codes in wikidata language code format."
+          },
+          {
+            "name": "values",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "The translated descriptions in each language."
+          }
+        ],
+        "description": "This concept's description in many languages, derived from article titles on each language's wikipedia."
+      }
+    ],
+    "description": "Translation of the display_name and description into multiple languages."
+  },
+  {
+    "name": "level",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "The level in the concept tree where this concept lives. Lower-level concepts are more general, and higher-level concepts are more specific. Computer Science has a level of 0; Java Bytecode has a level of 5. Level 0 concepts have no ancestors and level 5 concepts have no descendants."
+  },
+  {
+    "name": "related_concepts",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "Concepts that are similar to this one. Each listed concept is a dehydrated Concept object, with one additional attribute",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The English-language label of the concept."
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The OpenAlex ID for this concept."
+      },
+      {
+        "name": "level",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The level in the concept tree where this concept lives."
+      },
+      {
+        "name": "score",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": "The strength of association between this concept and the listed concept, on a scale of 0-100."
+      },
+      {
+        "name": "wikidata",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The Wikidata ID for this concept. "
+      }
+    ]
+  },
+  {
+    "name": "summary_stats",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "2yr_mean_citedness",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": "The 2-year mean citedness for this concept. Also known as impact factor."
+      },
+      {
+        "name": "h_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The h-index for this concept."
+      },
+      {
+        "name": "i10_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "The i-10 index for this concept."
+      }
+    ],
+    "description": "Citation metrics for this concept."
+  },
+  {
+    "name": "updated_date",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "The last time anything in this concept object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  },
+  {
+    "name": "wikidata",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The Wikidata ID for this concept. This is the Canonical External ID for concepts."
+  },
+  {
+    "name": "works_api_url",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "An URL that will get you a list of all the works tagged with this concept. We express this as an API URL (instead of just listing the works themselves) because there might be millions of works tagged with this concept, and that's too many to fit here."
+  },
+  {
+    "name": "works_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "The number of works tagged with this concept."
+  }
+]

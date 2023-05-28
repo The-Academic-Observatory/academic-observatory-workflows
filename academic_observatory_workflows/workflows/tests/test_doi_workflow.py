@@ -19,12 +19,9 @@ from __future__ import annotations
 import os
 from datetime import timedelta
 from typing import Dict, List
-from unittest.mock import patch
 
 import pendulum
 import vcr
-from airflow.exceptions import AirflowException
-from airflow.models import Connection
 from airflow.utils.state import State
 
 from academic_observatory_workflows.config import test_fixtures_folder
@@ -44,27 +41,27 @@ from academic_observatory_workflows.workflows.doi_workflow import (
     fetch_ror_affiliations,
     ror_to_ror_hierarchy_index,
 )
-from observatory.api.client import ApiClient, Configuration
-from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
-from observatory.api.client.model.dataset import Dataset
-from observatory.api.client.model.dataset_type import DatasetType
-from observatory.api.client.model.organisation import Organisation
-from observatory.api.client.model.table_type import TableType
-from observatory.api.client.model.workflow import Workflow
-from observatory.api.client.model.workflow_type import WorkflowType
-from observatory.api.testing import ObservatoryApiEnvironment
-from observatory.platform.utils.airflow_utils import AirflowConns
-from observatory.platform.utils.airflow_utils import set_task_state
-from observatory.platform.utils.file_utils import load_jsonl
-from observatory.platform.utils.gc_utils import run_bigquery_query, bigquery_sharded_table_id
-from observatory.platform.utils.release_utils import get_dataset_releases
-from observatory.platform.utils.test_utils import (
+from observatory.platform.api import get_dataset_releases
+from observatory.platform.bigquery import bq_run_query, bq_sharded_table_id, bq_table_id
+from observatory.platform.files import load_jsonl
+from observatory.platform.observatory_config import Workflow
+from observatory.platform.observatory_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
     make_dummy_dag,
-    module_file_path,
     find_free_port,
 )
+
+
+def query_table(table_id: str, order_by_field: str) -> List[Dict]:
+    """Query a BigQuery table, sorting the results and returning results as a list of dicts.
+
+    :param table_id: the table id.
+    :param order_by_field: what field or fields to order by.
+    :return: the table rows.
+    """
+
+    return [dict(row) for row in bq_run_query(f"SELECT * from {table_id} ORDER BY {order_by_field} ASC;")]
 
 
 class TestDoiWorkflow(ObservatoryTestCase):
@@ -72,7 +69,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
     def __init__(self, *args, **kwargs):
         super(TestDoiWorkflow, self).__init__(*args, **kwargs)
-        # GCP settings
+        self.maxDiff = None
+        self.dag_id = "doi"
         self.project_id: str = os.getenv("TEST_GCP_PROJECT_ID")
         self.bucket_name: str = os.getenv("TEST_GCP_BUCKET_NAME")
         self.data_location: str = os.getenv("TEST_GCP_DATA_LOCATION")
@@ -160,66 +158,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
         ]
         # fmt: on
 
-        # API environment
-        self.host = "localhost"
-        self.port = find_free_port()
-        configuration = Configuration(host=f"http://{self.host}:{self.port}")
-        api_client = ApiClient(configuration)
-        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
-        self.env = ObservatoryApiEnvironment(host=self.host, port=self.port)
-        self.org_name = "Curtin University"
-
-    def setup_api(self):
-        dt = pendulum.now("UTC")
-
-        name = "Doi Workflow"
-        workflow_type = WorkflowType(name=name, type_id="doi")
-        self.api.put_workflow_type(workflow_type)
-
-        organisation = Organisation(
-            name="Curtin University",
-            project_id="project",
-            download_bucket="download_bucket",
-            transform_bucket="transform_bucket",
-        )
-        self.api.put_organisation(organisation)
-
-        telescope = Workflow(
-            name=name,
-            workflow_type=WorkflowType(id=1),
-            organisation=Organisation(id=1),
-            extra={},
-        )
-        self.api.put_workflow(telescope)
-
-        table_type = TableType(
-            type_id="partitioned",
-            name="partitioned bq table",
-        )
-        self.api.put_table_type(table_type)
-
-        dataset_type = DatasetType(
-            type_id=DoiWorkflow.DAG_ID,
-            name="ds type",
-            extra={},
-            table_type=TableType(id=1),
-        )
-        self.api.put_dataset_type(dataset_type)
-
-        dataset = Dataset(
-            name="Example Dataset",
-            address="project.dataset.table",
-            service="bigquery",
-            workflow=Workflow(id=1),
-            dataset_type=DatasetType(id=1),
-        )
-        self.api.put_dataset(dataset)
-
-    def setup_connections(self, env):
-        # Add Observatory API connection
-        conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.port}")
-        env.add_connection(conn)
-
     def test_fetch_ror_affiliations(self):
         """Test fetch_ror_affiliations"""
 
@@ -249,23 +187,13 @@ class TestDoiWorkflow(ObservatoryTestCase):
             actual = fetch_ror_affiliations(repository_institution)
             self.assertEqual(expected, actual)
 
-    def test_set_task_state(self):
-        """Test
-
-        :return:
-        """
-
-        set_task_state(True, "my-task-id")
-        with self.assertRaises(AirflowException):
-            set_task_state(False, "my-task-id")
-
     def test_dag_structure(self):
-        """Test that the DOI DAG has the correct structure.
+        """Test that the DOI DAG has the correct structure."""
 
-        :return: None
-        """
-
-        dag = DoiWorkflow().make_dag()
+        dag = DoiWorkflow(
+            dag_id=self.dag_id,
+            cloud_workspace=self.fake_cloud_workspace,
+        ).make_dag()
         self.assert_dag_structure(
             {
                 "crossref_metadata_sensor": ["check_dependencies"],
@@ -274,6 +202,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "ror_sensor": ["check_dependencies"],
                 "open_citations_sensor": ["check_dependencies"],
                 "unpaywall_sensor": ["check_dependencies"],
+                "orcid_sensor": ["check_dependencies"],
                 "crossref_events_sensor": ["check_dependencies"],
                 "openalex_sensor": ["check_dependencies"],
                 "check_dependencies": ["create_datasets"],
@@ -349,12 +278,19 @@ class TestDoiWorkflow(ObservatoryTestCase):
         :return: None
         """
 
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
+        env = ObservatoryEnvironment(
+            workflows=[
+                Workflow(
+                    dag_id=self.dag_id,
+                    name="DOI Workflow",
+                    class_name="academic_observatory_workflows.workflows.doi_workflow.DoiWorkflow",
+                    cloud_workspace=self.fake_cloud_workspace,
+                )
+            ]
+        )
+
         with env.create():
-            self.setup_connections(env)
-            self.setup_api()
-            dag_file = os.path.join(module_file_path("academic_observatory_workflows.dags"), "doi_workflow.py")
-            self.assert_dag_load("doi", dag_file)
+            self.assert_dag_load_from_config(self.dag_id)
 
     def test_ror_to_ror_hierarchy_index(self):
         """Test ror_to_ror_hierarchy_index. Check that correct ancestor relationships created."""
@@ -373,21 +309,17 @@ class TestDoiWorkflow(ObservatoryTestCase):
         self.assertEqual({"https://ror.org/02n415q13", "https://ror.org/047272k79"}, index["https://ror.org/05sd1pp77"])
 
     def test_telescope(self):
-        """Test the DOI telescope end to end.
+        """Test the DOI telescope end to end."""
 
-        :return: None.
-        """
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
 
         # Create datasets
-        env = ObservatoryEnvironment(
-            project_id=self.project_id, data_location=self.data_location, api_host=self.host, api_port=self.port
-        )
         fake_dataset_id = env.add_dataset(prefix="fake")
-        intermediate_dataset_id = env.add_dataset(prefix="intermediate")
-        dashboards_dataset_id = env.add_dataset(prefix="dashboards")
-        observatory_dataset_id = env.add_dataset(prefix="observatory")
-        elastic_dataset_id = env.add_dataset(prefix="elastic")
-        settings_dataset_id = env.add_dataset(prefix="settings")
+        bq_intermediate_dataset_id = env.add_dataset(prefix="intermediate")
+        bq_dashboards_dataset_id = env.add_dataset(prefix="dashboards")
+        bq_observatory_dataset_id = env.add_dataset(prefix="observatory")
+        bq_elastic_dataset_id = env.add_dataset(prefix="elastic")
+        bq_settings_dataset_id = env.add_dataset(prefix="settings")
         dataset_transforms = make_dataset_transforms(
             input_project_id=self.project_id,
             output_project_id=self.project_id,
@@ -399,32 +331,26 @@ class TestDoiWorkflow(ObservatoryTestCase):
             dataset_id_orcid=fake_dataset_id,
             dataset_id_open_citations=fake_dataset_id,
             dataset_id_unpaywall=fake_dataset_id,
-            dataset_id_settings=settings_dataset_id,
-            dataset_id_observatory=observatory_dataset_id,
-            dataset_id_observatory_intermediate=intermediate_dataset_id,
+            dataset_id_settings=bq_settings_dataset_id,
+            dataset_id_observatory=bq_observatory_dataset_id,
+            dataset_id_observatory_intermediate=bq_intermediate_dataset_id,
             dataset_id_openalex=fake_dataset_id,
         )
         transforms, transform_doi, transform_book = dataset_transforms
 
         with env.create(task_logging=True):
-            self.setup_connections(env)
-            self.setup_api()
-
-            # Make dag
             start_date = pendulum.datetime(year=2021, month=10, day=10)
             workflow = DoiWorkflow(
-                input_project_id=self.project_id,
-                output_project_id=self.project_id,
-                data_location=self.data_location,
-                intermediate_dataset_id=intermediate_dataset_id,
-                dashboards_dataset_id=dashboards_dataset_id,
-                observatory_dataset_id=observatory_dataset_id,
-                elastic_dataset_id=elastic_dataset_id,
-                unpaywall_dataset_id=fake_dataset_id,
-                ror_dataset_id=fake_dataset_id,
+                dag_id=self.dag_id,
+                cloud_workspace=env.cloud_workspace,
+                bq_intermediate_dataset_id=bq_intermediate_dataset_id,
+                bq_dashboards_dataset_id=bq_dashboards_dataset_id,
+                bq_observatory_dataset_id=bq_observatory_dataset_id,
+                bq_elastic_dataset_id=bq_elastic_dataset_id,
+                bq_unpaywall_dataset_id=fake_dataset_id,
+                bq_ror_dataset_id=fake_dataset_id,
                 transforms=dataset_transforms,
                 start_date=start_date,
-                workflow_id=1,  # Set to 1 during tests so that vcrpy captures them correctly
                 max_fetch_threads=1,
             )
 
@@ -445,8 +371,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
             # Run Dummy Dags
             execution_date = pendulum.datetime(year=2021, month=10, day=17)
-            release_date = pendulum.datetime(year=2021, month=10, day=23)
-            release_suffix = release_date.strftime("%Y%m%d")
+            snapshot_date = pendulum.datetime(year=2021, month=10, day=24)
             expected_state = "success"
             for dag_id in DoiWorkflow.SENSOR_DAG_IDS:
                 dag = make_dummy_dag(dag_id, execution_date)
@@ -478,10 +403,9 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     repository,
                     env.download_bucket,
                     fake_dataset_id,
-                    settings_dataset_id,
-                    release_date,
-                    self.data_location,
-                    project_id=self.project_id,
+                    bq_settings_dataset_id,
+                    snapshot_date,
+                    self.project_id,
                 )
 
                 # Create repository institution table
@@ -492,8 +416,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 ):
                     ti = env.run_task(workflow.create_repo_institution_to_ror_table.__name__)
                 self.assertEqual(expected_state, ti.state)
-                table_id = bigquery_sharded_table_id(
-                    f"{self.project_id}.{intermediate_dataset_id}.repository_institution_to_ror", release_date
+                table_id = bq_sharded_table_id(
+                    self.project_id, bq_intermediate_dataset_id, "repository_institution_to_ror", snapshot_date
                 )
                 rors = [
                     {"rors": [], "repository_institution": "Academia.edu"},
@@ -537,7 +461,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     if ror["repository_institution"] in names:
                         expected.append(ror)
                 self.assert_table_integrity(table_id, expected_rows=len(expected))
-                self.assert_table_content(table_id, expected)
+                self.assert_table_content(table_id, expected, "repository_institution")
 
                 # Create ROR hierarchy table
                 ti = env.run_task(workflow.create_ror_hierarchy_table.__name__)
@@ -554,30 +478,30 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 self.assertEqual(expected_state, ti.state)
 
                 # DOI assert table exists
-                expected_table_id = f"{self.project_id}.{observatory_dataset_id}.doi{release_suffix}"
+                table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, "doi", snapshot_date)
                 expected_rows = len(observatory_dataset.papers)
-                self.assert_table_integrity(expected_table_id, expected_rows=expected_rows)
+                self.assert_table_integrity(table_id, expected_rows=expected_rows)
 
                 # Check openalex table created
-                expected_table_id = f"{self.project_id}.{fake_dataset_id}.Work"
-                self.assert_table_integrity(expected_table_id, expected_rows=expected_rows)
+                table_id = bq_table_id(self.project_id, fake_dataset_id, "works")
+                self.assert_table_integrity(table_id, expected_rows=expected_rows)
 
-                expected_table_id = f"{self.project_id}.{intermediate_dataset_id}.openalex{release_suffix}"
-                self.assert_table_integrity(expected_table_id, expected_rows=expected_rows)
+                table_id = bq_sharded_table_id(self.project_id, bq_intermediate_dataset_id, "openalex", snapshot_date)
+                self.assert_table_integrity(table_id, expected_rows=expected_rows)
 
                 # DOI assert correctness of output
                 expected_output = make_doi_table(observatory_dataset)
-                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
-                    actual_output = self.query_table(observatory_dataset_id, f"doi{release_suffix}", "doi")
+                table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, "doi", snapshot_date)
+                actual_output = query_table(table_id, "doi")
 
                 self.assert_doi(expected_output, actual_output)
 
                 # Test create book
                 ti = env.run_task("create_book")
                 self.assertEqual(expected_state, ti.state)
-                expected_table_id = f"{self.project_id}.{observatory_dataset_id}.book{release_suffix}"
+                table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, "book", snapshot_date)
                 expected_rows = 0
-                self.assert_table_integrity(expected_table_id, expected_rows)
+                self.assert_table_integrity(table_id, expected_rows)
 
                 # Test aggregations tasks
                 for agg in DoiWorkflow.AGGREGATIONS:
@@ -586,25 +510,23 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     self.assertEqual(expected_state, ti.state)
 
                     # Aggregation assert table exists
-                    expected_table_id = f"{self.project_id}.{observatory_dataset_id}.{agg.table_name}{release_suffix}"
-                    self.assert_table_integrity(expected_table_id)
+                    table_id = bq_sharded_table_id(
+                        self.project_id, bq_observatory_dataset_id, agg.table_name, snapshot_date
+                    )
+                    self.assert_table_integrity(table_id)
 
                 # Assert country aggregation output
                 agg = "country"
                 expected_output = make_aggregate_table(agg, observatory_dataset)
-                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
-                    actual_output = self.query_table(
-                        observatory_dataset_id, f"{agg}{release_suffix}", "id, time_period"
-                    )
+                table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, agg, snapshot_date)
+                actual_output = query_table(table_id, "id, time_period")
                 self.assert_aggregate(expected_output, actual_output)
 
                 # Assert institution aggregation output
                 agg = "institution"
                 expected_output = make_aggregate_table(agg, observatory_dataset)
-                with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
-                    actual_output = self.query_table(
-                        observatory_dataset_id, f"{agg}{release_suffix}", "id, time_period"
-                    )
+                table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, agg, snapshot_date)
+                actual_output = query_table(table_id, "id, time_period")
                 self.assert_aggregate(expected_output, actual_output)
                 # TODO: test correctness of remaining outputs
 
@@ -616,13 +538,15 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 ti = env.run_task("copy_to_dashboards")
                 self.assertEqual(expected_state, ti.state)
                 for agg in DoiWorkflow.AGGREGATIONS:
-                    self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{agg.table_name}")
+                    table_id = bq_table_id(self.project_id, bq_dashboards_dataset_id, agg.table_name)
+                    self.assert_table_integrity(table_id)
 
                 # Test create dashboard views
                 ti = env.run_task("create_dashboard_views")
                 self.assertEqual(expected_state, ti.state)
                 for table_name in ["country", "funder", "group", "institution", "publisher", "subregion"]:
-                    self.assert_table_integrity(f"{self.project_id}.{dashboards_dataset_id}.{table_name}_comparison")
+                    table_id = bq_table_id(self.project_id, bq_dashboards_dataset_id, f"{table_name}_comparison")
+                    self.assert_table_integrity(table_id)
 
                 # Test create exported tables for Elasticsearch
                 # Remove author from AGGREGATIONS list to save space on Elastic.
@@ -646,34 +570,18 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     for table in tables:
                         aggregate = table["aggregate"]
                         facet = table["facet"]
-                        expected_table_id = (
-                            f"{self.project_id}.{elastic_dataset_id}.ao_{aggregate}_{facet}{release_suffix}"
+                        table_id = bq_sharded_table_id(
+                            self.project_id, bq_elastic_dataset_id, f"ao_{aggregate}_{facet}", snapshot_date
                         )
-                        self.assert_table_integrity(expected_table_id)
+                        self.assert_table_integrity(table_id)
 
                 # add_dataset_release_task
-                dataset_releases = get_dataset_releases(dataset_id=1)
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
                 self.assertEqual(len(dataset_releases), 0)
-                ti = env.run_task("add_new_dataset_releases")
-                self.assertEqual(ti.state, State.SUCCESS)
-                dataset_releases = get_dataset_releases(dataset_id=1)
+                ti = env.run_task(workflow.add_new_dataset_releases.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
                 self.assertEqual(len(dataset_releases), 1)
-
-    def query_table(self, observatory_dataset_id: str, table_id: str, order_by_field: str) -> List[Dict]:
-        """Query a BigQuery table, sorting the results and returning results as a list of dicts.
-
-        :param observatory_dataset_id: the observatory dataset id.
-        :param table_id: the table id.
-        :param order_by_field: what field or fields to order by.
-        :return: the table rows.
-        """
-
-        return [
-            dict(row)
-            for row in run_bigquery_query(
-                f"SELECT * from {self.project_id}.{observatory_dataset_id}.{table_id} ORDER BY {order_by_field} ASC;"
-            )
-        ]
 
     def assert_aggregate(self, expected: List[Dict], actual: List[Dict]):
         """Assert an aggregate table.

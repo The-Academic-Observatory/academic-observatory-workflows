@@ -7,3 +7,4 @@ beautifulsoup4>=4.9.3,<5
 boto3>=1.15.0,<2
 nltk==3.*
 Deprecated>1,<2
+limits>3,<4

@@ -14,231 +14,52 @@
 
 # Author: James Diprose, Tuan Chien
 
+
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pendulum
-from airflow.models import Connection
+import vcr
 from airflow.utils.state import State
 
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.open_citations_telescope import (
     OpenCitationsRelease,
     OpenCitationsTelescope,
+    list_releases,
 )
-from observatory.api.client import ApiClient, Configuration
-from observatory.api.client.api.observatory_api import ObservatoryApi  # noqa: E501
-from observatory.api.client.model.dataset import Dataset
-from observatory.api.client.model.dataset_type import DatasetType
-from observatory.api.client.model.organisation import Organisation
-from observatory.api.client.model.table_type import TableType
-from observatory.api.client.model.workflow import Workflow
-from observatory.api.client.model.workflow_type import WorkflowType
-from observatory.api.testing import ObservatoryApiEnvironment
-from observatory.platform.utils.airflow_utils import AirflowConns
-from observatory.platform.utils.gc_utils import run_bigquery_query
-from observatory.platform.utils.http_download import DownloadInfo
-from observatory.platform.utils.jinja2_utils import render_template
-from observatory.platform.utils.release_utils import get_dataset_releases
-from observatory.platform.utils.test_utils import (
-    HttpServer,
+from observatory.platform.api import get_dataset_releases
+from observatory.platform.bigquery import bq_sharded_table_id
+from observatory.platform.files import list_files
+from observatory.platform.gcs import gcs_blob_name_from_path
+from observatory.platform.observatory_config import Workflow
+from observatory.platform.observatory_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
-    module_file_path,
     find_free_port,
+    HttpServer,
 )
-from observatory.platform.utils.workflow_utils import (
-    bigquery_sharded_table_id,
-)
-from observatory.platform.utils.workflow_utils import blob_name
+from observatory.platform.utils.http_download import DownloadInfo
 
 
 class TestOpenCitationsTelescope(ObservatoryTestCase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self.dag_id = "open_citations"
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
-        self.fixture_dir = test_fixtures_folder("open_citations")
-        self.release_list_file = "list_open_citation_releases.json"
-        self.version_1_file = "1.json"
-
-        # API environment
-        self.host = "localhost"
-        self.port = find_free_port()
-        configuration = Configuration(host=f"http://{self.host}:{self.port}")
-        api_client = ApiClient(configuration)
-        self.api = ObservatoryApi(api_client=api_client)  # noqa: E501
-        self.env = ObservatoryApiEnvironment(host=self.host, port=self.port)
-        self.org_name = "Curtin University"
-
-    def setup_api(self):
-        dt = pendulum.now("UTC")
-
-        name = "Open Citations Telescope"
-        workflow_type = WorkflowType(name=name, type_id=OpenCitationsTelescope.DAG_ID)
-        self.api.put_workflow_type(workflow_type)
-
-        organisation = Organisation(
-            name="Curtin University",
-            project_id="project",
-            download_bucket="download_bucket",
-            transform_bucket="transform_bucket",
-        )
-        self.api.put_organisation(organisation)
-
-        telescope = Workflow(
-            name=name,
-            workflow_type=WorkflowType(id=1),
-            organisation=Organisation(id=1),
-            extra={},
-        )
-        self.api.put_workflow(telescope)
-
-        table_type = TableType(
-            type_id="partitioned",
-            name="partitioned bq table",
-        )
-        self.api.put_table_type(table_type)
-
-        dataset_type = DatasetType(
-            type_id="open_citations",
-            name="ds type",
-            extra={},
-            table_type=TableType(id=1),
-        )
-        self.api.put_dataset_type(dataset_type)
-
-        dataset = Dataset(
-            name="Open Citations Dataset",
-            address="project.dataset.table",
-            service="bigquery",
-            workflow=Workflow(id=1),
-            dataset_type=DatasetType(id=1),
-        )
-        self.api.put_dataset(dataset)
-
-    def setup_connections(self, env):
-        # Add Observatory API connection
-        conn = Connection(conn_id=AirflowConns.OBSERVATORY_API, uri=f"http://:password@{self.host}:{self.port}")
-        env.add_connection(conn)
-
-    def test_ctor(self):
-        table_descriptions = {"open_citations": "Custom description"}
-        telescope = OpenCitationsTelescope(table_descriptions=table_descriptions)
-        self.assertEqual(telescope.table_descriptions, table_descriptions)
-
-        telescope = OpenCitationsTelescope(airflow_vars=[])
-        self.assertEqual(telescope.airflow_vars, ["transform_bucket"])
-
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.get_http_response_json")
-    def test_list_releases_skip(self, m_get_response):
-        telescope = OpenCitationsTelescope()
-        m_get_response.side_effect = [
-            [{"url": "something"}],
-            {"created_date": "2018-11-13T12:03:08Z", "files": [1, 2]},
-        ]
-        start_date = pendulum.datetime(2019, 1, 1)
-        end_date = pendulum.datetime(2019, 2, 1)
-        releases = telescope._list_releases(start_date=start_date, end_date=end_date)
-        self.assertEqual(len(releases), 0)
-
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.bigquery_table_exists")
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.bigquery_sharded_table_id")
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.Variable.get")
-    def test_process_release_no_files(self, m_get, m_bq_table_id, m_bq_table_exists):
-        m_get.return_value = "project_id"
-        m_bq_table_id.return_value = "1"
-        m_bq_table_exists.return_value = False
-        telescope = OpenCitationsTelescope()
-        releases = [
-            {"files": [], "date": "20210101"},
-            {"files": [1], "date": "20210101"},
-            {"files": [2], "date": "20210101"},
-        ]
-
-        filtered_releases = list(filter(telescope._process_release, releases))
-        self.assertEqual(len(filtered_releases), 2)
-
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.bigquery_table_exists")
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.bigquery_sharded_table_id")
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.Variable.get")
-    def test_process_release_table_exists(self, m_get, m_bq_table_id, m_bq_table_exists):
-        m_get.return_value = "project_id"
-        m_bq_table_id.return_value = "1"
-        m_bq_table_exists.side_effect = [False, True, False]
-
-        telescope = OpenCitationsTelescope()
-        releases = [
-            {"files": [0], "date": "20210101"},
-            {"files": [1], "date": "20210101"},
-            {"files": [2], "date": "20210101"},
-        ]
-
-        filtered_releases = list(filter(telescope._process_release, releases))
-        self.assertEqual(len(filtered_releases), 2)
-
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope._process_release")
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope._list_releases")
-    def test_get_release_info_continue(self, m_list_releases, m_process_release):
-        m_list_releases.return_value = [1, 2, 3]
-        m_process_release.return_value = True
-
-        telescope = OpenCitationsTelescope()
-        execution_date = pendulum.datetime(2021, 1, 1)
-        next_execution_date = pendulum.datetime(2021, 1, 8)
-        ti = MagicMock()
-        continue_dag = telescope.get_release_info(
-            execution_date=execution_date, next_execution_date=next_execution_date, ti=ti
-        )
-        self.assertTrue(continue_dag)
-        self.assertEqual(len(ti.method_calls), 1)
-
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope._process_release")
-    @patch("academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope._list_releases")
-    def test_get_release_info_skip(self, m_list_releases, m_process_release):
-        m_list_releases.return_value = []
-        m_process_release.return_value = True
-
-        telescope = OpenCitationsTelescope()
-        execution_date = pendulum.datetime(2021, 1, 1)
-        next_execution_date = pendulum.datetime(2021, 1, 8)
-        ti = MagicMock()
-        continue_dag = telescope.get_release_info(
-            execution_date=execution_date, next_execution_date=next_execution_date, ti=ti
-        )
-        self.assertFalse(continue_dag)
-        self.assertEqual(len(ti.method_calls), 0)
-
-    def create_templates(self, *, host, port):
-        # list open citation releases
-        template_path = os.path.join(self.fixture_dir, self.release_list_file + ".jinja2")
-        rendered = render_template(template_path, host=host, port=port)
-        dst = os.path.join(self.fixture_dir, self.release_list_file)
-        with open(dst, "w") as f:
-            f.write(rendered)
-
-        # version 1
-        template_path = os.path.join(self.fixture_dir, self.version_1_file + ".jinja2")
-        rendered = render_template(template_path, host=host, port=port)
-        dst = os.path.join(self.fixture_dir, self.version_1_file)
-        with open(dst, "w") as f:
-            f.write(rendered)
-
-    def remove_templates(self):
-        dst = os.path.join(self.fixture_dir, self.release_list_file)
-        os.remove(dst)
-
-        dst = os.path.join(self.fixture_dir, self.version_1_file)
-        os.remove(dst)
+        self.server_port = find_free_port()
 
     def test_dag_structure(self):
-        """Test that the OpenCitationsTelescope DAG has the correct structure.
+        """Test that the DAG has the correct structure."""
 
-        :return: None
-        """
+        workflow = OpenCitationsTelescope(
+            dag_id=self.dag_id,
+            cloud_workspace=self.fake_cloud_workspace,
+        )
 
-        dag = OpenCitationsTelescope().make_dag()
+        dag = workflow.make_dag()
         self.assert_dag_structure(
             {
                 "check_dependencies": ["get_release_info"],
@@ -247,192 +68,238 @@ class TestOpenCitationsTelescope(ObservatoryTestCase):
                 "upload_downloaded": ["extract"],
                 "extract": ["upload_transformed"],
                 "upload_transformed": ["bq_load"],
-                "bq_load": ["cleanup"],
-                "cleanup": ["add_new_dataset_releases"],
-                "add_new_dataset_releases": [],
+                "bq_load": ["add_new_dataset_releases"],
+                "add_new_dataset_releases": ["cleanup"],
+                "cleanup": [],
             },
             dag,
         )
 
     def test_dag_load(self):
-        """Test that the OpenCitationsTelescope DAG can be loaded from a DAG bag.
+        """Test that workflow can be loaded from a DAG bag."""
 
-        :return: None
-        """
-
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
+        env = ObservatoryEnvironment(
+            workflows=[
+                Workflow(
+                    dag_id=self.dag_id,
+                    name="Open Citations Telescope",
+                    class_name="academic_observatory_workflows.workflows.open_citations_telescope.OpenCitationsTelescope",
+                    cloud_workspace=self.fake_cloud_workspace,
+                )
+            ]
+        )
 
         with env.create():
-            self.setup_connections(env)
-            self.setup_api()
-            dag_file = os.path.join(
-                module_file_path("academic_observatory_workflows.dags"), "open_citations_telescope.py"
-            )
-            self.assert_dag_load("open_citations", dag_file)
+            self.assert_dag_load_from_config(self.dag_id)
 
-    def test_telescope(self):
+    @patch("academic_observatory_workflows.workflows.open_citations_telescope.list_releases")
+    def test_telescope(self, m_list_records):
         """Test the OpenCitationsTelescope telescope end to end."""
 
         # Setup Observatory environment
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_host=self.host, api_port=self.port)
-        dataset_id = env.add_dataset()
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
+        bq_dataset_id = env.add_dataset()
 
         with env.create():
-            self.setup_connections(env)
-            self.setup_api()
             execution_date = pendulum.datetime(year=2018, month=11, day=12)
-            telescope = OpenCitationsTelescope(dataset_id=dataset_id, workflow_id=1)
-            dag = telescope.make_dag()
+            workflow = OpenCitationsTelescope(
+                dag_id=self.dag_id,
+                cloud_workspace=env.cloud_workspace,
+                bq_dataset_id=bq_dataset_id,
+            )
+            dag = workflow.make_dag()
 
-            with env.create_dag_run(dag, execution_date):
-                server = HttpServer(directory=self.fixture_dir)
-                with patch.object(
-                    OpenCitationsTelescope,
-                    "VERSION_URL",
-                    f"http://{server.host}:{server.port}/{self.release_list_file}",
-                ):
-                    download_url = f"http://{server.host}:{server.port}/data.csv.zip"
-                    download_url2 = f"http://{server.host}:{server.port}/data2.csv.zip"
-
-                    download_file_hash = "f06dfd0bee323a95861f0ba490e786c9"
-                    download_file_hash2 = "6d90805d99b65b107b17907432aa8534"
-
-                    release = OpenCitationsRelease(
-                        telescope.dag_id,
-                        release_date=pendulum.datetime(2018, 11, 13),
-                        files=[
-                            DownloadInfo(
-                                url=download_url,
-                                filename="data.csv.zip",
-                                hash=download_file_hash,
-                                hash_algorithm="md5",
-                            ),
-                            DownloadInfo(
-                                url=download_url2,
-                                filename="data2.csv.zip",
-                                hash=download_file_hash2,
-                                hash_algorithm="md5",
-                            ),
-                        ],
-                    )
-
-                    self.create_templates(host=server.host, port=server.port)
-                    with server.create():
-                        # Check dependencies
-                        ti = env.run_task(telescope.check_dependencies.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
-
-                        # Get release info
-                        ti = env.run_task(telescope.get_release_info.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
-
-                        actual_release_info = ti.xcom_pull(
-                            key=OpenCitationsTelescope.RELEASE_INFO,
-                            task_ids=telescope.get_release_info.__name__,
-                            include_prior_dates=False,
+            with env.create_dag_run(dag, execution_date) as dag_run:
+                # Make mocked data
+                files = [
+                    dict(
+                        download_url=f"http://localhost:{self.server_port}/data.csv.zip",
+                        name="data.csv.zip",
+                        computed_md5="f06dfd0bee323a95861f0ba490e786c9",
+                    ),
+                    dict(
+                        download_url=f"http://localhost:{self.server_port}/data2.csv.zip",
+                        name="data2.csv.zip",
+                        computed_md5="6d90805d99b65b107b17907432aa8534",
+                    ),
+                ]
+                release_info = [dict(date="20181113", files=files)]
+                release = OpenCitationsRelease(
+                    dag_id=self.dag_id,
+                    run_id=dag_run.run_id,
+                    snapshot_date=pendulum.datetime(2018, 11, 13),
+                    files=[
+                        DownloadInfo(
+                            url=file["download_url"],
+                            filename=file["name"],
+                            hash=file["computed_md5"],
+                            hash_algorithm="md5",
                         )
-                        self.assertEqual(len(actual_release_info), 1)
-                        self.assertEqual(actual_release_info[0]["date"], "20181113")
-                        self.assertEqual(len(actual_release_info[0]["files"]), 2)
-                        self.assertEqual(actual_release_info[0]["files"][0]["download_url"], download_url)
-                        self.assertEqual(actual_release_info[0]["files"][1]["download_url"], download_url2)
+                        for file in files
+                    ],
+                )
 
-                        # Download
-                        ti = env.run_task(telescope.download.__name__)
-                        self.assertEqual(ti.state, State.SUCCESS)
-                        self.assertEqual(len(release.download_files), 2)
+                # Check dependencies
+                ti = env.run_task(workflow.check_dependencies.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
 
-                        self.remove_templates()
+                # Get release info
+                # Mocked so that we can control what files are returned
+                # list_release_info tested separately
+                m_list_records.return_value = release_info
+                ti = env.run_task(workflow.get_release_info.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                actual_release_info = ti.xcom_pull(
+                    key=OpenCitationsTelescope.RELEASE_INFO,
+                    task_ids=workflow.get_release_info.__name__,
+                    include_prior_dates=False,
+                )
+                self.assertEqual(release_info, actual_release_info)
 
-                    # Upload downloaded
-                    ti = env.run_task(telescope.upload_downloaded.__name__)
-                    self.assertEqual(ti.state, State.SUCCESS)
-                    self.assert_blob_integrity(
-                        env.download_bucket, blob_name(release.download_files[0]), release.download_files[0]
+                # Download
+                server = HttpServer(directory=test_fixtures_folder(self.dag_id), port=self.server_port)
+                with server.create():
+                    ti = env.run_task(workflow.download.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                download_files = list_files(release.download_folder, release.download_file_regex)
+                self.assertEqual(2, len(download_files))
+                for download_info in release.files:
+                    self.assert_file_integrity(
+                        os.path.join(release.download_folder, download_info.filename),
+                        download_info.hash,
+                        download_info.hash_algorithm,
                     )
 
-                    # Extract
-                    ti = env.run_task(telescope.extract.__name__)
-                    self.assertEqual(ti.state, State.SUCCESS)
+                # Upload downloaded
+                ti = env.run_task(workflow.upload_downloaded.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                download_files = list_files(release.download_folder, release.download_file_regex)
+                for file_path in download_files:
+                    self.assert_blob_integrity(env.download_bucket, gcs_blob_name_from_path(file_path), file_path)
 
-                    # Upload transformed
-                    ti = env.run_task(telescope.upload_transformed.__name__)
-                    self.assertEqual(ti.state, State.SUCCESS)
-                    self.assert_blob_integrity(
-                        env.transform_bucket, blob_name(release.transform_files[0]), release.transform_files[0]
-                    )
+                # Extract
+                ti = env.run_task(workflow.extract.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                transform_files = list_files(release.transform_folder, release.transform_file_regex)
+                self.assertEqual(2, len(transform_files))
 
-                    print(release.transform_files)
+                # Upload transformed
+                ti = env.run_task(workflow.upload_transformed.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                transform_files = list_files(release.transform_folder, release.transform_file_regex)
+                for file_path in transform_files:
+                    self.assert_blob_integrity(env.transform_bucket, gcs_blob_name_from_path(file_path), file_path)
 
-                    # BQ load
-                    ti = env.run_task(telescope.bq_load.__name__)
-                    self.assertEqual(ti.state, State.SUCCESS)
+                # BQ load
+                ti = env.run_task(workflow.bq_load.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                table_id = bq_sharded_table_id(
+                    self.project_id, workflow.bq_dataset_id, workflow.bq_table_name, release.snapshot_date
+                )
+                expected_rows = 4
+                self.assert_table_integrity(table_id, expected_rows)
+                expected_content = [
+                    dict(
+                        oci="020010100093631183015370109090737060203090304-020020102030636101310000103090309",
+                        citing="10.1109/viuf.1997.623934",
+                        cited="10.21236/ada013939",
+                        creation="1997",
+                        timespan="P22Y",
+                        journal_sc=False,
+                        author_sc=False,
+                    ),
+                    dict(
+                        oci="02001010009363118353702000009370100-0200100010636280009020563020301025800025900000601036306",
+                        citing="10.1109/viz.2009.10",
+                        cited="10.1016/s0925-2312(02)00613-6",
+                        creation="2009-07",
+                        timespan="P6Y3M",
+                        journal_sc=False,
+                        author_sc=False,
+                    ),
+                    dict(
+                        oci="020010100093631183015370109090737060203090304-020020102030636101310000103090309",
+                        citing="10.1109/viuf.1997.623934",
+                        cited="10.21236/ada013939",
+                        creation="1997",
+                        timespan="P22Y",
+                        journal_sc=False,
+                        author_sc=False,
+                    ),
+                    dict(
+                        oci="02001010009363118353702000009370100-0200100010636280009020563020301025800025900000601036306",
+                        citing="10.1109/viz.2009.10",
+                        cited="10.1016/s0925-2312(02)00613-6",
+                        creation="2009-07",
+                        timespan="P6Y3M",
+                        journal_sc=False,
+                        author_sc=False,
+                    ),
+                ]
+                self.assert_table_content(table_id, expected_content, "oci")
 
-                    table_id = (
-                        f"{self.project_id}.{dataset_id}."
-                        f"{bigquery_sharded_table_id(telescope.dag_id, release.release_date)}"
-                    )
-                    expected_rows = 4
-                    self.assert_table_integrity(table_id, expected_rows)
+                # Test that DatasetRelease is added to database
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
+                self.assertEqual(len(dataset_releases), 0)
+                ti = env.run_task(workflow.add_new_dataset_releases.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
+                self.assertEqual(len(dataset_releases), 1)
 
-                    sql = f"SELECT * from {self.project_id}.{dataset_id}.open_citations20181113"
-                    with patch("observatory.platform.utils.gc_utils.bq_query_bytes_daily_limit_check"):
-                        records = run_bigquery_query(sql)
+                # Test that all workflow data deleted
+                ti = env.run_task(workflow.cleanup.__name__)
+                self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_cleanup(release.workflow_folder)
 
-                    self.assertEqual(
-                        records[0]["oci"],
-                        "020010100093631183015370109090737060203090304-020020102030636101310000103090309",
-                    )
-                    self.assertEqual(records[0]["citing"], "10.1109/viuf.1997.623934")
-                    self.assertEqual(records[0]["cited"], "10.21236/ada013939")
-                    self.assertEqual(records[0]["creation"], "1997")
-                    self.assertEqual(records[0]["timespan"], "P22Y")
-                    self.assertEqual(records[0]["journal_sc"], False)
-                    self.assertEqual(records[0]["author_sc"], False)
+    def test_list_releases(self):
+        """Test that the list_releases function works correctly"""
 
-                    self.assertEqual(
-                        records[1]["oci"],
-                        "02001010009363118353702000009370100-0200100010636280009020563020301025800025900000601036306",
-                    )
-                    self.assertEqual(records[1]["citing"], "10.1109/viz.2009.10")
-                    self.assertEqual(records[1]["cited"], "10.1016/s0925-2312(02)00613-6")
-                    self.assertEqual(records[1]["creation"], "2009-07")
-                    self.assertEqual(records[1]["timespan"], "P6Y3M")
-                    self.assertEqual(records[1]["journal_sc"], False)
-                    self.assertEqual(records[1]["author_sc"], False)
+        with vcr.use_cassette(
+            test_fixtures_folder(self.dag_id, "list_releases.yaml"),
+        ):
+            # Test that 2 releases are returned
+            # 2018-07-13T22:10:34Z, 2018-11-12T21:42:54Z, 2020-01-21T06:35:29Z
+            # It should just return 2018-07-13, 2018-11-12 as end_date is exclusive
+            start_date = pendulum.datetime(2018, 7, 13)
+            end_date = pendulum.datetime(2020, 1, 21)
+            records = list_releases(start_date, end_date)
+            self.assertEqual(2, len(records))
+            self.assertEqual(
+                [
+                    {
+                        "date": "20180713",
+                        "files": [
+                            {
+                                "id": 12302372,
+                                "name": "data.csv.zip",
+                                "size": 8730701380,
+                                "is_link_only": False,
+                                "download_url": "https://ndownloader.figshare.com/files/12302372",
+                                "supplied_md5": "b4fe3f61981fd210651ef18c7bac8977",
+                                "computed_md5": "b4fe3f61981fd210651ef18c7bac8977",
+                            }
+                        ],
+                    },
+                    {
+                        "date": "20181112",
+                        "files": [
+                            {
+                                "id": 13531112,
+                                "name": "data.csv.zip",
+                                "size": 11568165723,
+                                "is_link_only": False,
+                                "download_url": "https://ndownloader.figshare.com/files/13531112",
+                                "supplied_md5": "9cbcd5b5b7df8d02a3d0d6f503fe79bc",
+                                "computed_md5": "9cbcd5b5b7df8d02a3d0d6f503fe79bc",
+                            }
+                        ],
+                    },
+                ],
+                records,
+            )
 
-                    self.assertEqual(records[2]["citing"], "10.1109/viuf.1997.623934")
-                    self.assertEqual(records[2]["cited"], "10.21236/ada013939")
-                    self.assertEqual(records[2]["creation"], "1997")
-                    self.assertEqual(records[2]["timespan"], "P22Y")
-                    self.assertEqual(records[2]["journal_sc"], False)
-                    self.assertEqual(records[2]["author_sc"], False)
-
-                    self.assertEqual(
-                        records[1]["oci"],
-                        "02001010009363118353702000009370100-0200100010636280009020563020301025800025900000601036306",
-                    )
-                    self.assertEqual(records[3]["citing"], "10.1109/viz.2009.10")
-                    self.assertEqual(records[3]["cited"], "10.1016/s0925-2312(02)00613-6")
-                    self.assertEqual(records[3]["creation"], "2009-07")
-                    self.assertEqual(records[3]["timespan"], "P6Y3M")
-                    self.assertEqual(records[3]["journal_sc"], False)
-                    self.assertEqual(records[3]["author_sc"], False)
-
-                    # Cleanup
-                    download_folder, extract_folder, transform_folder = (
-                        release.download_folder,
-                        release.extract_folder,
-                        release.transform_folder,
-                    )
-                    env.run_task(telescope.cleanup.__name__)
-                    self.assertEqual(ti.state, State.SUCCESS)
-                    self.assert_cleanup(download_folder, extract_folder, transform_folder)
-
-                    # add_dataset_release_task
-                    dataset_releases = get_dataset_releases(dataset_id=1)
-                    self.assertEqual(len(dataset_releases), 0)
-                    ti = env.run_task("add_new_dataset_releases")
-                    self.assertEqual(ti.state, State.SUCCESS)
-                    dataset_releases = get_dataset_releases(dataset_id=1)
-                    self.assertEqual(len(dataset_releases), 1)
+            # Test that no releases are returned
+            start_date = pendulum.datetime(2018, 7, 14)
+            end_date = pendulum.datetime(2018, 11, 11)
+            records = list_releases(start_date, end_date)
+            self.assertEqual(0, len(records))

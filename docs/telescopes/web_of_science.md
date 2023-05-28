@@ -58,7 +58,7 @@ The telescope downloads results in parallel. Web of Science has imposed [throttl
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/wos_latest.csv
+   :file: ../schemas/web_of_science/web_of_science_latest.csv
    :width: 100%
    :header-rows: 1
 ```
