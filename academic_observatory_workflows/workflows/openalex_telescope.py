@@ -943,9 +943,12 @@ def fetch_merged_ids(
     results = []
     for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/{entity_name}"):
         for content in page.get("Contents", []):
-            url = f"s3://{bucket}/{content['Key']}"
-            content_length = content["Size"]
-            results.append(MergedId(url, content_length))
+            obj_key = content['Key']
+            # There is a dud file in data/merged_ids/sources/
+            if obj_key != "data/merged_ids/sources/.csv":
+                url = f"s3://{bucket}/{obj_key}"
+                content_length = content["Size"]
+                results.append(MergedId(url, content_length))
 
     # Sort from oldest to newest
     results.sort(key=lambda m: m.updated_date, reverse=False)

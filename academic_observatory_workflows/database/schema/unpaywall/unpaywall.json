@@ -398,6 +398,43 @@
             "mode": "NULLABLE",
             "name": "name",
             "type": "STRING"
+          },
+          {
+            "fields": [
+              {
+                "mode": "NULLABLE",
+                "name": "id",
+                "type": "STRING"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "id-type",
+                "type": "STRING"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "asserted-by",
+                "type": "STRING"
+              }
+            ],
+            "mode": "REPEATED",
+            "name": "id",
+            "type": "RECORD"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "place",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "department",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "acronym",
+            "type": "STRING"
           }
         ],
         "mode": "REPEATED",
