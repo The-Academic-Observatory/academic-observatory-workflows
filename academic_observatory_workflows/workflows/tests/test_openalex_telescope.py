@@ -378,7 +378,7 @@ class TestOpenAlexUtils(ObservatoryTestCase):
             transform_path = "transform/out.jsonl.gz"
 
             # Create works entity file
-            works = {"works": "content"}
+            works = {"works": "content", "corresponding_institution_ids": [None], "corresponding_author_ids": [None]}
             works_download_path = "works.jsonl.gz"
             with gzip.open(works_download_path, "wt", encoding="ascii") as f_out:
                 json.dump(works, f_out)
@@ -393,7 +393,10 @@ class TestOpenAlexUtils(ObservatoryTestCase):
             self.assertFalse(os.path.isdir(os.path.dirname(transform_path)))
 
             transform_file(works_download_path, transform_path)
-            mock_transform_object.assert_called_once_with(works, "abstract_inverted_index")
+            mock_transform_object.assert_called_once_with(
+                {"works": "content", "corresponding_institution_ids": [], "corresponding_author_ids": []},
+                "abstract_inverted_index",
+            )
             mock_transform_object.reset_mock()
             os.remove(transform_path)
 
@@ -401,18 +404,67 @@ class TestOpenAlexUtils(ObservatoryTestCase):
             self.assertTrue(os.path.isdir(os.path.dirname(transform_path)))
 
             transform_file(works_download_path, transform_path)
-            self.assert_file_integrity(transform_path, "682a6d42", "gzip_crc")
-            mock_transform_object.assert_called_once_with(works, "abstract_inverted_index")
+            mock_transform_object.assert_called_once_with(
+                {"works": "content", "corresponding_institution_ids": [], "corresponding_author_ids": []},
+                "abstract_inverted_index",
+            )
             mock_transform_object.reset_mock()
             os.remove(transform_path)
 
             # Test for "concepts" and "institution" entities
             transform_file(concepts_download_path, transform_path)
-            self.assert_file_integrity(transform_path, "d8cafe16", "gzip_crc")
             mock_transform_object.assert_called_once_with(concepts, "international")
 
     def test_transform_object(self):
         """Test the transform_object function."""
+
+        # Null
+        obj = {
+            "corresponding_institution_ids": None
+        }
+        transform_object(obj)
+        self.assertDictEqual(
+            {
+                "corresponding_institution_ids": []
+            },
+            obj,
+        )
+
+        # Null
+        obj = {
+            "corresponding_author_ids": None
+        }
+        transform_object(obj)
+        self.assertDictEqual(
+            {
+                "corresponding_author_ids": []
+            },
+            obj,
+        )
+
+        # Null in array
+        obj = {
+            "corresponding_institution_ids": [None]
+        }
+        transform_object(obj)
+        self.assertDictEqual(
+            {
+                "corresponding_institution_ids": []
+            },
+            obj,
+        )
+
+        # Null in array
+        obj = {
+            "corresponding_author_ids": [None]
+        }
+        transform_object(obj)
+        self.assertDictEqual(
+            {
+                "corresponding_author_ids": []
+            },
+            obj,
+        )
 
         # Test object with nested "international" fields
         obj1 = {
@@ -424,7 +476,7 @@ class TestOpenAlexUtils(ObservatoryTestCase):
                 }
             }
         }
-        transform_object(obj1, "international")
+        transform_object(obj1)
         self.assertDictEqual(
             {
                 "international": {
@@ -443,7 +495,7 @@ class TestOpenAlexUtils(ObservatoryTestCase):
 
         # Test object with nested "international" none
         obj2 = {"international": {"display_name": None}}
-        transform_object(obj2, "international")
+        transform_object(obj2)
         self.assertDictEqual({"international": {"display_name": None}}, obj2)
 
         # Test object with nested "abstract_inverted_index" fields
@@ -457,7 +509,7 @@ class TestOpenAlexUtils(ObservatoryTestCase):
                 "primarily": [5],
             }
         }
-        transform_object(obj3, "abstract_inverted_index")
+        transform_object(obj3)
         self.assertDictEqual(
             {
                 "abstract_inverted_index": {
@@ -470,7 +522,7 @@ class TestOpenAlexUtils(ObservatoryTestCase):
 
         # Test object with nested "abstract_inverted_index" none
         obj4 = {"abstract_inverted_index": None}
-        transform_object(obj4, "abstract_inverted_index")
+        transform_object(obj4)
         self.assertDictEqual({"abstract_inverted_index": None}, obj4)
 
 

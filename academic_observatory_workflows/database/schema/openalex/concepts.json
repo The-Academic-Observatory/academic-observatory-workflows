@@ -49,6 +49,12 @@
         "description": "The number citations to works that have been tagged with this concept. Or less formally: the number of citations to this concept. For example, if there are just two works tagged with this concept and one of them has been cited 10 times, and the other has been cited 1 time, cited_by_count for this concept would be 11."
       },
       {
+        "name": "oa_works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
         "name": "works_count",
         "type": "INTEGER",
         "mode": "NULLABLE",
@@ -239,22 +245,64 @@
     "mode": "NULLABLE",
     "fields": [
       {
+        "name": "2yr_cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "2yr_h_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "2yr_i10_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
         "name": "2yr_mean_citedness",
         "type": "FLOAT",
         "mode": "NULLABLE",
-        "description": "The 2-year mean citedness for this concept. Also known as impact factor."
+        "description": ""
+      },
+      {
+        "name": "2yr_works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
       },
       {
         "name": "h_index",
         "type": "INTEGER",
         "mode": "NULLABLE",
-        "description": "The h-index for this concept."
+        "description": ""
       },
       {
         "name": "i10_index",
         "type": "INTEGER",
         "mode": "NULLABLE",
-        "description": "The i-10 index for this concept."
+        "description": ""
+      },
+      {
+        "name": "oa_percent",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
       }
     ],
     "description": "Citation metrics for this concept."

@@ -20,6 +20,7 @@ import json
 import logging
 import math
 import os
+import shutil
 import urllib.parse
 from typing import List, Any, Dict
 from zipfile import BadZipFile, ZipFile
@@ -221,6 +222,12 @@ class RorTelescope(Workflow):
             except BadZipFile:
                 raise AirflowException("Not a zip file")
             logging.info(f"File extracted to: {release.extract_folder}")
+
+            # Remove dud __MACOSX folder that shouldn't be there
+            try:
+                shutil.rmtree(os.path.join(release.extract_folder, "__MACOSX"))
+            except FileNotFoundError:
+                pass
 
     def transform(self, releases: List[RorRelease], **kwargs):
         """Task to transform the ROR releases."""

@@ -943,7 +943,7 @@ def fetch_merged_ids(
     results = []
     for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/{entity_name}"):
         for content in page.get("Contents", []):
-            obj_key = content['Key']
+            obj_key = content["Key"]
             # There is a dud file in data/merged_ids/sources/
             if obj_key != "data/merged_ids/sources/.csv":
                 url = f"s3://{bucket}/{obj_key}"
@@ -973,16 +973,13 @@ def transform_file(download_path: str, transform_path: str):
     with gzip.open(download_path, "rb") as f_in, gzip.open(transform_path, "wt", encoding="ascii") as f_out:
         reader = jsonlines.Reader(f_in)
         for obj in reader.iter(skip_empty=True):
-            if "works" in download_path:
-                transform_object(obj, "abstract_inverted_index")
-            else:
-                transform_object(obj, "international")
+            transform_object(obj)
             json.dump(obj, f_out)
             f_out.write("\n")
     logging.info(f"Finished transform, saved to {transform_path}")
 
 
-def transform_object(obj: dict, field: str):
+def transform_object(obj: dict):
     """Transform an entry/object for one of the OpenAlex entities.
     For the Work entity only the "abstract_inverted_index" field is transformed.
     For the Concept and Institution entities only the "international" field is transformed.
@@ -991,7 +988,36 @@ def transform_object(obj: dict, field: str):
     :param field: The field of interested that is transformed.
     :return: None.
     """
-    if field == "international":
+
+    # Remove nulls from arrays
+    # And handle null value
+    field = "corresponding_institution_ids"
+    if field in obj:
+        value = obj.get(field, [])
+        if value is None:
+            value = []
+        obj[field] = [x for x in value if x is not None]
+
+    # Remove nulls from arrays
+    # And handle null value
+    field = "corresponding_author_ids"
+    if field in obj:
+        value = obj.get(field, [])
+        if value is None:
+            value = []
+        obj[field] = [x for x in value if x is not None]
+
+    field = "abstract_inverted_index"
+    if field in obj:
+        if not isinstance(obj.get(field), dict):
+            return
+        keys = list(obj[field].keys())
+        values = [str(value)[1:-1] for value in obj[field].values()]
+
+        obj[field] = {"keys": keys, "values": values}
+
+    field = "international"
+    if field in obj:
         for nested_field in obj.get(field, {}).keys():
             if not isinstance(obj[field][nested_field], dict):
                 continue
@@ -999,10 +1025,3 @@ def transform_object(obj: dict, field: str):
             values = list(obj[field][nested_field].values())
 
             obj[field][nested_field] = {"keys": keys, "values": values}
-    elif field == "abstract_inverted_index":
-        if not isinstance(obj.get(field), dict):
-            return
-        keys = list(obj[field].keys())
-        values = [str(value)[1:-1] for value in obj[field].values()]
-
-        obj[field] = {"keys": keys, "values": values}
