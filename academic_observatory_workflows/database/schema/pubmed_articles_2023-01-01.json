@@ -300,8 +300,51 @@
                       },
                       {
                         "name": "ReferenceList",
-                        "mode": "NULLABLE",
-                        "type": "STRING"
+                        "mode": "REPEATED",
+                        "type": "RECORD",
+                        "fields": [
+                          {
+                            "name": "Title",
+                            "mode": "NULLABLE",
+                            "type": "STRING"
+                          },
+                          {
+                            "name": "Reference",
+                            "mode": "REPEATED",
+                            "type": "RECORD",
+                            "fields": [
+                              {
+                                "name": "ArticleIdList",
+                                "mode": "NULLABLE",
+                                "type": "RECORD",
+                                "fields": [
+                                  {
+                                    "name": "ArticleId",
+                                    "mode": "REPEATED",
+                                    "type": "RECORD",
+                                    "fields": [
+                                      {
+                                        "name": "IdType",
+                                        "mode": "NULLABLE",
+                                        "type": "STRING"
+                                      },
+                                      {
+                                        "name": "value",
+                                        "mode": "NULLABLE",
+                                        "type": "STRING"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "name": "Citation",
+                                "mode": "NULLABLE",
+                                "type": "STRING"
+                              }
+                            ]
+                          }
+                        ]
                       }
                     ]
                   }
