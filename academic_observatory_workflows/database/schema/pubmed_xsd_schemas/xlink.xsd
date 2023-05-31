@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="##xlink" xmlns:xlink="##xlink" xmlns:mml="http://www.w3.org/1998/Math/MathML">
-    <xs:import schemaLocation="pubmed_230101.xsd"/>
-    <xs:import namespace="http://www.w3.org/1998/Math/MathML" schemaLocation="mathml3.xsd"/>
-    <xs:import namespace="http://www.w3.org/XML/1998/namespace" schemaLocation="xml.xsd"/>
-    <xs:attribute name="href"/>
-    <xs:attribute name="type"/>
-</xs:schema>
