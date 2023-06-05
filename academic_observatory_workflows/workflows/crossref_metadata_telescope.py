@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import functools
-import gzip
 import json
 import logging
 import os
@@ -76,7 +75,7 @@ class CrossrefMetadataRelease(SnapshotRelease):
         self.download_file_name = "crossref_metadata.json.tar.gz"
         self.download_file_path = os.path.join(self.download_folder, self.download_file_name)
         self.extract_files_regex = r".*\.json$"
-        self.transform_files_regex = r".*\.jsonl.gz$"
+        self.transform_files_regex = r".*\.jsonl$"
 
 
 class CrossrefMetadataTelescope(Workflow):
@@ -91,16 +90,16 @@ class CrossrefMetadataTelescope(Workflow):
         *,
         dag_id: str,
         cloud_workspace: CloudWorkspace,
-        bq_dataset_id: str = "crossref",
+        bq_dataset_id: str = "crossref_metadata",
         bq_table_name: str = "crossref_metadata",
         api_dataset_id: str = "crossref_metadata",
         schema_folder: str = os.path.join(default_schema_folder(), "crossref_metadata"),
-        dataset_description: str = "Datasets created by Crossref: https://www.crossref.org/",
+        dataset_description: str = "The Crossref Metadata Plus dataset: https://www.crossref.org/services/metadata-retrieval/metadata-plus/",
         table_description: str = "The Crossref Metadata Plus dataset: https://www.crossref.org/services/metadata-retrieval/metadata-plus/",
         crossref_metadata_conn_id: str = "crossref_metadata",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         max_processes: int = os.cpu_count(),
-        batch_size: int = 200,
+        batch_size: int = 20,
         start_date: pendulum.DateTime = pendulum.datetime(2020, 6, 7),
         schedule_interval: str = "0 0 7 * *",
         catchup: bool = True,
@@ -241,10 +240,11 @@ class CrossrefMetadataTelescope(Workflow):
 
     def transform(self, release: CrossrefMetadataRelease, **kwargs):
         """Task to transform the CrossrefMetadataRelease release for a given month.
-        Each extracted file is transformed. This is done in parallel using the ThreadPoolExecutor."""
+        Each extracted file is transformed."""
 
         logging.info(f"Transform input folder: {release.extract_folder}, output folder: {release.transform_folder}")
         clean_dir(release.transform_folder)
+        finished = 0
 
         # List files and sort so that they are processed in ascending order
         input_file_paths = natsorted(list_files(release.extract_folder, release.extract_files_regex))
@@ -256,21 +256,16 @@ class CrossrefMetadataTelescope(Workflow):
 
                 # Create tasks for each file
                 for input_file in chunk:
-                    future = executor.submit(transform_file, input_file)
+                    output_file = os.path.join(release.transform_folder, os.path.basename(input_file) + "l")
+                    future = executor.submit(transform_file, input_file, output_file)
                     futures.append(future)
 
-                # Write data from batch into a single jsonl.gz file
-                # The output file will be a json lines gzip file, hence adding the 'l.gz' to the file extension
-                file_path = os.path.join(release.transform_folder, f"crossref_metadata_{i:012}.jsonl.gz")
-                with gzip.open(file_path, "wb") as gzip_file:
-                    with jsonlines.Writer(gzip_file) as writer:
-                        # Write data to the jsonlines.Writer as it becomes available
-                        for future in as_completed(futures):
-                            data = future.result()
-                            writer.write_all(data)
-
-                if i % 1000 == 0:
-                    logging.info(f"Transformed {i + 1} files")
+                # Wait for completed tasks
+                for future in as_completed(futures):
+                    future.result()
+                    finished += 1
+                    if finished % 1000 == 0:
+                        logging.info(f"Transformed {finished} files")
 
     def upload_transformed(self, release: CrossrefMetadataRelease, **kwargs) -> None:
         """Upload the transformed data to Cloud Storage."""
@@ -294,7 +289,7 @@ class CrossrefMetadataTelescope(Workflow):
         # subfolders: https://cloud.google.com/bigquery/docs/batch-loading-data#load-wildcards
         uri = gcs_blob_uri(
             self.cloud_workspace.transform_bucket,
-            f"{gcs_blob_name_from_path(release.transform_folder)}/*.jsonl.gz",
+            f"{gcs_blob_name_from_path(release.transform_folder)}/*.jsonl",
         )
         table_id = bq_sharded_table_id(
             self.cloud_workspace.output_project_id, self.bq_dataset_id, self.bq_table_name, release.snapshot_date
@@ -363,24 +358,23 @@ def check_release_exists(month: pendulum.DateTime, api_key: str) -> bool:
         return False
 
 
-def transform_file(input_file_path: str):
+def transform_file(input_file_path: str, output_file_path: str):
     """Transform a single Crossref Metadata json file.
     The json file is converted to a jsonl file and field names are transformed so they are accepted by BigQuery.
 
     :param input_file_path: the path of the file to transform.
+    :param output_file_path: where to save the transformed file.
     :return: None.
     """
 
     # Open json
-    with open(input_file_path, mode="r") as input_file:
-        input_data = json.load(input_file)
+    with open(input_file_path, mode="r") as in_file:
+        input_data = json.load(in_file)
 
-    # Transform data
-    output_data = []
-    for item in input_data["items"]:
-        output_data.append(transform_item(item))
-
-    return output_data
+    # Transform and write
+    with jsonlines.open(output_file_path, mode="w", compact=True) as out_file:
+        for item in input_data["items"]:
+            out_file.write(transform_item(item))
 
 
 def transform_item(item):

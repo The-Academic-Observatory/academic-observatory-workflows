@@ -99,7 +99,7 @@ class WebOfScienceTelescope(Workflow):
         institution_ids: List[str],
         wos_conn_id: str,
         earliest_date: pendulum.DateTime = pendulum.datetime(1800, 1, 1),
-        bq_dataset_id: str = "clarivate",
+        bq_dataset_id: str = "web_of_science",
         bq_table_name: str = "web_of_science",
         api_dataset_id: str = "web_of_science",
         schema_folder: str = os.path.join(default_schema_folder(), "web_of_science"),

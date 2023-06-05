@@ -656,7 +656,7 @@ class OpenAlexTelescope(Workflow):
                 schema_file_path=entity.schema_file_path,
                 source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
                 write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-                ignore_unknown_values=False,
+                ignore_unknown_values=True,
             )
             assert (
                 success
@@ -699,7 +699,7 @@ class OpenAlexTelescope(Workflow):
                     source_format=SourceFormat.CSV,
                     csv_skip_leading_rows=1,
                     write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-                    ignore_unknown_values=False,
+                    ignore_unknown_values=True,
                 )
                 assert (
                     success
