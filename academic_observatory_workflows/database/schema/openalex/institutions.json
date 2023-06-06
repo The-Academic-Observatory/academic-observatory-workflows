@@ -43,12 +43,6 @@
     ]
   },
   {
-    "name": "relationship",
-    "type": "STRING",
-    "mode": "NULLABLE",
-    "description": ""
-  },
-  {
     "name": "cited_by_count",
     "type": "INTEGER",
     "mode": "NULLABLE",

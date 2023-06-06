@@ -100,33 +100,6 @@
     ]
   },
   {
-    "name": "apc_paid",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "currency",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "price",
-        "type": "INTEGER",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "provenance",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
-    "name": "apc_paid_usd",
-    "type": "STRING",
-    "mode": "NULLABLE"
-  },
-  {
     "name": "apc_payment",
     "type": "RECORD",
     "mode": "NULLABLE",
@@ -880,12 +853,6 @@
       }
     ],
     "description": "Information about the access status of this work, as an OpenAccess object."
-  },
-  {
-    "name": "price_usd",
-    "type": "INTEGER",
-    "mode": "NULLABLE",
-    "description": "APC converted to USD"
   },
   {
     "name": "primary_location",
