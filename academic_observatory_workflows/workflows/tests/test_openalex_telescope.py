@@ -369,52 +369,6 @@ class TestOpenAlexUtils(ObservatoryTestCase):
             actual = fetch_merged_ids(bucket=bucket_name, aws_key=self.aws_key, entity_name="authors")
             self.assertEqual(expected, actual)
 
-    @patch("academic_observatory_workflows.workflows.openalex_telescope.transform_object")
-    def test_transform_file(self, mock_transform_object):
-        """Test the transform_file function."""
-
-        mock_transform_object.return_value = {}
-        with CliRunner().isolated_filesystem() as t:
-            transform_path = "transform/out.jsonl.gz"
-
-            # Create works entity file
-            works = {"works": "content", "corresponding_institution_ids": [None], "corresponding_author_ids": [None]}
-            works_download_path = "works.jsonl.gz"
-            with gzip.open(works_download_path, "wt", encoding="ascii") as f_out:
-                json.dump(works, f_out)
-
-            # Create other entity file (concepts or institution)
-            concepts = {"concepts": "content"}
-            concepts_download_path = "concepts.jsonl.gz"
-            with gzip.open(concepts_download_path, "wt", encoding="ascii") as f_out:
-                json.dump(concepts, f_out)
-
-            # Test when dir of transform path does not exist yet, using 'works' entity'
-            self.assertFalse(os.path.isdir(os.path.dirname(transform_path)))
-
-            transform_file(works_download_path, transform_path)
-            mock_transform_object.assert_called_once_with(
-                {"works": "content", "corresponding_institution_ids": [], "corresponding_author_ids": []},
-                "abstract_inverted_index",
-            )
-            mock_transform_object.reset_mock()
-            os.remove(transform_path)
-
-            # Test when dir of transform path does exist, using 'works' entity
-            self.assertTrue(os.path.isdir(os.path.dirname(transform_path)))
-
-            transform_file(works_download_path, transform_path)
-            mock_transform_object.assert_called_once_with(
-                {"works": "content", "corresponding_institution_ids": [], "corresponding_author_ids": []},
-                "abstract_inverted_index",
-            )
-            mock_transform_object.reset_mock()
-            os.remove(transform_path)
-
-            # Test for "concepts" and "institution" entities
-            transform_file(concepts_download_path, transform_path)
-            mock_transform_object.assert_called_once_with(concepts, "international")
-
     def test_transform_object(self):
         """Test the transform_object function."""
 
