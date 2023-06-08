@@ -515,7 +515,7 @@ class DoiWorkflow(Workflow):
         bq_dashboards_dataset_id: str = "coki_dashboards",
         bq_observatory_dataset_id: str = "observatory",
         bq_elastic_dataset_id: str = "data_export",
-        bq_unpaywall_dataset_id: str = "our_research",
+        bq_unpaywall_dataset_id: str = "unpaywall",
         bq_ror_dataset_id: str = "ror",
         api_dataset_id: str = "doi",
         transforms: Tuple = None,
