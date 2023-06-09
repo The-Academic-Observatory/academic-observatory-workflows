@@ -14,26 +14,26 @@
 
 # Author: Alex Massen-Hane
 
-# Common libraries
+# Common
 import os
-from pathlib import Path
-import subprocess
-from typing import Dict, List
-import pendulum
-from datetime import timedelta
-import logging
-import re
 import gzip
 import json
+import logging
+import pendulum
+from pathlib import Path
+from datetime import timedelta
+from bs4 import BeautifulSoup
+from typing import Union, Dict, List
 
-# To download the files from the FTP server
+# Google Biguery
+from google.cloud import bigquery
+from google.cloud.bigquery import SourceFormat
+
+# To download the files from the Pubmed FTP server
 import ftplib
-
-# For checking files have been downloaded correctly
 import hashlib
-from psutil import Popen
 
-# For Injesting the XML using Biopython library.
+# For reading in the XML files using Biopython library.
 from Bio import Entrez
 from Bio.Entrez.Parser import (
     StringElement,
@@ -45,49 +45,242 @@ from Bio.Entrez.Parser import (
 # Multithreading libraries
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-# Airflow modules
+# Airflow
 from airflow import AirflowException
+from airflow.operators.dummy import DummyOperator
 from airflow.models.taskinstance import TaskInstance
-from airflow.models.variable import Variable
+from observatory.platform.airflow import PreviousDagRunSensor, is_first_dag_run
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
-from observatory.platform.utils.airflow_utils import AirflowVars, make_workflow_folder
-from observatory.platform.workflows.workflow import Workflow, Release
-from observatory.platform.utils.workflow_utils import get_chunks
-
-from observatory.platform.utils.gc_utils import (
-    bigquery_table_exists,
-    upload_file_to_cloud_storage,
-    bigquery_sharded_table_id,
-    create_bigquery_dataset,
-    load_bigquery_table,
-    run_bigquery_query,
-    delete_old_datasets_with_prefix,
+# Observatory Platform
+from observatory.platform.files import get_chunks
+from observatory.api.client.model.dataset_release import DatasetRelease
+from observatory.platform.api import get_latest_dataset_release, get_dataset_releases, make_observatory_api
+from observatory.platform.gcs import gcs_upload_files, gcs_blob_name_from_path
+from observatory.platform.observatory_config import CloudWorkspace
+from observatory.platform.config import AirflowConns
+from observatory.platform.workflows.workflow import (
+    Workflow,
+    ChangefileRelease,
+    cleanup,
+)
+from observatory.platform.bigquery import (
+    bq_table_exists,
+    bq_sharded_table_id,
+    bq_create_dataset,
+    bq_load_table,
+    bq_snapshot,
+    bq_run_query,
 )
 
-from observatory.platform.utils.release_utils import (
-    get_dataset_releases,
-    get_datasets,
-    get_latest_dataset_release,
-    is_first_release,
-)
-
-from observatory.platform.utils.workflow_utils import (
-    SubFolder,
-    make_release_date,
-)
-
-from google.cloud import bigquery
+# Academic observatory workflows
+from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
 
 
-class PubMedRelease(Release):
+class Changefile:
+    def __init__(
+        self,
+        filename: str,
+        file_index: str,
+        path_on_ftp: str,
+        is_first_run: bool,
+        changefile_date: pendulum.DateTime,
+        num_new: int = None,
+        num_revised: int = None,
+        num_total: int = None,
+        num_cite_total: int = None,
+        num_deletes: int = None,
+        changefile_release: ChangefileRelease = None,
+    ):
+        """Holds the metadata about a single Pubmed updatefile (changefile).
+
+        TODO: Update doc string
+
+        :param filename: the name of the changefile.
+        :param file_index: Index of the updatefile, effectively a count of the n-th updatefile.
+        :param changefile_date: the date that the changefile was added to PubMed's FTP server.
+        :param is_first_run: Identifies if this changefile is a baseline (true) or an updatefile (false).
+        :param num_new: Number of new Medline records to be added.
+        :param num_revised: Number of Medline records to revise / update.
+        :param num_total: Number of record Medline records in total.
+        :param num_cite_total: Total number of citation records in this updatefile.
+        :param num_deletes: Number of records to delete from the database.
+
+        """
+
+        self.filename = filename
+        self.file_index = file_index
+        self.path_on_ftp = path_on_ftp
+        self.is_first_run = is_first_run
+        self.changefile_date = changefile_date
+        self.num_new = num_new
+        self.num_revised = num_revised
+        self.num_total = num_total
+        self.num_cite_total = num_cite_total
+        self.num_deletes = num_deletes
+
+        self.changefile_release: ChangefileRelease = changefile_release
+
+        self.file_type = "jsonl.gz"
+
+    def __eq__(self, other):
+        if isinstance(other, Changefile):
+            return self.filename == other.filename and self.changefile_date == other.changefile_date
+        return False
+
+    @staticmethod
+    def from_dict(dict_: Dict):  # Unable to do a -> Changefile . Airflow does not like it and says it is undefined.
+        filename = dict_["filename"]
+        file_index = dict_["file_index"]
+        path_on_ftp = dict_["path_on_ftp"]
+        is_first_run = dict_["is_first_run"]
+        changefile_date = pendulum.parse(dict_["changefile_date"])
+        num_new = dict_["num_new"]
+        num_revised = dict_["num_revised"]
+        num_total = dict_["num_total"]
+        num_cite_total = dict_["num_cite_total"]
+        num_deletes = dict_["num_deletes"]
+        changefile_release = dict_["changefile_release"]
+
+        return Changefile(
+            filename=filename,
+            file_index=file_index,
+            path_on_ftp=path_on_ftp,
+            is_first_run=is_first_run,
+            changefile_date=changefile_date,
+            num_new=num_new,
+            num_revised=num_revised,
+            num_total=num_total,
+            num_cite_total=num_cite_total,
+            num_deletes=num_deletes,
+            changefile_release=changefile_release,
+        )
+
+    def to_dict(self) -> Dict:
+        return dict(
+            filename=self.filename,
+            file_index=self.file_index,
+            path_on_ftp=self.path_on_ftp,
+            is_first_run=self.is_first_run,
+            changefile_date=self.changefile_date.isoformat(),
+            num_new=self.num_new,
+            num_revised=self.num_revised,
+            num_total=self.num_total,
+            num_cite_total=self.num_cite_total,
+            num_deletes=self.num_deletes,
+            changefile_release=self.changefile_release,
+        )
+
+    @property
+    def download_file_path(self):
+        return os.path.join(self.changefile_release.download_folder, self.filename)
+
+    @property
+    def transform_path(self):
+        assert self.changefile_release is not None, "Changefile.download_file_path: self.changefile_release is None"
+        return self.changefile_release.transform_folder
+
+    def transform_file_path(self, entity_type: str) -> str:
+        """
+        Give path to the transform file.
+
+        :param entity_type: Type of the record, either "additions" or "deletions".
+        :return: Retuns the path to the transformed file.
+        """
+
+        # Splice at the end to get rid of the .xml.gz part
+        assert self.changefile_release is not None, "Changefile.transform_file_path: self.changefile_release is None"
+        return os.path.join(
+            self.changefile_release.transform_folder, f"{entity_type}_{self.filename[:-7]}.{self.file_type}"
+        )
+
+    def transform_file_pattern(self, entity_type: str) -> str:
+        """Return a glob pattern for the transform files.
+
+        :param entity_type: Type of the record, either "additions" or "deletions".
+        :return: Retuns the path to the transformed file.
+        """
+        assert self.changefile_release is not None, "Changefile.transform_file_path: self.changefile_release is None"
+        return os.path.join(self.changefile_release.transform_folder, f"{entity_type}_*.{self.file_type}")
+
+    def merged_transform_file_path(
+        self, entity_type: str, first_file_index: int, last_file_index: int, part_num: int = None
+    ) -> str:
+        """
+        Give path to the merged transform file.
+
+        :param entity_type: Type of the record, either "additions" or "deletions".
+        :return: Retuns the path to the transformed file.
+        """
+
+        assert self.changefile_release is not None, "Changefile.transform_file_path: self.changefile_release is None"
+        if part_num:
+            return os.path.join(
+                self.changefile_release.transform_folder,
+                f"merged_{entity_type}_{first_file_index}-{last_file_index}_part_{part_num}.{self.file_type}",
+            )
+        else:
+            return os.path.join(
+                self.changefile_release.transform_folder,
+                f"merged_{entity_type}_{first_file_index}-{last_file_index}.{self.file_type}",
+            )
+
+    def merged_tranform_file_pattern(self, entity_type: str) -> str:
+        """
+        Return a glob pattern for the merged transform files.
+
+        :param entity_type: Type of the record, either "additions" or "deletions".
+        :return: Retuns the path to the transformed file.
+        """
+        assert self.changefile_release is not None, "Changefile.transform_file_path: self.changefile_release is None"
+        return os.path.join(
+            self.changefile_release.transform_folder,
+            f"merged_{entity_type}_*-*_part_*.{self.file_type}",
+        )
+
+
+class PubmedEntity:
+    def __init__(
+        self,
+        name: str,
+        type: str,
+        sub_key: str,
+        set_key: str,
+        PMID_location: str,
+    ):
+        """
+        Holds the metadata about the records stored in Pubmed.
+
+        TODO: Update doc string
+
+        :param entity_name: Name of the enitty, articles, book articles or book documents.
+        :param type: Either a set of 'addition' or 'deletion' records.
+        """
+
+        self.name = name
+        self.type = type
+        self.sub_key = sub_key
+        self.set_key = set_key
+        self.PMID_location = PMID_location
+        self.schema_file_path = os.path.join(default_schema_folder(), "pubmed", f"{name}_2023-01-01.json")
+
+
+class PubMedRelease(ChangefileRelease):
     def __init__(
         self,
         *,
         dag_id: str,
-        release_id: str,
+        run_id: str,
+        cloud_workspace: CloudWorkspace,
+        bq_dataset_id: str,
+        start_date: pendulum.DateTime,
+        end_date: pendulum.DateTime,
+        is_first_run: bool,
+        schema_folder: str,
+        changefile_list: List[Changefile],
     ):
         """Construct a PubmedRelease.
+
+         TODO: Update doc string
 
         :param dag_id: the DAG id.
         :param start_date:
@@ -95,25 +288,52 @@ class PubMedRelease(Release):
         :param first_release:
         """
 
-        download_files_regex = r"*.xml.gz"
-        transform_files_regex = r"*.jsonl"
-
         super().__init__(
             dag_id=dag_id,
-            release_id=release_id,
-            download_files_regex=download_files_regex,
-            transform_files_regex=transform_files_regex,
+            run_id=run_id,
+            start_date=start_date,
+            end_date=end_date,
+            sequence_start=changefile_list[0].file_index,
+            sequence_end=changefile_list[-1].file_index,
+        )
+        self.cloud_workspace = cloud_workspace
+        self.bq_dataset_id = bq_dataset_id
+        self.is_first_run = is_first_run
+        self.schema_folder = schema_folder
+        self.changefile_list = changefile_list
+
+        self.changefile_release = ChangefileRelease(
+            dag_id=dag_id,
+            run_id=run_id,
+            start_date=start_date,
+            end_date=end_date,
+            sequence_start=changefile_list[0].file_index,
+            sequence_end=changefile_list[-1].file_index,
         )
 
-    # @property
-    #
+        self.changefile_list = changefile_list
+        for changefile in changefile_list:
+            changefile.changefile_release = self.changefile_release
+
+    # TODO: Move this function elsewhere?
+    def merged_transfer_blob_pattern(self, entity_type: str, first_index: int = None, last_index: int = None) -> str:
+        """
+        Create a gcs blob pattern url for transfering the merged updatefiles into Bigquery.
+
+        :param entity_type: Either "additions" or "deletions".
+        :return: GCS blob uri for merged transform files.
+        """
+
+        if first_index:
+            return f"gs://{self.cloud_workspace.transform_bucket}/{gcs_blob_name_from_path(self.changefile_release.transform_folder)}/merged_{entity_type}_{first_index}-{last_index}_*.{self.changefile_list[0].file_type}"
+
+        else:
+            return f"gs://{self.cloud_workspace.transform_bucket}/{gcs_blob_name_from_path(self.changefile_release.transform_folder)}/merged_{entity_type}_*.{self.changefile_list[0].file_type}"
 
 
 class PubMedTelescope(Workflow):
-    DAG_ID_PREFIX = "pubmed"
 
     """
-
     PubMed Telescope
 
     Please visit:
@@ -125,27 +345,27 @@ class PubMedTelescope(Workflow):
         self,
         *,
         dag_id: str,
-        workflow_id: int,
+        cloud_workspace: CloudWorkspace,
+        bq_dataset_id: str = "pubmed",
         start_date: str = pendulum.datetime(year=2022, month=11, day=27),  # When the baseline data became available.
         schedule_interval: str = "0 0 * * 0",  # weekly
         catchup: bool = True,
-        ftp_server_url: str,
+        ftp_server_url: str = "ftp.ncbi.nlm.nih.gov",
         reset_ftp_counter: int = 20,
-        check_md5_hash: bool,
+        check_md5_hash: bool = True,
         max_download_retry: int = 5,
-        airflow_vars: List[str] = None,
-        queue: str = "default",
-        max_processes: int = 4,  # Limited to 4 due to RAM
+        observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
+        queue: str = "remote_queue",
+        snapshot_expiry_days: int = 7,
+        max_processes: int = 4,  # Limited to 4 due to RAM usage when transforming files
         batch_size: int = 4,
-        dataset_description: str = "PubMed Citation Lists",
-        dataset_id: str = None,
-        data_location: str = Variable.get(AirflowVars.DATA_LOCATION),
-        source_format: str,
-        **kwargs,
+        data_location: str = "us",
+        main_table: str = "articles_test",
+        table_description: str = "Pubmed Medline database. https://pubmed.ncbi.nlm.nih.gov/about/ ",
     ):
         """Construct an PubMed Telescope instance.
 
-        # TODO: Go through descriptions of classes and functions.
+        # TODO: Go through this doc string.
 
         :param dag_id: the id of the DAG.
         :param start_date: the start date of the DAG.
@@ -158,45 +378,52 @@ class PubMedTelescope(Workflow):
         :param workflow_id: api workflow id.
         """
 
-        if airflow_vars is None:
-            airflow_vars = [
-                AirflowVars.DATA_PATH,
-                AirflowVars.PROJECT_ID,
-                AirflowVars.DOWNLOAD_BUCKET,
-                AirflowVars.TRANSFORM_BUCKET,
-            ]
+        self.observatory_api_conn_id = observatory_api_conn_id
+        self.start_date = start_date
 
-        # TODO: Go throguh these params. Are they needed?
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
             schedule_interval=schedule_interval,
             catchup=catchup,
-            airflow_vars=airflow_vars,
-            workflow_id=workflow_id,
+            airflow_conns=[observatory_api_conn_id],
             queue=queue,
-            **kwargs,
+            tags=[Tag.academic_observatory],
         )
 
         # Databse settings
-        self.project_id = Variable.get(AirflowVars.PROJECT_ID)
-        self.download_bucket = Variable.get(AirflowVars.DOWNLOAD_BUCKET)
-        self.transform_bucket = Variable.get(AirflowVars.TRANSFORM_BUCKET)
-
+        self.cloud_workspace = cloud_workspace
+        self.bq_dataset_id = bq_dataset_id
+        self.main_table = main_table
+        self.table_description = table_description
         self.data_location = data_location
-        self.dataset_description = dataset_description
-        self.dataset_id = dataset_id
-        self.source_format = source_format
         self.schema_folder = default_schema_folder()
-        self.main_table = "articles"
-        self.temp_dataset = "temporary_working_space"
+        self.snapshot_expiry_days = snapshot_expiry_days
 
         # Workflow parameters
-        self.workflow_id = workflow_id
+        self.dag_id = dag_id
         self.schedule_interval = schedule_interval
 
+        # Metadata of how to pull out data from the XML files.
+        self.entity_list = [
+            PubmedEntity(
+                name="article_additions",
+                type="additions",
+                sub_key="PubmedArticle",
+                set_key="PubmedArticleSet",
+                PMID_location="MedlineCitation",
+            ),
+            PubmedEntity(
+                name="article_deletions",
+                type="deletions",
+                sub_key="PMID",
+                set_key="DeleteCitation",
+                PMID_location=None,
+            ),
+        ]
+
         # PubMed download parameters
-        self.ftp_server_url = ftp_server_url  # FTP server URL
+        self.ftp_server_url = ftp_server_url
         self.baseline_path = "/pubmed/baseline/"
         self.updatefiles_path = "/pubmed/updatefiles/"
 
@@ -205,93 +432,85 @@ class PubMedTelescope(Workflow):
         self.max_processes = max_processes
         self.batch_size = batch_size
 
+        # Required file size of the update files.
+        self.merged_file_size = 4  # Gb
+
+        self.num_to_download = 3
+
         # After how many downloads to reset the connection to Pubmed's FTP server.
         self.reset_ftp_counter = reset_ftp_counter
 
-        # If this is the first ever run of the telescope, download the "baseline" database and build on this.
-        ## Use if first dag run later instead of this.
-
-        # TODO: Make condition for when the new baseline is out - after the release date for it each year.
-        # if present day after the new baseline date then download baseline or
-        # this is the very first release for the telescope
+        # Wait for the previous DAG run to finish to make sure that
+        # changefiles are processed in the correct order
+        external_task_id = "dag_run_complete"
+        self.add_operator(
+            PreviousDagRunSensor(
+                dag_id=self.dag_id,
+                external_task_id=external_task_id,
+                execution_delta=timedelta(days=7),  # To match the @weekly schedule_interval
+            )
+        )
 
         self.add_setup_task(self.check_dependencies)
-        self.add_task(self.check_releases)
+        self.add_setup_task(self.list_changefiles_for_release)
         self.add_task(self.download)
         self.add_task(self.upload_downloaded)
         self.add_task(self.transform)
+        self.add_task(self.merge_updatefiles)
         self.add_task(self.upload_transformed)
         self.add_task(self.bq_ingest_update_tables)
         self.add_task(self.bq_add_updates_to_main_table)
-        # self.add_task(self.add_release)
+        self.add_task(self.add_new_dataset_release)
         self.add_task(self.cleanup)
 
-        # self.add_task(self.add_release)
+        # The last task that the next DAG run's ExternalTaskSensor waits for.
+        self.add_operator(
+            DummyOperator(
+                task_id=external_task_id,
+            )
+        )
 
-    def make_release(self, **kwargs) -> PubMedRelease:
-        """Creates a new Pubmed release instance
-
-        :return: The Pubmed release instance
+    def list_changefiles_for_release(self, **kwargs):
         """
-        release_date = kwargs["data_interval_end"]
+        Get a list of all files to download for this data interval run / release period.
+        """
 
-        self.data_interval_start = kwargs["data_interval_start"]
-        self.data_interval_end = kwargs["data_interval_end"]
-        self.first_release = is_first_release(self.workflow_id)
-        # Check for if the initial baseline table exists and what pubmed IDs are in he description??????????????????????????/
-
-        logging.info(
-            f"Start data date: {self.data_interval_start} End date: {self.data_interval_end} First release: {self.first_release}"
-        )
-
-        self.release_id = (
-            self.data_interval_start.strftime("%Y_%m_%d") + "-" + self.data_interval_end.strftime("%Y_%m_%d")
-        )
-        logging.info(f"Release date interval: {self.release_id}")
-
-        release = PubMedRelease(dag_id=self.dag_id, release_id=self.release_id)
-
-        # TODO: Make this properties on the release.
-        self.workflow_folder = make_workflow_folder(self.dag_id, release_date)
-        self.download_folder = make_workflow_folder(self.dag_id, release_date, SubFolder.downloaded.value)
-        self.transform_folder = make_workflow_folder(self.dag_id, release_date, SubFolder.transformed.value)
-
-        if self.data_interval_start < self.start_date + timedelta(days=7) and not bigquery_table_exists(
-            project_id=self.project_id, dataset_id=self.dataset_id, table_name=self.main_table
-        ):
-            self.download_baseline = True
-        else:
-            self.download_baseline = False
-
-        return release
-
-    def check_releases(self, release: PubMedRelease, **kwargs):
-        """TODO: Update this doc string"""
+        dag_run = kwargs["dag_run"]
+        is_first_run = is_first_dag_run(dag_run)
+        data_interval_start = kwargs["data_interval_start"]
+        data_interval_end = kwargs["data_interval_end"]
 
         # Open FTP connection to PubMed servers.
         ftp_conn = ftplib.FTP(self.ftp_server_url, timeout=1000000.0)
         ftp_conn.login()  # anonymous login (publicly available data)
 
         files_to_download = []
-
-        if self.download_baseline:
+        if is_first_run:
             logging.info(f"This is the first release of the PubMed Telescope. Grabbing list of 'baseline' files. ")
 
             # Change to the baseline directory.
             ftp_conn.cwd(self.baseline_path)
 
-            # Find all the xml.gz files available from the server.
-            baseline_list = ftp_conn.nlst()
-            files_to_download = [
-                self.baseline_path + file for file in baseline_list if (file.split(".")[-1] == "gz" in file)
-            ]
-            files_to_download.sort()
+            # Grab list of all baseline files to be downloaded.
+            baseline_list_ftp = ftp_conn.nlst()
 
-            logging.info(f"List of files to download from the PubMed FTP server for 'baseline': {files_to_download}")
-
+            # Grab metadata and path of the file.
+            for file in baseline_list_ftp:
+                if file.split(".")[-1] == "gz" in file:  # Find all the xml.gz files available from the server.
+                    filename = file
+                    file_index = int(file[9:13])
+                    path_on_ftp = self.baseline_path + file
+                    changefile = Changefile(
+                        filename=filename,
+                        file_index=file_index,
+                        path_on_ftp=path_on_ftp,
+                        is_first_run=is_first_run,
+                        changefile_date=self.start_date,
+                    )
+                    files_to_download.append(changefile)
         else:
             logging.info(
-                f"Grabbing list of 'updatefiles' for this release: {self.data_interval_start} to {self.data_interval_end}"
+                f"Grabbing list of 'updatefiles' for this release: {data_interval_start} to {data_interval_end}"
             )
 
             # Change to updatefiles directory
@@ -302,74 +521,140 @@ class PubMedTelescope(Workflow):
             updatefiles_xml_gz = [file for file in updatefiles_list if (file.split(".")[-1] == "gz" in file)]
             updatefiles_xml_gz.sort()
 
-            # Only return list of update files that are within the release period.
-            updatefiles_to_download = [
-                self.updatefiles_path + file
-                for file in updatefiles_xml_gz
-                if pendulum.from_format(ftp_conn.sendcmd("MDTM {}".format(file))[4:], "YYYYMMDDHHmmss")
-                in pendulum.period(self.data_interval_start, self.data_interval_end)
-            ]
+            for file in updatefiles_xml_gz:
+                # Only return list of updatefiles that are within the required release period.
+                file_upload_time = ftp_conn.sendcmd("MDTM {}".format(file))[4:]
+                file_upload_date = pendulum.from_format(file_upload_time, "YYYYMMDDHHmmss")
+                if file_upload_date in pendulum.period(data_interval_start, data_interval_end):
+                    # Grab name and metadata for this release file.
+                    filename = file
+                    file_index = int(file[9:13])
+                    path_on_ftp = self.updatefiles_path + file
+                    changefile_date = file_upload_date
 
-            # Check that all update files that will be used are sequential.
-            updatefiles_to_download.sort()
-            file_index_last = int(re.findall(r"\d{4}", updatefiles_to_download[0].split("/")[-1].split(".")[0])[0])
-            logging.info(f"file_index_last: {file_index_last}")
-            for i in range(1, len(updatefiles_to_download), 1):
-                file_index = int(re.findall(r"\d{4}", updatefiles_to_download[i].split("/")[-1].split(".")[0])[0])
-                if file_index != file_index_last + 1:
-                    raise AirflowException(
-                        f"The update files are not going to be sequential. Please investigate download {file_index} and {file_index_last+1}"
+                    # TODO: Add retry loop for DLing this html file.
+
+                    # Download the HTML metadata file.
+                    html_file = f"{filename.split('.')[0]}_stats.html"
+                    with open(html_file, "wb") as f:
+                        ftp_conn.retrbinary(f"RETR {html_file}", f.write)
+                        f.close()
+
+                    # Pull metadata from HTML file.
+                    metadata = pull_updatefile_metadata(html_file)
+
+                    changefile = Changefile(
+                        filename=filename,
+                        file_index=file_index,
+                        path_on_ftp=path_on_ftp,
+                        changefile_date=changefile_date,
+                        is_first_run=is_first_run,
+                        num_new=metadata["MEDLINE New"],
+                        num_revised=metadata["MEDLINE Revised"],
+                        num_total=metadata["MEDLINE Total"],
+                        num_cite_total=metadata["Citation Set Total"],
+                        num_deletes=metadata["Deletes"],
                     )
+                    files_to_download.append(changefile)
+
+            # Check that all updatefiles pulled from the FTP server are sequential.
+
+            # Sort from oldest to newest using the file index
+            files_to_download.sort(key=lambda c: c.file_index, reverse=False)
+            file_index_last = files_to_download[0].file_index
+            logging.info(f"file_index_last: {file_index_last}")
+            for changefile in files_to_download[1:]:
+                logging.info(f"{changefile.file_index} {file_index_last + 1}")
+                if changefile.file_index == file_index_last + 1:
+                    logging.info(
+                        f"changefile.file_index = {changefile.file_index} - file_index_last + 1 = {file_index_last + 1} "
+                    )
+                    file_index_last = changefile.file_index
                 else:
-                    file_index_last = file_index
+                    raise AirflowException(
+                        f"The update files are not going to be sequential. Please investigate download {changefile.file_index} and {file_index_last+1}"
+                    )
 
-            # TODO: Check that last release index is file_index_last + 1
+            # Make sure the first changefile file index for this release is n + 1 ahead of the last release.
+            dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=self.bq_dataset_id)
+            latest_release = get_latest_dataset_release(dataset_releases, "changefile_end_date")
+            if files_to_download[0].file_index != latest_release.sequence_end + 1:
+                raise AirflowException(
+                    f"Last updatefile index is not n+1 from the previous release. Latest release update index: {latest_release.sequence_end + 1} vs current start: {files_to_download[0].file_index}"
+                )
 
-            logging.info(
-                f"List of files to download from the PubMed FTP server for 'updatefiles': {updatefiles_to_download}"
-            )
-
-            files_to_download.extend(updatefiles_to_download)
+            logging.info(f"List of files to download from the PubMed FTP server for 'updatefiles':")
+            for changefile in files_to_download:
+                logging.info(f"{changefile.filename}")
 
         # Close the connection to the FTP server.
         ftp_conn.close()
 
-        # Push list of files to download into the xcom.
+        # Push list of changefile objects to download to the Xcom for next step.
         ti: TaskInstance = kwargs["ti"]
-        ti.xcom_push(key="files_to_download", value=files_to_download)
+        files_to_download_list = [changefile.to_dict() for changefile in files_to_download]
+        ti.xcom_push(key="files_to_download", value=files_to_download_list)
+
+        # Return True so downstream tasks aren't skipped.
+        return True
+
+    def make_release(self, **kwargs) -> PubMedRelease:
+        """
+        Make a Release instance. Gets the list of releases available from the release check (setup task).
+
+        :param kwargs: the context passed from the Airflow Operator.
+        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
+        to this argument.
+        :return PubMedRelease.
+        """
+
+        # Pass the list of files to download to the release.
+
+        ti: TaskInstance = kwargs["ti"]
+        files_to_download_list = ti.xcom_pull(
+            key="files_to_download", task_ids=self.list_changefiles_for_release.__name__, include_prior_dates=False
+        )
+        changefile_list = [Changefile.from_dict(changefile) for changefile in files_to_download_list]
+
+        # Sort the incoming list.
+        changefile_list.sort(key=lambda c: c.file_index, reverse=False)
+
+        run_id = kwargs["run_id"]
+        dag_run = kwargs["dag_run"]
+        is_first_run = is_first_dag_run(dag_run)
+        start_date = kwargs["data_interval_start"]
+        end_date = kwargs["data_interval_end"]
+
+        release = PubMedRelease(
+            dag_id=self.dag_id,
+            run_id=run_id,
+            cloud_workspace=self.cloud_workspace,
+            bq_dataset_id=self.bq_dataset_id,
+            start_date=start_date,
+            end_date=end_date,
+            is_first_run=is_first_run,
+            schema_folder=self.schema_folder,
+            changefile_list=changefile_list,
+        )
+
+        logging.info(f"Release info: {release}")
+
+        return release
 
     def download(self, release: PubMedRelease, **kwargs):
-        """Download files from PubMed's FTP server for this release.
+        """
+        Download files from PubMed's FTP server for this release.
 
         Unable to do this in parallel because their FTP server is not able to handle too many requests.
         """
-
-        # Grab list of files to download from xcom
-        ti: TaskInstance = kwargs["ti"]
-        files_to_download = ti.xcom_pull(key="files_to_download")
-
-        # For testing
-        if self.download_baseline:
-            if len(files_to_download) < 3:
-                num_to_download = len(files_to_download)
-            else:
-                num_to_download = 3
-        else:
-            num_to_download = len(files_to_download)
-
-        logging.info(
-            f"Files to download from PubMed for this release ({len(files_to_download)}): {files_to_download[:num_to_download]}"
-        )
 
         # Open FTP connection
         ftp_conn = ftplib.FTP(self.ftp_server_url, timeout=1000000000.0)
         ftp_conn.login()  # anonymous login (publicly available data)
 
-        downloaded_files_for_release = []
-
-        # for file_on_ftp in files_to_download:
-        for i in range(0, num_to_download, 1):  # -  for testing
-            file_on_ftp = files_to_download[i]
+        num_to_download = len(release.changefile_list)
+        for i in range(0, num_to_download, 1):
+            changefile = release.changefile_list[i]
 
             # The FTP server disconnects the connection for the download after some time.
             # Need to have it refreshed every so often so we can reliably download it.
@@ -387,619 +672,593 @@ class PubMedTelescope(Workflow):
                     f"FTP connection to Pubmed's servers has been reset after {self.reset_ftp_counter} downloads to avoid issues."
                 )
 
-            file = file_on_ftp.split("/")[-1]
-
-            # Save file to correct download path for the workflow
-            file_download_location = os.path.join(self.download_folder, file)
-
             if self.check_md5_hash:
                 download_attemp_count = 1
                 download_success = False
                 while download_attemp_count <= self.max_download_retry and not download_success:
-                    logging.info(f"Downloading: {file} Attempt: {download_attemp_count}")
+                    logging.info(f"Downloading: {changefile.filename} Attempt: {download_attemp_count}")
                     try:
                         # Download file
-                        with open(file_download_location, "wb") as f:
-                            ftp_conn.retrbinary(f"RETR {file_on_ftp}", f.write)
+                        with open(changefile.download_file_path, "wb") as f:
+                            ftp_conn.retrbinary(f"RETR {changefile.path_on_ftp}", f.write)
                     except:
                         logging.info(
-                            f"Unable to download {file_on_ftp} from PubMed's FTP server {self.ftp_server_url}."
+                            f"Unable to download {changefile.path_on_ftp} from PubMed's FTP server {self.ftp_server_url}."
                         )
 
                     # Create the hash from the above downloaded file.
-                    with open(file_download_location, "rb") as f_in:
-                        data = f_in.read()
+                    with open(changefile.download_file_path, "rb") as f_hash:
+                        data = f_hash.read()
                         md5hash_from_download = hashlib.md5(data).hexdigest()
 
                     # Need to have a download catch for the hash file as well, otherwise it can break the download loop.
                     try:
                         # Download corresponding md5 hash.
-                        with open(f"{file_download_location}.md5", "wb") as f:
-                            ftp_conn.retrbinary(f"RETR {file_on_ftp}.md5", f.write)
+                        with open(f"{changefile.download_file_path}.md5", "wb") as f:
+                            ftp_conn.retrbinary(f"RETR {changefile.path_on_ftp}.md5", f.write)
                     except:
                         logging.info(
-                            f"Unable to download {file_on_ftp}.md5 from PubMed's FTP server {self.ftp_server_url}."
+                            f"Unable to download {changefile.path_on_ftp}.md5 from PubMed's FTP server {self.ftp_server_url}."
                         )
 
                     # Peep into md5 file.
-                    with open(f"{file_download_location}.md5", "r") as f_md5:
+                    with open(f"{changefile.download_file_path}.md5", "r") as f_md5:
                         md5_from_pubmed_ftp = f_md5.read()
 
                     # If md5 does not match, raise an Airflow exception.
                     if md5hash_from_download in md5_from_pubmed_ftp:
                         download_success = True
-                        downloaded_files_for_release.append(file_download_location)
                     else:
-                        logging.info(f"MD5 hash does not match the given MD5 checksum from server: {file}")
+                        logging.info(
+                            f"MD5 hash does not match the given MD5 checksum from server: {changefile.download_file_path}"
+                        )
 
                     download_attemp_count += 1
 
                 if not download_success:
                     raise AirflowException(
-                        f"Unable to download {file_on_ftp} from PubMed's FTP server {self.ftp_server_url} after {self.max_download_retry}"
+                        f"Unable to download {changefile.download_file_path} from PubMed's FTP server {self.ftp_server_url} after {self.max_download_retry}"
                     )
 
             else:
-                logging.info(f"Downloading: {file}")
+                logging.info(f"Downloading: {changefile.download_file_path}")
                 try:
                     # Download file
-                    with open(file_download_location, "wb") as f:
-                        ftp_conn.retrbinary(f"RETR {file_on_ftp}", f.write)
+                    with open(changefile.download_file_path, "wb") as f:
+                        ftp_conn.retrbinary(f"RETR {changefile.path_on_ftp}", f.write)
                 except:
                     raise AirflowException(
-                        f"Unable to download {file_on_ftp} from PubMed's FTP server {self.ftp_server_url}"
+                        f"Unable to download {changefile.path_on_ftp} from PubMed's FTP server {self.ftp_server_url}"
                     )
-
-                downloaded_files_for_release.append(file_download_location)
 
         # Close the FTP connection after downloading the required files.
         ftp_conn.close()
 
-        # Push list of downloaded files into the xcom
-        ti.xcom_push(key="downloaded_files_for_release", value=downloaded_files_for_release)
-
     def upload_downloaded(self, release: PubMedRelease, **kwargs):
-        """Put all downloaded files onto GCS."""
-
-        # Pull list of downloaded files from xcom
-        ti: TaskInstance = kwargs["ti"]
-        downloaded_files_for_release = ti.xcom_pull(key="downloaded_files_for_release")
-
-        uploaded_download_files = []
-        for file_to_upload in downloaded_files_for_release:
-            file = file_to_upload.split("/")[-1]
-
-            try:
-                # TODO: how to get proper path of the GCS blobs?
-                blob_name = f"telescopes/{self.dag_id}/{self.release_id}/{file}"
-                logging.info(f"Uploading file {file} to GCS bucket {self.download_bucket} and {blob_name}")
-                success = upload_file_to_cloud_storage(
-                    bucket_name=self.download_bucket,
-                    blob_name=blob_name,
-                    file_path=file_to_upload,
-                    check_blob_hash=False,
-                )
-
-                uploaded_download_files.append(file_to_upload)
-
-            except:
-                raise AirflowException(f"Unable to upload file: {file} to GCS bucket {self.download_bucket}")
-
-        # Push to xcom for keeping track of the release files.
-        ti.xcom_push(key="uploaded_download_files", value=uploaded_download_files)
-
-    def transform(self, release: PubMedRelease, **kwargs):
-        """Transform the *.xml.gz files downloaded from PubMed's FTP server into usable jsonl files for BigQuery.
-
-        This task pulls all of the PubmedArticle, PubmedBookArticle and BookDocument entires from the Pubmed files.
-        It runs the transform task in parallel is max_processes. Limited by the amount of RAM on the system that it is run on.
-
-        Requires ~30gb of RAM to run.
-
-        :return: None.
+        """
+        Push all downloaded changefiles from Pubmed to Google Cloud Storage.
         """
 
-        # Grab list of files downloaded from previous step.
-        ti: TaskInstance = kwargs["ti"]
-        downloaded_files_for_release = ti.xcom_pull(key="downloaded_files_for_release")
+        # Grab list of files to upload.
+        if release.is_first_run:
+            changefiles_to_upload = [
+                changefile.download_file_path for changefile in release.changefile_list[: self.num_to_download]
+            ]
+        else:
+            changefiles_to_upload = [changefile.download_file_path for changefile in release.changefile_list]
 
-        # List to hold metadata and file lists about how to pull the data from Pubmed.
+        success = gcs_upload_files(
+            bucket_name=self.cloud_workspace.download_bucket,
+            file_paths=changefiles_to_upload,
+        )
 
-        # TODO: Move this to the init?
-        # Only the article additions and deletions are populated in Pubmed.
-        entity_list = {
-            "article_additions": {
-                "data_type": "additions",
-                "sub_key": "PubmedArticle",
-                "set_key": "PubmedArticleSet",
-                "pmid_key_loc": "MedlineCitation",
-                "output_file_base": f"pubmed_article_additions_{self.release_id}",
-                "transform_files": [],
-                "merged_transform_files": [],
-                "uploaded_to_gcs": [],
-                "schema_file_path": os.path.join(default_schema_folder(), "pubmed_articles_2023-01-01.json"),
-                "table_list": [],
-                "table_row_count": None,
-            },
-            # "pubmed_book_article_additions": {
-            #     "data_type": "additions",
-            #     "sub_key": "PubmedBookArticle",
-            #     "set_key": "PubmedBookArticleSet",
-            #     "pmid_key_loc": "MedlineCitation",
-            #     "output_file_base": f"pubmed_book_article_additions_{self.release_id}",
-            #     "transform_files": [],
-            #     "merged_transform_files": [],
-            #     "uploaded_to_gcs": [],
-            #     "schema_file_path": os.path.join(default_schema_folder(), "pubmed_articles_2023-01-01.json"),
-            #     "table_list": [],
-            #     "table_row_count": None,
-            # },
-            # "book_document_additions": {
-            #     "data_type": "additions",
-            #     "sub_key": "BookDocument",
-            #     "set_key": "BookDocumentSet",
-            #     "pmid_key_loc": "BookDocument",
-            #     "output_file_base": f"book_document_additions_{self.release_id}",
-            #     "transform_files": [],
-            #     "merged_transform_files": [],
-            #     "uploaded_to_gcs": [],
-            #     "schema_file_path": os.path.join(default_schema_folder(), "pubmed_articles_2023-01-01.json"),
-            #     "table_list": [],
-            #     "table_row_count": None,
-            # },
-            "article_deletions": {
-                "data_type": "deletions",
-                "sub_key": "PMID",
-                "set_key": "DeleteCitation",
-                "output_file_base": f"pubmed_article_deletions_{self.release_id}",
-                "transform_files": [],
-                "merged_transform_files": [],
-                "uploaded_to_gcs": [],
-                "schema_file_path": os.path.join(default_schema_folder(), "pubmed_deletions_2023-01-01.json"),
-                "table_list": [],
-                "table_row_count": None,
-            },
-            # "book_document_deletions": {
-            #     "data_type": "deletions",
-            #     "sub_key": "PMID",
-            #     "set_key": "DeleteDocument",
-            #     "output_file_base": f"book_document_deletions_{self.release_id}",
-            #     "transform_files": [],
-            #     "merged_transform_files": [],
-            #     "uploaded_to_gcs": [],
-            #     "schema_file_path": os.path.join(default_schema_folder(), "pubmed_deletions_2023-01-01.json"),
-            #     "table_list": [],
-            #     "table_row_count": None,
-            # },
-        }
+        if not success:
+            raise AirflowException(
+                f"Unable to upload downloaded changefiles to GCS bucket {self.cloud_workspace.download_bucket}"
+            )
+
+    def transform(self, release: PubMedRelease, **kwargs):
+        """
+        Transform the *.xml.gz files downloaded from PubMed's FTP server into usable *.jsonl.gz files for BigQuery import.
+
+        This is a multithreaded task that pulls the information from the files using the keys defined in self.entity_list.
+        """
+
+        # Grab list of changefiles for this release
+        files_to_transform = release.changefile_list
 
         # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
-        for i, chunk in enumerate(get_chunks(input_list=downloaded_files_for_release, chunk_size=4)):
-            with ProcessPoolExecutor(max_workers=4) as executor:
+        for i, chunk in enumerate(get_chunks(input_list=files_to_transform, chunk_size=self.max_processes)):
+            with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
                 logging.info(f"In chunk {i} and processing files: {chunk}")
 
                 futures = [
-                    executor.submit(transform_pubmed_xml_file_to_jsonl, input_file, entity_list, self.transform_folder)
-                    for input_file in chunk
+                    executor.submit(transform_pubmed_xml_file_to_jsonl, changefile, self.entity_list)
+                    for changefile in chunk
                 ]
 
-                # Gather list of files transformed by the above.
+                # Make sure that all changefiles have been properly transformed.
                 for future in as_completed(futures):
-                    returned_entity_list = future.result()
+                    transformed_changefile = future.result()
 
-                    # Merge the list of transform files from mulitprocessing step
-                    for name, entity in returned_entity_list.items():
-                        entity_list[name]["transform_files"].extend(entity["transform_files"])
+                    logging.info(f"Successfully transformed file - {transformed_changefile.filename}")
 
-        # Push updated entity metadata into the Xcom
-        ti.xcom_push(key="entity_list", value=entity_list)
+        return True
 
-    def upload_transformed(self, release: PubMedRelease, **kwargs):
-        """Upload the transformed files to GCS.
+    def merge_updatefiles(self, release: PubMedRelease, **kwargs):
+        """
+        Check through the changefiles to only use the newest records for a particular PMID and version number of the article.
 
-        :return: None
+        This is to reduce the number of quiries done on the main table, ~100-120gb everytime it looks for
         """
 
-        # Pull entity_list from xcom
+        # # Grab list of changefiles that were transformed in previous task.
+        files_to_merge = release.changefile_list
+
+        # Make sure that the incoming list of changefiles are sorted on file_index, from newest to oldest.
+        files_to_merge.sort(key=lambda c: c.file_index, reverse=False)
+
+        merged_updatefiles = {}
+
+        # Merge the baseline files so that they are easier for importing from GCS to BQ
+        if release.is_first_run:
+            logging.info(f"Merging the baseline files from the transform step.")
+
+            # Loop through additions or deletions
+            for entity in self.entity_list:
+                merged_data = []
+                file_size_sum = 0.0
+                merge_part = 1
+
+                first_file_index = files_to_merge[0].file_index
+                for changefile in files_to_merge:
+                    transform_file = changefile.transform_file_path(entity.type)
+
+                    # Get file size in Gigabytes
+                    transform_file_stats = os.stat(transform_file)
+                    transform_file_size = transform_file_stats.st_size / 1024.0**3
+
+                    logging.info(f"Transform file size - {transform_file_size}")
+
+                    # Read in file
+                    with gzip.open(transform_file, "rb") as f_in:
+                        data = [json.loads(line) for line in f_in]
+                        merged_data.extend(data)
+
+                    # If the file is the last in the list or if the running total of the file_size exceeds the requirement.
+                    if (
+                        changefile == files_to_merge[-1]
+                        or (file_size_sum + transform_file_size) >= self.merged_file_size
+                    ):
+                        merged_output_file = changefile.merged_transform_file_path(
+                            entity.type, first_file_index, changefile.file_index, merge_part
+                        )
+
+                        logging.info(f"Size of merged output file - {file_size_sum + transform_file_size}")
+                        logging.info(f"Writing out to file - {merged_output_file}")
+
+                        # Write file out to file.
+                        with gzip.open(merged_output_file, "w") as f_out:
+                            for line in merged_data:
+                                f_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
+
+                        merged_updatefiles[entity.name] = merged_output_file
+
+                        # Reset variables for next part.
+                        merge_part += 1
+                        file_size_sum = 0
+                        merged_data = []
+                        first_file_index = changefile.file_index + 1
+
+                    else:
+                        file_size_sum += transform_file_size
+
+        # For each updatefile, only keep the newest record for a PMID and version.
+        else:
+            # Separating the updatefiles into smaller chunks is not necessary as they are small to begin with.
+            # Max number of updatefiles per week is about 10 to 15 and will be less than 4gb when compressed.
+
+            logging.info(f"Running through each of the updatefiles and checking if there are updated records.")
+
+            # TODO: Add check for if the number of updates/deletes are match the changefile records.
+            # # Loop through all the changefiles and determine total sums of the below
+            # # metadata from changefiles
+            sum_new = 0
+            sum_revised = 0
+            sum_total = 0
+            sum_cite_total = 0
+            sum_deletes = 0
+
+            for changefile in files_to_merge:
+                # logging.info(f"Numb{changefile.filename}")
+                sum_new += changefile.num_new
+                sum_revised += changefile.num_revised
+                sum_total += changefile.num_total
+                sum_cite_total += changefile.num_cite_total
+                sum_deletes += changefile.num_deletes
+
+            for entity in self.entity_list:
+                # Find newest records from the updatefiles
+                # Clear last entity
+                merged_data = []
+
+                update_counter = 0
+
+                first_file_index = files_to_merge[0].file_index
+                for changefile in files_to_merge:
+                    transform_file = changefile.transform_file_path(entity.type)
+
+                    logging.info(f"Reading in file - {transform_file}")
+
+                    # Read in the updatefile into memory
+                    with gzip.open(transform_file, "r") as f_in:
+                        incoming_data = [json.loads(line) for line in f_in]
+
+                    if entity.type == "additions":
+                        # Make the merged data a dictionary for faster lookup.
+                        merged_dict = {str(record[entity.PMID_location]["PMID"]): record for record in merged_data}
+
+                        for incoming_record in incoming_data:
+                            key = str(incoming_record[entity.PMID_location]["PMID"])
+                            if key in merged_dict:
+                                logging.info(
+                                    f"Found a duplicate of PMID and version number {key} - {incoming_record[entity.PMID_location]['PMID']}"
+                                )
+
+                                # Remove the old record from merged_data
+                                del merged_dict[key]
+
+                                update_counter += 1
+
+                        # Convert back to a list.
+                        merged_data = list(merged_dict.values())
+
+                    # Add on the newer records.
+                    # This will also merge all of the deletion records into one file so that can be removed from the main table.
+                    merged_data.extend(incoming_data)
+
+                logging.info(f"Found the following number of records that were updated - {update_counter}")
+                logging.info(f"Number of records to delete from the main table - {sum_revised - update_counter}")
+                # store this info for the BQ step.
+
+                merged_output_file = changefile.merged_transform_file_path(
+                    entity.type, first_file_index, changefile.file_index
+                )
+
+                merged_updatefiles[entity.name] = merged_output_file
+
+                logging.info(f"Writing to file - {merged_output_file}")
+
+                # Write to compressed *.jsonl.gz
+                with gzip.open(merged_output_file, "w") as f_out:
+                    for line in merged_data:
+                        f_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
+
+        # Push list of merged transformed files to Xcom for upload step.
         ti: TaskInstance = kwargs["ti"]
-        entity_list = ti.xcom_pull(key="entity_list")
+        ti.xcom_push(key="merged_updatefiles", value=merged_updatefiles)
 
-        for name, entity in entity_list.items():
-            entity["transform_files"].sort()
+    def upload_transformed(self, release: PubMedRelease, **kwargs):
+        """
+        Upload the merged transformed files to GCS.
+        """
 
-            for file_to_upload in entity["transform_files"]:
-                file = file_to_upload.split("/")[-1]
+        ti: TaskInstance = kwargs["ti"]
+        merged_updatefiles = ti.xcom_pull(key="merged_updatefiles")
+        files_to_upload = list(merged_updatefiles.values())
 
-                try:
-                    blob_name = f"telescopes/{self.dag_id}/{self.release_id}/{file}"
-                    logging.info(f"Uploading file {file} to GCS bucket {self.transform_bucket} and {blob_name}")
-                    upload_file_to_cloud_storage(
-                        bucket_name=self.transform_bucket,
-                        blob_name=blob_name,
-                        file_path=file_to_upload,
-                        check_blob_hash=False,
-                    )
+        logging.info(f"files_to_upload - {files_to_upload}")
 
-                    # Add uri to entity data for transferring to BQ
-                    entity["uploaded_to_gcs"].append(f"gs://{self.transform_bucket}/{blob_name}")
+        success = gcs_upload_files(
+            bucket_name=self.cloud_workspace.transform_bucket,
+            file_paths=files_to_upload,
+        )
 
-                except:
-                    raise AirflowException(f"Unable to upload file: {file} to GCS bucket {self.transform_bucket}")
-
-            # Sort list for later
-            entity["uploaded_to_gcs"].sort()
-
-            # Update entity_list with the new list of GCS blobs.
-            entity_list[name] = entity
-
-        # Push updated entity_lsit into the xcom.
-        ti.xcom_push(key="entity_list", value=entity_list)
+        if not success:
+            raise AirflowException(
+                f"Unable to upload downloaded changefiles to GCS bucket {self.cloud_workspace.download_bucket}"
+            )
 
     def bq_ingest_update_tables(self, release: PubMedRelease, **kwargs):
         """
         Ingest data into tables for this particular release.
 
-        If first run of the workflow, it will only upload the baseline table.
-
-        :return: None.
+        If first run of the workflow, it will only trasnfer the baseline table in BQ, otherwise it will
+        ingest the addition and deletion tables as shards.
         """
 
-        # Pull lsit of files to transfer from GCS to BQ
         ti: TaskInstance = kwargs["ti"]
-        entity_list = ti.xcom_pull(key="entity_list")
+        merged_updatefiles = ti.xcom_pull(key="merged_updatefiles")
 
         # If its the first run of the workflow, only upload the baseline table to the main table.
-        if self.download_baseline:
+        if release.is_first_run:
             # Create the dataset if it doesn't exist already.
             try:
-                create_bigquery_dataset(
-                    self.project_id,
-                    self.dataset_id,
-                    self.data_location,
-                    description="Pubmed dataset for Medline Citation records.",
+                bq_create_dataset(
+                    self.cloud_workspace.project_id,
+                    self.bq_dataset_id,
+                    self.cloud_workspace.data_location,
+                    description="Pubmed dataset of citation records.",
                 )
-                logging.info(f"Created dataset: {self.project_id}.{self.dataset_id}")
+                logging.info(f"Created dataset: {self.cloud_workspace.project_id,}.{self.bq_dataset_id}")
             except:
-                logging.info(f"Dataset {self.project_id}.{self.dataset_id} already exists.")
+                logging.info(f"Dataset {self.cloud_workspace.project_id,}.{self.bq_dataset_id} already exists.")
 
             # Delete old baseline table just in case there was a bad previous run.
             bq_delete_table(
-                project_id=self.project_id, dataset_id=self.dataset_id, table_id=self.main_table, not_found_okay=True
+                project_id=self.cloud_workspace.project_id,
+                dataset_id=self.bq_dataset_id,
+                table_id=self.main_table,
+                not_found_okay=True,
             )
 
             logging.info(f"Uploading to table - {self.main_table}")
 
-            # Create a transfer job into BQ from GCS for all of the transformed baseline files.
-            transform_blob_pattern = f"gs://{self.transform_bucket}/telescopes/{self.dag_id}/{self.release_id}/*"
+            merged_transform_blob_pattern = release.merged_transfer_blob_pattern("additions")
 
             logging.info(
-                f"Creating a load job for all of the smaller baseline files with pattern: {transform_blob_pattern} "
+                f"Creating a load job for all of the smaller baseline files with pattern: {merged_transform_blob_pattern} "
             )
 
-            success = load_bigquery_table(
-                transform_blob_pattern,
-                self.dataset_id,
-                self.data_location,
-                self.main_table,
-                entity_list["article_additions"]["schema_file_path"],
-                self.source_format,
+            success = bq_load_table(
+                uri=merged_transform_blob_pattern,
+                table_id=f"{self.cloud_workspace.project_id}.{self.bq_dataset_id}.{self.main_table}",
+                source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
+                schema_file_path=os.path.join(self.schema_folder, "pubmed", "article_additions_2023-01-01.json"),
                 write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-                project_id=self.project_id,
-                table_description="Baseline table of the Pubmed database.",
+                table_description=self.table_description,
                 partition=False,
+                ignore_unknown_values=False,
             )
 
-            if success:
-                entity_list["article_additions"]["table_list"].append(
-                    f"{self.project_id}.{self.dataset_id}.{self.main_table}"
-                )
-            else:
+            if not success:
                 raise AirflowException(f"Unable to upload table {self.main_table}")
 
         # Not the first workflow run, only ingest update tables into BQ.
         else:
-            # Create a temporary dataset for injesting the tables and not make main dataset messy with small update tables.
-            # Unable to partition on dates or indicies - could look into another method later.
-            try:
-                create_bigquery_dataset(
-                    self.project_id,
-                    self.temp_dataset,
-                    self.data_location,
-                    description="Temporary dataset for Pubmed workflow for the update tables for current release.",
+            # Keep a list of update tables for this release.
+            update_tables = {}
+
+            # Upload release tables for this data interval - store on a sharded table and have it expire after a month.
+            for entity in self.entity_list:
+                table_id = bq_sharded_table_id(
+                    self.cloud_workspace.project_id, self.bq_dataset_id, entity.name, date=release.end_date
                 )
-                logging.info(f"Created working dataset: {self.project_id}.{self.temp_dataset}")
-            except:
-                raise AirflowException(f"Working dataset {self.project_id}.{self.temp_dataset} already exists.")
-                # Should be deleted at the end of each run. If it still exists it means that the cleanup step didn't run properly.
+                merged_transform_file_uri = f"gs://{self.cloud_workspace.transform_bucket}/{gcs_blob_name_from_path(merged_updatefiles[entity.name])}"
 
-            # Upload release tables for this data interval.
-            for name, entity in entity_list.items():
-                entity["table_list"] = []
+                # Delete old table just in case there was a bad previous run.
+                # We don't want to append or add any dupliactes to the tables.
+                bq_delete_table(
+                    project_id=self.cloud_workspace.project_id,
+                    dataset_id=self.bq_dataset_id,
+                    table_id=table_id.split(".")[2],
+                    not_found_okay=True,
+                )
 
-                for transform_blob in entity["uploaded_to_gcs"]:
-                    # Create a table for each of the pubmed updates.
-                    file_index = transform_blob.split("_")[-1].split(".")[0]
-                    table_id = f"{name}_{file_index}"
-                    table_description = f"Update table from file {file_index}"
+                logging.info(f"Uploading to table - {table_id}")
 
-                    # Delete old tables with table_id just in case there was a bad previous run.
-                    # We don't want to append or add any dupliactes to the tables.
-                    bq_delete_table(
-                        project_id=self.project_id, dataset_id=self.temp_dataset, table_id=table_id, not_found_okay=True
-                    )
-
-                    logging.info(f"Uploading to table - {table_id}")
-
-                    success = load_bigquery_table(
-                        transform_blob,
-                        self.temp_dataset,
-                        self.data_location,
-                        table_id,
-                        entity["schema_file_path"],
-                        self.source_format,
-                        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-                        project_id=self.project_id,
-                        table_description=table_description,
-                        partition=False,
-                    )
-
-                    if success:
-                        if not table_id in entity["table_list"]:
-                            entity["table_list"].append(f"{self.project_id}.{self.temp_dataset}.{table_id}")
-                    else:
-                        raise AirflowException(
-                            f"Unable to upload table {self.project_id}.{self.temp_dataset}.{table_id}"
-                        )
+                success = bq_load_table(
+                    uri=merged_transform_file_uri,
+                    table_id=table_id,
+                    source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
+                    schema_file_path=entity.schema_file_path,
+                    write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+                    table_description=f"Update table for {entity.type} for Pumbed update files {release.changefile_list[0].filename} to {release.changefile_list[-1].filename}.",
+                    partition=False,
+                    ignore_unknown_values=False,
+                )
 
                 if success:
-                    logging.info(
-                        f"""Successfully uploaded to table - {name} with {len(entity['table_list'])} tables. """
-                    )
+                    logging.info(f"Successfully tranferred to table - {table_id}")
+                    update_tables[entity.name] = table_id
 
-                    # Update the entity after a successful table upload.
-                    entity_list[name] = entity
+                else:
+                    raise AirflowException(f"Unable to tranfer to table - {table_id}")
 
-        #  Update workflow metadata of tables.
-        entity_list = ti.xcom_push(key="entity_list", value=entity_list)
+                # Update the table expiration so we don't have lots sharded tables hanging around in the dataset.
+                expiry_date = pendulum.now().add(days=7)
+                bq_update_table_expiration(
+                    self.cloud_workspace.project_id,
+                    self.bq_dataset_id,
+                    table_id.split(".")[2],
+                    expiration_date=expiry_date,
+                )
 
-    def bq_add_updates_to_main_table(self, release: PubMedRelease, **kwargs):
+            # Push list of update tables into the xcom
+            ti.xcom_push(key="update_tables", value=update_tables)
+
+    def bq_add_updates_to_main_table(self, release: PubMedRelease, **kwargs) -> None:
         """
         Updates the main table with the additions and deletions from the update files.
-
-        :param release: Pubmed release.
-        :return: None.
         """
-
-        # TODO: Add a dependant check on if previous release was done. Can only run if the last data_interval_period was done.
-
-        # Pull workflow entity data
-        ti: TaskInstance = kwargs["ti"]
-        entity_list = ti.xcom_pull(key="entity_list")
 
         # Use the table from this workflow run to make the first snapshot.
         # This should be just the baseline dataset, so there should be no deletions to the snapshot.
-        if self.download_baseline:
-            # TODO: Asssert that the main table exists.
-
-            logging.info(f"Table {self.main_table} has already been created and injested in the previous step.")
+        if release.is_first_run:
+            main_table_exists = bq_table_exists(
+                table_id=f"{self.cloud_workspace.project_id}.{self.bq_dataset_id}.{self.main_table}"
+            )
+            if not main_table_exists:
+                raise AirflowException(
+                    f"Main table {self.main_table} does not exist. Something went wrong in the previous transfer step."
+                )
+            else:
+                logging.info(
+                    f"""First run of the workflow does not require more updates to be added to the table. \n
+                        The table {self.main_table} has already been created and injested in the previous step."""
+                )
 
         else:
-            if len(entity_list["article_additions"]["table_list"]) != len(
-                entity_list["article_deletions"]["table_list"]
-            ):
-                # Stop workflow as something has gone wrong in the upload table step.
-                raise AirflowException("Number of addition and deletion record tables are not the same.")
+            # Pull list of update tables from xcom
+            ti: TaskInstance = kwargs["ti"]
+            update_tables = ti.xcom_pull(key="update_tables")
 
-            num_update_tables = len(entity_list["article_additions"]["table_list"])
-
-            # Create a snapshot of main table just in case something happens with the below updates and deletes
+            # Create a snapshot of main table as a backup just in case something happens with the below updates and deletes
             # and we can revert if necessary.
-            # This will be replaced with a function in the new version of the workflow.
-            backup_table_id = bigquery_sharded_table_id(f"{self.main_table}_backup", self.data_interval_start)
-            create_backup_table = f"""
-            CREATE SNAPSHOT TABLE `{self.project_id}.{self.dataset_id}.{backup_table_id}`
-            CLONE `{self.project_id}.{self.dataset_id}.{self.main_table}`
+
+            prev_end_date = kwargs["data_interval_end"]
+            main_table_id = f"{self.cloud_workspace.project_id}.{self.bq_dataset_id}.{self.main_table}"
+            backup_table_id = bq_sharded_table_id(
+                self.cloud_workspace.project_id, self.bq_dataset_id, f"{self.main_table}_backup", prev_end_date
+            )
+            expiry_date = pendulum.now().add(days=31)
+            success = bq_snapshot(src_table_id=main_table_id, dst_table_id=backup_table_id, expiry_date=expiry_date)
+
+            if success:
+                logging.info(f"Successfully created snapshot backup table of {main_table_id}")
+            else:
+                raise AirflowException(f"Error creating snapshot backup table.")
+
+            # Need to use custom queries for the update and delete since they rely on both the PMID value and Version.
+
+            # Delete old records in the main table that are to be updated.
+            delete_records_to_be_updated = f"""
+            DELETE FROM `{main_table_id}`
+            WHERE (MedlineCitation.PMID.value, MedlineCitation.PMID.Version) IN (
+            SELECT (MedlineCitation.PMID.value, MedlineCitation.PMID.Version)
+            FROM `{update_tables['article_additions']}`)
             """
-            bq_output = run_bigquery_query(create_backup_table)
-            logging.info(f"Output from 'create_backup_table' query: {bq_output}")
+            result = bq_run_query(delete_records_to_be_updated)
+            logging.info(f"Result from deleting old records from {self.main_table} - {result}")
 
-            entity_list["article_additions"]["table_list"].sort()
-            entity_list["article_deletions"]["table_list"].sort()
+            # Insert the new updated records.
+            insert_updated_records = f"""
+            INSERT INTO `{main_table_id}`
+            SELECT *
+            FROM `{update_tables['article_additions']}`
+            """
+            result = bq_run_query(insert_updated_records)
+            logging.info(f"Result from inserting the updated records to {self.main_table} - {result}")
 
-            logging.info(
-                f'Addition table list to apply to main_table: {entity_list["article_additions"]["table_list"]}'
-            )
-            logging.info(
-                f'Deletion table list to apply to main_table: {entity_list["article_deletions"]["table_list"]}'
-            )
+            # Delete the records from the "deletion" table using both PMID and version number.
+            delete_records_from_main_table = f"""
+            DELETE FROM `{main_table_id}`
+            WHERE (MedlineCitation.PMID.value, MedlineCitation.PMID.Version) IN (
+            SELECT (value, Version) 
+            FROM `{update_tables['article_deletions']}`)
+            """
+            result = bq_run_query(delete_records_from_main_table)
+            logging.info(f"Result from inserting the updated records to {self.main_table} - {result}")
 
-            for i in range(num_update_tables):
-                logging.info(f"Currently doing - {entity_list['article_additions']['table_list'][i]}")
-
-                # Ensure that the file_index is the same for the addition and deletion tables.
-                add_file_index = entity_list["article_additions"]["table_list"][i].split(".").split("_")[-1]
-                del_file_index = entity_list["article_deletions"]["table_list"][i].split(".").split("_")[-1]
-
-                if add_file_index != del_file_index:
-                    raise AirflowException(
-                        f"File indices do not match for these additions and deletions! Additions: {add_file_index} Deletions: {del_file_index}"
-                    )
-
-                logging.info(f"Currently doing additions from - {entity_list['article_additions']['table_list'][i]}")
-
-                # Remove the records that have updates from the incoming additions table.
-                # This will be done with an upsert merge with the next version of the workflows.
-                delete_records_from_main_table_from_incoming_additions = f"""
-                DELETE FROM `{self.project_id}.{self.dataset_id}.{self.main_table}`
-                WHERE MedlineCitation.PMID.value IN (
-                SELECT MedlineCitation.PMID.value
-                FROM `{entity_list['article_additions']['table_list'][i]}`)
-                """
-                bq_output = run_bigquery_query(delete_records_from_main_table_from_incoming_additions)
-                logging.info(f"Output from 'delete_records_from_main_table_from_incoming_additions' query: {bq_output}")
-
-                # Insert the additions in to the main table.
-                insert_records_into_main_table_from_incoming_additions = f"""
-                INSERT INTO `{self.project_id}.{self.dataset_id}.{self.main_table}` 
-                SELECT * 
-                FROM `{entity_list['article_additions']['table_list'][i]}`
-                """
-                bq_output = run_bigquery_query(insert_records_into_main_table_from_incoming_additions)
-                logging.info(f"Output from 'insert_records_into_main_table_from_incoming_additions' query: {bq_output}")
-
-                logging.info(f"Currently doing deletions from - {entity_list['article_deletions']['table_list'][i]}")
-
-                # Delete records from the main table using the incoming deletions, matching on the PMID and Version.
-                delete_records_from_main_table_from_incoming_deletions = f"""
-                DELETE FROM `{self.project_id}.{self.dataset_id}.{self.main_table}`
-                WHERE (MedlineCitation.PMID.value, MedlineCitation.PMID.Version) IN (
-                SELECT (value, Version) 
-                FROM `{entity_list['article_deletions']['table_list'][i]}`)
-                """
-                bq_output = run_bigquery_query(delete_records_from_main_table_from_incoming_deletions)
-                logging.info(f"Output from 'delete_records_from_main_table_from_incoming_deletions' query: {bq_output}")
-
-                # TODO: Update the main table description with the new update file index.
-                # description = f"""Pubmed Article table with baseline files pubmed23n0001-pubmed23n1166 and updatefiles from pubmed23n1167-pubmed23nxxxx"""
-
-                # TODO: Do some sort of check step on the main table to ensure that it's been done right?
-                # Re result from the deletions and see if the length of the
-
-    def add_release(self, release: PubMedRelease, **kwargs):
-        """Add the release info to the observatory API.
-
-        :return: None.
+    def add_new_dataset_release(self, release: PubMedRelease, **kwargs) -> None:
+        """
+        Adds release information to API.
         """
 
-        # Add the PubMed release into to the API
-        # Include the following into the release info
-
-        # Index of pubmed files from their FTP server.
-        # data_interval_start and data_interval_end
-        # Names of tables made for this release
-        # Name of Snapshot (partition date)
-        # Create
+        logging.info(f"add_new_dataset_releases: creating dataset release for Pubmed Articles.")
+        dataset_release = DatasetRelease(
+            dag_id=self.dag_id,
+            dataset_id=self.bq_dataset_id,
+            dag_run_id=release.run_id,
+            data_interval_start=release.start_date,
+            data_interval_end=release.end_date,
+            sequence_start=release.changefile_list[0].file_index,
+            sequence_end=release.changefile_list[-1].file_index,
+        )
+        logging.info(f"add_new_dataset_releases: dataset_release={dataset_release}")
+        api = make_observatory_api(observatory_api_conn_id=self.observatory_api_conn_id)
+        api.post_dataset_release(dataset_release)
 
     def cleanup(self, release: PubMedRelease, **kwargs):
-        """Cleanup files from this workflow run.
+        """
+        Cleanup files from this workflow run.
 
-        Delete local download files, tranform files and left over tables in BQ.
-
-        :return: None.
+        Delete local download files, tranform files and current task instance.
         """
 
-        # Pull from Xcom
-        ti: TaskInstance = kwargs["ti"]
-        downloaded_files_for_release = ti.xcom_pull(key="downloaded_files_for_release")
-        entity_list = ti.xcom_pull(key="entity_list")
-
-        logging.info(f"Deleting the locally downloaded files for this release.")
-        for file in downloaded_files_for_release:
-            logging.info(f"Deleting file = {file}")
-            try:
-                os.remove(file)
-            except:
-                logging.info(f"File {file} does not exist.")
-
-        # For each entity, delete the local transform files
-        for name, entity in entity_list.items():
-            logging.info(f"Deleting local transform files for - {name}")
-            for transform_file in entity["transform_files"]:
-                logging.info(f"Deleting file = {file}")
-                try:
-                    os.remove(transform_file)
-                except:
-                    logging.info(f"File {transform_file} does not exist.")
-
-        if not self.download_baseline:
-            logging.info(
-                f"Deleting the dataset {self.project_id}.{self.temp_dataset} and all update tables inside it for this release."
-            )
-            try:
-                # Delete the update tables from BQ by deleting the whole temporary dataset.
-                delete_old_datasets_with_prefix(prefix=self.temp_dataset, age_to_delete=0)
-            except:
-                raise AirflowException(f"Unable to delete dataset: {self.project_id}.{self.temp_dataset}")
-
-        # TODO: Remove all task instance data from this workflow run.
+        logging.info(f"Deleting local files from - {release.workflow_folder}")
+        cleanup(dag_id=self.dag_id, execution_date=kwargs["logical_date"], workflow_folder=release.workflow_folder)
 
 
-def transform_pubmed_xml_file_to_jsonl(input_file: str, entity_list: Dict, transform_folder: str) -> Dict:
+def pull_updatefile_metadata(filename: str) -> dict:
+    """
+    Pull the metadata from the html stats page for a Pubmed updatefile.
+
+    :param filename: Name of the incoming HTML file.
+    :return metadata: Dictionary containing metadata on the Pubmed updatefile.
+    """
+
+    # Read in file and parse.
+    with open(filename, "r") as f_in:
+        html = f_in.read()
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table")
+
+    # Iterate over each row in the table
+    metadata = {}
+    for row in table.find_all("tr"):
+        # Find the columns in each row
+        columns = row.find_all("td")
+        if len(columns) == 2:
+            key = columns[0].text.strip()
+            value = columns[1].text.strip()
+            metadata[key] = int(value)
+
+    return metadata
+
+
+def transform_pubmed_xml_file_to_jsonl(changefile: Changefile, entity_list: List[PubmedEntity]) -> Changefile:
     """
     Convert a single Pubmed XML file to JSONL, pulling out any of the Pubmed additions and or deletions.
 
     Used in parallelised section "transform". Each file is given to an individual process
     rather than multple files read in and transformed at once.
 
-    :param input_file: Absolute path to the Pubmed xml.gz file.
-    :param download_folder: Absolute path to the download folder set for the release.
-    :param entity_list: Dictionary object with details of how to pull out the Pubmed data.
-    :return entity_list: Update dictionary object with updated list of transform files.
+    TODO: Update doc string
     """
 
-    pubmed_file_id = Path(input_file).name.split(".")[0]
+    pubmed_file_id = Path(changefile.download_file_path).name.split(".")[0]
 
-    logging.info(f"Reading in file - {input_file}")
+    logging.info(f"Reading in file - {changefile.filename}")
 
-    with gzip.open(input_file, "rb") as f_in:
+    with gzip.open(changefile.download_file_path, "rb") as f_in:
         # Use the BioPython library for reading in the Pubmed XML files.
         data_dict_dirty = Entrez.read(f_in, validate=True)
 
         # Need to have the XML attributes pulled out from the Biopython data classes.
         data_dict = add_attributes_to_data_from_biopython_classes(data_dict_dirty)
 
-    # now a key, value - loop through entities
-    for name, entity in entity_list.items():
-        # Have to set this to empty here because python multi processing is dumb.
-        entity_list[name]["transform_files"] = []
-
-        # Pull out each record type from the data.
-        data_type, set_key, sub_key = (
-            entity["data_type"],
-            entity["set_key"],
-            entity["sub_key"],
-        )
-
+    # Loop through the Pubmed record metadata, pulling out additions or deletions.
+    for entity in entity_list:
         logging.info(
-            f"Extracting {set_key if data_type == 'deletions' else sub_key} records from file - {pubmed_file_id}"
+            f"Extracting {entity.set_key if entity.type == 'deletions' else entity.sub_key} records from file - {pubmed_file_id}"
         )
 
         try:
             try:
-                data_part = [retrieve for retrieve in data_dict[set_key][sub_key]]
+                data_part = [retrieve for retrieve in data_dict[entity.set_key][entity.sub_key]]
             except:
-                data_part = [retrieve for retrieve in data_dict[sub_key]]
+                data_part = [retrieve for retrieve in data_dict[entity.sub_key]]
 
             logging.info(
-                f"Pulled out {len(data_part)} {f'{set_key} records' if data_type == 'deletions' else f'{sub_key} {data_type}'} from file - {pubmed_file_id}"
+                f"Pulled out {len(data_part)} {f'{entity.set_key} records' if entity.type == 'deletions' else f'{entity.sub_key} {entity.type}'} from file - {pubmed_file_id}"
             )
 
         except:
             logging.info(
-                f"No {f'{set_key} records' if data_type == 'deletions' else f'{sub_key} {data_type}'} records in file - {pubmed_file_id}"
+                f"No {f'{entity.set_key} records' if entity.type == 'deletions' else f'{entity.sub_key} {entity.type}'} records in file - {pubmed_file_id}"
             )
             data_part = []
 
-        output_file = os.path.join(transform_folder, entity["output_file_base"] + "_" + pubmed_file_id + ".jsonl.gz")
+        output_file = changefile.transform_file_path(entity.type)
 
-        logging.info(f"Writing {name} {data_type} to file - {output_file}")
+        logging.info(f"Writing {entity.name} {entity.type} to file - {output_file}")
 
         # Write to compressed *.jsonl.gz
         with gzip.open(output_file, "w") as f_out:
             for line in data_part:
                 f_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
 
-        entity_list[name]["transform_files"].append(output_file)
-
-    return entity_list
+    return changefile
 
 
-# TODO: Clean up this function if possible. Too many messy if statements and is slow.
-def add_attributes_to_data_from_biopython_classes(obj):
+def add_attributes_to_data_from_biopython_classes(
+    obj: Union[StringElement, DictionaryElement, ListElement, OrderedListElement, list]
+):
     """
-    Recursively travel down the data tree and add attributes from the biopython data classes as dictionary keys.
+    Recursively travel down the data tree and add attributes from the Biopython classes as dictionary keys.
 
-    :param obj: Input object, any type.
+    :param obj: Input object, being one of the Biopython data classes.
     :return new: Object with attributes added as keys.
     """
 
@@ -1052,31 +1311,35 @@ def add_attributes_to_data_from_biopython_classes(obj):
         return obj
 
 
-# TODO: Clean up the below if possible and remove unnecessary comments about attributes
 class CustomEncoder(json.JSONEncoder):
 
     """Custom encoder for JSON dump for it to write a dictionary field as a string of text for a
-    number of select key values in the Pubmed data"""
+    select number of key values in the Pubmed data.
+
+    For example, the AbstractText field can be a string or an array containing background, methods, etc,
+    but Bigquery requires it to be well defined and it can't be both an array and a string in the
+    schema. This encoder forces the below fields to be a string, but will be in a dictionary/json format.
+    """
 
     write_as_single_field = [
-        "AbstractText",  # ? also has attributes
+        "AbstractText",
         "Affiliation",
-        "ArticleTitle",  # ? also has attributes
+        "ArticleTitle",
         "b",
-        "BookTitle",  # ? also has attributes
+        "BookTitle",
         "Citation",
         "CoiStatement",
-        "CollectionTitle",  # ? also has attributes
+        "CollectionTitle",
         "CollectiveName",
         "i",
-        "Param",  # ? also has attributes
+        "Param",
         "PublisherName",
-        "SectionTitle",  # ? also has attributes
+        "SectionTitle",
         "sub",
         "Suffix",
         "sup",
         "u",
-        "VernacularTitle",  # ? also has attributes
+        "VernacularTitle",
         "VolumeTitle",
     ]
 
@@ -1092,13 +1355,6 @@ class CustomEncoder(json.JSONEncoder):
                 else:
                     new[k] = self._transform_obj_data(v)
 
-                # TODO: Reconsider if this is needed after review.
-                # # To remove a list of a list e.g. "KeywordList": [["a","b"]] to "KeywordList": ["a","b"]
-                # if k == "KeywordList" and len(v) > 0:
-                #     new[k] = v[0]
-                # else:
-                #     new[k] = self._transform_obj_data(v)
-
             return new
         elif isinstance(obj, list):
             return [self._transform_obj_data(elem) for elem in obj]
@@ -1113,9 +1369,13 @@ class CustomEncoder(json.JSONEncoder):
 def bq_delete_table(
     project_id: str, dataset_id: str, table_id: str, partition_decorator: str = None, not_found_okay: bool = True
 ):
-    # TODO: To add to gcs utils after the workflow restructure.
+    # TODO: Add to gcs utils after merging workflow.
 
-    """Delete a single table in Bigquery."""
+    """
+    Delete a single table in Bigquery.
+
+    TODO: Update doc string
+    """
 
     bq_client = bigquery.Client(project=project_id)
     dataset = bigquery.DatasetReference(project_id, dataset_id)
@@ -1131,3 +1391,27 @@ def bq_delete_table(
         logging.info(f"Deleted exising bigquery table: {table_id} {partition_decorator}")
     except:
         raise AirflowException(f"An error occured deleting table {table_id}")
+
+
+def bq_update_table_expiration(project_id: str, dataset_id: str, table_id: str, expiration_date: pendulum.datetime):
+    """Update a BQ table's expiration date.
+
+    # TODO: Add to bq utils after merging workflow.
+
+    :param project_id: Google project id.
+    :param dataset_id: Name of the dataset.
+    :param table_id: Table name.
+    :param expiration_date
+
+    :return: None.
+    """
+
+    bq_client = bigquery.Client(project=project_id)
+    table_ref = bq_client.dataset(dataset_id).table(table_id)
+    table = bq_client.get_table(table_ref)
+
+    # Update the expiration time
+    table.expires = expiration_date
+
+    # Update the table metadata
+    bq_client.update_table(table, ["expires"])
