@@ -13,23 +13,6 @@
 # limitations under the License.
 # Author: Richard Hosking #}
 
-# Helper Function: Processing Output Types
-{#
-Output Schema:
-per_25th	FLOAT	NULLABLE
-median	    FLOAT	NULLABLE
-per_90th	FLOAT	NULLABLE
-per_95th	FLOAT	NULLABLE
-#}
-CREATE TEMP FUNCTION compute_percentiles(counts ARRAY<INT64>) AS (
-  (SELECT as STRUCT
-    ROUND(PERCENTILE_CONT(count, 0.25) OVER(), 2) as per_25th,
-    ROUND(PERCENTILE_CONT(count, 0.50) OVER(), 2) as median,
-    ROUND(PERCENTILE_CONT(count, 0.90) OVER(), 2) as per_90th,
-    ROUND(PERCENTILE_CONT(count, 0.95) OVER(), 2) as per_95th
-  FROM UNNEST(counts) as count LIMIT 1)
-);
-
 # Helper Function: Counting Access Types
 {#
 Output Schema:
@@ -215,13 +198,10 @@ outputs_without_citations	INTEGER	NULLABLE
 citations	                RECORD	NULLABLE
 citations.openalex                  RECORD	NULLABLE
 citations.openalex.total_citations	INTEGER	NULLABLE
-citations.openalex.percentiles	    RECORD	NULLABLE
 citations.open_citations	                RECORD	NULLABLE
 citations.open_citations.total_citations	INTEGER	NULLABLE
-citations.open_citations.percentiles	    RECORD	NULLABLE
 citations.crossref                  RECORD	NULLABLE
 citations.crossref.total_citations	INTEGER	NULLABLE
-citations.crossref.percentiles	    RECORD	NULLABLE
 
 *percetiles schema captured above
 #}
@@ -243,16 +223,13 @@ CREATE TEMP FUNCTION compute_conditional_citations(
       COUNTIF( (citations.crossref IS NULL OR citations.crossref = 0) AND (citations.open_citations IS NULL OR citations.open_citations = 0) AND (citations.openalex IS NULL OR citations.openalex = 0)) as outputs_without_citations,
       STRUCT(
         STRUCT(
-          SUM(citations.openalex) as total_citations,
-          compute_percentiles(ARRAY_AGG(citations.openalex)) as percentiles
+          SUM(citations.openalex) as total_citations
         ) as openalex,
         STRUCT(
-          SUM(citations.open_citations) as total_citations,
-          compute_percentiles(ARRAY_AGG(citations.open_citations)) as percentiles
+          SUM(citations.open_citations) as total_citations
         ) as open_citations, 
         STRUCT(
-          SUM(citations.crossref) as total_citations,
-          compute_percentiles(ARRAY_AGG(citations.crossref)) as percentiles
+          SUM(citations.crossref) as total_citations
         ) as crossref
       ) as citations,
 
@@ -504,15 +481,11 @@ sum_of_scores	                FLOAT	NULLABLE
 citations	                    RECORD	NULLABLE
 openalex	                            RECORD	NULLABLE
 total_citations	                INTEGER	NULLABLE
-percentiles	                    RECORD	NULLABLE
 open_citations	                RECORD	NULLABLE
 total_citations	                INTEGER	NULLABLE
-percentiles	                    RECORD	NULLABLE
 crossref	                    RECORD	NULLABLE
 total_citations	                INTEGER	NULLABLE
-percentiles	                    RECORD	NULLABLE
 total_citations	                INTEGER	NULLABLE
-percentiles	                    RECORD	NULLABLE
 num_oa_outputs	                INTEGER	NULLABLE
 num_green_outputs	            INTEGER	NULLABLE
 num_gold_outputs	            INTEGER	NULLABLE
@@ -543,16 +516,13 @@ CREATE TEMP FUNCTION compute_disciplines(
         SUM(Score) as sum_of_scores,
         STRUCT(
           STRUCT(
-            SUM(citations.openalex) as total_citations,
-            compute_percentiles(ARRAY_AGG(citations.openalex)) as percentiles
+            SUM(citations.openalex) as total_citations
           ) as openalex,
           STRUCT(
-            SUM(citations.open_citations) as total_citations,
-            compute_percentiles(ARRAY_AGG(citations.open_citations)) as percentiles
+            SUM(citations.open_citations) as total_citations
           ) as open_citations, 
           STRUCT(
-            SUM(citations.crossref) as total_citations,
-            compute_percentiles(ARRAY_AGG(citations.crossref)) as percentiles
+            SUM(citations.crossref) as total_citations
           ) as crossref
         ) as citations,
         COUNTIF(is_oa) as num_oa_outputs, 
