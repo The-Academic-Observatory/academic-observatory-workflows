@@ -1828,7 +1828,8 @@ def save_coki_oa_dataset(path: str, countries: List[Entity], institutions: List[
     subset = {
         "id": None,
         "name": None,
-        "country": None,
+        "country_name": None,
+        "country_code": None,
         "subregion": None,
         "region": None,
         "institution_type": None,
