@@ -297,7 +297,7 @@
       {
         "name": "issn",
         "type": "STRING",
-        "mode": "NULLABLE"
+        "mode": "REPEATED"
       },
       {
         "name": "display_name",

@@ -119,9 +119,21 @@
   },
   {
     "name": "parent_publisher",
-    "type": "STRING",
+    "type": "RECORD",
     "mode": "NULLABLE",
-    "description": "An OpenAlex ID linking to the direct parent of the publisher. This will be null if the publisher's hierarchy_level is 0."
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ],
+    "description": "An OpenAlex ID linking to the direct parent of the publisher and display name. This will be null if the publisher's hierarchy_level is 0."
   },
   {
     "name": "roles",
