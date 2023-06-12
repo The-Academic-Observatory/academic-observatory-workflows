@@ -66,6 +66,12 @@
         "description": "The total number Works that cite a work created by an author affiliated with this institution. Or less formally: the number of citations this institution has collected."
       },
       {
+        "name": "oa_works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
         "name": "works_count",
         "type": "INTEGER",
         "mode": "NULLABLE",
@@ -103,6 +109,28 @@
     "type": "STRING",
     "mode": "REPEATED",
     "description": "Other names people may use for this institution.  "
+  },
+  {
+    "name": "roles",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "role",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      }
+    ]
   },
   {
     "name": "geo",
@@ -152,7 +180,7 @@
         "description": "The sub-national region (state, province) where this institution lives."
       }
     ],
-    "description": "A bunch of stuff we know about the location of this institution:"
+    "description": "A bunch of stuff we know about the location of this institution"
   },
   {
     "name": "homepage_url",
@@ -258,21 +286,40 @@
       {
         "name": "id",
         "type": "STRING",
+        "mode": "NULLABLE",
         "description": "The OpenAlex ID of the repository."
+      },
+      {
+        "name": "issn_l",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "issn",
+        "type": "STRING",
+        "mode": "REPEATED"
       },
       {
         "name": "display_name",
         "type": "STRING",
+        "mode": "NULLABLE",
         "description": "The repositories display name."
+      },
+      {
+        "name": "publisher",
+        "type": "STRING",
+        "mode": "NULLABLE"
       },
       {
         "name": "host_organization",
         "type": "STRING",
+        "mode": "NULLABLE",
         "description": "The OpenAlex ID of the host organisation."
       },
       {
         "name": "host_organization_name",
         "type": "STRING",
+        "mode": "NULLABLE",
         "description": "The host organisations name."
       },
       {
@@ -280,6 +327,16 @@
         "type": "STRING",
         "mode": "REPEATED",
         "description": "The host organisations lineage."
+      },
+      {
+        "name": "publisher_id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "type",
+        "type": "STRING",
+        "mode": "NULLABLE"
       }
     ]
   },
@@ -295,22 +352,64 @@
     "mode": "NULLABLE",
     "fields": [
       {
+        "name": "2yr_cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "2yr_h_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "2yr_i10_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
         "name": "2yr_mean_citedness",
         "type": "FLOAT",
         "mode": "NULLABLE",
-        "description": "The 2-year mean citedness for this institutions. Also known as impact factor."
+        "description": ""
+      },
+      {
+        "name": "2yr_works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
       },
       {
         "name": "h_index",
         "type": "INTEGER",
         "mode": "NULLABLE",
-        "description": "The h-index for this institutions."
+        "description": ""
       },
       {
         "name": "i10_index",
         "type": "INTEGER",
         "mode": "NULLABLE",
-        "description": "The i-10 index for this institutions."
+        "description": ""
+      },
+      {
+        "name": "oa_percent",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
       }
     ],
     "description": "Citation metrics for this institutions."

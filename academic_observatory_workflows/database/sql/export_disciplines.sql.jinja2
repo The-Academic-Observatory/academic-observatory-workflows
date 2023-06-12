@@ -30,7 +30,6 @@ SELECT
   ROUND(SAFE_DIVIDE( ( discipline.num_green_outputs ) * 100 , discipline.total_outputs ), 2) as disciplines_percent_green,
   ROUND(SAFE_DIVIDE( ( discipline.num_gold_outputs ) * 100 , discipline.total_outputs ), 2) as disciplines_percent_gold,
   discipline.citations.openalex.total_citations as disciplines_total_citations,
-  discipline.citations.openalex.percentiles.median as disciplines_median_citations_per_output,
   discipline.funding.total_funded_outputs as disciplines_total_funded_outputs,
   discipline.funding.num_international_outputs as disciplines_num_international_funded_outputs,
   discipline.funding.num_domestic_outputs as disciplines_num_domestic_funded_outputs,

@@ -173,10 +173,9 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
                 ti = env.run_task(workflow.transform.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
                 file_paths = list_files(release.transform_folder, release.transform_files_regex)
-                self.assertEqual(1, len(file_paths))
+                self.assertEqual(5, len(file_paths))
                 for file_path in file_paths:
                     self.assertTrue(os.path.isfile(file_path))
-                    self.assertTrue(is_gzip(file_path))
 
                 # Test that transformed files uploaded
                 ti = env.run_task(workflow.upload_transformed.__name__)
@@ -311,7 +310,9 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
                     "issn_type": [{"value": "0003-987X", "type": "print"}],
                 }
             ]
-            actual_results = transform_file(input_file_path)
+            output_file_path = os.path.join(t, "output.jsonl")
+            transform_file(input_file_path, output_file_path)
+            actual_results = load_jsonl(output_file_path)
             self.assertEqual(expected_results, actual_results)
 
     def test_transform_item(self):

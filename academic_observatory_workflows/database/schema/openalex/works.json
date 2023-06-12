@@ -1,152 +1,5 @@
 [
   {
-    "name": "host_venue",
-    "type": "RECORD",
-    "description": "DEPRECATED",
-    "fields": [
-      {
-        "name": "display_name",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "id",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "is_oa",
-        "type": "BOOLEAN",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "issn",
-        "type": "STRING",
-        "mode": "REPEATED",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "issn_l",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "license",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "publisher",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "type",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "url",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "version",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "host_organization",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "host_organization_name",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "publisher_id",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      }
-    ]
-  },
-  {
-    "name": "alternate_host_venues",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "description": "DEPRECATED",
-    "fields": [
-      {
-        "name": "display_name",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "id",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "is_oa",
-        "type": "BOOLEAN",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "issn",
-        "type": "STRING",
-        "mode": "REPEATED",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "issn_l",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "license",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "publisher",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "type",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "url",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "version",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "host_organization",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "host_organization_name",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "publisher_id",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      }
-    ]
-  },
-  {
     "name": "abstract_inverted_index",
     "type": "RECORD",
     "mode": "NULLABLE",
@@ -165,6 +18,115 @@
       }
     ],
     "description": "The abstract of the work, as an inverted index, which encodes information about the abstract's words and their positions within the text. Like Microsoft Academic Graph, OpenAlex doesn't include plaintext abstracts due to legal constraints."
+  },
+  {
+    "name": "alternate_host_venues",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "DEPRECATED",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization_lineage",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization_name",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "issn",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "issn_l",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "license",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "publisher",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "publisher_id",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "type",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "url",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "version",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      }
+    ]
+  },
+  {
+    "name": "apc_payment",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "currency",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "price",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "price_usd",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "APC converted to USD"
+      },
+      {
+        "name": "provenance",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ],
+    "description": "Objects containing information about the APC (article processing charge) for this work. If we can get the APC price from OpenAPC, we use that. Those APCs are specific to an article and are the actual APC paid by an author or institution to publish the article. As a fallback, we use the DOAJ APC prices that are available in sources. Those are an estimate of what authors would have had to pay to publish the article, since the DOAJ apc prices apply to an entire journal."
   },
   {
     "name": "authorships",
@@ -284,6 +246,12 @@
         "description": "The location's publishing license. This can be a Create Commons license such as cc0 or cc-by, a publisher-specific license, or null which means we are not able to determine a license for this location."
       },
       {
+        "name": "pdf_url",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "A URL where you can find this location as a PDF."
+      },
+      {
         "name": "source",
         "type": "RECORD",
         "mode": "NULLABLE",
@@ -299,6 +267,11 @@
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The host organization for this source as an OpenAlex ID. This will be an Institution.id if the source is a repository, and a Publisher.id if the source is a journal, conference, or eBook platform (based on the type field)."
+          },
+          {
+            "name": "host_organization_lineage",
+            "type": "STRING",
+            "mode": "REPEATED"
           },
           {
             "name": "host_organization_name",
@@ -344,12 +317,6 @@
           }
         ],
         "description": "Information about the source of this location, as a DehydratedSource object."
-      },
-      {
-        "name": "pdf_url",
-        "type": "STRING",
-        "mode": "NULLABLE",
-        "description": "A URL where you can find this location as a PDF."
       },
       {
         "name": "version",
@@ -438,6 +405,18 @@
     "description": "List of dehydrated Concept objects. \nEach Concept object in the list also has one additional property"
   },
   {
+    "name": "corresponding_author_ids",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "OpenAlex IDs of any authors for which authorships.is_corresponding is true."
+  },
+  {
+    "name": "corresponding_institution_ids",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "OpenAlex IDs of any institutions found within an authorship for which authorships.is_corresponding is true."
+  },
+  {
     "name": "counts_by_year",
     "type": "RECORD",
     "mode": "REPEATED",
@@ -447,6 +426,12 @@
         "type": "INTEGER",
         "mode": "NULLABLE",
         "description": "The number of times this work is cited in this year."
+      },
+      {
+        "name": "oa_works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
       },
       {
         "name": "year",
@@ -520,6 +505,108 @@
     ]
   },
   {
+    "name": "grants",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "award_id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "funder",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "funder_display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ],
+    "description": "List of grant objects, which include the Funder and the award ID, if available. Our grants data comes from Crossref, and is currently fairly limited."
+  },
+  {
+    "name": "host_venue",
+    "type": "RECORD",
+    "description": "DEPRECATED",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization_lineage",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "host_organization_name",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "issn",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "issn_l",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "license",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "publisher",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "publisher_id",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "type",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "url",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      },
+      {
+        "name": "version",
+        "type": "STRING",
+        "description": "DEPRECATED"
+      }
+    ]
+  },
+  {
     "name": "id",
     "type": "STRING",
     "mode": "NULLABLE",
@@ -564,6 +651,12 @@
     "description": "All the persistent identifiers (PIDs) that we know about for this work, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible."
   },
   {
+    "name": "is_oa",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE",
+    "description": "Set to true if the work hosted here can be read for free, without registration."
+  },
+  {
     "name": "is_paratext",
     "type": "BOOLEAN",
     "mode": "NULLABLE",
@@ -580,6 +673,12 @@
     "type": "STRING",
     "mode": "NULLABLE",
     "description": "The language of the work in ISO 639-1 format. The language is automatically detected using the information we have about the work. We use the langdetect software library on the words in the work's abstract, or the title if we do not have the abstract. The source code for this procedure is here. Keep in mind that this method is not perfect, and that in some cases the language of the title or abstract could be different from the body of the work."
+  },
+  {
+    "name": "license",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The license applied to this work at this host. Most toll-access works don't have an explicit license (they're under \"all rights reserved\" copyright), so this field generally has content only if is_oa is true."
   },
   {
     "name": "locations",
@@ -626,6 +725,11 @@
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The host organization for this source as an OpenAlex ID. This will be an Institution.id if the source is a repository, and a Publisher.id if the source is a journal, conference, or eBook platform (based on the type field)."
+          },
+          {
+            "name": "host_organization_lineage",
+            "type": "STRING",
+            "mode": "REPEATED"
           },
           {
             "name": "host_organization_name",
@@ -675,10 +779,16 @@
         "name": "version",
         "type": "STRING",
         "mode": "NULLABLE",
-        "description": "The version of the work, based on the DRIVER Guidelines versioning scheme. Possible values are: publishedVersion: The document’s version of record. This is the most authoritative version.\nacceptedVersion: The document after having completed peer review and being officially accepted for publication. It will lack publisher formatting, but the content should be interchangeable with the that of the publishedVersion.\nsubmittedVersion: the document as submitted to the publisher by the authors, but before peer-review. Its content may differ significantly from that of the accepted article."
+        "description": "The version of the work, based on the DRIVER Guidelines versioning scheme. Possible values are: publishedVersion: The document\u2019s version of record. This is the most authoritative version.\nacceptedVersion: The document after having completed peer review and being officially accepted for publication. It will lack publisher formatting, but the content should be interchangeable with the that of the publishedVersion.\nsubmittedVersion: the document as submitted to the publisher by the authors, but before peer-review. Its content may differ significantly from that of the accepted article."
       }
     ],
     "description": "A list of Location objects describing all unique places where this work lives."
+  },
+  {
+    "name": "locations_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "Number of locations for this work."
   },
   {
     "name": "mesh",
@@ -718,6 +828,11 @@
     "type": "RECORD",
     "mode": "NULLABLE",
     "fields": [
+      {
+        "name": "any_repository_has_fulltext",
+        "type": "BOOLEAN",
+        "mode": "NULLABLE"
+      },
       {
         "name": "is_oa",
         "type": "BOOLEAN",
@@ -786,6 +901,11 @@
             "description": "The host organization for this source as an OpenAlex ID. This will be an Institution.id if the source is a repository, and a Publisher.id if the source is a journal, conference, or eBook platform (based on the type field)."
           },
           {
+            "name": "host_organization_lineage",
+            "type": "STRING",
+            "mode": "REPEATED"
+          },
+          {
             "name": "host_organization_name",
             "type": "STRING",
             "mode": "NULLABLE",
@@ -833,7 +953,7 @@
         "name": "version",
         "type": "STRING",
         "mode": "NULLABLE",
-        "description": "The version of the work, based on the DRIVER Guidelines versioning scheme. Possible values are:.\npublishedVersion: The document’s version of record. This is the most authoritative version.\nacceptedVersion: The document after having completed peer review and being officially accepted for publication. It will lack publisher formatting, but the content should be interchangeable with the that of the publishedVersion.\nsubmittedVersion: the document as submitted to the publisher by the authors, but before peer-review. Its content may differ significantly from that of the accepted article."
+        "description": "The version of the work, based on the DRIVER Guidelines versioning scheme. Possible values are:.\npublishedVersion: The document\u2019s version of record. This is the most authoritative version.\nacceptedVersion: The document after having completed peer review and being officially accepted for publication. It will lack publisher formatting, but the content should be interchangeable with the that of the publishedVersion.\nsubmittedVersion: the document as submitted to the publisher by the authors, but before peer-review. Its content may differ significantly from that of the accepted article."
       }
     ],
     "description": "A Location object with the primary location of this work."
@@ -863,6 +983,61 @@
     "description": "OpenAlex IDs for works related to this work. "
   },
   {
+    "name": "summary_stats",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "2yr_cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "2yr_h_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "2yr_i10_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "2yr_mean_citedness",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "h_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "i10_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "oa_percent",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": ""
+      }
+    ]
+  },
+  {
     "name": "title",
     "type": "STRING",
     "mode": "NULLABLE",
@@ -879,5 +1054,17 @@
     "type": "TIMESTAMP",
     "mode": "NULLABLE",
     "description": "The last time anything in this Work object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
+  },
+  {
+    "name": "url",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The URL where you can access this work."
+  },
+  {
+    "name": "version",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The version of the work, based on the DRIVER Guidelines versioning scheme. Possible values are: publishedVersion, acceptedVersion or submittedVersion."
   }
 ]

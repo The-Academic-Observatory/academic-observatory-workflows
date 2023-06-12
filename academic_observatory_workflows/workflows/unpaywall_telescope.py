@@ -203,11 +203,11 @@ class UnpaywallTelescope(Workflow):
         *,
         dag_id: str,
         cloud_workspace: CloudWorkspace,
-        bq_dataset_id: str = "our_research",
+        bq_dataset_id: str = "unpaywall",
         bq_table_name: str = "unpaywall",
         api_dataset_id: str = "unpaywall",
         schema_folder: str = os.path.join(default_schema_folder(), "unpaywall"),
-        dataset_description: str = "Our Research datasets: http://ourresearch.org/",
+        dataset_description: str = "Unpaywall Data Feed: https://unpaywall.org/products/data-feed",
         table_description: str = "Unpaywall Data Feed: https://unpaywall.org/products/data-feed",
         primary_key: str = "doi",
         snapshot_expiry_days: int = 7,
@@ -565,7 +565,7 @@ class UnpaywallTelescope(Workflow):
             source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
             table_description=self.table_description,
             write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-            ignore_unknown_values=False,
+            ignore_unknown_values=True,
         )
         set_task_state(success, self.bq_load_upsert_table.__name__, release)
 
@@ -655,7 +655,7 @@ class UnpaywallTelescope(Workflow):
             source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
             table_description=self.table_description,
             write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-            ignore_unknown_values=False,
+            ignore_unknown_values=True,
         )
         set_task_state(success, self.bq_load_upsert_table.__name__, release)
 

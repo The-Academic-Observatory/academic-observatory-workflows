@@ -165,11 +165,11 @@ class CrossrefEventsTelescope(Workflow):
         dag_id: str,
         cloud_workspace: CloudWorkspace,
         events_start_date: pendulum.DateTime = pendulum.datetime(2017, 2, 17),
-        bq_dataset_id: str = "crossref",
+        bq_dataset_id: str = "crossref_events",
         bq_table_name: str = "crossref_events",
         api_dataset_id: str = "crossref_events",
         schema_folder: str = os.path.join(default_schema_folder(), "crossref_events"),
-        dataset_description: str = "Datasets created by Crossref: https://www.crossref.org/",
+        dataset_description: str = "The Crossref Events dataset: https://www.eventdata.crossref.org/guide/",
         table_description: str = "The Crossref Events dataset: https://www.eventdata.crossref.org/guide/",
         snapshot_expiry_days: int = 31,
         n_rows: int = 1000,
@@ -515,7 +515,7 @@ class CrossrefEventsTelescope(Workflow):
             schema_file_path=self.schema_file_path,
             source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
             write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-            ignore_unknown_values=False,
+            ignore_unknown_values=True,
         )
         set_task_state(success, self.bq_load_main_table.__name__, release)
 

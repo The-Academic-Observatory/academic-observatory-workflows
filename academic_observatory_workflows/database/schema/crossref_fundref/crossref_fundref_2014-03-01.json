@@ -8,9 +8,26 @@
               {
                 "fields": [
                   {
+                    "fields": [
+                      {
+                        "mode": "REPEATED",
+                        "name": "parent",
+                        "type": "STRING"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "name",
+                        "type": "STRING"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "funder",
+                        "type": "STRING"
+                      }
+                    ],
                     "mode": "REPEATED",
                     "name": "parent",
-                    "type": "STRING"
+                    "type": "RECORD"
                   },
                   {
                     "mode": "NULLABLE",
@@ -111,9 +128,26 @@
               {
                 "fields": [
                   {
+                    "fields": [
+                      {
+                        "mode": "REPEATED",
+                        "name": "children",
+                        "type": "STRING"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "name",
+                        "type": "STRING"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "funder",
+                        "type": "STRING"
+                      }
+                    ],
                     "mode": "REPEATED",
                     "name": "children",
-                    "type": "STRING"
+                    "type": "RECORD"
                   },
                   {
                     "mode": "NULLABLE",

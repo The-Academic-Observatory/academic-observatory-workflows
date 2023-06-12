@@ -101,7 +101,7 @@ class ScopusTelescope(Workflow):
         scopus_conn_ids: List[str],
         view: str = "STANDARD",
         earliest_date: pendulum.DateTime = pendulum.datetime(1800, 1, 1),
-        bq_dataset_id: str = "elsevier",
+        bq_dataset_id: str = "scopus",
         bq_table_name: str = "scopus",
         api_dataset_id: str = "scopus",
         schema_folder: str = os.path.join(default_schema_folder(), "scopus"),

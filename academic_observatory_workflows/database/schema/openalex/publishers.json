@@ -29,6 +29,12 @@
         "description": "The total number of Works that cite a Work published by this publisher."
       },
       {
+        "name": "oa_works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
         "name": "works_count",
         "type": "INTEGER",
         "mode": "NULLABLE",
@@ -113,9 +119,43 @@
   },
   {
     "name": "parent_publisher",
-    "type": "STRING",
+    "type": "RECORD",
     "mode": "NULLABLE",
-    "description": "An OpenAlex ID linking to the direct parent of the publisher. This will be null if the publisher's hierarchy_level is 0."
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ],
+    "description": "An OpenAlex ID linking to the direct parent of the publisher and display name. This will be null if the publisher's hierarchy_level is 0."
+  },
+  {
+    "name": "roles",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "role",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      }
+    ]
   },
   {
     "name": "sources_api_url",
@@ -130,22 +170,64 @@
     "description": "Citation metrics for this publisher",
     "fields": [
       {
+        "name": "2yr_cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "2yr_h_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "2yr_i10_index",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
         "name": "2yr_mean_citedness",
         "type": "FLOAT",
         "mode": "NULLABLE",
-        "description": "The 2-year mean citedness for this publisher. Also known as impact factor. While the h-index and the i-10 index are normally author-level metrics and the 2-year mean citedness is normally a journal-level metric, they can be calculated for any set of papers, so we include them for publishers."
+        "description": ""
+      },
+      {
+        "name": "2yr_works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "cited_by_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
       },
       {
         "name": "h_index",
         "type": "INTEGER",
         "mode": "NULLABLE",
-        "description": "The h-index for this publisher."
+        "description": ""
       },
       {
         "name": "i10_index",
         "type": "INTEGER",
         "mode": "NULLABLE",
-        "description": "The i-10 index for this publisher."
+        "description": ""
+      },
+      {
+        "name": "oa_percent",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": ""
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": ""
       }
     ]
   },

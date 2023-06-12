@@ -83,7 +83,7 @@ PERCENTAGE_FIELD_KEYS = [
     ("outputs_public", "n_outputs_other_platform_open"),
     ("outputs_other_internet", "n_outputs_other_platform_open"),
 ]
-INCLUSION_THRESHOLD = {"country": 1, "institution": 700}
+INCLUSION_THRESHOLD = {"country": 15, "institution": 800}
 MAX_REPOSITORIES = 200
 START_YEAR = 2000
 END_YEAR = pendulum.now().year - 1
@@ -575,6 +575,8 @@ class OaWebWorkflow(Workflow):
 
             # Aggregate data file
             df_index = make_index_df(category, df_index, df_data)
+
+            logging.info(f"Total {category} entities: {len(df_index)}")
 
             # Save index to intermediate
             index_path = os.path.join(release.intermediate_path, index_name)
@@ -1826,7 +1828,8 @@ def save_coki_oa_dataset(path: str, countries: List[Entity], institutions: List[
     subset = {
         "id": None,
         "name": None,
-        "country": None,
+        "country_name": None,
+        "country_code": None,
         "subregion": None,
         "region": None,
         "institution_type": None,
