@@ -1017,6 +1017,7 @@ SELECT
 
 FROM `{{ project_id }}.{{ dataset_id }}.doi{{ snapshot_date.strftime('%Y%m%d') }}` as dois, UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
 WHERE aggregrate.identifier IS NOT NULL
+AND dois.crossref.type NOT IN ("dataset")
 GROUP BY aggregrate.identifier, crossref.{{ group_by_time_field }}
 )
 
