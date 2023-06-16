@@ -13,6 +13,9 @@
 # limitations under the License.
 # Author: Richard Hosking #}
 
+{#These types will be excluded by the aggregation#}
+{% set CROSSREF_TYPES_TO_EXCLUDE = '("dataset")' %}
+
 # Helper Function: Counting Access Types
 {#
 Output Schema:
@@ -741,6 +744,7 @@ WITH tmp_disciplines AS
     UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
   WHERE
     aggregrate.identifier IS NOT NULL
+    AND dois.crossref.type NOT IN {{ CROSSREF_TYPES_TO_EXCLUDE }}
   GROUP BY
     aggregrate.identifier,
     crossref.{{ group_by_time_field }}
@@ -764,6 +768,7 @@ tmp_access_types AS (
     UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
   WHERE
     aggregrate.identifier IS NOT NULL
+    AND dois.crossref.type NOT IN {{ CROSSREF_TYPES_TO_EXCLUDE }}
   GROUP BY
     aggregrate.identifier,
     crossref.{{ group_by_time_field }}
@@ -1017,7 +1022,7 @@ SELECT
 
 FROM `{{ project_id }}.{{ dataset_id }}.doi{{ snapshot_date.strftime('%Y%m%d') }}` as dois, UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
 WHERE aggregrate.identifier IS NOT NULL
-AND dois.crossref.type NOT IN ("dataset")
+AND dois.crossref.type NOT IN {{ CROSSREF_TYPES_TO_EXCLUDE }}
 GROUP BY aggregrate.identifier, crossref.{{ group_by_time_field }}
 )
 
