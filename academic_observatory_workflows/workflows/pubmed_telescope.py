@@ -25,12 +25,14 @@ from datetime import timedelta
 from bs4 import BeautifulSoup
 from typing import Union, Dict, List
 
+import glob
+
 # Google Biguery
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
 
 # To download the files from the Pubmed FTP server
-import ftplib
+from ftplib import FTP
 import hashlib
 
 # For reading in the XML files using Biopython library.
@@ -84,27 +86,16 @@ class Changefile:
         path_on_ftp: str,
         is_first_run: bool,
         changefile_date: pendulum.DateTime,
-        num_new: int = None,
-        num_revised: int = None,
-        num_total: int = None,
-        num_cite_total: int = None,
-        num_deletes: int = None,
         changefile_release: ChangefileRelease = None,
     ):
-        """Holds the metadata about a single Pubmed updatefile (changefile).
-
-        TODO: Update doc string
+        """Holds the metadata about a single Pubmed updatefile.
 
         :param filename: the name of the changefile.
         :param file_index: Index of the updatefile, effectively a count of the n-th updatefile.
-        :param changefile_date: the date that the changefile was added to PubMed's FTP server.
+        :param path_on_ftp: Path of the
         :param is_first_run: Identifies if this changefile is a baseline (true) or an updatefile (false).
-        :param num_new: Number of new Medline records to be added.
-        :param num_revised: Number of Medline records to revise / update.
-        :param num_total: Number of record Medline records in total.
-        :param num_cite_total: Total number of citation records in this updatefile.
-        :param num_deletes: Number of records to delete from the database.
-
+        :param changefile_date: The date that the changefile was added to PubMed's FTP server.
+        :param ChangefileRelease: Changefile release.
         """
 
         self.filename = filename
@@ -112,19 +103,20 @@ class Changefile:
         self.path_on_ftp = path_on_ftp
         self.is_first_run = is_first_run
         self.changefile_date = changefile_date
-        self.num_new = num_new
-        self.num_revised = num_revised
-        self.num_total = num_total
-        self.num_cite_total = num_cite_total
-        self.num_deletes = num_deletes
-
         self.changefile_release: ChangefileRelease = changefile_release
 
         self.file_type = "jsonl.gz"
 
     def __eq__(self, other):
         if isinstance(other, Changefile):
-            return self.filename == other.filename and self.changefile_date == other.changefile_date
+            return (
+                self.filename == other.filename
+                and self.file_index == other.file_index
+                and self.path_on_ftp == other.path_on_ftp
+                and self.is_first_run == other.is_first_run
+                and abs(self.changefile_date - other.changefile_date) <= timedelta(minutes=1)
+                and self.changefile_release == other.changefile_release
+            )
         return False
 
     @staticmethod
@@ -134,11 +126,6 @@ class Changefile:
         path_on_ftp = dict_["path_on_ftp"]
         is_first_run = dict_["is_first_run"]
         changefile_date = pendulum.parse(dict_["changefile_date"])
-        num_new = dict_["num_new"]
-        num_revised = dict_["num_revised"]
-        num_total = dict_["num_total"]
-        num_cite_total = dict_["num_cite_total"]
-        num_deletes = dict_["num_deletes"]
         changefile_release = dict_["changefile_release"]
 
         return Changefile(
@@ -147,11 +134,6 @@ class Changefile:
             path_on_ftp=path_on_ftp,
             is_first_run=is_first_run,
             changefile_date=changefile_date,
-            num_new=num_new,
-            num_revised=num_revised,
-            num_total=num_total,
-            num_cite_total=num_cite_total,
-            num_deletes=num_deletes,
             changefile_release=changefile_release,
         )
 
@@ -162,21 +144,17 @@ class Changefile:
             path_on_ftp=self.path_on_ftp,
             is_first_run=self.is_first_run,
             changefile_date=self.changefile_date.isoformat(),
-            num_new=self.num_new,
-            num_revised=self.num_revised,
-            num_total=self.num_total,
-            num_cite_total=self.num_cite_total,
-            num_deletes=self.num_deletes,
             changefile_release=self.changefile_release,
         )
 
     @property
     def download_file_path(self):
+        assert self.changefile_release is not None, "Changefile.download_folder: self.changefile_release is None"
         return os.path.join(self.changefile_release.download_folder, self.filename)
 
     @property
     def transform_path(self):
-        assert self.changefile_release is not None, "Changefile.download_file_path: self.changefile_release is None"
+        assert self.changefile_release is not None, "Changefile.transform_path: self.changefile_release is None"
         return self.changefile_release.transform_folder
 
     def transform_file_path(self, entity_type: str) -> str:
@@ -187,7 +165,6 @@ class Changefile:
         :return: Retuns the path to the transformed file.
         """
 
-        # Splice at the end to get rid of the .xml.gz part
         assert self.changefile_release is not None, "Changefile.transform_file_path: self.changefile_release is None"
         return os.path.join(
             self.changefile_release.transform_folder, f"{entity_type}_{self.filename[:-7]}.{self.file_type}"
@@ -199,6 +176,7 @@ class Changefile:
         :param entity_type: Type of the record, either "additions" or "deletions".
         :return: Retuns the path to the transformed file.
         """
+
         assert self.changefile_release is not None, "Changefile.transform_file_path: self.changefile_release is None"
         return os.path.join(self.changefile_release.transform_folder, f"{entity_type}_*.{self.file_type}")
 
@@ -250,10 +228,11 @@ class PubmedEntity:
         """
         Holds the metadata about the records stored in Pubmed.
 
-        TODO: Update doc string
-
-        :param entity_name: Name of the enitty, articles, book articles or book documents.
+        :param name: Name of the enitty, articles, book articles or book documents.
         :param type: Either a set of 'addition' or 'deletion' records.
+        :param sub_key: Sub key location of Pubmed data.
+        :param set_key: Key location of Pubmed.
+        :param PMID_location: Location of PMID values
         """
 
         self.name = name
@@ -275,17 +254,19 @@ class PubMedRelease(ChangefileRelease):
         start_date: pendulum.DateTime,
         end_date: pendulum.DateTime,
         is_first_run: bool,
-        schema_folder: str,
         changefile_list: List[Changefile],
     ):
-        """Construct a PubmedRelease.
-
-         TODO: Update doc string
+        """
+        Construct a PubmedRelease.
 
         :param dag_id: the DAG id.
-        :param start_date:
-        :param end_date:
-        :param first_release:
+        :param run_id: Run id of this workflow.
+        :param cloud_workspace: Holds cloud location details.
+        :param start_date: Start date of the release.
+        :param end_date: End date of the release.
+        :param is_first_run: If it's the first run of the workflow, if this
+        release is to download the baseline files of Pubmed.
+        :param changefile_list: List of changefiles for this release.
         """
 
         super().__init__(
@@ -299,7 +280,6 @@ class PubMedRelease(ChangefileRelease):
         self.cloud_workspace = cloud_workspace
         self.bq_dataset_id = bq_dataset_id
         self.is_first_run = is_first_run
-        self.schema_folder = schema_folder
         self.changefile_list = changefile_list
 
         self.changefile_release = ChangefileRelease(
@@ -315,7 +295,6 @@ class PubMedRelease(ChangefileRelease):
         for changefile in changefile_list:
             changefile.changefile_release = self.changefile_release
 
-    # TODO: Move this function elsewhere?
     def merged_transfer_blob_pattern(self, entity_type: str, first_index: int = None, last_index: int = None) -> str:
         """
         Create a gcs blob pattern url for transfering the merged updatefiles into Bigquery.
@@ -351,6 +330,7 @@ class PubMedTelescope(Workflow):
         schedule_interval: str = "0 0 * * 0",  # weekly
         catchup: bool = True,
         ftp_server_url: str = "ftp.ncbi.nlm.nih.gov",
+        ftp_port: str = 21,
         reset_ftp_counter: int = 20,
         check_md5_hash: bool = True,
         max_download_retry: int = 5,
@@ -359,23 +339,27 @@ class PubMedTelescope(Workflow):
         snapshot_expiry_days: int = 7,
         max_processes: int = 4,  # Limited to 4 due to RAM usage when transforming files
         batch_size: int = 4,
-        data_location: str = "us",
-        main_table: str = "articles_test",
+        main_table: str = "articles",
         table_description: str = "Pubmed Medline database. https://pubmed.ncbi.nlm.nih.gov/about/ ",
     ):
         """Construct an PubMed Telescope instance.
 
-        # TODO: Go through this doc string.
-
         :param dag_id: the id of the DAG.
+        :param cloud_workspace: Cloud settings.
+        :param bq_dataset_id: Dataset name for final tables.
         :param start_date: the start date of the DAG.
         :param schedule_interval: the schedule interval of the DAG.
-        :param dataset_id: the dataset id.
-        :param dataset_description: the dataset description.
+        :param catchup: Turn catch up on or not.
+        :param ftp_server_url: Server address of Pubmed's FTP server.
+        :param ftp_port: FTP port.
+        :param reset_ftp_counter: Resets FTP connection after downloading x number of files.
+        :param check_md5_hash: Verify the MD5 checksum of the downloaded changefile.
         :param queue: the queue that the tasks should run on.
-        :param schema_folder: the SQL schema path.
-        :param airflow_vars: list of airflow variable keys, for each variable it is checked if it exists in airflow
-        :param workflow_id: api workflow id.
+        :param snapshot_expiry_days: How long until the snapshot expires.
+        :param max_processes: Max number of parallel processors.
+        :param batch_size: Number of changefiles per batch.
+        :param main_table: Name of Pubmed table.
+        :param table_description: Description of the main table.
         """
 
         self.observatory_api_conn_id = observatory_api_conn_id
@@ -396,8 +380,6 @@ class PubMedTelescope(Workflow):
         self.bq_dataset_id = bq_dataset_id
         self.main_table = main_table
         self.table_description = table_description
-        self.data_location = data_location
-        self.schema_folder = default_schema_folder()
         self.snapshot_expiry_days = snapshot_expiry_days
 
         # Workflow parameters
@@ -424,6 +406,7 @@ class PubMedTelescope(Workflow):
 
         # PubMed download parameters
         self.ftp_server_url = ftp_server_url
+        self.ftp_port = ftp_port
         self.baseline_path = "/pubmed/baseline/"
         self.updatefiles_path = "/pubmed/updatefiles/"
 
@@ -434,8 +417,6 @@ class PubMedTelescope(Workflow):
 
         # Required file size of the update files.
         self.merged_file_size = 4  # Gb
-
-        self.num_to_download = 3
 
         # After how many downloads to reset the connection to Pubmed's FTP server.
         self.reset_ftp_counter = reset_ftp_counter
@@ -481,7 +462,8 @@ class PubMedTelescope(Workflow):
         data_interval_end = kwargs["data_interval_end"]
 
         # Open FTP connection to PubMed servers.
-        ftp_conn = ftplib.FTP(self.ftp_server_url, timeout=1000000.0)
+        ftp_conn = FTP()
+        ftp_conn.connect(host=self.ftp_server_url, port=self.ftp_port)
         ftp_conn.login()  # anonymous login (publicly available data)
 
         files_to_download = []
@@ -515,11 +497,11 @@ class PubMedTelescope(Workflow):
 
             # Change to updatefiles directory
             ftp_conn.cwd(self.updatefiles_path)
+            ftp_conn.sendcmd("PASV")
 
-            # Find all the xml.gz files available from the server.
+            # Find all the .xml.gz files available
             updatefiles_list = ftp_conn.nlst()
-            updatefiles_xml_gz = [file for file in updatefiles_list if (file.split(".")[-1] == "gz" in file)]
-            updatefiles_xml_gz.sort()
+            updatefiles_xml_gz = [file for file in updatefiles_list if file.endswith(".xml.gz")]
 
             for file in updatefiles_xml_gz:
                 # Only return list of updatefiles that are within the required release period.
@@ -532,33 +514,16 @@ class PubMedTelescope(Workflow):
                     path_on_ftp = self.updatefiles_path + file
                     changefile_date = file_upload_date
 
-                    # TODO: Add retry loop for DLing this html file.
-
-                    # Download the HTML metadata file.
-                    html_file = f"{filename.split('.')[0]}_stats.html"
-                    with open(html_file, "wb") as f:
-                        ftp_conn.retrbinary(f"RETR {html_file}", f.write)
-                        f.close()
-
-                    # Pull metadata from HTML file.
-                    metadata = pull_updatefile_metadata(html_file)
-
                     changefile = Changefile(
                         filename=filename,
                         file_index=file_index,
                         path_on_ftp=path_on_ftp,
                         changefile_date=changefile_date,
                         is_first_run=is_first_run,
-                        num_new=metadata["MEDLINE New"],
-                        num_revised=metadata["MEDLINE Revised"],
-                        num_total=metadata["MEDLINE Total"],
-                        num_cite_total=metadata["Citation Set Total"],
-                        num_deletes=metadata["Deletes"],
                     )
                     files_to_download.append(changefile)
 
             # Check that all updatefiles pulled from the FTP server are sequential.
-
             # Sort from oldest to newest using the file index
             files_to_download.sort(key=lambda c: c.file_index, reverse=False)
             file_index_last = files_to_download[0].file_index
@@ -633,7 +598,6 @@ class PubMedTelescope(Workflow):
             start_date=start_date,
             end_date=end_date,
             is_first_run=is_first_run,
-            schema_folder=self.schema_folder,
             changefile_list=changefile_list,
         )
 
@@ -649,7 +613,8 @@ class PubMedTelescope(Workflow):
         """
 
         # Open FTP connection
-        ftp_conn = ftplib.FTP(self.ftp_server_url, timeout=1000000000.0)
+        ftp_conn = FTP()
+        ftp_conn.connect(host=self.ftp_server_url, port=self.ftp_port)
         ftp_conn.login()  # anonymous login (publicly available data)
 
         num_to_download = len(release.changefile_list)
@@ -665,8 +630,9 @@ class PubMedTelescope(Workflow):
                 ftp_conn.close()
 
                 # Open a new FTP connection
-                ftp_conn = ftplib.FTP(self.ftp_server_url, timeout=1000000000.0)
-                ftp_conn.login()
+                ftp_conn = FTP()
+                ftp_conn.connect(host=self.ftp_server_url, port=self.ftp_port)
+                ftp_conn.login()  # anonymous login (publicly available data)
 
                 logging.info(
                     f"FTP connection to Pubmed's servers has been reset after {self.reset_ftp_counter} downloads to avoid issues."
@@ -678,23 +644,27 @@ class PubMedTelescope(Workflow):
                 while download_attemp_count <= self.max_download_retry and not download_success:
                     logging.info(f"Downloading: {changefile.filename} Attempt: {download_attemp_count}")
                     try:
+                        download_location = changefile.download_file_path
                         # Download file
-                        with open(changefile.download_file_path, "wb") as f:
+                        with open(download_location, "wb") as f:
                             ftp_conn.retrbinary(f"RETR {changefile.path_on_ftp}", f.write)
+                        logging.info(f"File downloaded to - {download_location}")
                     except:
                         logging.info(
                             f"Unable to download {changefile.path_on_ftp} from PubMed's FTP server {self.ftp_server_url}."
                         )
 
                     # Create the hash from the above downloaded file.
-                    with open(changefile.download_file_path, "rb") as f_hash:
+                    with open(download_location, "rb") as f_hash:
                         data = f_hash.read()
                         md5hash_from_download = hashlib.md5(data).hexdigest()
+
+                    logging.info(f"MD5 has from downloaded file: {md5hash_from_download}")
 
                     # Need to have a download catch for the hash file as well, otherwise it can break the download loop.
                     try:
                         # Download corresponding md5 hash.
-                        with open(f"{changefile.download_file_path}.md5", "wb") as f:
+                        with open(f"{download_location}.md5", "wb") as f:
                             ftp_conn.retrbinary(f"RETR {changefile.path_on_ftp}.md5", f.write)
                     except:
                         logging.info(
@@ -702,7 +672,7 @@ class PubMedTelescope(Workflow):
                         )
 
                     # Peep into md5 file.
-                    with open(f"{changefile.download_file_path}.md5", "r") as f_md5:
+                    with open(f"{download_location}.md5", "r") as f_md5:
                         md5_from_pubmed_ftp = f_md5.read()
 
                     # If md5 does not match, raise an Airflow exception.
@@ -717,7 +687,7 @@ class PubMedTelescope(Workflow):
 
                 if not download_success:
                     raise AirflowException(
-                        f"Unable to download {changefile.download_file_path} from PubMed's FTP server {self.ftp_server_url} after {self.max_download_retry}"
+                        f"Unable to download {download_location} from PubMed's FTP server {self.ftp_server_url} after {self.max_download_retry}"
                     )
 
             else:
@@ -740,12 +710,7 @@ class PubMedTelescope(Workflow):
         """
 
         # Grab list of files to upload.
-        if release.is_first_run:
-            changefiles_to_upload = [
-                changefile.download_file_path for changefile in release.changefile_list[: self.num_to_download]
-            ]
-        else:
-            changefiles_to_upload = [changefile.download_file_path for changefile in release.changefile_list]
+        changefiles_to_upload = [changefile.download_file_path for changefile in release.changefile_list]
 
         success = gcs_upload_files(
             bucket_name=self.cloud_workspace.download_bucket,
@@ -783,8 +748,6 @@ class PubMedTelescope(Workflow):
 
                     logging.info(f"Successfully transformed file - {transformed_changefile.filename}")
 
-        return True
-
     def merge_updatefiles(self, release: PubMedRelease, **kwargs):
         """
         Check through the changefiles to only use the newest records for a particular PMID and version number of the article.
@@ -795,7 +758,7 @@ class PubMedTelescope(Workflow):
         # # Grab list of changefiles that were transformed in previous task.
         files_to_merge = release.changefile_list
 
-        # Make sure that the incoming list of changefiles are sorted on file_index, from newest to oldest.
+        # Make sure that the incoming list of changefiles are sorted on file_index, oldest to newest.
         files_to_merge.sort(key=lambda c: c.file_index, reverse=False)
 
         merged_updatefiles = {}
@@ -840,7 +803,7 @@ class PubMedTelescope(Workflow):
                         # Write file out to file.
                         with gzip.open(merged_output_file, "w") as f_out:
                             for line in merged_data:
-                                f_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
+                                f_out.write(str.encode(json.dumps(line, cls=PubMedCustomEncoder) + "\n"))
 
                         merged_updatefiles[entity.name] = merged_output_file
 
@@ -859,23 +822,6 @@ class PubMedTelescope(Workflow):
             # Max number of updatefiles per week is about 10 to 15 and will be less than 4gb when compressed.
 
             logging.info(f"Running through each of the updatefiles and checking if there are updated records.")
-
-            # TODO: Add check for if the number of updates/deletes are match the changefile records.
-            # # Loop through all the changefiles and determine total sums of the below
-            # # metadata from changefiles
-            sum_new = 0
-            sum_revised = 0
-            sum_total = 0
-            sum_cite_total = 0
-            sum_deletes = 0
-
-            for changefile in files_to_merge:
-                # logging.info(f"Numb{changefile.filename}")
-                sum_new += changefile.num_new
-                sum_revised += changefile.num_revised
-                sum_total += changefile.num_total
-                sum_cite_total += changefile.num_cite_total
-                sum_deletes += changefile.num_deletes
 
             for entity in self.entity_list:
                 # Find newest records from the updatefiles
@@ -918,8 +864,6 @@ class PubMedTelescope(Workflow):
                     merged_data.extend(incoming_data)
 
                 logging.info(f"Found the following number of records that were updated - {update_counter}")
-                logging.info(f"Number of records to delete from the main table - {sum_revised - update_counter}")
-                # store this info for the BQ step.
 
                 merged_output_file = changefile.merged_transform_file_path(
                     entity.type, first_file_index, changefile.file_index
@@ -932,7 +876,7 @@ class PubMedTelescope(Workflow):
                 # Write to compressed *.jsonl.gz
                 with gzip.open(merged_output_file, "w") as f_out:
                     for line in merged_data:
-                        f_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
+                        f_out.write(str.encode(json.dumps(line, cls=PubMedCustomEncoder) + "\n"))
 
         # Push list of merged transformed files to Xcom for upload step.
         ti: TaskInstance = kwargs["ti"]
@@ -1004,7 +948,7 @@ class PubMedTelescope(Workflow):
                 uri=merged_transform_blob_pattern,
                 table_id=f"{self.cloud_workspace.project_id}.{self.bq_dataset_id}.{self.main_table}",
                 source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
-                schema_file_path=os.path.join(self.schema_folder, "pubmed", "article_additions_2023-01-01.json"),
+                schema_file_path=self.entity_list[0].schema_file_path,
                 write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
                 table_description=self.table_description,
                 partition=False,
@@ -1067,7 +1011,7 @@ class PubMedTelescope(Workflow):
             # Push list of update tables into the xcom
             ti.xcom_push(key="update_tables", value=update_tables)
 
-    def bq_add_updates_to_main_table(self, release: PubMedRelease, **kwargs) -> None:
+    def bq_add_updates_to_main_table(self, release: PubMedRelease, **kwargs):
         """
         Updates the main table with the additions and deletions from the update files.
         """
@@ -1105,7 +1049,9 @@ class PubMedTelescope(Workflow):
             success = bq_snapshot(src_table_id=main_table_id, dst_table_id=backup_table_id, expiry_date=expiry_date)
 
             if success:
-                logging.info(f"Successfully created snapshot backup table of {main_table_id}")
+                logging.info(
+                    f"Successfully created snapshot backup table of {main_table_id} - backup table: {backup_table_id}"
+                )
             else:
                 raise AirflowException(f"Error creating snapshot backup table.")
 
@@ -1140,7 +1086,7 @@ class PubMedTelescope(Workflow):
             result = bq_run_query(delete_records_from_main_table)
             logging.info(f"Result from inserting the updated records to {self.main_table} - {result}")
 
-    def add_new_dataset_release(self, release: PubMedRelease, **kwargs) -> None:
+    def add_new_dataset_release(self, release: PubMedRelease, **kwargs):
         """
         Adds release information to API.
         """
@@ -1154,6 +1100,8 @@ class PubMedTelescope(Workflow):
             data_interval_end=release.end_date,
             sequence_start=release.changefile_list[0].file_index,
             sequence_end=release.changefile_list[-1].file_index,
+            changefile_start_date=release.start_date,
+            changefile_end_date=release.end_date,
         )
         logging.info(f"add_new_dataset_releases: dataset_release={dataset_release}")
         api = make_observatory_api(observatory_api_conn_id=self.observatory_api_conn_id)
@@ -1170,44 +1118,19 @@ class PubMedTelescope(Workflow):
         cleanup(dag_id=self.dag_id, execution_date=kwargs["logical_date"], workflow_folder=release.workflow_folder)
 
 
-def pull_updatefile_metadata(filename: str) -> dict:
-    """
-    Pull the metadata from the html stats page for a Pubmed updatefile.
-
-    :param filename: Name of the incoming HTML file.
-    :return metadata: Dictionary containing metadata on the Pubmed updatefile.
-    """
-
-    # Read in file and parse.
-    with open(filename, "r") as f_in:
-        html = f_in.read()
-    soup = BeautifulSoup(html, "html.parser")
-    table = soup.find("table")
-
-    # Iterate over each row in the table
-    metadata = {}
-    for row in table.find_all("tr"):
-        # Find the columns in each row
-        columns = row.find_all("td")
-        if len(columns) == 2:
-            key = columns[0].text.strip()
-            value = columns[1].text.strip()
-            metadata[key] = int(value)
-
-    return metadata
-
-
 def transform_pubmed_xml_file_to_jsonl(changefile: Changefile, entity_list: List[PubmedEntity]) -> Changefile:
     """
-    Convert a single Pubmed XML file to JSONL, pulling out any of the Pubmed additions and or deletions.
+    Convert a single Pubmed XML file to JSONL, pulling out any of the Pubmed entities and their additions
+    and or deletions.
 
     Used in parallelised section "transform". Each file is given to an individual process
     rather than multple files read in and transformed at once.
 
-    TODO: Update doc string
-    """
+    :param changefile: Incoming changefile to transform.
+    :param entity_list" List of entities to pull out from the changefile.
 
-    pubmed_file_id = Path(changefile.download_file_path).name.split(".")[0]
+    :return: Changefile object that's been transformed.
+    """
 
     logging.info(f"Reading in file - {changefile.filename}")
 
@@ -1221,7 +1144,7 @@ def transform_pubmed_xml_file_to_jsonl(changefile: Changefile, entity_list: List
     # Loop through the Pubmed record metadata, pulling out additions or deletions.
     for entity in entity_list:
         logging.info(
-            f"Extracting {entity.set_key if entity.type == 'deletions' else entity.sub_key} records from file - {pubmed_file_id}"
+            f"Extracting {entity.set_key if entity.type == 'deletions' else entity.sub_key} records from file - {changefile.filename}"
         )
 
         try:
@@ -1231,12 +1154,12 @@ def transform_pubmed_xml_file_to_jsonl(changefile: Changefile, entity_list: List
                 data_part = [retrieve for retrieve in data_dict[entity.sub_key]]
 
             logging.info(
-                f"Pulled out {len(data_part)} {f'{entity.set_key} records' if entity.type == 'deletions' else f'{entity.sub_key} {entity.type}'} from file - {pubmed_file_id}"
+                f"Pulled out {len(data_part)} {f'{entity.set_key} records' if entity.type == 'deletions' else f'{entity.sub_key} {entity.type}'} from file - {changefile.filename}"
             )
 
         except:
             logging.info(
-                f"No {f'{entity.set_key} records' if entity.type == 'deletions' else f'{entity.sub_key} {entity.type}'} records in file - {pubmed_file_id}"
+                f"No {f'{entity.set_key} records' if entity.type == 'deletions' else f'{entity.sub_key} {entity.type}'} records in file - {changefile.filename}"
             )
             data_part = []
 
@@ -1247,7 +1170,7 @@ def transform_pubmed_xml_file_to_jsonl(changefile: Changefile, entity_list: List
         # Write to compressed *.jsonl.gz
         with gzip.open(output_file, "w") as f_out:
             for line in data_part:
-                f_out.write(str.encode(json.dumps(line, cls=CustomEncoder) + "\n"))
+                f_out.write(str.encode(json.dumps(line, cls=PubMedCustomEncoder) + "\n"))
 
     return changefile
 
@@ -1259,7 +1182,7 @@ def add_attributes_to_data_from_biopython_classes(
     Recursively travel down the data tree and add attributes from the Biopython classes as dictionary keys.
 
     :param obj: Input object, being one of the Biopython data classes.
-    :return new: Object with attributes added as keys.
+    :return new: Object with attributes added as keys to the dictionary.
     """
 
     if isinstance(obj, StringElement):
@@ -1311,14 +1234,15 @@ def add_attributes_to_data_from_biopython_classes(
         return obj
 
 
-class CustomEncoder(json.JSONEncoder):
+class PubMedCustomEncoder(json.JSONEncoder):
 
-    """Custom encoder for JSON dump for it to write a dictionary field as a string of text for a
+    """
+    Custom encoder for JSON dump for it to write a dictionary field as a string of text for a
     select number of key values in the Pubmed data.
 
     For example, the AbstractText field can be a string or an array containing background, methods, etc,
     but Bigquery requires it to be well defined and it can't be both an array and a string in the
-    schema. This encoder forces the below fields to be a string, but will be in a dictionary/json format.
+    schema. This encoder forces the below fields to be a string when written to a json file.
     """
 
     write_as_single_field = [
@@ -1363,18 +1287,24 @@ class CustomEncoder(json.JSONEncoder):
 
     def encode(self, obj):
         transformed_obj = self._transform_obj_data(obj)
-        return super(CustomEncoder, self).encode(transformed_obj)
+        return super(PubMedCustomEncoder, self).encode(transformed_obj)
 
 
 def bq_delete_table(
     project_id: str, dataset_id: str, table_id: str, partition_decorator: str = None, not_found_okay: bool = True
 ):
-    # TODO: Add to gcs utils after merging workflow.
-
     """
     Delete a single table in Bigquery.
 
-    TODO: Update doc string
+    # TODO: Add to bq utils later
+
+    :param project_id: Google project id.
+    :param dataset_id: Name of the dataset.
+    :param table_id: Table name.
+    :param partition_decorator: Partition decorator.
+    :param not_found_okay: Is okay if the table does not exist.
+
+    :return: None.
     """
 
     bq_client = bigquery.Client(project=project_id)
@@ -1382,7 +1312,6 @@ def bq_delete_table(
     table = bigquery.Table(dataset.table(table_id))
 
     try:
-        # bq_client.get_table(table)
         if partition_decorator:
             bq_client.delete_table(table, tableId=partition_decorator, not_found_ok=not_found_okay)
         else:
@@ -1394,16 +1323,15 @@ def bq_delete_table(
 
 
 def bq_update_table_expiration(project_id: str, dataset_id: str, table_id: str, expiration_date: pendulum.datetime):
-    """Update a BQ table's expiration date.
+    """
+    Update a Bigquery table expiration date.
 
-    # TODO: Add to bq utils after merging workflow.
+    # TODO: Add to bq utils later
 
     :param project_id: Google project id.
     :param dataset_id: Name of the dataset.
     :param table_id: Table name.
-    :param expiration_date
-
-    :return: None.
+    :param expiration_date: Expiration date of the table.
     """
 
     bq_client = bigquery.Client(project=project_id)
