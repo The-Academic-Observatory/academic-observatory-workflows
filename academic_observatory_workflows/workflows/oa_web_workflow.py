@@ -83,7 +83,7 @@ PERCENTAGE_FIELD_KEYS = [
     ("outputs_public", "n_outputs_other_platform_open"),
     ("outputs_other_internet", "n_outputs_other_platform_open"),
 ]
-INCLUSION_THRESHOLD = {"country": 15, "institution": 800}
+INCLUSION_THRESHOLD = {"country": 15, "institution": 1000}
 MAX_REPOSITORIES = 200
 START_YEAR = 2000
 END_YEAR = pendulum.now().year - 1
@@ -352,10 +352,10 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.download_logos)
         self.add_task(self.download_wiki_descriptions)
         self.add_task(self.build_datasets)
-        self.add_task(self.publish_zenodo_version)
-        self.add_task(self.upload_dataset)
-        self.add_task(self.repository_dispatch)
-        self.add_task(self.cleanup)
+        # self.add_task(self.publish_zenodo_version)
+        # self.add_task(self.upload_dataset)
+        # self.add_task(self.repository_dispatch)
+        # self.add_task(self.cleanup)
 
     ######################################
     # Airflow tasks

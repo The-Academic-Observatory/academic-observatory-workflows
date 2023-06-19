@@ -13,8 +13,9 @@
 # limitations under the License.
 # Author: Richard Hosking #}
 
-{#These types will be excluded by the aggregation#}
-{% set CROSSREF_TYPES_TO_EXCLUDE = '("dataset")' %}
+{#Include:journal-article,proceedings-article,report,posted-content,edited-book,book,book-chapter,reference-book,monograph,other,book-section,book-part,reference-entry#}
+{#Exclude: the types below and NULL#}
+{% set CROSSREF_TYPES_TO_EXCLUDE = '("dataset","database","component","report-component","peer-review","grant","proceedings","journal-issue","report-series","book-track")' %}
 
 # Helper Function: Counting Access Types
 {#
@@ -744,6 +745,7 @@ WITH tmp_disciplines AS
     UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
   WHERE
     aggregrate.identifier IS NOT NULL
+    AND dois.crossref.type IS NOT NULL
     AND dois.crossref.type NOT IN {{ CROSSREF_TYPES_TO_EXCLUDE }}
   GROUP BY
     aggregrate.identifier,
@@ -768,6 +770,7 @@ tmp_access_types AS (
     UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
   WHERE
     aggregrate.identifier IS NOT NULL
+    AND dois.crossref.type IS NOT NULL
     AND dois.crossref.type NOT IN {{ CROSSREF_TYPES_TO_EXCLUDE }}
   GROUP BY
     aggregrate.identifier,
@@ -1022,6 +1025,7 @@ SELECT
 
 FROM `{{ project_id }}.{{ dataset_id }}.doi{{ snapshot_date.strftime('%Y%m%d') }}` as dois, UNNEST(dois.affiliations.{{ aggregation_field }}) as aggregrate
 WHERE aggregrate.identifier IS NOT NULL
+AND dois.crossref.type IS NOT NULL
 AND dois.crossref.type NOT IN {{ CROSSREF_TYPES_TO_EXCLUDE }}
 GROUP BY aggregrate.identifier, crossref.{{ group_by_time_field }}
 )
