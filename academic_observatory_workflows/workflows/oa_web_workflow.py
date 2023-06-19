@@ -83,7 +83,7 @@ PERCENTAGE_FIELD_KEYS = [
     ("outputs_public", "n_outputs_other_platform_open"),
     ("outputs_other_internet", "n_outputs_other_platform_open"),
 ]
-INCLUSION_THRESHOLD = {"country": 15, "institution": 800}
+INCLUSION_THRESHOLD = {"country": 15, "institution": 1000}
 MAX_REPOSITORIES = 200
 START_YEAR = 2000
 END_YEAR = pendulum.now().year - 1
@@ -697,7 +697,7 @@ class OaWebWorkflow(Workflow):
             )
             for version in versions
         ]
-        last_updated = zenodo_versions[0].snapshot_date.format("D MMMM YYYY")
+        last_updated = zenodo_versions[0].release_date.format("D MMMM YYYY")
         country_stats = make_entity_stats(countries)
         institution_stats = make_entity_stats(institutions)
         stats = Stats(START_YEAR, END_YEAR, last_updated, zenodo_versions, country_stats, institution_stats)
@@ -960,11 +960,11 @@ class Year:
 
 @dataclasses.dataclass
 class ZenodoVersion:
-    snapshot_date: pendulum.DateTime
+    release_date: pendulum.DateTime
     download_url: str
 
     def to_dict(self) -> Dict:
-        return {"snapshot_date": self.snapshot_date.strftime("%Y-%m-%d"), "download_url": self.download_url}
+        return {"release_date": self.release_date.strftime("%Y-%m-%d"), "download_url": self.download_url}
 
 
 @dataclasses.dataclass

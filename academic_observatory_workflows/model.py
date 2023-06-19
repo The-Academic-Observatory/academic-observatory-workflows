@@ -206,6 +206,7 @@ class Paper:
     id: int
     doi: str = None
     title: str = None
+    type: str = None
     published_date: pendulum.Date = None
     output_type: str = None
     authors: List[Author] = None
@@ -790,6 +791,7 @@ def make_papers(
         # Make paper
         paper = Paper(
             i,
+            type="journal-article",
             doi=doi_,
             title=title_,
             published_date=published_date_,
@@ -1099,6 +1101,7 @@ def make_crossref_metadata(dataset: ObservatoryDataset) -> List[Dict]:
         # Add Crossref record
         records.append(
             {
+                "type": paper.type,
                 "title": [paper.title],
                 "DOI": paper.doi,
                 "is_referenced_by_count": len(paper.cited_by),
@@ -1483,6 +1486,7 @@ def make_doi_table(dataset: ObservatoryDataset) -> List[Dict]:
             {
                 "doi": doi,
                 "crossref": {
+                    "type": paper.type,
                     "title": paper.title,
                     "published_year": paper.published_date.year,
                     "published_month": paper.published_date.month,
