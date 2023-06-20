@@ -1,11 +1,13 @@
 [
   {
     "name": "value",
+    "description": "PMID - States the PubMed Identifier.",
     "mode": "NULLABLE",
     "type": "STRING"
   },
   {
     "name": "Version",
+    "description": "Indicates the version number of the citation's PMID.",
     "mode": "NULLABLE",
     "type": "STRING"
   }
