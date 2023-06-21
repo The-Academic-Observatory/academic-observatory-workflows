@@ -23,8 +23,6 @@ import pendulum
 from datetime import timedelta
 from typing import Union, Dict, List
 
-import glob
-
 # Google Biguery
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
