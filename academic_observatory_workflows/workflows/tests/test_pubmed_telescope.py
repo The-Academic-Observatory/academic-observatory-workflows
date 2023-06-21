@@ -17,6 +17,7 @@
 import os
 import json
 import gzip
+import shutil
 import hashlib
 import logging
 import pendulum
@@ -25,14 +26,10 @@ from ftplib import FTP
 from click.testing import CliRunner
 from airflow.utils.state import State
 
-from Bio.Entrez.Parser import (
-    StringElement,
-    ListElement,
-    DictionaryElement,
-)
-
 from observatory.platform.api import get_dataset_releases
 from observatory.platform.observatory_config import Workflow
+from observatory.platform.workflows.workflow import ChangefileRelease
+from Bio.Entrez.Parser import StringElement, ListElement, DictionaryElement
 from observatory.platform.gcs import gcs_blob_name_from_path, gcs_download_blob
 from observatory.platform.observatory_environment import ObservatoryEnvironment, ObservatoryTestCase
 from observatory.platform.bigquery import bq_sharded_table_id, bq_create_table_from_query, bq_export_table
@@ -42,13 +39,16 @@ from observatory.platform.observatory_environment import (
     find_free_port,
     FtpServer,
 )
+
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.pubmed_telescope import (
     Changefile,
     PubMedCustomEncoder,
     PubMedRelease,
     PubMedTelescope,
+    PubmedEntity,
     add_attributes_to_data_from_biopython_classes,
+    transform_pubmed_xml_file_to_jsonl,
 )
 
 
@@ -177,8 +177,8 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 "transform": ["merge_updatefiles"],
                 "merge_updatefiles": ["upload_transformed"],
                 "upload_transformed": ["bq_ingest_update_tables"],
-                "bq_ingest_update_tables": ["bq_add_updates_to_main_table"],
-                "bq_add_updates_to_main_table": ["add_new_dataset_release"],
+                "bq_ingest_update_tables": ["bq_add_updates_to_table"],
+                "bq_add_updates_to_table": ["add_new_dataset_release"],
                 "add_new_dataset_release": ["cleanup"],
                 "cleanup": ["dag_run_complete"],
                 "dag_run_complete": [],
@@ -225,7 +225,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
             ftp_conn.login(user="root", passwd="pass")
             for file_path, upload_date in self.ftp_hosted_files.items():
                 ftp_command = f"MFMT {upload_date.format('YYYYMMDDHHmmss')} {file_path}"
-                print("ftp send command ", ftp_command)
+                logging.info("FTP send command - {ftp_command}")
                 ftp_conn.sendcmd(ftp_command)
             ftp_conn.close()
 
@@ -274,19 +274,13 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     changefiles_to_download = [Changefile.from_dict(changefile) for changefile in files_to_download]
                     self.assertEqual(len(changefiles_to_download), len(run["changefiles"]))
                     for i in range(len(run["changefiles"])):
-                        try:
-                            self.assertTrue(changefiles_to_download[i].__eq__(run["changefiles"][i]))
-                        except:
-                            print("From test", changefiles_to_download[i].to_dict())
-                            print("Expected changefile", run["changefiles"][i].to_dict())
-                            raise NameError("sdfsdfgdfg")
+                        self.assertTrue(changefiles_to_download[i].__eq__(run["changefiles"][i]))
 
                     # Create the release
                     release = PubMedRelease(
                         dag_id=self.dag_id,
                         run_id=dag_run.run_id,
                         cloud_workspace=workflow.cloud_workspace,
-                        bq_dataset_id=workflow.bq_dataset_id,
                         start_date=dag_run.data_interval_start,
                         end_date=pendulum.instance(dag_run.data_interval_end),  # bug with the observatory instance.
                         is_first_run=run["is_first_run"],
@@ -327,7 +321,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     for changefile in release.changefile_list:
                         for entity in workflow.entity_list:
                             transform_file = changefile.transform_file_path(entity.type)
-                            print(f"Transform file - {transform_file}")
                             self.assertTrue(os.path.exists(transform_file))
 
                     ### Merge transformed ###
@@ -338,7 +331,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     # Check that the file exists for this run.
                     for entity in workflow.entity_list:
                         merged_file = os.path.join(release.transform_folder, run["merged_file_output"][entity.type])
-                        print("merged file - ", merged_file)
                         self.assertTrue(os.path.exists(merged_file))
 
                     ### Upload transformed ###
@@ -369,21 +361,21 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                     for entity in workflow.entity_list:
                         table_id = (
-                            f"{workflow.cloud_workspace.project_id}.{workflow.bq_dataset_id}.{workflow.main_table}"
+                            f"{workflow.cloud_workspace.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}"
                         )
                         self.assert_table_integrity(table_id, 4)
 
                     ### bq_add_updates_to_main_table
-                    task_id = workflow.bq_add_updates_to_main_table.__name__
+                    task_id = workflow.bq_add_updates_to_table.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # On first run of the workflow, the baseline main_table should be untouched.
-                    main_table_id = f"{env.project_id}.{workflow.bq_dataset_id}.{workflow.main_table}"
+                    main_table_id = f"{env.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}"
                     self.assert_table_integrity(main_table_id, 4)
 
                     # Run query to get list of PMIDs that are present in the table and compare against what it should be.
-                    PMID_list = f"{env.project_id}.{workflow.bq_dataset_id}.{workflow.main_table}_PMID_list_first_run"
+                    PMID_list = f"{env.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}_PMID_list_first_run"
                     bq_query_list_PMIDs = f"""
                     SELECT (MedlineCitation.PMID.Version, MedlineCitation.PMID.value) 
                     FROM `{main_table_id}` 
@@ -458,19 +450,13 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     changefiles_to_download = [Changefile.from_dict(changefile) for changefile in files_to_download]
                     self.assertEqual(len(changefiles_to_download), len(run["changefiles"]))
                     for i in range(len(run["changefiles"])):
-                        try:
-                            self.assertTrue(changefiles_to_download[i].__eq__(run["changefiles"][i]))
-                        except:
-                            logging.info(f"From test - {changefiles_to_download[i].to_dict()}")
-                            logging.info(f"Expected changefile {run['changefiles'][i].to_dict()}")
-                            raise NameError("sdfsdfgdfg")
+                        self.assertTrue(changefiles_to_download[i].__eq__(run["changefiles"][i]))
 
                     # Create the release
                     release = PubMedRelease(
                         dag_id=self.dag_id,
                         run_id=dag_run.run_id,
                         cloud_workspace=workflow.cloud_workspace,
-                        bq_dataset_id=workflow.bq_dataset_id,
                         start_date=dag_run.data_interval_start,
                         end_date=pendulum.instance(dag_run.data_interval_end),
                         is_first_run=run["is_first_run"],
@@ -511,7 +497,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     for changefile in release.changefile_list:
                         for entity in workflow.entity_list:
                             transform_file = changefile.transform_file_path(entity.type)
-                            print(f"Transform file - {transform_file}")
                             self.assertTrue(os.path.exists(transform_file))
 
                     ### Merge transformed ###
@@ -522,7 +507,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     # Check that the file exists for this run.
                     for entity in workflow.entity_list:
                         merged_file = os.path.join(release.transform_folder, run["merged_file_output"][entity.type])
-                        print("merged file - ", merged_file)
                         self.assertTrue(os.path.exists(merged_file))
 
                     ### Upload transformed ###
@@ -562,7 +546,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         self.assert_table_integrity(table_id, run["update_tables"][entity.type])
 
                     ### bq_add_updates_to_main_table
-                    task_id = workflow.bq_add_updates_to_main_table.__name__
+                    task_id = workflow.bq_add_updates_to_table.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
@@ -570,19 +554,19 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     snapshot_table_id = bq_sharded_table_id(
                         workflow.cloud_workspace.project_id,
                         workflow.bq_dataset_id,
-                        f"{workflow.main_table}_backup",
+                        f"{workflow.bq_table_id}_backup",
                         date=release.end_date,
                     )
                     self.assert_table_integrity(snapshot_table_id, 4)
 
                     # Check that additions, updates and deletions have been applied successfully.
                     main_table_id = (
-                        f"{workflow.cloud_workspace.project_id}.{workflow.bq_dataset_id}.{workflow.main_table}"
+                        f"{workflow.cloud_workspace.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}"
                     )
                     self.assert_table_integrity(main_table_id, 5)
 
                     # Run query to get list of PMIDs that are present in the table and compare against what it should be.
-                    PMID_list = f"{env.project_id}.{workflow.bq_dataset_id}.{workflow.main_table}_PMID_list_second_run"
+                    PMID_list = f"{env.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}_PMID_list_second_run"
                     bq_query_list_PMIDs = f"""
                     SELECT (MedlineCitation.PMID.Version, MedlineCitation.PMID.value) 
                     FROM `{main_table_id}` 
@@ -632,10 +616,87 @@ class TestPubMedUtils(ObservatoryTestCase):
     def __init__(self, *args, **kwargs):
         super(TestPubMedUtils, self).__init__(*args, **kwargs)
 
+        self.dag_id = "pubmed"
+        self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
+        self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
+
+    def test_transform_pubmed_xml_file_to_jsonl(self):
+        """Test that an exmaple PubMed XMLs can be transformed successfully."""
+
+        # Setup environment
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
+
+        with env.create(task_logging=True):
+            changefile_release = ChangefileRelease(
+                dag_id="pubmed_telescope",
+                run_id="something",
+                start_date=pendulum.now(),
+                end_date=pendulum.now(),
+                sequence_start=1,
+                sequence_end=1,
+            )
+
+            entity_list = [
+                PubmedEntity(
+                    name="article_additions",
+                    type="additions",
+                    sub_key="PubmedArticle",
+                    set_key="PubmedArticleSet",
+                    pmid_location="MedlineCitation",
+                    table_description="""PubmedArticle""",
+                ),
+                PubmedEntity(
+                    name="article_deletions",
+                    type="deletions",
+                    sub_key="PMID",
+                    set_key="DeleteCitation",
+                    pmid_location=None,
+                    table_description="""DeleteCitation""",
+                ),
+            ]
+
+            ### Bad XML ###
+            changefile_bad = Changefile(
+                filename="pubmed23n0001_bad_fields.xml.gz",
+                file_index=1,
+                path_on_ftp="dummy_string",
+                is_first_run=True,
+                changefile_date=pendulum.now(),
+                changefile_release=changefile_release,
+            )
+            bad_xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "pubmed23n0001_bad_fields.xml.gz")
+            shutil.copy2(bad_xml_file_path, changefile_bad.download_file_path)
+
+            # Attempt to transform bad xml.
+            changefile_returned = transform_pubmed_xml_file_to_jsonl(changefile=changefile_bad, entity_list=entity_list)
+            self.assertFalse(changefile_returned)
+
+            changefile_good = Changefile(
+                filename="pubmed23n0001.xml.gz",
+                file_index=1,
+                path_on_ftp="dummy_string",
+                is_first_run=True,
+                changefile_date=pendulum.now(),
+                changefile_release=changefile_release,
+            )
+
+            ### VALID XML ###
+            valid_xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "baseline", "pubmed23n0001.xml.gz")
+            shutil.copy2(valid_xml_file_path, changefile_good.download_file_path)
+
+            # Attempt to transform valid xml - returns Changefile instance only if it's successful.
+            changefile_returned = transform_pubmed_xml_file_to_jsonl(
+                changefile=changefile_good, entity_list=entity_list
+            )
+            self.assertTrue(isinstance(changefile_returned, Changefile))
+
+            # Ensure that transform files were written to disk.
+            for entity in entity_list:
+                self.assertTrue(os.path.exists(changefile_returned.transform_file_path(entity.type)))
+
     def test_add_attributes_to_data_from_biopython(self):
         """
-        Test that attributes from the Biopython data classes can be reliably pulled out
-        from the data and added to the dictionary.
+        Test that attributes from the Biopython data classes can be reliably pulled out and added to the dictionary.
         """
 
         biopython_str = StringElement("string", tag="data", attributes={"type": "str"}, key="data")
@@ -655,7 +716,6 @@ class TestPubMedUtils(ObservatoryTestCase):
         with CliRunner().isolated_filesystem() as tmp_dir:
             # Write test files using custom encoder
             output_file = os.path.join(tmp_dir, "test_output_file.jsonl")
-            print(output_file)
             with open(output_file, "wb") as f_out:
                 for line in objects:
                     output = add_attributes_to_data_from_biopython_classes(line)
