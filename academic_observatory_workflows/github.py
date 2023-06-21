@@ -19,13 +19,16 @@ from __future__ import annotations
 import json
 
 import requests
+from airflow import AirflowException
 
 
-def trigger_repository_dispatch(*, token: str, event_type: str):
-    """Trigger a Github repository dispatch event.
+def trigger_repository_dispatch(*, org: str, repo_name: str, token: str, event_type: str):
+    """Trigger a GitHub repository dispatch event.
 
+    :param org: the GitHub organisation / username.
+    :param repo_name: the repository name.
+    :param token: the GitHub token.
     :param event_type: the event type
-    :param token: the Github token.
     :return: the response.
     """
 
@@ -35,8 +38,10 @@ def trigger_repository_dispatch(*, token: str, event_type: str):
     }
     data = {"event_type": event_type}
 
-    return requests.post(
-        "https://api.github.com/repos/The-Academic-Observatory/coki-oa-web/dispatches",
+    response = requests.post(
+        f"https://api.github.com/repos/{org}/{repo_name}/dispatches",
         headers=headers,
         data=json.dumps(data),
     )
+    if response.status_code != 204:
+        raise AirflowException(f"trigger_repository_dispatch: {response.status_code}, {response.text}")
