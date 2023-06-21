@@ -765,7 +765,9 @@ class OaWebWorkflow(Workflow):
         token = get_airflow_connection_password(self.github_conn_id)
         event_types = ["data-update/develop", "data-update/staging", "data-update/production"]
         for event_type in event_types:
-            trigger_repository_dispatch(token=token, event_type=event_type)
+            trigger_repository_dispatch(
+                org="The-Academic-Observatory", repo_name="coki-oa-web", token=token, event_type=event_type
+            )
 
     def cleanup(self, release: OaWebRelease, **kwargs):
         """Delete all files and folders associated with this release.

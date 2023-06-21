@@ -17,11 +17,22 @@
 import unittest
 from unittest.mock import patch
 
+import requests
+from airflow import AirflowException
+
 from academic_observatory_workflows.github import trigger_repository_dispatch
 
 
 class TestGithub(unittest.TestCase):
     @patch("academic_observatory_workflows.github.requests.post")
     def test_trigger_repository_dispatch(self, mock_requests_post):
-        trigger_repository_dispatch(token="my-token", event_type="my-event-type")
+        response = requests.Response()
+        response.status_code = 204
+        mock_requests_post.return_value = response
+
+        trigger_repository_dispatch(org="org", repo_name="my-repo", token="my-token", event_type="my-event-type")
         mock_requests_post.called_once()
+
+        response.status_code = 401
+        with self.assertRaises(AirflowException):
+            trigger_repository_dispatch(org="org", repo_name="my-repo", token="my-token", event_type="my-event-type")
