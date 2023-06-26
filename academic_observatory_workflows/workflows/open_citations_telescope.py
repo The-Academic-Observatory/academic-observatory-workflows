@@ -264,7 +264,6 @@ class OpenCitationsTelescope(Workflow):
                 csv_quote_character='"',
                 csv_skip_leading_rows=1,
                 csv_allow_quoted_newlines=True,
-                write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
                 ignore_unknown_values=True,
             )
             set_task_state(success, self.bq_load.__name__, release)
