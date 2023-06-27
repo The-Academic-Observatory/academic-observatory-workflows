@@ -18,6 +18,7 @@
 import os
 import gzip
 import json
+import math
 import logging
 import pendulum
 from datetime import timedelta
@@ -418,7 +419,7 @@ class PubMedTelescope(Workflow):
         self.batch_size = batch_size
 
         # Required file size of the update files.
-        self.merged_file_size = 4  # Gb
+        self.merged_file_size = 3.8  # Gb
 
         # After how many downloads to reset the connection to Pubmed's FTP server.
         self.reset_ftp_counter = reset_ftp_counter
@@ -588,6 +589,9 @@ class PubMedTelescope(Workflow):
         # Sort the incoming list.
         changefile_list.sort(key=lambda c: c.file_index, reverse=False)
 
+        # limit to the first 20 files for testing
+        changefile_list = changefile_list[:100]
+
         run_id = kwargs["run_id"]
         dag_run = kwargs["dag_run"]
         is_first_run = is_first_dag_run(dag_run)
@@ -752,7 +756,7 @@ class PubMedTelescope(Workflow):
         Check through the changefiles and only grab the newest records for a particular PMID and version number of the article.
         This is to reduce the number of quiries done on the main table in BQ.
 
-        If it is the first run of the workflow, it will merge the baseline changefiles into 4Gb chunks.
+        If it is the first run of the workflow, it will merge the baseline changefiles into more appropriate sized chunks.
         """
 
         # # Grab list of changefiles that were transformed in previous task.
@@ -769,52 +773,61 @@ class PubMedTelescope(Workflow):
 
             # Loop through additions or deletions
             for entity in self.entity_list:
-                merged_data = []
-                file_size_sum = 0.0
-                merge_part = 1
+                merged_updatefiles[entity.name] = []
 
-                first_file_index = files_to_merge[0].file_index
+                # Get the size of all the updatefiles
+                file_size_sum = 0
                 for changefile in files_to_merge:
                     transform_file = changefile.transform_file_path(entity.type)
-
-                    # Get file size in Gigabytes
                     transform_file_stats = os.stat(transform_file)
                     transform_file_size = transform_file_stats.st_size / 1024.0**3
+                    file_size_sum += transform_file_size
 
-                    logging.info(f"Transform file size - {transform_file_size}")
+                logging.info(f"Total size of updatefiles for {entity.type} for this release: {file_size_sum} ")
 
-                    # Read in file
-                    with gzip.open(transform_file, "rb") as f_in:
-                        data = [json.loads(line) for line in f_in]
-                        merged_data.extend(data)
+                num_chunks = math.ceil(file_size_sum / self.merged_file_size)
 
-                    # If the file is the last in the list or if the running total of the file_size exceeds the requirement.
-                    if (
-                        changefile == files_to_merge[-1]
-                        or (file_size_sum + transform_file_size) >= self.merged_file_size
-                    ):
-                        merged_output_file = changefile.merged_transform_file_path(
-                            entity.type, first_file_index, changefile.file_index, merge_part
-                        )
+                logging.info(f"Aproximate size of each merged: {file_size_sum/num_chunks} Gb")
 
-                        logging.info(f"Size of merged output file - {file_size_sum + transform_file_size}")
-                        logging.info(f"Writing out to file - {merged_output_file}")
+                if num_chunks == 1:
+                    logging.info(f"There were will be 1 part for the merged updatefiles.")
 
-                        # Write file out to file.
-                        with gzip.open(merged_output_file, "w") as f_out:
-                            for line in merged_data:
-                                f_out.write(str.encode(json.dumps(line, cls=PubMedCustomEncoder) + "\n"))
+                    # Only one chunk to process for required file size, do in serial.
+                    merged_updatefile_path = merge_changefiles_together(files_to_merge, 1, entity.type)
+                    merged_updatefiles[entity.name].append(merged_updatefile_path)
+                    logging.info(f"Successfully merged updatefiles to - {merged_updatefile_path}")
 
-                        merged_updatefiles[entity.name] = merged_output_file
+                else:
+                    chunk_size = math.floor(len(files_to_merge) / num_chunks)
+                    chunks = [
+                        chunk for i, chunk in enumerate(get_chunks(input_list=files_to_merge, chunk_size=chunk_size))
+                    ]
 
-                        # Reset variables for next part.
-                        merge_part += 1
-                        file_size_sum = 0
-                        merged_data = []
-                        first_file_index = changefile.file_index + 1
+                    if num_chunks > self.max_processes:
+                        processes_to_use = self.max_processes
 
                     else:
-                        file_size_sum += transform_file_size
+                        processes_to_use = num_chunks
+
+                    logging.info(f"There were will be {len(chunks)} parts for the merged updatefiles.")
+
+                    # Multiple output for merged files, do in parallel.
+                    for j, sub_chunks in enumerate(get_chunks(input_list=chunks, chunk_size=processes_to_use)):
+                        # Pass off each chunk to a process for them to merge files in parallel.
+                        with ProcessPoolExecutor(max_workers=processes_to_use) as executor:
+                            futures = []
+                            for i, chunk in enumerate(sub_chunks):
+                                futures.append(
+                                    executor.submit(
+                                        merge_changefiles_together, chunk, i + 1 + j * processes_to_use, entity.type
+                                    )
+                                )
+
+                            for future in as_completed(futures):
+                                merged_updatefile_path = future.result()
+                                merged_updatefiles[entity.name].append(merged_updatefile_path)
+
+                                logging.info(f"Successfully merged updatefiles to - {merged_updatefile_path}")
 
         # For each updatefile, only keep the newest record for a PMID and version.
         else:
@@ -827,7 +840,7 @@ class PubMedTelescope(Workflow):
                 # Find newest records from the updatefiles
                 # Clear last entity
                 merged_data = []
-
+                merged_updatefiles[entity.name] = []
                 update_counter = 0
 
                 first_file_index = files_to_merge[0].file_index
@@ -869,7 +882,7 @@ class PubMedTelescope(Workflow):
                     entity.type, first_file_index, changefile.file_index
                 )
 
-                merged_updatefiles[entity.name] = merged_output_file
+                merged_updatefiles[entity.name].append(merged_output_file)
 
                 logging.info(f"Writing to file - {merged_output_file}")
 
@@ -889,7 +902,9 @@ class PubMedTelescope(Workflow):
 
         ti: TaskInstance = kwargs["ti"]
         merged_updatefiles = ti.xcom_pull(key="merged_updatefiles")
-        files_to_upload = list(merged_updatefiles.values())
+        files_to_upload = []
+        for entity in self.entity_list:
+            files_to_upload.extend(merged_updatefiles[entity.name])
 
         logging.info(f"files_to_upload - {files_to_upload}")
 
@@ -914,7 +929,6 @@ class PubMedTelescope(Workflow):
         # If its the first run of the workflow, only upload the baseline table to the main table.
         if release.is_first_run:
             # Create the dataset if it doesn't exist already.
-
             bq_create_dataset(
                 project_id=self.cloud_workspace.project_id,
                 dataset_id=self.bq_dataset_id,
@@ -962,7 +976,7 @@ class PubMedTelescope(Workflow):
                 table_id = bq_sharded_table_id(
                     self.cloud_workspace.project_id, self.bq_dataset_id, entity.name, date=release.end_date
                 )
-                merged_transform_file_uri = f"gs://{self.cloud_workspace.transform_bucket}/{gcs_blob_name_from_path(merged_updatefiles[entity.name])}"
+                merged_transform_blob_pattern = release.merged_transfer_blob_pattern(entity_type=entity.type)
 
                 # Delete old table just in case there was a bad previous run.
                 # We don't want to append or add any dupliactes to the tables.
@@ -976,7 +990,7 @@ class PubMedTelescope(Workflow):
                 logging.info(f"Uploading to table - {table_id}")
 
                 success = bq_load_table(
-                    uri=merged_transform_file_uri,
+                    uri=merged_transform_blob_pattern,
                     table_id=table_id,
                     source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
                     schema_file_path=entity.schema_file_path,
@@ -1135,6 +1149,7 @@ def transform_pubmed_xml_file_to_jsonl(
 
         # Need to have the XML attributes pulled out from the Biopython data classes.
         data_dict = add_attributes_to_data_from_biopython_classes(data_dict_dirty)
+        data_dict_dirty = []
 
     # Loop through the Pubmed record metadata, pulling out additions or deletions.
     for entity in entity_list:
@@ -1168,6 +1183,39 @@ def transform_pubmed_xml_file_to_jsonl(
                 f_out.write(str.encode(json.dumps(line, cls=PubMedCustomEncoder) + "\n"))
 
     return changefile
+
+
+def merge_changefiles_together(changefile_list: List[Changefile], part_num: int, entity_type: str) -> str:
+    """Merge a given list of changefiles together.
+
+    :param changefile_list: List of changefiles to merge together.
+    :param part_num: Part number of the merge file from the greater list of changefiles.
+    :param entity_type: Type of changefiles given, for helping with name of the output file.
+    :return merged_output_file: Path to the resultant output file.
+    """
+
+    merged_output_file = changefile_list[0].merged_transform_file_path(
+        entity_type, changefile_list[0].file_index, changefile_list[-1].file_index, part_num
+    )
+
+    logging.info(f"Writing data to file - {merged_output_file}")
+
+    # Read in data and directly write it out to file to avoid holding too much
+    # data in memory and crashing the workflow.
+    with gzip.open(merged_output_file, "w") as f_out:
+        # Loop through the set of given changefiles
+        for changefile_sub in changefile_list:
+            transform_file_sub = changefile_sub.transform_file_path(entity_type)
+
+            # Read in file
+            with gzip.open(transform_file_sub, "rb") as f_in:
+                data = [json.loads(line) for line in f_in]
+
+            # Write directly to output file.
+            for line in data:
+                f_out.write(str.encode(json.dumps(line, cls=PubMedCustomEncoder) + "\n"))
+
+    return merged_output_file
 
 
 def add_attributes_to_data_from_biopython_classes(
