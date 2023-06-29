@@ -23,6 +23,7 @@ import logging
 import pendulum
 import datetime
 from ftplib import FTP
+from typing import List, Dict
 from click.testing import CliRunner
 from airflow.utils.state import State
 
@@ -32,7 +33,7 @@ from observatory.platform.workflows.workflow import ChangefileRelease
 from Bio.Entrez.Parser import StringElement, ListElement, DictionaryElement
 from observatory.platform.gcs import gcs_blob_name_from_path, gcs_download_blob
 from observatory.platform.observatory_environment import ObservatoryEnvironment, ObservatoryTestCase
-from observatory.platform.bigquery import bq_sharded_table_id, bq_create_table_from_query, bq_export_table
+from observatory.platform.bigquery import bq_run_query, bq_sharded_table_id, bq_create_table_from_query, bq_export_table
 from observatory.platform.observatory_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
@@ -48,8 +49,23 @@ from academic_observatory_workflows.workflows.pubmed_telescope import (
     PubMedTelescope,
     PubmedEntity,
     add_attributes_to_data_from_biopython_classes,
+    merge_changefiles_together,
     transform_pubmed_xml_file_to_jsonl,
 )
+
+
+def query_table(table_id: str, select_columns: str, order_by_field: str) -> List[Dict]:
+    """Query a BigQuery table, sorting the results and returning results as a list of dicts.
+
+    :param table_id: the table id.
+    :param select_columns: Columns to pull from the table.
+    :param order_by_field: what field or fields to order by.
+    :return: the table rows.
+    """
+
+    return [
+        dict(row) for row in bq_run_query(f"SELECT {select_columns} FROM {table_id} ORDER BY {order_by_field} ASC;")
+    ]
 
 
 class TestPubMedTelescope(ObservatoryTestCase):
@@ -375,26 +391,12 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assert_table_integrity(main_table_id, 4)
 
                     # Run query to get list of PMIDs that are present in the table and compare against what it should be.
-                    PMID_list = f"{env.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}_PMID_list_first_run"
-                    bq_query_list_PMIDs = f"""
-                    SELECT (MedlineCitation.PMID.Version, MedlineCitation.PMID.value) 
-                    FROM `{main_table_id}` 
-                    ORDER BY MedlineCitation.PMID.value
-                    """
-                    destination_uri = f"gs://{env.transform_bucket}/PMID_list_first_run.jsonl"
-                    PMID_list_path = os.path.join(release.transform_folder, "PMID_list_first_run.jsonl")
-                    bq_create_table_from_query(sql=bq_query_list_PMIDs, table_id=PMID_list)
-                    bq_export_table(table_id=PMID_list, file_type="jsonl", destination_uri=destination_uri)
-                    gcs_download_blob(
-                        bucket_name=env.transform_bucket,
-                        blob_name="PMID_list_first_run.jsonl",
-                        file_path=PMID_list_path,
+                    actual_output = query_table(
+                        main_table_id,
+                        "(MedlineCitation.PMID.Version, MedlineCitation.PMID.value)",
+                        "MedlineCitation.PMID.value",
                     )
-                    logging.info(f"Downloaded table to: {PMID_list_path}")
-                    with open(PMID_list_path, "rb") as f_in:
-                        PMID_list = [json.loads(line) for line in f_in]
-
-                    self.assertEqual(PMID_list, run["PMID_list"])
+                    self.assertEqual(actual_output, run["PMID_list"])
 
                     ### add_new_dataset_release ###
                     task_id = workflow.add_new_dataset_release.__name__
@@ -566,26 +568,12 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assert_table_integrity(main_table_id, 5)
 
                     # Run query to get list of PMIDs that are present in the table and compare against what it should be.
-                    PMID_list = f"{env.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}_PMID_list_second_run"
-                    bq_query_list_PMIDs = f"""
-                    SELECT (MedlineCitation.PMID.Version, MedlineCitation.PMID.value) 
-                    FROM `{main_table_id}` 
-                    ORDER BY MedlineCitation.PMID.value
-                    """
-                    destination_uri = f"gs://{env.transform_bucket}/PMID_list_second_run.jsonl"
-                    PMID_list_path = os.path.join(release.transform_folder, "PMID_list_second_run.jsonl")
-                    bq_create_table_from_query(sql=bq_query_list_PMIDs, table_id=PMID_list)
-                    bq_export_table(table_id=PMID_list, file_type="jsonl", destination_uri=destination_uri)
-                    gcs_download_blob(
-                        bucket_name=env.transform_bucket,
-                        blob_name="PMID_list_second_run.jsonl",
-                        file_path=PMID_list_path,
+                    actual_output = query_table(
+                        main_table_id,
+                        "(MedlineCitation.PMID.Version, MedlineCitation.PMID.value)",
+                        "MedlineCitation.PMID.value",
                     )
-                    logging.info(f"Downloaded table to: {PMID_list_path}")
-                    with open(PMID_list_path, "rb") as f_in:
-                        PMID_list = [json.loads(line) for line in f_in]
-
-                    self.assertEqual(PMID_list, run["PMID_list"])
+                    self.assertEqual(actual_output, run["PMID_list"])
 
                     ### add_new_dataset_release ###
                     task_id = workflow.add_new_dataset_release.__name__
@@ -693,6 +681,87 @@ class TestPubMedUtils(ObservatoryTestCase):
             # Ensure that transform files were written to disk.
             for entity in entity_list:
                 self.assertTrue(os.path.exists(changefile_returned.transform_file_path(entity.type)))
+
+    def test_merge_changefiles_together(
+        self,
+    ):
+        """Test that *.jsonl.gz files can be reliably merged into one or more files."""
+
+        expected_hash = {
+            "article_additions": "8823ea43ca4619175d21dad430a03826",
+            "article_deletions": "c8b6f684ad613e1e8be46022afc83916",
+        }
+
+        # Setup environment
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
+
+        with env.create(task_logging=True):
+            changefile_release = ChangefileRelease(
+                dag_id="pubmed_telescope",
+                run_id="something",
+                start_date=pendulum.now(),
+                end_date=pendulum.now(),
+                sequence_start=1,
+                sequence_end=1,
+            )
+
+            entity_list = [
+                PubmedEntity(
+                    name="article_additions",
+                    type="additions",
+                    sub_key="PubmedArticle",
+                    set_key="PubmedArticleSet",
+                    pmid_location="MedlineCitation",
+                    table_description="""PubmedArticle""",
+                ),
+                PubmedEntity(
+                    name="article_deletions",
+                    type="deletions",
+                    sub_key="PMID",
+                    set_key="DeleteCitation",
+                    pmid_location=None,
+                    table_description="""DeleteCitation""",
+                ),
+            ]
+
+            # Changefiles to merge
+            changefile_list = [
+                Changefile(
+                    filename="pubmed23n0003.xml.gz",
+                    file_index=3,
+                    path_on_ftp="dummy_string",
+                    is_first_run=False,
+                    changefile_date=pendulum.now(),
+                    changefile_release=changefile_release,
+                ),
+                Changefile(
+                    filename="pubmed23n0004.xml.gz",
+                    file_index=4,
+                    path_on_ftp="dummy_string",
+                    is_first_run=False,
+                    changefile_date=pendulum.now(),
+                    changefile_release=changefile_release,
+                ),
+            ]
+
+            # Perform merge step on the tranformed files.
+            for entity in entity_list:
+                # Copy test files into temp test directory
+                for changefile in changefile_list:
+                    copy_path = os.path.join(
+                        test_fixtures_folder(),
+                        "pubmed",
+                        "other",
+                        f"test_{entity.type}_{changefile.filename.split('.')[0]}.jsonl.gz",
+                    )
+                    shutil.copy2(copy_path, changefile.transform_file_path(entity.type))
+
+                output_file = merge_changefiles_together(changefile_list, part_num=1, entity_type=entity.type)
+
+                # Check against expected hash for the files.
+                self.assertEqual(
+                    hashlib.md5(gzip.open(output_file, "rb").read()).hexdigest(), expected_hash[entity.name]
+                )
 
     def test_add_attributes_to_data_from_biopython(self):
         """

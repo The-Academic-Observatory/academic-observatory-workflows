@@ -16,9 +16,9 @@
 
 # Common
 import os
+import re
 import gzip
 import json
-import math
 import logging
 import pendulum
 from datetime import timedelta
@@ -333,9 +333,8 @@ class PubMedTelescope(Workflow):
         max_download_retry: int = 5,
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         queue: str = "remote_queue",
-        snapshot_expiry_days: int = 7,
+        snapshot_expiry_days: int = 31,
         max_processes: int = 4,  # Limited to 4 due to RAM usage when transforming files
-        batch_size: int = 4,
     ):
         """Construct an PubMed Telescope instance.
 
@@ -352,7 +351,6 @@ class PubMedTelescope(Workflow):
         :param queue: the queue that the tasks should run on.
         :param snapshot_expiry_days: How long until the snapshot expires.
         :param max_processes: Max number of parallel processors.
-        :param batch_size: Number of changefiles per batch.
         :param bq_table_id: Name of Pubmed table.
         :param table_description: Description of the main table.
         """
@@ -416,7 +414,6 @@ class PubMedTelescope(Workflow):
         self.check_md5_hash = check_md5_hash
         self.max_download_retry = max_download_retry
         self.max_processes = max_processes
-        self.batch_size = batch_size
 
         # Required file size of the update files.
         self.merged_file_size = 3.8  # Gb
@@ -483,7 +480,7 @@ class PubMedTelescope(Workflow):
             for file in baseline_list_ftp:
                 if file.endswith(".xml.gz"):  # Find all the xml.gz files available from the server.
                     filename = file
-                    file_index = int(file[9:13])
+                    file_index = int(re.findall("\d{4}", file)[0])
                     path_on_ftp = self.baseline_path + file
                     changefile = Changefile(
                         filename=filename,
@@ -493,6 +490,10 @@ class PubMedTelescope(Workflow):
                         changefile_date=self.start_date,
                     )
                     files_to_download.append(changefile)
+
+            logging.info(f"List of files to download from the PubMed FTP server for 'baseline':")
+            for changefile in files_to_download:
+                logging.info(f"{changefile.filename}")
         else:
             logging.info(
                 f"Grabbing list of 'updatefiles' for this release: {data_interval_start} to {data_interval_end}"
@@ -511,9 +512,9 @@ class PubMedTelescope(Workflow):
                 file_upload_time = ftp_conn.sendcmd("MDTM {}".format(file))[4:]
                 file_upload_date = pendulum.from_format(file_upload_time, "YYYYMMDDHHmmss")
                 if file_upload_date in pendulum.period(data_interval_start, data_interval_end):
-                    # Grab name and metadata for this release file.
+                    # Grab metadata and path of the file.
                     filename = file
-                    file_index = int(file[9:13])
+                    file_index = int(re.findall("\d{4}", file)[0])
                     path_on_ftp = self.updatefiles_path + file
                     changefile_date = file_upload_date
 
@@ -542,7 +543,7 @@ class PubMedTelescope(Workflow):
                     file_index_last = changefile.file_index
                 else:
                     raise AirflowException(
-                        f"The update files are not going to be sequential. Please investigate download {changefile.file_index} and {file_index_last+1}"
+                        f"The updatefiles are not going to be sequential. Please investigate download {changefile.file_index} and {file_index_last+1}"
                     )
 
             # Make sure the first changefile file index for this release is n + 1 ahead of the last release.
@@ -588,9 +589,6 @@ class PubMedTelescope(Workflow):
 
         # Sort the incoming list.
         changefile_list.sort(key=lambda c: c.file_index, reverse=False)
-
-        # limit to the first 20 files for testing
-        changefile_list = changefile_list[:100]
 
         run_id = kwargs["run_id"]
         dag_run = kwargs["dag_run"]
@@ -775,20 +773,43 @@ class PubMedTelescope(Workflow):
             for entity in self.entity_list:
                 merged_updatefiles[entity.name] = []
 
-                # Get the size of all the updatefiles
+                # Determine what files are merged together by summing up each file
+                # and creating chunks off of the total size.
                 file_size_sum = 0
+                temp_chunk = []
+                chunks = []
+                part_counter = 1
                 for changefile in files_to_merge:
                     transform_file = changefile.transform_file_path(entity.type)
                     transform_file_stats = os.stat(transform_file)
                     transform_file_size = transform_file_stats.st_size / 1024.0**3
-                    file_size_sum += transform_file_size
 
-                logging.info(f"Total size of updatefiles for {entity.type} for this release: {file_size_sum} ")
+                    if (
+                        changefile.file_index == release.changefile_list[-1].file_index
+                        or file_size_sum + transform_file_size > self.merged_file_size
+                    ):
+                        # If last in the list, still needs to be added to the chunks to be merged.
+                        if changefile.file_index == release.changefile_list[-1].file_index:
+                            temp_chunk.append(changefile)
+                            file_size_sum += transform_file_size
 
-                num_chunks = math.ceil(file_size_sum / self.merged_file_size)
+                        # Start a new chunk as this one fits the size requirement.
+                        chunks.append(temp_chunk)
+                        logging.info(
+                            f"Rough file size of part {part_counter} = {format(file_size_sum, '.2f')} Gb for changefiles {temp_chunk[0].file_index} to {temp_chunk[-1].file_index}"
+                        )
 
-                logging.info(f"Aproximate size of each merged: {file_size_sum/num_chunks} Gb")
+                        # Reset variables
+                        file_size_sum = 0
+                        temp_chunk = [changefile]
+                        file_size_sum = transform_file_size
+                        part_counter += 1
 
+                    else:
+                        temp_chunk.append(changefile)
+                        file_size_sum += transform_file_size
+
+                num_chunks = len(chunks)
                 if num_chunks == 1:
                     logging.info(f"There were will be 1 part for the merged updatefiles.")
 
@@ -798,11 +819,6 @@ class PubMedTelescope(Workflow):
                     logging.info(f"Successfully merged updatefiles to - {merged_updatefile_path}")
 
                 else:
-                    chunk_size = math.floor(len(files_to_merge) / num_chunks)
-                    chunks = [
-                        chunk for i, chunk in enumerate(get_chunks(input_list=files_to_merge, chunk_size=chunk_size))
-                    ]
-
                     if num_chunks > self.max_processes:
                         processes_to_use = self.max_processes
 
@@ -811,10 +827,10 @@ class PubMedTelescope(Workflow):
 
                     logging.info(f"There were will be {len(chunks)} parts for the merged updatefiles.")
 
-                    # Multiple output for merged files, do in parallel.
+                    # Multiple outputs for merged files, do in parallel.
                     for j, sub_chunks in enumerate(get_chunks(input_list=chunks, chunk_size=processes_to_use)):
                         # Pass off each chunk to a process for them to merge files in parallel.
-                        with ProcessPoolExecutor(max_workers=processes_to_use) as executor:
+                        with ProcessPoolExecutor(max_workers=len(sub_chunks)) as executor:
                             futures = []
                             for i, chunk in enumerate(sub_chunks):
                                 futures.append(
@@ -1053,7 +1069,7 @@ class PubMedTelescope(Workflow):
             backup_table_id = bq_sharded_table_id(
                 self.cloud_workspace.project_id, self.bq_dataset_id, f"{self.bq_table_id}_backup", prev_end_date
             )
-            expiry_date = pendulum.now().add(days=31)
+            expiry_date = pendulum.now().add(days=self.snapshot_expiry_days)
             success = bq_snapshot(src_table_id=full_table_id, dst_table_id=backup_table_id, expiry_date=expiry_date)
 
             set_task_state(success, kwargs["ti"].task_id, release=release)
