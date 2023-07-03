@@ -212,19 +212,17 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     "create_crossref_events",
                     "create_crossref_fundref",
                     "create_ror",
-                    "create_mag",
                     "create_orcid",
                     "create_open_citations",
-                    "create_unpaywall",
+                    "create_openaccess",
                     "create_openalex",
                 ],
                 "create_crossref_events": ["create_doi"],
                 "create_crossref_fundref": ["create_doi"],
                 "create_ror": ["create_doi"],
-                "create_mag": ["create_doi"],
                 "create_orcid": ["create_doi"],
                 "create_open_citations": ["create_doi"],
-                "create_unpaywall": ["create_doi"],
+                "create_openaccess": ["create_doi"],
                 "create_openalex": ["create_doi"],
                 "create_doi": ["create_book"],
                 "create_book": [
@@ -327,7 +325,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
             dataset_id_crossref_metadata=fake_dataset_id,
             dataset_id_crossref_fundref=fake_dataset_id,
             dataset_id_ror=fake_dataset_id,
-            dataset_id_mag=fake_dataset_id,
             dataset_id_orcid=fake_dataset_id,
             dataset_id_open_citations=fake_dataset_id,
             dataset_id_unpaywall=fake_dataset_id,
@@ -710,7 +707,9 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
         # Subfields
         fields = ["institutions", "countries", "subregions", "regions", "journals", "publishers", "funders"]
+        print("assert_doi_affiliations:")
         for field in fields:
+            print(f"\t{field}")
             self.assert_doi_affiliation(expected, actual, field)
 
     def assert_doi_affiliation(self, expected: Dict, actual: Dict, key: str):

@@ -106,7 +106,6 @@ def make_dataset_transforms(
     dataset_id_crossref_metadata: str = "crossref_metadata",
     dataset_id_crossref_fundref: str = "crossref_fundref",
     dataset_id_ror: str = "ror",
-    dataset_id_mag: str = "mag",
     dataset_id_orcid: str = "orcid",
     dataset_id_open_citations: str = "open_citations",
     dataset_id_unpaywall: str = "unpaywall",
@@ -142,16 +141,6 @@ def make_dataset_transforms(
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "ror"),
             ),
             Transform(
-                inputs={
-                    "mag": Table(input_project_id, dataset_id_mag, "Affiliations", sharded=True),
-                    "mag_affiliation_override": Table(
-                        input_project_id, dataset_id_settings, "mag_affiliation_override"
-                    ),
-                },
-                output_table=Table(output_project_id, dataset_id_observatory_intermediate, "mag"),
-                output_clustering_fields=["Doi"],
-            ),
-            Transform(
                 inputs={"orcid": Table(input_project_id, dataset_id_orcid, "orcid")},
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "orcid"),
                 output_clustering_fields=["doi"],
@@ -175,7 +164,7 @@ def make_dataset_transforms(
                         sharded=True,
                     ),
                 },
-                output_table=Table(output_project_id, dataset_id_observatory_intermediate, "unpaywall"),
+                output_table=Table(output_project_id, dataset_id_observatory_intermediate, "openaccess"),
                 output_clustering_fields=["doi"],
             ),
             Transform(
@@ -693,7 +682,7 @@ class DoiWorkflow(Workflow):
         """Create the repository_institution_to_ror_table."""
 
         # Fetch unique Unpaywall repository institution names
-        template_path = os.path.join(sql_folder(), make_sql_jinja2_filename("create_unpaywall_repo_names"))
+        template_path = os.path.join(sql_folder(), make_sql_jinja2_filename("create_openaccess_repo_names"))
         sql = render_template(template_path, project_id=self.input_project_id, dataset_id=self.bq_unpaywall_dataset_id)
         records = bq_run_query(sql)
 

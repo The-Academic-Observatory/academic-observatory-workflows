@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import math
 import os
 import random
 import urllib.parse
@@ -25,6 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Tuple
 
+import math
 import pandas as pd
 import pendulum
 from click.testing import CliRunner
@@ -1006,59 +1006,6 @@ def make_openalex_dataset(dataset: ObservatoryDataset) -> List[dict]:
     return result
 
 
-@dataclass
-class MagDataset:
-    """A container to hold the Microsoft Academic Graph tables.
-
-    :param: Affiliations table rows.
-    :param: Papers table rows.
-    :param: PaperAuthorAffiliations rows.
-    :param: FieldsOfStudy rows.
-    :param: PaperFieldsOfStudy rows.
-    """
-
-    affiliations: List[Dict]
-    papers: List[Dict]
-    paper_author_affiliations: List[Dict]
-    fields_of_study: List[Dict]
-    paper_fields_of_study: List[Dict]
-
-
-def make_mag(dataset: ObservatoryDataset) -> MagDataset:
-    """Generate the Microsoft Academic Graph tables from an ObservatoryDataset instance.
-
-    :param dataset: the Observatory Dataset.
-    :return: the Microsoft Academic Graph dataset.
-    """
-
-    # Create affiliations
-    affiliations = []
-    for institute in dataset.institutions:
-        affiliations.append({"AffiliationId": institute.id, "DisplayName": institute.name, "GridId": institute.grid_id})
-
-    # Create fields of study
-    fields_of_study = []
-    for fos in dataset.fields_of_study:
-        fields_of_study.append({"FieldOfStudyId": fos.id, "DisplayName": fos.name, "Level": fos.level})
-
-    # Create papers, paper_author_affiliations and paper_fields_of_study
-    papers = []
-    paper_author_affiliations = []
-    paper_fields_of_study = []
-    for paper in dataset.papers:
-        papers.append({"PaperId": paper.id, "CitationCount": len(paper.cited_by), "Doi": paper.doi})
-
-        for author in paper.authors:
-            paper_author_affiliations.append(
-                {"PaperId": paper.id, "AuthorId": author.id, "AffiliationId": author.institution.id}
-            )
-
-        for fos in paper.fields_of_study:
-            paper_fields_of_study.append({"PaperId": paper.id, "FieldOfStudyId": fos.id})
-
-    return MagDataset(affiliations, papers, paper_author_affiliations, fields_of_study, paper_fields_of_study)
-
-
 def make_crossref_fundref(dataset: ObservatoryDataset) -> List[Dict]:
     """Generate the Crossref Fundref table from an ObservatoryDataset instance.
 
@@ -1140,7 +1087,6 @@ def bq_load_observatory_dataset(
     # Generate source datasets
     open_citations = make_open_citations(observatory_dataset)
     crossref_events = make_crossref_events(observatory_dataset)
-    mag: MagDataset = make_mag(observatory_dataset)
     openalex: List[dict] = make_openalex_dataset(observatory_dataset)
     crossref_fundref = make_crossref_fundref(observatory_dataset)
     unpaywall = make_unpaywall(observatory_dataset)
@@ -1196,55 +1142,6 @@ def bq_load_observatory_dataset(
                 ),
             ),
             Table(
-                "Affiliations",
-                True,
-                dataset_id_all,
-                mag.affiliations,
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"), table_name="MagAffiliations", release_date=snapshot_date
-                ),
-            ),
-            Table(
-                "FieldsOfStudy",
-                True,
-                dataset_id_all,
-                mag.fields_of_study,
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"), table_name="MagFieldsOfStudy", release_date=snapshot_date
-                ),
-            ),
-            Table(
-                "PaperAuthorAffiliations",
-                True,
-                dataset_id_all,
-                mag.paper_author_affiliations,
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"),
-                    table_name="MagPaperAuthorAffiliations",
-                    release_date=snapshot_date,
-                ),
-            ),
-            Table(
-                "PaperFieldsOfStudy",
-                True,
-                dataset_id_all,
-                mag.paper_fields_of_study,
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"),
-                    table_name="MagPaperFieldsOfStudy",
-                    release_date=snapshot_date,
-                ),
-            ),
-            Table(
-                "Papers",
-                True,
-                dataset_id_all,
-                mag.papers,
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"), table_name="MagPapers", release_date=snapshot_date
-                ),
-            ),
-            Table(
                 "open_citations",
                 True,
                 dataset_id_all,
@@ -1289,95 +1186,6 @@ def bq_load_observatory_dataset(
                 dataset_id_settings,
                 mag_affiliation_override,
                 bq_find_schema(path=os.path.join(schema_path, "doi"), table_name="mag_affiliation_override"),
-            ),
-            Table(
-                "PaperAbstractsInvertedIndex",
-                True,
-                dataset_id_all,
-                [],
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"),
-                    table_name="MagPaperAbstractsInvertedIndex",
-                    release_date=snapshot_date,
-                ),
-            ),
-            Table(
-                "Journals",
-                True,
-                dataset_id_all,
-                [],
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"), table_name="MagJournals", release_date=snapshot_date
-                ),
-            ),
-            Table(
-                "ConferenceInstances",
-                True,
-                dataset_id_all,
-                [],
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"),
-                    table_name="MagConferenceInstances",
-                    release_date=snapshot_date,
-                ),
-            ),
-            Table(
-                "ConferenceSeries",
-                True,
-                dataset_id_all,
-                [],
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"), table_name="MagConferenceSeries", release_date=snapshot_date
-                ),
-            ),
-            Table(
-                "FieldOfStudyExtendedAttributes",
-                True,
-                dataset_id_all,
-                [],
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"),
-                    table_name="MagFieldOfStudyExtendedAttributes",
-                    release_date=snapshot_date,
-                ),
-            ),
-            Table(
-                "PaperExtendedAttributes",
-                True,
-                dataset_id_all,
-                [],
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"),
-                    table_name="MagPaperExtendedAttributes",
-                    release_date=snapshot_date,
-                ),
-            ),
-            Table(
-                "PaperResources",
-                True,
-                dataset_id_all,
-                [],
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"), table_name="MagPaperResources", release_date=snapshot_date
-                ),
-            ),
-            Table(
-                "PaperUrls",
-                True,
-                dataset_id_all,
-                [],
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"), table_name="MagPaperUrls", release_date=snapshot_date
-                ),
-            ),
-            Table(
-                "PaperMeSH",
-                True,
-                dataset_id_all,
-                [],
-                bq_find_schema(
-                    path=os.path.join(schema_path, "mag"), table_name="MagPaperMeSH", release_date=snapshot_date
-                ),
             ),
             Table(
                 "orcid",
@@ -1495,7 +1303,6 @@ def make_doi_table(dataset: ObservatoryDataset) -> List[Dict]:
                 },
                 "unpaywall": {},
                 "unpaywall_history": {},
-                "mag": {},
                 "open_citations": {},
                 "events": events,
                 "affiliations": {
