@@ -328,6 +328,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
             dataset_id_orcid=fake_dataset_id,
             dataset_id_open_citations=fake_dataset_id,
             dataset_id_unpaywall=fake_dataset_id,
+            dataset_id_scihub=fake_dataset_id,
             dataset_id_settings=bq_settings_dataset_id,
             dataset_id_observatory=bq_observatory_dataset_id,
             dataset_id_observatory_intermediate=bq_intermediate_dataset_id,
@@ -367,8 +368,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     self.assertEqual(expected_state, ti.state)
 
             # Run Dummy Dags
-            execution_date = pendulum.datetime(year=2021, month=10, day=17)
-            snapshot_date = pendulum.datetime(year=2021, month=10, day=24)
+            execution_date = pendulum.datetime(year=2023, month=6, day=18)
+            snapshot_date = pendulum.datetime(year=2023, month=6, day=25)
             expected_state = "success"
             for dag_id in DoiWorkflow.SENSOR_DAG_IDS:
                 dag = make_dummy_dag(dag_id, execution_date)

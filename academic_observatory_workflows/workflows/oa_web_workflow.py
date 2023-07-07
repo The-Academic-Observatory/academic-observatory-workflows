@@ -129,27 +129,27 @@ SELECT
   agg.total_outputs as n_outputs,
   
   -- COKI OA Categories
-  agg.oa_coki.open.total AS n_outputs_open,
-  agg.oa_coki.publisher.total AS n_outputs_publisher_open,
-  agg.oa_coki.publisher_only.total AS n_outputs_publisher_open_only,
-  agg.oa_coki.both.total AS n_outputs_both,
-  agg.oa_coki.other_platform.total AS n_outputs_other_platform_open,
-  agg.oa_coki.other_platform_only.total AS n_outputs_other_platform_open_only,
-  agg.oa_coki.closed.total AS n_outputs_closed,
+  agg.coki.oa.coki.open.total AS n_outputs_open,
+  agg.coki.oa.coki.publisher.total AS n_outputs_publisher_open,
+  agg.coki.oa.coki.publisher_only.total AS n_outputs_publisher_open_only,
+  agg.coki.oa.coki.both.total AS n_outputs_both,
+  agg.coki.oa.coki.other_platform.total AS n_outputs_other_platform_open,
+  agg.coki.oa.coki.other_platform_only.total AS n_outputs_other_platform_open_only,
+  agg.coki.oa.coki.closed.total AS n_outputs_closed,
   
   -- Publisher Open Categories
-  agg.oa_coki.publisher_categories.oa_journal.total AS n_outputs_oa_journal,
-  agg.oa_coki.publisher_categories.hybrid.total AS n_outputs_hybrid,
-  agg.oa_coki.publisher_categories.no_guarantees.total AS n_outputs_no_guarantees,
+  agg.coki.oa.coki.publisher_categories.oa_journal.total AS n_outputs_oa_journal,
+  agg.coki.oa.coki.publisher_categories.hybrid.total AS n_outputs_hybrid,
+  agg.coki.oa.coki.publisher_categories.no_guarantees.total AS n_outputs_no_guarantees,
   
   -- Other Platform Open Categories
-  agg.oa_coki.other_platform_categories.preprint.total AS n_outputs_preprint,
-  agg.oa_coki.other_platform_categories.domain.total AS n_outputs_domain,
-  agg.oa_coki.other_platform_categories.institution.total AS n_outputs_institution,
-  agg.oa_coki.other_platform_categories.public.total AS n_outputs_public,
-  agg.oa_coki.other_platform_categories.aggregator.total + agg.oa_coki.other_platform_categories.other_internet.total + agg.oa_coki.other_platform_categories.unknown.total AS n_outputs_other_internet, 
+  agg.coki.oa.coki.other_platform_categories.preprint.total AS n_outputs_preprint,
+  agg.coki.oa.coki.other_platform_categories.domain.total AS n_outputs_domain,
+  agg.coki.oa.coki.other_platform_categories.institution.total AS n_outputs_institution,
+  agg.coki.oa.coki.other_platform_categories.public.total AS n_outputs_public,
+  agg.coki.oa.coki.other_platform_categories.aggregator.total + agg.coki.oa.coki.other_platform_categories.other_internet.total + agg.coki.oa.coki.other_platform_categories.unknown.total AS n_outputs_other_internet, 
 
-  agg.repositories
+  agg.coki.repositories
 FROM
   `{agg_table_id}` as agg
 WHERE agg.time_period >= {start_year} AND agg.time_period <= {end_year}

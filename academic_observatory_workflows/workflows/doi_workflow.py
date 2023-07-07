@@ -109,6 +109,7 @@ def make_dataset_transforms(
     dataset_id_orcid: str = "orcid",
     dataset_id_open_citations: str = "open_citations",
     dataset_id_unpaywall: str = "unpaywall",
+    dataset_id_scihub: str = "scihub",
     dataset_id_openalex: str = "openalex",
     dataset_id_settings: str = "settings",
     dataset_id_observatory: str = "observatory",
@@ -154,6 +155,7 @@ def make_dataset_transforms(
             ),
             Transform(
                 inputs={
+                    "scihub": Table(input_project_id, dataset_id_scihub, "scihub", sharded=True),
                     "unpaywall": Table(input_project_id, dataset_id_unpaywall, "unpaywall", sharded=False),
                     "ror": Table(input_project_id, dataset_id_ror, "ror", sharded=True),
                     "repository": Table(input_project_id, dataset_id_settings, "repository"),
@@ -162,6 +164,9 @@ def make_dataset_transforms(
                         dataset_id_observatory_intermediate,
                         "repository_institution_to_ror",
                         sharded=True,
+                    ),
+                    "crossref_metadata": Table(
+                        input_project_id, dataset_id_crossref_metadata, "crossref_metadata", sharded=True
                     ),
                 },
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "openaccess"),

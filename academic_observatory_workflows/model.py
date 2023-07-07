@@ -219,6 +219,7 @@ class Paper:
     publisher_license: str = None
     publisher_is_free_to_read: bool = False
     repositories: List[Repository] = None
+    in_scihub: bool = False
 
     @property
     def access_type(self) -> AccessType:
@@ -234,9 +235,17 @@ class Paper:
         green = len(self.repositories) > 0
         green_only = green and not gold_doaj and not self.publisher_is_free_to_read
         oa = gold or hybrid or bronze or green
+        black = self.in_scihub  # Add LibGen etc here
 
         return AccessType(
-            oa=oa, green=green, gold=gold, gold_doaj=gold_doaj, hybrid=hybrid, bronze=bronze, green_only=green_only
+            oa=oa,
+            green=green,
+            gold=gold,
+            gold_doaj=gold_doaj,
+            hybrid=hybrid,
+            bronze=bronze,
+            green_only=green_only,
+            black=black,
         )
 
     @property
@@ -299,6 +308,7 @@ class AccessType:
     not open access.
     :param bronze: when the paper is free to read at the publisher website however there is no license.
     :param green_only: where the paper is not free to read from the publisher, however it is available at an
+    :param black: where the paper is available at SciHub.
     institutional repository.
     """
 
@@ -309,6 +319,7 @@ class AccessType:
     hybrid: bool = None
     bronze: bool = None
     green_only: bool = None
+    black: bool = None
 
 
 @dataclass
@@ -805,6 +816,7 @@ def make_papers(
             publisher_license=license_,
             publisher_is_free_to_read=publisher_is_free_to_read_,
             repositories=paper_repos,
+            in_scihub=bool(random.getrandbits(1)),
         )
         papers.append(paper)
 
@@ -896,6 +908,20 @@ def make_crossref_events(dataset: ObservatoryDataset) -> List[Dict]:
             )
 
     return events
+
+
+def make_scihub(dataset: ObservatoryDataset) -> List[Dict]:
+    """Generate the SciHub table from an ObservatoryDataset instance.
+
+    :param dataset: the Observatory Dataset.
+    :return: table rows.
+    """
+
+    data = []
+    for paper in dataset.papers:
+        if paper.access_type.black:
+            data.append({"doi": paper.doi})
+    return data
 
 
 def make_unpaywall(dataset: ObservatoryDataset) -> List[Dict]:
@@ -1091,6 +1117,7 @@ def bq_load_observatory_dataset(
     crossref_fundref = make_crossref_fundref(observatory_dataset)
     unpaywall = make_unpaywall(observatory_dataset)
     crossref_metadata = make_crossref_metadata(observatory_dataset)
+    scihub = make_scihub(observatory_dataset)
 
     # Load fake ROR and settings datasets
     test_doi_path = test_fixtures_folder("doi")
@@ -1150,6 +1177,15 @@ def bq_load_observatory_dataset(
                     path=os.path.join(schema_path, "open_citations"),
                     table_name="open_citations",
                     release_date=snapshot_date,
+                ),
+            ),
+            Table(
+                "scihub",
+                True,
+                dataset_id_all,
+                scihub,
+                bq_find_schema(
+                    path=os.path.join(schema_path, "scihub"), release_date=snapshot_date, table_name="scihub"
                 ),
             ),
             Table(

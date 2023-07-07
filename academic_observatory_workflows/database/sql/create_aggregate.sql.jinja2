@@ -32,20 +32,20 @@ num_green_only_ignoring_bronze_outputs	INTEGER	NULLABLE
 num_has_license	                        INTEGER	NULLABLE
 num_is_cclicensed	                    INTEGER	NULLABLE
 #}
-CREATE TEMP FUNCTION count_access_types(coki ANY TYPE) as (
+CREATE TEMP FUNCTION count_access_types(oa ANY TYPE) as (
     (SELECT as STRUCT
-      COUNTIF(oa_coki.open) as num_oa_outputs,
-{#      COUNTIF(oa_color.is_in_doaj) as num_in_doaj,#}
-      COUNTIF(oa_color.green) as num_green_outputs,
-      COUNTIF(oa_color.gold) as num_gold_outputs,
-      COUNTIF(gold_just_doaj) as num_gold_just_doaj_outputs,
-      COUNTIF(oa_color.hybrid) as num_hybrid_outputs,
-      COUNTIF(oa_color.bronze) as num_bronze_outputs,
-      COUNTIF(oa_color.green_only) as num_green_only_outputs,
-      COUNTIF(oa_color.green_only_ignoring_bronze) as num_green_only_ignoring_bronze_outputs,
-      COUNTIF(oa_license.has_license) as num_has_license,
-      COUNTIF(oa_license.is_cclicensed) as num_is_cclicensed
-    FROM UNNEST(unpaywall))
+      COUNTIF(color.oa) as num_oa_outputs,
+      COUNTIF(color.green) as num_green_outputs,
+      COUNTIF(color.gold) as num_gold_outputs,
+      COUNTIF(color.gold_just_doaj) as num_gold_just_doaj_outputs,
+      COUNTIF(color.hybrid) as num_hybrid_outputs,
+      COUNTIF(color.bronze) as num_bronze_outputs,
+      COUNTIF(color.green_only) as num_green_only_outputs,
+      COUNTIF(color.green_only_ignoring_bronze) as num_green_only_ignoring_bronze_outputs,
+      COUNTIF(color.black) as num_black,
+      COUNTIF(license.has_license) as num_has_license,
+      COUNTIF(license.is_cclicensed) as num_is_cclicensed
+    FROM UNNEST(oa))
 );
 
 # Helper Function: Count distribution of access types and citations for a single output type
@@ -68,7 +68,7 @@ citations.total_crossref_citations	        INTEGER	NULLABLE
 CREATE TEMP FUNCTION count_single_output_type(
         output_type STRING,
         items ARRAY<STRUCT<type STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>,
-        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type STRING)
+        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, black BOOL>>, measured_type STRING)
   AS (
   (SELECT as STRUCT
     output_type,
@@ -80,6 +80,7 @@ CREATE TEMP FUNCTION count_single_output_type(
     COUNTIF(item.type = measured_type AND item.hybrid ) as num_hybrid_outputs,
     COUNTIF(item.type = measured_type AND item.bronze ) as num_bronze_outputs,
     COUNTIF(item.type = measured_type AND item.green_only ) as num_green_only_outputs,
+    COUNTIF(item.type = measured_type AND item.black ) as num_black_outputs,
     STRUCT(
       SUM(citations.openalex) as total_openalex_citations,
       SUM(citations.open_citations) as total_open_citations_citations,
@@ -107,7 +108,7 @@ citations.total_crossref_citations	        INTEGER	NULLABLE
 #}
 CREATE TEMP FUNCTION count_array_output_type(
         output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>,
-        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type ARRAY<STRING>)
+        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, black BOOL>>, measured_type ARRAY<STRING>)
   AS (
   (SELECT as STRUCT
     output_type,
@@ -119,6 +120,7 @@ CREATE TEMP FUNCTION count_array_output_type(
     COUNTIF(item.type in UNNEST(measured_type) AND item.hybrid ) as num_hybrid_outputs,
     COUNTIF(item.type in UNNEST(measured_type) AND item.bronze ) as num_bronze_outputs,
     COUNTIF(item.type in UNNEST(measured_type) AND item.green_only ) as num_green_only_outputs,
+    COUNTIF(item.type in UNNEST(measured_type) AND item.black ) as num_black_outputs,
     STRUCT(
       SUM(citations.openalex) as total_openalex_citations,
       SUM(citations.open_citations) as total_open_citations_citations,
@@ -147,7 +149,7 @@ citations.total_crossref_citations	        INTEGER	NULLABLE
 #}
 CREATE TEMP FUNCTION count_not_in_array_output_type(
         output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>,
-        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>, measured_type ARRAY<STRING>)
+        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, black BOOL>>, measured_type ARRAY<STRING>)
   AS (
   (SELECT as STRUCT
     output_type,
@@ -159,6 +161,7 @@ CREATE TEMP FUNCTION count_not_in_array_output_type(
     COUNTIF(item.type not in UNNEST(measured_type) AND item.hybrid ) as num_hybrid_outputs,
     COUNTIF(item.type not in UNNEST(measured_type) AND item.bronze ) as num_bronze_outputs,
     COUNTIF(item.type not in UNNEST(measured_type) AND item.green_only ) as num_green_only_outputs,
+    COUNTIF(item.type not in UNNEST(measured_type) AND item.black ) as num_black_outputs,
     STRUCT(
       SUM(citations.openalex) as total_openalex_citations,
       SUM(citations.open_citations) as total_open_citations_citations,
@@ -176,7 +179,7 @@ output_types	RECORD	REPEATED
 #}
 CREATE TEMP FUNCTION count_output_types(
         items ARRAY<STRUCT<type STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>,
-        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>)
+        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, black BOOL>>)
     AS (
     [
       count_single_output_type("journal_articles", items, 'journal-article'),
@@ -321,7 +324,7 @@ breakdown	                RECORD	REPEATED
 #}
 CREATE TEMP FUNCTION compute_access_types(
            items ARRAY<STRUCT<doi STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>,
-           is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL>>)
+           is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, black BOOL>>)
   AS (
   (SELECT AS STRUCT
     STRUCT(
@@ -359,6 +362,11 @@ CREATE TEMP FUNCTION compute_access_types(
       ROUND(SAFE_DIVIDE( (COUNTIF(green_only is True)) * 100 , COUNT(doi)), 2) as percent
     ) as green_only,
 
+    STRUCT(
+      COUNTIF(black) as total_outputs,
+      ROUND(SAFE_DIVIDE( (COUNTIF(black is True)) * 100 , COUNT(doi)), 2) as percent
+    ) as black,
+
     ARRAY_CONCAT(
       compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(is_oa, false) as is_x)), "oa", "Open Access", "Not Open Access"),
       compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(green, false) as is_x)), "green", "Green", "Not Green"),
@@ -366,7 +374,8 @@ CREATE TEMP FUNCTION compute_access_types(
       compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(gold_just_doaj, false) as is_x)), "gold_just_doaj", "Gold just DOAJ", "Not Gold just DOAJ"),
       compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(hybrid, false) as is_x)), "hybrid", "Hybrid", "Not Hybrid"),
       compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(bronze, false) as is_x)), "bronze", "Bronze", "Not Bronze"),
-      compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(green_only, false) as is_x)), "green_only", "Green Only", "Not Green Only")
+      compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(green_only, false) as is_x)), "green_only", "Green Only", "Not Green Only"),
+      compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(black, false) as is_x)), "black", "Black", "Not Black")
     ) as breakdown
 
   FROM UNNEST(items))
@@ -510,7 +519,7 @@ international_collaboration_with_funding_outputs	INTEGER	NULLABLE
 #}
 CREATE TEMP FUNCTION compute_disciplines(
             fields ARRAY<STRUCT<DisplayName STRING, Score FLOAT64, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>,
-            is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL,
+            is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, black BOOL,
             funding BOOL, international_funding BOOL, domestic_funding BOOL, government_funding BOOL, private_funding BOOL, international_colab BOOL>>)
   AS (
   ARRAY(
@@ -536,6 +545,7 @@ CREATE TEMP FUNCTION compute_disciplines(
         COUNTIF(hybrid) as num_hybrid_outputs, 
         COUNTIF(bronze) as num_bronze_outputs, 
         COUNTIF(green_only) as num_green_only_outputs,
+        COUNTIF(black) as num_black_outputs,
         STRUCT(
           COUNTIF(funding) as total_funded_outputs,
           COUNTIF(international_funding) as num_international_outputs,
@@ -609,14 +619,14 @@ CREATE TEMP FUNCTION process_relations(relationships ANY TYPE, total INT64, tota
           relation.identifier as id,
           COUNT(relation.identifier) as total_outputs,
           ROUND(SAFE_DIVIDE( COUNT(relation.identifier), total), 3) as percentage_of_all_outputs,
-          ROUND(SAFE_DIVIDE( COUNTIF(coki.oa_coki.open) , total_oa ), 3) as percentage_of_all_oa,
+          ROUND(SAFE_DIVIDE( COUNTIF(coki.oa.coki.open) , total_oa ), 3) as percentage_of_all_oa,
           MAX(relation.name) as name,
           MAX(relation.country) as country,
           MAX(relation.country_code) as country_code,
           MAX(relation.region) as region,
           MAX(relation.subregion) as subregion,
           MAX(relation.coordinates) as coordinates,
-          count_access_types(ARRAY_AGG(coki)).*,
+          count_access_types(ARRAY_AGG(coki.oa)).*,
           STRUCT(
             SUM(citations.openalex) as openalex,
             SUM(citations.crossref) as crosssref,
@@ -727,7 +737,7 @@ WITH tmp_disciplines AS
                 dois.crossref.references_count as crossref,
                 dois.open_citations.citations_total as open_citations
               ) as citations,
-              coki.oa_coki.open as is_oa, coki.oa_color.green as green, coki.oa_color.gold as gold, coki.oa_color.gold_just_doaj, coki.oa_color.hybrid, coki.oa_color.bronze, coki.oa_color.green_only,
+              coki.oa.coki.open as is_oa, coki.oa.color.green as green, coki.oa.color.gold as gold, coki.oa.color.gold_just_doaj, coki.oa.color.hybrid, coki.oa.color.bronze, coki.oa.color.green_only, coki.oa.color.black,
               -- Total Funding
               (SELECT COUNT(funder) > 0 from UNNEST(affiliations.funders) as funder) as funding,
               -- Domestic, international, both, none or unknown funding
@@ -761,7 +771,7 @@ tmp_access_types AS (
       ARRAY_AGG(
           STRUCT(
               dois.doi, STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-              coki.oa_coki.open, coki.oa_color.green, coki.oa_color.gold, coki.oa_color.gold_just_doaj, coki.oa_color.hybrid, coki.oa_color.bronze, coki.oa_color.green_only
+              coki.oa.coki.open, coki.oa.color.green, coki.oa.color.gold, coki.oa.color.gold_just_doaj, coki.oa.color.hybrid, coki.oa.color.bronze, coki.oa.color.green_only, coki.oa.color.black
           )
       )
     ) as access_types
@@ -794,15 +804,31 @@ SELECT
   -- Total outputs
   COUNT(dois.doi) as total_outputs,
 
-  -- COKI OA
-  compute_coki_oa(
-    ARRAY_AGG(
-      STRUCT(
-        dois.doi,
-        coki.oa_coki
-      )
-    )
-  ) as oa_coki,
+  -- COKI data
+  STRUCT(
+    STRUCT(
+      -- Open Access Types
+      compute_coki_oa(
+        ARRAY_AGG(
+          STRUCT(
+            dois.doi,
+            coki.oa.coki
+          )
+        )
+      ) as coki
+    ) as oa,
+
+    -- Repositories
+    {#
+    This SQL block aggregrates the repository names, remebering we are inside a larger GROUP BY statement,
+    #}
+    process_repositories(
+      ARRAY_CONCAT_AGG(
+        coki.repositories
+      ),
+      MAX(aggregrate.identifier)
+    ) as repositories
+  ) as coki,
 
   -- Citations
   compute_citations(
@@ -814,27 +840,14 @@ SELECT
   ) as citations,
 
   -- Output Types
-
   count_output_types(
      ARRAY_AGG(
         STRUCT(
             crossref.type, STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-            coki.oa_coki.open, coki.oa_color.green, coki.oa_color.gold, coki.oa_color.gold_just_doaj, coki.oa_color.hybrid, coki.oa_color.bronze, coki.oa_color.green_only
+            coki.oa.coki.open, coki.oa.color.green, coki.oa.color.gold, coki.oa.color.gold_just_doaj, coki.oa.color.hybrid, coki.oa.color.bronze, coki.oa.color.green_only, coki.oa.color.black
         )
      )
   ) as output_types,
-
-  -- Repositories
-  {#
-  This SQL block aggregrates the repository names, remebering we are inside a larger GROUP BY statement,
-  #}
-  -- Repositories
-  process_repositories(
-    ARRAY_CONCAT_AGG(
-      coki.repositories
-    ),
-    MAX(aggregrate.identifier)
-  ) as repositories,
 
   {% if relate_to_institutions %}
   -- Institutions
@@ -852,11 +865,11 @@ SELECT
           relation, 
           coki,
           STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa_coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa.coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(affiliations.institutions) as relation
         WHERE relation.identifier <> aggregrate.identifier) 
       )
-    ), COUNT(dois.doi), COUNTIF(coki.oa_coki.open = True)
+    ), COUNT(dois.doi), COUNTIF(coki.oa.coki.open = True)
   ) as institutions,
   {% endif %}
 
@@ -876,11 +889,11 @@ SELECT
           relation, 
           coki,
           STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa_coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa.coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(affiliations.countries) as relation
         WHERE relation.identifier <> aggregrate.country_code OR aggregrate.country_code IS NULL) 
       )
-    ), COUNT(dois.doi), COUNTIF(coki.oa_coki.open = True)
+    ), COUNT(dois.doi), COUNTIF(coki.oa.coki.open = True)
   ) as countries,
   {% endif %}
 
@@ -900,11 +913,11 @@ SELECT
           relation, 
           coki,
           STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa_coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa.coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(affiliations.groupings) as relation
         WHERE relation.identifier <> aggregrate.identifier) 
       )
-    ), COUNT(dois.doi), COUNTIF(coki.oa_coki.open = True)
+    ), COUNT(dois.doi), COUNTIF(coki.oa.coki.open = True)
   ) as groupings,
   {% endif %}
 
@@ -924,11 +937,11 @@ SELECT
           relation, 
           coki,
           STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa_coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa.coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(affiliations.funders) as relation
         WHERE relation.identifier <> aggregrate.identifier) 
       )
-    ), COUNT(dois.doi), COUNTIF(coki.oa_coki.open = True)
+    ), COUNT(dois.doi), COUNTIF(coki.oa.coki.open = True)
   ) as funders,
   {% endif %}
 
@@ -952,10 +965,10 @@ SELECT
           STRUCT(
                 dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations
           ) as citations,
-          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa_coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa.coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(aggregrate.members) as relation) 
       )
-    ), COUNT(dois.doi), COUNTIF(coki.oa_coki.open = True)
+    ), COUNT(dois.doi), COUNTIF(coki.oa.coki.open = True)
   ) as members,
   {% endif %}
 
@@ -975,11 +988,11 @@ SELECT
           relation, 
           coki,
           STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa_coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa.coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(affiliations.publishers) as relation
         WHERE relation.identifier <> aggregrate.identifier) 
       )
-    ), COUNT(dois.doi), COUNTIF(coki.oa_coki.open = True)
+    ), COUNT(dois.doi), COUNTIF(coki.oa.coki.open = True)
   ) as publishers,
   {% endif %}
 
@@ -999,11 +1012,11 @@ SELECT
           relation, 
           coki,
           STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations,
-          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa_coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
+          ARRAY( SELECT as STRUCT display_name as DisplayName, Score, coki.oa.coki.open FROM UNNEST(openalex.concepts) as fields where fields.level = 0) as disciplines
         FROM UNNEST(affiliations.journals) as relation
         WHERE relation.identifier <> aggregrate.identifier) 
       )
-    ), COUNT(dois.doi), COUNTIF(coki.oa_coki.open = True)
+    ), COUNT(dois.doi), COUNTIF(coki.oa.coki.open = True)
   ) as journals,
   {% endif %}
 
@@ -1020,7 +1033,7 @@ SELECT
           event.source, 
           event.count, 
           STRUCT(dois.openalex.cited_by_count as openalex, dois.crossref.references_count as crossref, dois.open_citations.citations_total as open_citations) as citations, 
-          coki.oa_coki.open as is_oa, coki.oa_color.green as green, coki.oa_color.gold as gold, coki.oa_color.gold_just_doaj, coki.oa_color.hybrid, coki.oa_color.bronze, coki.oa_color.green_only
+          coki.oa.coki.open as is_oa, coki.oa.color.green as green, coki.oa.color.gold as gold, coki.oa.color.gold_just_doaj, coki.oa.color.hybrid, coki.oa.color.bronze, coki.oa.color.green_only
         FROM UNNEST(dois.events.events) as event)))
   ) as events,
 
@@ -1033,9 +1046,15 @@ GROUP BY aggregrate.identifier, crossref.{{ group_by_time_field }}
 
 -- Putting it all together
 SELECT
-  tmp_agg_table.*,
-  disciplines,
-  access_types,
+  tmp_agg_table.* EXCEPT (coki),
+  STRUCT(
+    STRUCT(
+      access_types as color,
+      tmp_agg_table.coki.oa.coki as coki
+    ) as oa,
+    tmp_agg_table.coki.repositories as repositories
+  ) as coki,
+  disciplines
 FROM
   tmp_agg_table
 INNER JOIN
