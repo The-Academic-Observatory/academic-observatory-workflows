@@ -66,27 +66,19 @@
       {
         "name": "ArticleIdList",
         "description": "Lists all the identifiers associated with the citation. These identifiers may be associated with the original publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
-        "mode": "NULLABLE",
+        "mode": "REPEATED",
         "type": "RECORD",
         "fields": [
           {
-            "name": "ArticleId",
-            "description": "Specifies the value of an article identifier, either an identifier associated with the orignal publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
-            "mode": "REPEATED",
-            "type": "RECORD",
-            "fields": [
-              {
-                "name": "IdType",
-                "description": "Identifies the type of article identifier.",
-                "mode": "NULLABLE",
-                "type": "STRING"
-              },
-              {
-                "name": "value",
-                "mode": "NULLABLE",
-                "type": "STRING"
-              }
-            ]
+            "name": "IdType",
+            "description": "Identifies the type of article identifier.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "value",
+            "mode": "NULLABLE",
+            "type": "STRING"
           }
         ]
       },
@@ -97,35 +89,27 @@
         "type": "RECORD",
         "fields": [
           {
-            "name": "Object",
-            "description": "Available to list additional metadata that is not otherwise captured in other elements.",
-            "mode": "REPEATED",
+            "name": "Type",
+            "description": "The @Type attribute provides additional information on the source or sort of item described.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "Param",
+            "description": "Available to specify an aspect of the <Object> element. There may be one or more <Param> within a single <Object>; the nature of the <Param> contents is indicated by the @Name value.",
+            "mode": "NULLABLE",
             "type": "RECORD",
             "fields": [
               {
-                "name": "Type",
-                "description": "The @Type attribute provides additional information on the source or sort of item described.",
+                "name": "value",
                 "mode": "NULLABLE",
                 "type": "STRING"
               },
               {
-                "name": "Param",
-                "description": "Available to specify an aspect of the <Object> element. There may be one or more <Param> within a single <Object>; the nature of the <Param> contents is indicated by the @Name value.",
+                "name": "Name",
+                "description": "Available to identify the type of contents stated in the <Param> element.",
                 "mode": "NULLABLE",
-                "type": "RECORD",
-                "fields": [
-                  {
-                    "name": "value",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "Name",
-                    "description": "Available to identify the type of contents stated in the <Param> element.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  }
-                ]
+                "type": "STRING"
               }
             ]
           }
@@ -151,28 +135,20 @@
             "fields": [
               {
                 "name": "ArticleIdList",
-                "description": "Lists all the identifiers associated with the citation. These identifiers may be associated with the original publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
-                "mode": "NULLABLE",
+                "description": "Lists all the identifiers associated with the citation. These identifiers may be associated with the original publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id). Specifies the value of an article identifier, either an identifier associated with the orignal publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
+                "mode": "REPEATED",
                 "type": "RECORD",
                 "fields": [
                   {
-                    "name": "ArticleId",
-                    "description": "Specifies the value of an article identifier, either an identifier associated with the orignal publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
-                    "mode": "REPEATED",
-                    "type": "RECORD",
-                    "fields": [
-                      {
-                        "name": "IdType",
-                        "description": "Identifies the type of article identifier.",
-                        "mode": "NULLABLE",
-                        "type": "STRING"
-                      },
-                      {
-                        "name": "value",
-                        "mode": "NULLABLE",
-                        "type": "STRING"
-                      }
-                    ]
+                    "name": "IdType",
+                    "description": "Identifies the type of article identifier.",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "value",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
                   }
                 ]
               },
@@ -204,28 +180,20 @@
                 "fields": [
                   {
                     "name": "ArticleIdList",
-                    "description": "Lists all the identifiers associated with the citation. These identifiers may be associated with the original publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
-                    "mode": "NULLABLE",
+                    "description": "Lists all the identifiers associated with the citation. These identifiers may be associated with the original publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id). Specifies the value of an article identifier, either an identifier associated with the orignal publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
+                    "mode": "REPEATED",
                     "type": "RECORD",
                     "fields": [
                       {
-                        "name": "ArticleId",
-                        "description": "Specifies the value of an article identifier, either an identifier associated with the orignal publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
-                        "mode": "REPEATED",
-                        "type": "RECORD",
-                        "fields": [
-                          {
-                            "name": "IdType",
-                            "description": "Identifies the type of article identifier.",
-                            "mode": "NULLABLE",
-                            "type": "STRING"
-                          },
-                          {
-                            "name": "value",
-                            "mode": "NULLABLE",
-                            "type": "STRING"
-                          }
-                        ]
+                        "name": "IdType",
+                        "description": "Identifies the type of article identifier.",
+                        "mode": "NULLABLE",
+                        "type": "STRING"
+                      },
+                      {
+                        "name": "value",
+                        "mode": "NULLABLE",
+                        "type": "STRING"
                       }
                     ]
                   },
@@ -257,28 +225,20 @@
                     "fields": [
                       {
                         "name": "ArticleIdList",
-                        "description": "Lists all the identifiers associated with the citation. These identifiers may be associated with the original publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
-                        "mode": "NULLABLE",
+                        "description": "Lists all the identifiers associated with the citation. These identifiers may be associated with the original publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id). Specifies the value of an article identifier, either an identifier associated with the orignal publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
+                        "mode": "REPEATED",
                         "type": "RECORD",
                         "fields": [
                           {
-                            "name": "ArticleId",
-                            "description": "Specifies the value of an article identifier, either an identifier associated with the orignal publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
-                            "mode": "REPEATED",
-                            "type": "RECORD",
-                            "fields": [
-                              {
-                                "name": "IdType",
-                                "description": "Identifies the type of article identifier.",
-                                "mode": "NULLABLE",
-                                "type": "STRING"
-                              },
-                              {
-                                "name": "value",
-                                "mode": "NULLABLE",
-                                "type": "STRING"
-                              }
-                            ]
+                            "name": "IdType",
+                            "description": "Identifies the type of article identifier.",
+                            "mode": "NULLABLE",
+                            "type": "STRING"
+                          },
+                          {
+                            "name": "value",
+                            "mode": "NULLABLE",
+                            "type": "STRING"
                           }
                         ]
                       },
@@ -310,28 +270,20 @@
                         "fields": [
                           {
                             "name": "ArticleIdList",
-                            "description": "Lists all the identifiers associated with the citation. These identifiers may be associated with the original publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
-                            "mode": "NULLABLE",
+                            "description": "Lists all the identifiers associated with the citation. These identifiers may be associated with the original publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id). Specifies the value of an article identifier, either an identifier associated with the orignal publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
+                            "mode": "REPEATED",
                             "type": "RECORD",
                             "fields": [
                               {
-                                "name": "ArticleId",
-                                "description": "Specifies the value of an article identifier, either an identifier associated with the orignal publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
-                                "mode": "REPEATED",
-                                "type": "RECORD",
-                                "fields": [
-                                  {
-                                    "name": "IdType",
-                                    "description": "Identifies the type of article identifier.",
-                                    "mode": "NULLABLE",
-                                    "type": "STRING"
-                                  },
-                                  {
-                                    "name": "value",
-                                    "mode": "NULLABLE",
-                                    "type": "STRING"
-                                  }
-                                ]
+                                "name": "IdType",
+                                "description": "Identifies the type of article identifier.",
+                                "mode": "NULLABLE",
+                                "type": "STRING"
+                              },
+                              {
+                                "name": "value",
+                                "mode": "NULLABLE",
+                                "type": "STRING"
                               }
                             ]
                           },
@@ -363,28 +315,20 @@
                             "fields": [
                               {
                                 "name": "ArticleIdList",
-                                "description": "Lists all the identifiers associated with the citation. These identifiers may be associated with the original publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
-                                "mode": "NULLABLE",
+                                "description": "Lists all the identifiers associated with the citation. These identifiers may be associated with the original publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id). Specifies the value of an article identifier, either an identifier associated with the orignal publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
+                                "mode": "REPEATED",
                                 "type": "RECORD",
                                 "fields": [
                                   {
-                                    "name": "ArticleId",
-                                    "description": "Specifies the value of an article identifier, either an identifier associated with the orignal publication (e.g. DOI) or with the citation's processing at NLM (e.g. PMID or pubmed id).",
-                                    "mode": "REPEATED",
-                                    "type": "RECORD",
-                                    "fields": [
-                                      {
-                                        "name": "IdType",
-                                        "description": "Identifies the type of article identifier.",
-                                        "mode": "NULLABLE",
-                                        "type": "STRING"
-                                      },
-                                      {
-                                        "name": "value",
-                                        "mode": "NULLABLE",
-                                        "type": "STRING"
-                                      }
-                                    ]
+                                    "name": "IdType",
+                                    "description": "Identifies the type of article identifier.",
+                                    "mode": "NULLABLE",
+                                    "type": "STRING"
+                                  },
+                                  {
+                                    "name": "value",
+                                    "mode": "NULLABLE",
+                                    "type": "STRING"
                                   }
                                 ]
                               },
@@ -672,56 +616,87 @@
             ]
           },
           {
+            "name": "AuthorListCompleteYN",
+            "description": "Indicates whether the list of values is intentionally incomplete, reflecting periods of time when NLM policy was to enter fewer than all items qualified. 'Y' indicates that the list of values is complete. 'N' indicates that the list of values is incomplete.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "AuthorListType",
+            "description": "The @Type attribute provides additional information on the source or sort of item described.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
             "name": "AuthorList",
             "description": "Lists contributors associated with the publication. For book citations, the contributors may be authors or editors. For journal article citations, the contributors will only be authors.",
-            "mode": "NULLABLE",
+            "mode": "REPEATED",
             "type": "RECORD",
             "fields": [
               {
-                "name": "CompleteYN",
-                "description": "Indicates whether the list of values is intentionally incomplete, reflecting periods of time when NLM policy was to enter fewer than all items qualified. 'Y' indicates that the list of values is complete. 'N' indicates that the list of values is incomplete.",
+                "name": "CollectiveName",
+                "description": "Contains the name of a group contributor.",
                 "mode": "NULLABLE",
                 "type": "STRING"
               },
               {
-                "name": "Type",
-                "description": "The @Type attribute provides additional information on the source or sort of item described.",
+                "name": "Suffix",
+                "description": "Contains the suffix associated with an individual's name, e.g. 'Jr' and 'IV'.",
                 "mode": "NULLABLE",
                 "type": "STRING"
               },
               {
-                "name": "Author",
-                "description": "Identifies a contributor associated with the publication. The contributor may be an author or an editor, depending on the type indicated in the corresponding <AuthorList> element, or an individual or a group, depending on the type of name provided.",
+                "name": "Initials",
+                "description": "Contains the initials for an individual contributor's <ForeName>. Initials are generated automatically using an algorithm but may be modified by the publisher. Publishers may also submit initials with their article XML. Hyphens are allowed.",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "ForeName",
+                "description": "Includes the first portion of an individual contributor's name, i.e. the author or investigator's first and middle names. The <Suffix>, <Initials>, and <LastName> are contained in separate elements. Prior to 2002 NLM did not enter full first or middle names; only initials were entered.",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "LastName",
+                "description": "Contains the last name or the single name of an individual contributor, even if that single name is not considered to be a surname.",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "Identifier",
+                "description": "Introduced with the 2010 DTD, specifies a unique identifier for an individual contributor's name or affiliation, if available.",
                 "mode": "REPEATED",
                 "type": "RECORD",
                 "fields": [
                   {
-                    "name": "CollectiveName",
-                    "description": "Contains the name of a group contributor.",
+                    "name": "Source",
+                    "description": "When used in the <Identifer> element, it designates the organizational authority that established the unique identifier, e.g. ORCID or International Standard Name Identifier (ISNI). When used in the <OtherID> element, it identifies the source of the additional identifier associated with the record.",
                     "mode": "NULLABLE",
                     "type": "STRING"
                   },
                   {
-                    "name": "Suffix",
-                    "description": "Contains the suffix associated with an individual's name, e.g. 'Jr' and 'IV'.",
+                    "name": "value",
                     "mode": "NULLABLE",
                     "type": "STRING"
-                  },
+                  }
+                ]
+              },
+              {
+                "name": "EqualContrib",
+                "description": "Added to <Author> with the 2017 DTD, EqualContrib indicates whether one or more contributors contributed equally to the publication.",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "AffiliationInfo",
+                "description": "Introduced in 2015, <AffiliationInfo> contains the <Affiliation> element with the institutional affiliation information for an author or investigator at the time of publication. It may also contain the <Identifier> element with a unique identifier for the organization, if one is available. Multiple <AffiliationInfo> elements may be provided.",
+                "mode": "REPEATED",
+                "type": "RECORD",
+                "fields": [
                   {
-                    "name": "Initials",
-                    "description": "Contains the initials for an individual contributor's <ForeName>. Initials are generated automatically using an algorithm but may be modified by the publisher. Publishers may also submit initials with their article XML. Hyphens are allowed.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "ForeName",
-                    "description": "Includes the first portion of an individual contributor's name, i.e. the author or investigator's first and middle names. The <Suffix>, <Initials>, and <LastName> are contained in separate elements. Prior to 2002 NLM did not enter full first or middle names; only initials were entered.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "LastName",
-                    "description": "Contains the last name or the single name of an individual contributor, even if that single name is not considered to be a surname.",
+                    "name": "Affiliation",
+                    "description": "Contains the institutional affiliation information associated with an author or investigator at the time of publication.",
                     "mode": "NULLABLE",
                     "type": "STRING"
                   },
@@ -743,53 +718,14 @@
                         "type": "STRING"
                       }
                     ]
-                  },
-                  {
-                    "name": "EqualContrib",
-                    "description": "Added to <Author> with the 2017 DTD, EqualContrib indicates whether one or more contributors contributed equally to the publication.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "AffiliationInfo",
-                    "description": "Introduced in 2015, <AffiliationInfo> contains the <Affiliation> element with the institutional affiliation information for an author or investigator at the time of publication. It may also contain the <Identifier> element with a unique identifier for the organization, if one is available. Multiple <AffiliationInfo> elements may be provided.",
-                    "mode": "REPEATED",
-                    "type": "RECORD",
-                    "fields": [
-                      {
-                        "name": "Affiliation",
-                        "description": "Contains the institutional affiliation information associated with an author or investigator at the time of publication.",
-                        "mode": "NULLABLE",
-                        "type": "STRING"
-                      },
-                      {
-                        "name": "Identifier",
-                        "description": "Introduced with the 2010 DTD, specifies a unique identifier for an individual contributor's name or affiliation, if available.",
-                        "mode": "REPEATED",
-                        "type": "RECORD",
-                        "fields": [
-                          {
-                            "name": "Source",
-                            "description": "When used in the <Identifer> element, it designates the organizational authority that established the unique identifier, e.g. ORCID or International Standard Name Identifier (ISNI). When used in the <OtherID> element, it identifies the source of the additional identifier associated with the record.",
-                            "mode": "NULLABLE",
-                            "type": "STRING"
-                          },
-                          {
-                            "name": "value",
-                            "mode": "NULLABLE",
-                            "type": "STRING"
-                          }
-                        ]
-                      }
-                    ]
-                  },
-                  {
-                    "name": "ValidYN",
-                    "description": "Indicates whether the value is correct or not. The default value is 'Y'. On some older citations, if an incorrect value was initially provided and later corrected, the incorrect value may be retained and marked as ValidYN='N'. However, it is no longer used when citations are corrected; the incorrect values are now removed from the citation.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
                   }
                 ]
+              },
+              {
+                "name": "ValidYN",
+                "description": "Indicates whether the value is correct or not. The default value is 'Y'. On some older citations, if an incorrect value was initially provided and later corrected, the incorrect value may be retained and marked as ValidYN='N'. However, it is no longer used when citations are corrected; the incorrect values are now removed from the citation.",
+                "mode": "NULLABLE",
+                "type": "STRING"
               }
             ]
           },
@@ -800,117 +736,85 @@
             "type": "STRING"
           },
           {
+            "name": "DataBankListCompleteYN",
+            "description": "Indicates whether the list of values is intentionally incomplete, reflecting periods of time when NLM policy was to enter fewer than all items qualified. 'Y' indicates that the list of values is complete. 'N' indicates that the list of values is incomplete.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
             "name": "DataBankList",
             "description": "Lists each databank and its accession number(s) associated with the publication.",
-            "mode": "NULLABLE",
+            "mode": "REPEATED",
             "type": "RECORD",
             "fields": [
               {
-                "name": "CompleteYN",
-                "description": "Indicates whether the list of values is intentionally incomplete, reflecting periods of time when NLM policy was to enter fewer than all items qualified. 'Y' indicates that the list of values is complete. 'N' indicates that the list of values is incomplete.",
-                "mode": "NULLABLE",
+                "name": "AccessionNumberList",
+                "description": "Lists the values of accession numbers for a databank. The databank is identified in the element, <DataBankName>.",
+                "mode": "REPEATED",
                 "type": "STRING"
               },
               {
-                "name": "DataBank",
-                "description": "Contains a databank associated with the publication, as well as one or more accession numbers registered in it.",
-                "mode": "REPEATED",
-                "type": "RECORD",
-                "fields": [
-                  {
-                    "name": "AccessionNumberList",
-                    "description": "Lists the values of accession numbers for a databank. The databank is identified in the element, <DataBankName>.",
-                    "mode": "NULLABLE",
-                    "type": "RECORD",
-                    "fields": [
-                      {
-                        "name": "AccessionNumber",
-                        "description": "Specifies the value of an accession number for a databank. The databank is identified in the element, <DataBankName>.",
-                        "mode": "REPEATED",
-                        "type": "STRING"
-                      }
-                    ]
-                  },
-                  {
-                    "name": "DataBankName",
-                    "description": "Indicates the name of the databank associated with the publication.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  }
-                ]
+                "name": "DataBankName",
+                "description": "Indicates the name of the databank associated with the publication.",
+                "mode": "NULLABLE",
+                "type": "STRING"
               }
             ]
           },
           {
+            "name": "GrantListCompleteYN",
+            "description": "Indicates whether the list of values is intentionally incomplete, reflecting periods of time when NLM policy was to enter fewer than all items qualified. 'Y' indicates that the list of values is complete. 'N' indicates that the list of values is incomplete.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
             "name": "GrantList",
             "description": "Introduced in 1981, this element lists the grant information for grants associated with the publication.",
-            "mode": "NULLABLE",
+            "mode": "REPEATED",
             "type": "RECORD",
             "fields": [
               {
-                "name": "CompleteYN",
-                "description": "Indicates whether the list of values is intentionally incomplete, reflecting periods of time when NLM policy was to enter fewer than all items qualified. 'Y' indicates that the list of values is complete. 'N' indicates that the list of values is incomplete.",
+                "name": "GrantID",
+                "description": "Specifies the research grant or contract number for the funding that supported the publication.",
                 "mode": "NULLABLE",
                 "type": "STRING"
               },
               {
-                "name": "Grant",
-                "description": "Contains information for a grant mentioned in the cited publication.",
-                "mode": "REPEATED",
-                "type": "RECORD",
-                "fields": [
-                  {
-                    "name": "GrantID",
-                    "description": "Specifies the research grant or contract number for the funding that supported the publication.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "Acronym",
-                    "description": "Identifies the acronym associated with a grant.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "Agency",
-                    "description": "Identifies the funding agency by either the institute's acronym or full name.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "Country",
-                    "description": "When used in <Grant>, states the country wherein the funding agency is located. When used in <MedlineJournalInfo>, states the place of publication of the journal.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  }
-                ]
+                "name": "Acronym",
+                "description": "Identifies the acronym associated with a grant.",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "Agency",
+                "description": "Identifies the funding agency by either the institute's acronym or full name.",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "Country",
+                "description": "When used in <Grant>, states the country wherein the funding agency is located. When used in <MedlineJournalInfo>, states the place of publication of the journal.",
+                "mode": "NULLABLE",
+                "type": "STRING"
               }
             ]
           },
           {
             "name": "PublicationTypeList",
-            "description": "Contains one or more publication types that describe the publication.",
-            "mode": "NULLABLE",
+            "description": "Contains one or more publication types that describe the publication. States the publication type values that best describe the publication, using one of the values from NLM's controlled list. Records may contain more than one <PublicationType> that are listed in alphabetical order.",
+            "mode": "REPEATED",
             "type": "RECORD",
             "fields": [
               {
-                "name": "PublicationType",
-                "description": "States the publication type values that best describe the publication, using one of the values from NLM's controlled list. Records may contain more than one <PublicationType> that are listed in alphabetical order.",
-                "mode": "REPEATED",
-                "type": "RECORD",
-                "fields": [
-                  {
-                    "name": "UI",
-                    "description": "States the unique MeSH identifier.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "value",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  }
-                ]
+                "name": "UI",
+                "description": "States the unique MeSH identifier.",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "value",
+                "mode": "NULLABLE",
+                "type": "STRING"
               }
             ]
           },
@@ -994,54 +898,159 @@
       },
       {
         "name": "ChemicalList",
-        "description": "Lists chemical substances mentioned in the publication.",
-        "mode": "NULLABLE",
+        "description": "Lists chemical substances mentioned in the publication. Includes a chemical substance mentioned in the publication. The name of the substance and registry number will be provided.",
+        "mode": "REPEATED",
         "type": "RECORD",
         "fields": [
           {
-            "name": "Chemical",
-            "description": "Includes a chemical substance mentioned in the publication. The name of the substance and registry number will be provided.",
-            "mode": "REPEATED",
+            "name": "NameOfSubstance",
+            "description": "Provides the name of the chemical substance, alongside a MeSH unique identifier for names of chemical substances.",
+            "mode": "NULLABLE",
             "type": "RECORD",
             "fields": [
               {
-                "name": "NameOfSubstance",
-                "description": "Provides the name of the chemical substance, alongside a MeSH unique identifier for names of chemical substances.",
+                "name": "UI",
+                "description": "States the unique MeSH identifier.",
                 "mode": "NULLABLE",
-                "type": "RECORD",
-                "fields": [
-                  {
-                    "name": "UI",
-                    "description": "States the unique MeSH identifier.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "value",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  }
-                ]
+                "type": "STRING"
               },
               {
-                "name": "RegistryNumber",
-                "description": "Contains the unique registry number for a chemical substance, as designated by either the Chemical Abstracts Service, Enzyme Nomenclature, or Food and Drug Administration's Unique Ingredient Identifiers. A zero value indicates that no registry number is available.",
+                "name": "value",
                 "mode": "NULLABLE",
                 "type": "STRING"
               }
             ]
+          },
+          {
+            "name": "RegistryNumber",
+            "description": "Contains the unique registry number for a chemical substance, as designated by either the Chemical Abstracts Service, Enzyme Nomenclature, or Food and Drug Administration's Unique Ingredient Identifiers. A zero value indicates that no registry number is available.",
+            "mode": "NULLABLE",
+            "type": "STRING"
           }
         ]
       },
       {
         "name": "SupplMeshList",
-        "description": "Lists Supplementary Concept Record (SCR) terms assigned to the citation as part of MeSH indexing.",
-        "mode": "NULLABLE",
+        "description": "Lists Supplementary Concept Record (SCR) terms assigned to the citation as part of MeSH indexing. Identifies a Supplementary Concept Record (SCR) term assigned to the citation as part of MeSH indexing. The @Type attribute identifies the class of SCR, e.g. disease or protocol. The @UI attribute provides the unique identifier for the SCR.",
+        "mode": "REPEATED",
         "type": "RECORD",
         "fields": [
           {
-            "name": "SupplMeshName",
-            "description": "Identifies a Supplementary Concept Record (SCR) term assigned to the citation as part of MeSH indexing. The @Type attribute identifies the class of SCR, e.g. disease or protocol. The @UI attribute provides the unique identifier for the SCR.",
+            "name": "UI",
+            "description": "States the unique MeSH identifier.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "Type",
+            "description": "The @Type attribute provides additional information on the source or sort of item described.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "value",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "CitationSubset",
+        "description": "States the subset(s) for which the MEDLINE record was created. Most citations are from journals indexed for MEDLINE as part of 'Index Medicus', indicated by the citation subset value 'IM'. A small percentage of records in PubMed are in the OLDMEDLINE subset, indicated by the citation subset value 'OM'.",
+        "mode": "REPEATED",
+        "type": "STRING"
+      },
+      {
+        "name": "CommentsCorrectionsList",
+        "description": "Lists citations for other publications associated with the citation. These associated citations may be for comments or retractions, for instance. Contains the citation information for an associated publication such as an erratum, retraction, or expression of concern, and specifies the type of relationship between the associated publications with the RefType attribute. See the PubMed User Guide, https://pubmed.ncbi.nlm.nih.gov/help/#comment-correction, for additional information.",
+        "mode": "REPEATED",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "PMID",
+            "description": "States the PubMed Identifier.",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "Version",
+                "description": "Indicates the version number of the citation's PMID.",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "value",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          },
+          {
+            "name": "RefSource",
+            "description": "Provides the reference string for the associated publication. It will typically follow the format: NLM Title Abbreviation. Publication Date; Volume(Issue):Pagination.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "RefType",
+            "description": "Indicates the type of association between the citation and another publication, as well as the direction of the associated, for instance a comment on another publication or a retraction of another publication.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "Note",
+            "description": "Includes any notes added alongside an associated citation's entry, e.g. regarding the data correction published in an associated erratum.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          }
+        ]
+      },
+      {
+        "name": "GeneSymbolList",
+        "description": "Lists the GeneSymbols associated with the citation. Includes the symbol or abbreviated form of a gene name, as it was reported in the publication. This data was only added to citations from 1991 to 1995; it is no longer added to citations.",
+        "mode": "REPEATED",
+        "type": "STRING"
+      },
+      {
+        "name": "MeshHeadingList",
+        "description": "Contains the list of Medical Subject Headings (MeSH) that were assigned to the citation by NLM Indexing. The most significant MeSH assignments in the list are designated with @MajorTopic='Y'. Specifies a Medical Subject Heading (MeSH) assigned to the citation by NLM Indexing. Each MeSH heading entry includes one descriptor (<DescriptorName>) and zero, one, or more qualifiers (<QualifierName>).",
+        "mode": "REPEATED",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "DescriptorName",
+            "dscription": "Contains the main MeSH headings assigned by NLM. The presentation of <DescriptorName> is alphabetical.",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "Type",
+                "description": "The @Type attribute provides additional information on the source or sort of item described.",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "UI",
+                "description": "States the unique MeSH identifier.",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "MajorTopicYN",
+                "description": "Indicates whether or not the MeSH heading captures one of the more significant points in the publication.",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "value",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          },
+          {
+            "name": "QualifierName",
+            "description": "Contains MeSH terms that help to qualify the scope of the main MeSH terms assigned as Descriptors, see <DescriptorName>. The <QualifierName> associated with a <DescriptorName> is in alphabetical order.",
             "mode": "REPEATED",
             "type": "RECORD",
             "fields": [
@@ -1052,8 +1061,8 @@
                 "type": "STRING"
               },
               {
-                "name": "Type",
-                "description": "The @Type attribute provides additional information on the source or sort of item described.",
+                "name": "MajorTopicYN",
+                "description": "Indicates whether or not the MeSH heading captures one of the more significant points in the publication.",
                 "mode": "NULLABLE",
                 "type": "STRING"
               },
@@ -1067,151 +1076,6 @@
         ]
       },
       {
-        "name": "CitationSubset",
-        "description": "States the subset(s) for which the MEDLINE record was created. Most citations are from journals indexed for MEDLINE as part of 'Index Medicus', indicated by the citation subset value 'IM'. A small percentage of records in PubMed are in the OLDMEDLINE subset, indicated by the citation subset value 'OM'.",
-        "mode": "REPEATED",
-        "type": "STRING"
-      },
-      {
-        "name": "CommentsCorrectionsList",
-        "description": "Lists citations for other publications associated with the citation. These associated citations may be for comments or retractions, for instance.",
-        "mode": "NULLABLE",
-        "type": "RECORD",
-        "fields": [
-          {
-            "name": "CommentsCorrections",
-            "description": "Contains the citation information for an associated publication such as an erratum, retraction, or expression of concern, and specifies the type of relationship between the associated publications with the RefType attribute. See the PubMed User Guide, https://pubmed.ncbi.nlm.nih.gov/help/#comment-correction, for additional information.",
-            "mode": "REPEATED",
-            "type": "RECORD",
-            "fields": [
-              {
-                "name": "PMID",
-                "description": "States the PubMed Identifier.",
-                "mode": "NULLABLE",
-                "type": "RECORD",
-                "fields": [
-                  {
-                    "name": "Version",
-                    "description": "Indicates the version number of the citation's PMID.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "value",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  }
-                ]
-              },
-              {
-                "name": "RefSource",
-                "description": "Provides the reference string for the associated publication. It will typically follow the format: NLM Title Abbreviation. Publication Date; Volume(Issue):Pagination.",
-                "mode": "NULLABLE",
-                "type": "STRING"
-              },
-              {
-                "name": "RefType",
-                "description": "Indicates the type of association between the citation and another publication, as well as the direction of the associated, for instance a comment on another publication or a retraction of another publication.",
-                "mode": "NULLABLE",
-                "type": "STRING"
-              },
-              {
-                "name": "Note",
-                "description": "Includes any notes added alongside an associated citation's entry, e.g. regarding the data correction published in an associated erratum.",
-                "mode": "NULLABLE",
-                "type": "STRING"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "name": "GeneSymbolList",
-        "description": "Lists the GeneSymbols associated with the citation.",
-        "mode": "NULLABLE",
-        "type": "RECORD",
-        "fields": [
-          {
-            "name": "GeneSymbol",
-            "description": "Includes the symbol or abbreviated form of a gene name, as it was reported in the publication. This data was only added to citations from 1991 to 1995; it is no longer added to citations.",
-            "mode": "REPEATED",
-            "type": "STRING"
-          }
-        ]
-      },
-      {
-        "name": "MeshHeadingList",
-        "description": "Contains the list of Medical Subject Headings (MeSH) that were assigned to the citation by NLM Indexing. The most significant MeSH assignments in the list are designated with @MajorTopic='Y'.",
-        "mode": "NULLABLE",
-        "type": "RECORD",
-        "fields": [
-          {
-            "name": "MeshHeading",
-            "description": "Specifies a Medical Subject Heading (MeSH) assigned to the citation by NLM Indexing. Each MeSH heading entry includes one descriptor (<DescriptorName>) and zero, one, or more qualifiers (<QualifierName>).",
-            "mode": "REPEATED",
-            "type": "RECORD",
-            "fields": [
-              {
-                "name": "DescriptorName",
-                "dscription": "Contains the main MeSH headings assigned by NLM. The presentation of <DescriptorName> is alphabetical.",
-                "mode": "NULLABLE",
-                "type": "RECORD",
-                "fields": [
-                  {
-                    "name": "Type",
-                    "description": "The @Type attribute provides additional information on the source or sort of item described.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "UI",
-                    "description": "States the unique MeSH identifier.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "MajorTopicYN",
-                    "description": "Indicates whether or not the MeSH heading captures one of the more significant points in the publication.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "value",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  }
-                ]
-              },
-              {
-                "name": "QualifierName",
-                "description": "Contains MeSH terms that help to qualify the scope of the main MeSH terms assigned as Descriptors, see <DescriptorName>. The <QualifierName> associated with a <DescriptorName> is in alphabetical order.",
-                "mode": "REPEATED",
-                "type": "RECORD",
-                "fields": [
-                  {
-                    "name": "UI",
-                    "description": "States the unique MeSH identifier.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "MajorTopicYN",
-                    "description": "Indicates whether or not the MeSH heading captures one of the more significant points in the publication.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "value",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      {
         "name": "NumberOfReferences",
         "description": "Indicates the number of bibliographic references listed in citations for the following publication types: review, consensus development conference, and meta-analysis. This data is not currently input; NLM ceased adding the number of references to citations in 2010.",
         "mode": "NULLABLE",
@@ -1219,41 +1083,33 @@
       },
       {
         "name": "PersonalNameSubjectList",
-        "description": "Lists one or more individuals whose life or work is the subject of the publication.",
-        "mode": "NULLABLE",
+        "description": "Lists one or more individuals whose life or work is the subject of the publication. Identifies an individual whose life or work is the subject of the publication.",
+        "mode": "REPEATED",
         "type": "RECORD",
         "fields": [
           {
-            "name": "PersonalNameSubject",
-            "description": "Identifies an individual whose life or work is the subject of the publication.",
-            "mode": "REPEATED",
-            "type": "RECORD",
-            "fields": [
-              {
-                "name": "Initials",
-                "description": "Contains the initials for an individual contributor's <ForeName>. Initials are generated automatically using an algorithm but may be modified by the publisher. Publishers may also submit initials with their article XML. Hyphens are allowed.",
-                "mode": "NULLABLE",
-                "type": "STRING"
-              },
-              {
-                "name": "ForeName",
-                "description": "Includes the first portion of an individual contributor's name, i.e. the author or investigator's first and middle names. The <Suffix>, <Initials>, and <LastName> are contained in separate elements. Prior to 2002 NLM did not enter full first or middle names; only initials were entered.",
-                "mode": "NULLABLE",
-                "type": "STRING"
-              },
-              {
-                "name": "LastName",
-                "description": "Contains the last name or the single name of an individual contributor, even if that single name is not considered to be a surname.",
-                "mode": "NULLABLE",
-                "type": "STRING"
-              },
-              {
-                "name": "Suffix",
-                "description": "Contains the suffix associated with an individual's name, e.g. 'Jr' and 'IV'.",
-                "mode": "NULLABLE",
-                "type": "STRING"
-              }
-            ]
+            "name": "Initials",
+            "description": "Contains the initials for an individual contributor's <ForeName>. Initials are generated automatically using an algorithm but may be modified by the publisher. Publishers may also submit initials with their article XML. Hyphens are allowed.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "ForeName",
+            "description": "Includes the first portion of an individual contributor's name, i.e. the author or investigator's first and middle names. The <Suffix>, <Initials>, and <LastName> are contained in separate elements. Prior to 2002 NLM did not enter full first or middle names; only initials were entered.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "LastName",
+            "description": "Contains the last name or the single name of an individual contributor, even if that single name is not considered to be a surname.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "Suffix",
+            "description": "Contains the suffix associated with an individual's name, e.g. 'Jr' and 'IV'.",
+            "mode": "NULLABLE",
+            "type": "STRING"
           }
         ]
       },
@@ -1308,35 +1164,27 @@
         ]
       },
       {
+        "name": "KeywordListOwner",
+        "description": "Specifies the party responsible fo creating the citation.",
+        "mode": "REPEATED",
+        "type": "STRING"
+      },
+      {
         "name": "KeywordList",
-        "description": "Lists the keywords associated with the publication. The @Owner attribute indicates the organization that contributed the keywords. Beginning in 2013, the <KeywordList> with Owner attribute 'NOTNLM' contains author keywords provided by the publisher. On OLDMEDLINE records, the <KeywordList> with Owner attribute 'NLM' contains the original subject headings from the old print indexes from which the citations were created. In the past, NLM collaborating data producer partners such as NASA also added <KeywordList> data.",
+        "description": "Lists the keywords associated with the publication. The @Owner attribute indicates the organization that contributed the keywords. Beginning in 2013, the <KeywordList> with Owner attribute 'NOTNLM' contains author keywords provided by the publisher. On OLDMEDLINE records, the <KeywordList> with Owner attribute 'NLM' contains the original subject headings from the old print indexes from which the citations were created. In the past, NLM collaborating data producer partners such as NASA also added <KeywordList> data. Contains a keyword associated with the publication, such as author keywords when supplied by publishers.",
         "mode": "REPEATED",
         "type": "RECORD",
         "fields": [
           {
-            "name": "Owner",
-            "description": "Specifies the party responsible fo creating the citation.",
+            "name": "MajorTopicYN",
+            "description": "Indicates whether or not the MeSH heading captures one of the more significant points in the publication.",
             "mode": "NULLABLE",
             "type": "STRING"
           },
           {
-            "name": "Keyword",
-            "description": "Contains a keyword associated with the publication, such as author keywords when supplied by publishers.",
-            "mode": "REPEATED",
-            "type": "RECORD",
-            "fields": [
-              {
-                "name": "MajorTopicYN",
-                "description": "Indicates whether or not the MeSH heading captures one of the more significant points in the publication.",
-                "mode": "NULLABLE",
-                "type": "STRING"
-              },
-              {
-                "name": "value",
-                "mode": "NULLABLE",
-                "type": "STRING"
-              }
-            ]
+            "name": "value",
+            "mode": "NULLABLE",
+            "type": "STRING"
           }
         ]
       },
@@ -1354,25 +1202,62 @@
       },
       {
         "name": "InvestigatorList",
-        "description": "Introduced in 2008, lists names of investigators (or collaborators) who contributed to the publication as a member of a collective/group author. It will only be included on the citation if a collective/group author is included in the author list. For records containing more than one collective/group author, <InvestigatorList> does not indicate to which group author each personal name belongs.",
-        "mode": "NULLABLE",
+        "description": "Introduced in 2008, lists names of investigators (or collaborators) who contributed to the publication as a member of a collective/group author. It will only be included on the citation if a collective/group author is included in the author list. For records containing more than one collective/group author, <InvestigatorList> does not indicate to which group author each personal name belongs. Identifies an investigator (or collaborator) who contributed to the publication as a member of a collective/group author.",
+        "mode": "REPEATED",
         "type": "RECORD",
         "fields": [
           {
-            "name": "Investigator",
-            "description": "Identifies an investigator (or collaborator) who contributed to the publication as a member of a collective/group author.",
+            "name": "Suffix",
+            "description": "Contains the suffix associated with an individual's name, e.g. 'Jr' and 'IV'.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "Initials",
+            "description": "Contains the initials for an individual contributor's <ForeName>. Initials are generated automatically using an algorithm but may be modified by the publisher. Publishers may also submit initials with their article XML. Hyphens are allowed.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "Identifier",
+            "description": "Introduced with the 2010 DTD, specifies a unique identifier for an individual contributor's name or affiliation, if available.",
             "mode": "REPEATED",
             "type": "RECORD",
             "fields": [
               {
-                "name": "Suffix",
-                "description": "Contains the suffix associated with an individual's name, e.g. 'Jr' and 'IV'.",
+                "name": "Source",
+                "description": "When used in the <Identifer> element, it designates the organizational authority that established the unique identifier, e.g. ORCID or International Standard Name Identifier (ISNI). When used in the <OtherID> element, it identifies the source of the additional identifier associated with the record.",
                 "mode": "NULLABLE",
                 "type": "STRING"
               },
               {
-                "name": "Initials",
-                "description": "Contains the initials for an individual contributor's <ForeName>. Initials are generated automatically using an algorithm but may be modified by the publisher. Publishers may also submit initials with their article XML. Hyphens are allowed.",
+                "name": "value",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
+          },
+          {
+            "name": "ForeName",
+            "description": "Includes the first portion of an individual contributor's name, i.e. the author or investigator's first and middle names. The <Suffix>, <Initials>, and <LastName> are contained in separate elements. Prior to 2002 NLM did not enter full first or middle names; only initials were entered.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "LastName",
+            "description": "Contains the last name or the single name of an individual contributor, even if that single name is not considered to be a surname.",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "AffiliationInfo",
+            "description": "Introduced in 2015, <AffiliationInfo> contains the <Affiliation> element with the institutional affiliation information for an author or investigator at the time of publication. It may also contain the <Identifier> element with a unique identifier for the organization, if one is available. Multiple <AffiliationInfo> elements may be provided.",
+            "mode": "REPEATED",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "Affiliation",
+                "description": "Contains the institutional affiliation information associated with an author or investigator at the time of publication.",
                 "mode": "NULLABLE",
                 "type": "STRING"
               },
@@ -1394,59 +1279,14 @@
                     "type": "STRING"
                   }
                 ]
-              },
-              {
-                "name": "ForeName",
-                "description": "Includes the first portion of an individual contributor's name, i.e. the author or investigator's first and middle names. The <Suffix>, <Initials>, and <LastName> are contained in separate elements. Prior to 2002 NLM did not enter full first or middle names; only initials were entered.",
-                "mode": "NULLABLE",
-                "type": "STRING"
-              },
-              {
-                "name": "LastName",
-                "description": "Contains the last name or the single name of an individual contributor, even if that single name is not considered to be a surname.",
-                "mode": "NULLABLE",
-                "type": "STRING"
-              },
-              {
-                "name": "AffiliationInfo",
-                "description": "Introduced in 2015, <AffiliationInfo> contains the <Affiliation> element with the institutional affiliation information for an author or investigator at the time of publication. It may also contain the <Identifier> element with a unique identifier for the organization, if one is available. Multiple <AffiliationInfo> elements may be provided.",
-                "mode": "REPEATED",
-                "type": "RECORD",
-                "fields": [
-                  {
-                    "name": "Affiliation",
-                    "description": "Contains the institutional affiliation information associated with an author or investigator at the time of publication.",
-                    "mode": "NULLABLE",
-                    "type": "STRING"
-                  },
-                  {
-                    "name": "Identifier",
-                    "description": "Introduced with the 2010 DTD, specifies a unique identifier for an individual contributor's name or affiliation, if available.",
-                    "mode": "REPEATED",
-                    "type": "RECORD",
-                    "fields": [
-                      {
-                        "name": "Source",
-                        "description": "When used in the <Identifer> element, it designates the organizational authority that established the unique identifier, e.g. ORCID or International Standard Name Identifier (ISNI). When used in the <OtherID> element, it identifies the source of the additional identifier associated with the record.",
-                        "mode": "NULLABLE",
-                        "type": "STRING"
-                      },
-                      {
-                        "name": "value",
-                        "mode": "NULLABLE",
-                        "type": "STRING"
-                      }
-                    ]
-                  }
-                ]
-              },
-              {
-                "name": "ValidYN",
-                "description": "Indicates whether the value is correct or not. The default value is 'Y'. On some older citations, if an incorrect value was initially provided and later corrected, the incorrect value may be retained and marked as ValidYN='N'. However, it is no longer used when citations are corrected; the incorrect values are now removed from the citation.",
-                "mode": "NULLABLE",
-                "type": "STRING"
               }
             ]
+          },
+          {
+            "name": "ValidYN",
+            "description": "Indicates whether the value is correct or not. The default value is 'Y'. On some older citations, if an incorrect value was initially provided and later corrected, the incorrect value may be retained and marked as ValidYN='N'. However, it is no longer used when citations are corrected; the incorrect values are now removed from the citation.",
+            "mode": "NULLABLE",
+            "type": "STRING"
           }
         ]
       },

@@ -29,7 +29,7 @@ from airflow.utils.state import State
 
 from observatory.platform.api import get_dataset_releases
 from observatory.platform.observatory_config import Workflow
-from observatory.platform.workflows.workflow import ChangefileRelease
+from observatory.platform.workflows.workflow import ChangefileRelease, set_task_state
 from Bio.Entrez.Parser import StringElement, ListElement, DictionaryElement
 from observatory.platform.gcs import gcs_blob_name_from_path, gcs_download_blob
 from observatory.platform.observatory_environment import ObservatoryEnvironment, ObservatoryTestCase
@@ -43,13 +43,14 @@ from observatory.platform.observatory_environment import (
 
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.pubmed_telescope import (
-    Changefile,
+    Datafile,
     PubMedCustomEncoder,
     PubMedRelease,
     PubMedTelescope,
     PubmedEntity,
     add_attributes_to_data_from_biopython_classes,
-    merge_changefiles_together,
+    change_pubmed_list_structure,
+    download_datafiles_from_ftp_server,
     transform_pubmed_xml_file_to_jsonl,
 )
 
@@ -81,91 +82,160 @@ class TestPubMedTelescope(ObservatoryTestCase):
         self.ftp_port = find_free_port()
         self.baseline_path = "/pubmed/baseline/"
         self.updatefiles_path = "/pubmed/updatefiles/"
-        self.ftp_file_updload_date: pendulum.DateTime = pendulum.datetime(
-            year=2022,
-            month=12,
-            day=4,
-        )
 
         super(TestPubMedTelescope, self).__init__(*args, **kwargs)
 
-        # Changefile 23n0005 should be outside the window for the second run.
-        self.ftp_hosted_files = {
-            "pubmed/baseline/pubmed23n0001.xml.gz": self.ftp_file_updload_date,
-            "pubmed/baseline/pubmed23n0002.xml.gz": self.ftp_file_updload_date,
-            "pubmed/updatefiles/pubmed23n0003.xml.gz": pendulum.datetime(year=2022, month=12, day=9),
-            "pubmed/updatefiles/pubmed23n0004.xml.gz": pendulum.datetime(year=2022, month=12, day=10),
-            "pubmed/updatefiles/pubmed23n0005.xml.gz": pendulum.datetime(year=2022, month=12, day=20),
-        }
-
         # Expected values for how the Pubmed Telescope should run.
         self.first_run = {
-            "start_date": pendulum.datetime(year=2022, month=12, day=1),
-            "data_interval_start": pendulum.datetime(year=2022, month=12, day=1),
+            "ftp_hosted_files": {
+                "pubmed/baseline/pubmed22n0001.xml.gz": pendulum.datetime(year=2021, month=12, day=2),
+                "pubmed/baseline/pubmed22n0002.xml.gz": pendulum.datetime(year=2021, month=12, day=2),
+                "pubmed/updatefiles/pubmed22n0003.xml.gz": pendulum.datetime(year=2021, month=12, day=3),
+                "pubmed/updatefiles/pubmed22n0004.xml.gz": pendulum.datetime(year=2021, month=12, day=4),
+                "pubmed/updatefiles/pubmed22n0005.xml.gz": pendulum.datetime(year=2021, month=12, day=30),
+            },
+            "execution_date": pendulum.datetime(year=2021, month=12, day=5),
+            "release_interval_start": pendulum.datetime(year=2021, month=12, day=2),
+            "release_interval_end": pendulum.datetime(year=2021, month=12, day=5),
+            "baseline_upload_date": pendulum.datetime(year=2021, month=12, day=2),
             "is_first_run": True,
-            "changefiles": [
-                Changefile(
-                    filename="pubmed23n0001.xml.gz",
+            "year_first_run": True,
+            "datafiles": [
+                Datafile(
+                    filename="pubmed22n0001.xml.gz",
                     file_index=1,
-                    path_on_ftp=f"{self.baseline_path}pubmed23n0001.xml.gz",
-                    is_first_run=True,
-                    changefile_date=self.ftp_file_updload_date,
+                    path_on_ftp=f"{self.baseline_path}pubmed22n0001.xml.gz",
+                    baseline=True,
+                    datafile_date=pendulum.datetime(year=2021, month=12, day=2),
                 ),
-                Changefile(
-                    filename="pubmed23n0002.xml.gz",
+                Datafile(
+                    filename="pubmed22n0002.xml.gz",
                     file_index=2,
-                    path_on_ftp=f"{self.baseline_path}pubmed23n0002.xml.gz",
-                    is_first_run=True,
-                    changefile_date=self.ftp_file_updload_date,
+                    path_on_ftp=f"{self.baseline_path}pubmed22n0002.xml.gz",
+                    baseline=True,
+                    datafile_date=pendulum.datetime(year=2021, month=12, day=2),
+                ),
+                Datafile(
+                    filename="pubmed22n0003.xml.gz",
+                    file_index=3,
+                    path_on_ftp=f"{self.updatefiles_path}pubmed22n0003.xml.gz",
+                    baseline=False,
+                    datafile_date=pendulum.datetime(year=2021, month=12, day=3),
+                ),
+                Datafile(
+                    filename="pubmed22n0004.xml.gz",
+                    file_index=4,
+                    path_on_ftp=f"{self.updatefiles_path}pubmed22n0004.xml.gz",
+                    baseline=False,
+                    datafile_date=pendulum.datetime(year=2021, month=12, day=4),
                 ),
             ],
             "md5hash_download": {
-                "pubmed23n0001.xml.gz": "73624a987b3572221fdd53ebefa1043f",
-                "pubmed23n0002.xml.gz": "24da7ffc1afb277044ee1ba8cddb4e74",
+                "pubmed22n0001.xml.gz": "73624a987b3572221fdd53ebefa1043f",
+                "pubmed22n0002.xml.gz": "24da7ffc1afb277044ee1ba8cddb4e74",
+                "pubmed22n0003.xml.gz": "d6da2c87390489d22cdeb6e046b77da1",
+                "pubmed22n0004.xml.gz": "83764fc19cd98d247dc5603ca65569e6",
             },
-            "merged_file_output": {
-                "additions": "merged_additions_1-2_part_1.jsonl.gz",
-                "deletions": "merged_deletions_1-2_part_1.jsonl.gz",
+            "merged_upsert_files": ["merged_upsert_3-4_part_1.jsonl.gz", "merged_upsert_3-4_part_2.jsonl.gz"],
+            "merged_delete_files": ["merged_delete_3-4_part_1.jsonl.gz"],
+            "PMID_list": [
+                {"f0_": {"_field_1": "1", "_field_2": "1"}},
+                {"f0_": {"_field_1": "2", "_field_2": "2"}},
+                {"f0_": {"_field_1": "1", "_field_2": "30970"}},
+                {"f0_": {"_field_1": "1", "_field_2": "36519887"}},
+                {"f0_": {"_field_1": "1", "_field_2": "36519888"}},
+            ],
+        }
+        # Regular update for Pubmed. No new baseline files but download and process the updatefiles.
+        self.second_run = {
+            # Need to change the upload dates of the
+            "ftp_hosted_files": {
+                "pubmed/baseline/pubmed22n0001.xml.gz": pendulum.datetime(year=2021, month=12, day=2),
+                "pubmed/baseline/pubmed22n0002.xml.gz": pendulum.datetime(year=2021, month=12, day=2),
+                "pubmed/updatefiles/pubmed22n0003.xml.gz": pendulum.datetime(year=2021, month=12, day=3),
+                "pubmed/updatefiles/pubmed22n0004.xml.gz": pendulum.datetime(year=2021, month=12, day=4),
+                "pubmed/updatefiles/pubmed22n0005.xml.gz": pendulum.datetime(year=2021, month=12, day=8),
+            },
+            "execution_date": pendulum.datetime(year=2021, month=12, day=12),
+            "release_interval_start": pendulum.datetime(year=2021, month=12, day=5),
+            "release_interval_end": pendulum.datetime(year=2021, month=12, day=12),
+            "baseline_upload_date": pendulum.datetime(year=2021, month=12, day=2),
+            "is_first_run": False,
+            "year_first_run": False,
+            "datafiles": [
+                Datafile(
+                    filename="pubmed22n0005.xml.gz",
+                    file_index=5,
+                    path_on_ftp=f"{self.updatefiles_path}pubmed22n0005.xml.gz",
+                    baseline=False,
+                    datafile_date=pendulum.datetime(year=2021, month=12, day=8),
+                ),
+            ],
+            "md5hash_download": {
+                "pubmed22n0005.xml.gz": "9c61c5b19f021cadfc57845d0d1dcbc9",
+            },
+            "merged_upsert_files": ["merged_upsert_5-5_part_1.jsonl.gz"],
+            "merged_delete_files": ["merged_delete_5-5_part_1.jsonl.gz"],
+            "update_tables": {
+                "additions": 2,
+                "deletions": 1,
             },
             "PMID_list": [
                 {"f0_": {"_field_1": "1", "_field_2": "1"}},
-                {"f0_": {"_field_1": "1", "_field_2": "2"}},
+                {"f0_": {"_field_1": "1", "_field_2": "2994179"}},
+                {"f0_": {"_field_1": "1", "_field_2": "2994180"}},
                 {"f0_": {"_field_1": "1", "_field_2": "30970"}},
-                {"f0_": {"_field_1": "1", "_field_2": "30971"}},
+                {"f0_": {"_field_1": "1", "_field_2": "36519887"}},
+                {"f0_": {"_field_1": "1", "_field_2": "36519888"}},
             ],
         }
-        self.second_run = {
-            "start_date": pendulum.datetime(year=2022, month=12, day=8) + datetime.timedelta(days=7),
-            "data_interval_start": pendulum.datetime(year=2022, month=12, day=8),
+        # New yearly run of Pubmed. Grab newly available baseline files and process them.
+        # This is to only make sure that the new yearly baseline is detected and will be downloaded and processed
+        # along with any updatefiles with in the release period.
+        self.third_run = {
+            "ftp_hosted_files": {
+                "pubmed/baseline/pubmed22n0001.xml.gz": pendulum.datetime(year=2022, month=12, day=8),
+                "pubmed/baseline/pubmed22n0002.xml.gz": pendulum.datetime(year=2022, month=12, day=8),
+                "pubmed/updatefiles/pubmed22n0003.xml.gz": pendulum.datetime(year=2022, month=12, day=9),
+                "pubmed/updatefiles/pubmed22n0004.xml.gz": pendulum.datetime(year=2022, month=12, day=10),
+                "pubmed/updatefiles/pubmed22n0005.xml.gz": pendulum.datetime(year=2022, month=12, day=21),
+            },
+            "execution_date": pendulum.datetime(year=2022, month=12, day=11),
+            "release_interval_start": pendulum.datetime(year=2022, month=12, day=8),
+            "release_interval_end": pendulum.datetime(year=2022, month=12, day=11),
+            "baseline_upload_date": pendulum.datetime(year=2022, month=12, day=8),
             "is_first_run": False,
-            "changefiles": [
-                Changefile(
-                    filename="pubmed23n0003.xml.gz",
-                    file_index=3,
-                    path_on_ftp=f"{self.updatefiles_path}pubmed23n0003.xml.gz",
-                    is_first_run=False,
-                    changefile_date=pendulum.datetime(year=2022, month=12, day=9),
+            "year_first_run": True,
+            "datafiles": [
+                Datafile(
+                    filename="pubmed22n0001.xml.gz",
+                    file_index=1,
+                    path_on_ftp=f"{self.baseline_path}pubmed22n0001.xml.gz",
+                    baseline=True,
+                    datafile_date=pendulum.datetime(year=2022, month=12, day=8),
                 ),
-                Changefile(
-                    filename="pubmed23n0004.xml.gz",
+                Datafile(
+                    filename="pubmed22n0002.xml.gz",
+                    file_index=2,
+                    path_on_ftp=f"{self.baseline_path}pubmed22n0002.xml.gz",
+                    baseline=True,
+                    datafile_date=pendulum.datetime(year=2022, month=12, day=8),
+                ),
+                Datafile(
+                    filename="pubmed22n0003.xml.gz",
+                    file_index=3,
+                    path_on_ftp=f"{self.updatefiles_path}pubmed22n0003.xml.gz",
+                    baseline=False,
+                    datafile_date=pendulum.datetime(year=2022, month=12, day=9),
+                ),
+                Datafile(
+                    filename="pubmed22n0004.xml.gz",
                     file_index=4,
-                    path_on_ftp=f"{self.updatefiles_path}pubmed23n0004.xml.gz",
-                    is_first_run=False,
-                    changefile_date=pendulum.datetime(year=2022, month=12, day=10),
+                    path_on_ftp=f"{self.updatefiles_path}pubmed22n0004.xml.gz",
+                    baseline=False,
+                    datafile_date=pendulum.datetime(year=2022, month=12, day=10),
                 ),
             ],
-            "md5hash_download": {
-                "pubmed23n0003.xml.gz": "d6da2c87390489d22cdeb6e046b77da1",
-                "pubmed23n0004.xml.gz": "83764fc19cd98d247dc5603ca65569e6",
-            },
-            "merged_file_output": {
-                "additions": "merged_additions_3-4.jsonl.gz",
-                "deletions": "merged_deletions_3-4.jsonl.gz",
-            },
-            "update_tables": {
-                "additions": 4,
-                "deletions": 2,
-            },
             "PMID_list": [
                 {"f0_": {"_field_1": "1", "_field_2": "1"}},
                 {"f0_": {"_field_1": "2", "_field_2": "2"}},
@@ -186,15 +256,25 @@ class TestPubMedTelescope(ObservatoryTestCase):
         self.assert_dag_structure(
             {
                 "wait_for_prev_dag_run": ["check_dependencies"],
-                "check_dependencies": ["list_changefiles_for_release"],
-                "list_changefiles_for_release": ["download"],
-                "download": ["upload_downloaded"],
-                "upload_downloaded": ["transform"],
-                "transform": ["merge_updatefiles"],
-                "merge_updatefiles": ["upload_transformed"],
-                "upload_transformed": ["bq_ingest_update_tables"],
-                "bq_ingest_update_tables": ["bq_add_updates_to_table"],
-                "bq_add_updates_to_table": ["add_new_dataset_release"],
+                "check_dependencies": ["list_datafiles_for_release"],
+                "list_datafiles_for_release": ["download_baseline"],
+                "download_baseline": ["upload_downloaded_baseline"],
+                "upload_downloaded_baseline": ["transform_baseline"],
+                "transform_baseline": ["upload_transformed_baseline"],
+                "upload_transformed_baseline": ["bq_load_main_table"],
+                "bq_load_main_table": ["create_snapshot"],
+                "create_snapshot": ["download_updatefiles"],
+                "download_updatefiles": ["upload_downloaded_updatefiles"],
+                "upload_downloaded_updatefiles": ["transform_updatefiles"],
+                "transform_updatefiles": ["merge_upsert_records"],
+                "merge_upsert_records": ["upload_merged_upsert_records"],
+                "upload_merged_upsert_records": ["bq_load_upsert_table"],
+                "bq_load_upsert_table": ["bq_upsert_records"],
+                "bq_upsert_records": ["merge_delete_records"],
+                "merge_delete_records": ["upload_merged_delete_records"],
+                "upload_merged_delete_records": ["bq_load_delete_table"],
+                "bq_load_delete_table": ["bq_delete_records"],
+                "bq_delete_records": ["add_new_dataset_release"],
                 "add_new_dataset_release": ["cleanup"],
                 "cleanup": ["dag_run_complete"],
                 "dag_run_complete": [],
@@ -231,20 +311,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
         )
 
         with ftp_server.create():
-            # Before the tests start, we need to manually change the modified dates of the changefiles
-            # on the locally hosted FTP server so that the workflow can grab the correct updatefiles.
-
-            # Change the date modified on the FTP server.
-            # Login as root and change the modified time for the updatedate files
-            ftp_conn = FTP()
-            ftp_conn.connect(host=self.ftp_server_url, port=self.ftp_port)
-            ftp_conn.login(user="root", passwd="pass")
-            for file_path, upload_date in self.ftp_hosted_files.items():
-                ftp_command = f"MFMT {upload_date.format('YYYYMMDDHHmmss')} {file_path}"
-                logging.info("FTP send command - {ftp_command}")
-                ftp_conn.sendcmd(ftp_command)
-            ftp_conn.close()
-
             with env.create(task_logging=True):
                 # Initialise the telescope workflow.
                 workflow = PubMedTelescope(
@@ -253,7 +319,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     bq_dataset_id=bq_dataset_id,
                     ftp_server_url=self.ftp_server_url,
                     ftp_port=self.ftp_port,
-                    start_date=self.ftp_file_updload_date,
+                    max_processes=1,
                 )
                 dag = workflow.make_dag()
 
@@ -261,8 +327,22 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 ##### FIRST RUN #####
 
                 run = self.first_run
-                with env.create_dag_run(dag, run["data_interval_start"]) as dag_run:
-                    logging.info(f"Start date this workflow run {run['data_interval_start']}")
+                with env.create_dag_run(dag, run["execution_date"]) as dag_run:
+                    # Before the tests start, we need to manually change the modified dates of the datafiles
+                    # on the locally hosted FTP server so that the workflow can grab the correct updatefiles.
+
+                    # Change the date modified on the FTP server.
+                    # Login as root and change the modified time for the datafiles
+                    ftp_conn = FTP()
+                    ftp_conn.connect(host=self.ftp_server_url, port=self.ftp_port)
+                    ftp_conn.login(user="root", passwd="pass")
+                    for file_path, upload_date in run["ftp_hosted_files"].items():
+                        ftp_command = f"MFMT {upload_date.format('YYYYMMDDHHmmss')} {file_path}"
+                        logging.info("FTP send command - {ftp_command}")
+                        ftp_conn.sendcmd(ftp_command)
+                    ftp_conn.close()
+
+                    logging.info(f"Start date this workflow run {run['execution_date']}")
 
                     ### Wait for the previous DAG run to finish ###
                     ti = env.run_task("wait_for_prev_dag_run")
@@ -272,131 +352,273 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task("check_dependencies")
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    ### List change files for release ###
+                    ### List datafiles for release ###
 
-                    # Fetch changefiles
-                    task_id = workflow.list_changefiles_for_release.__name__
+                    # Fetch datafiles
+                    task_id = workflow.list_datafiles_for_release.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Pull list of changefiles for this run from the Xcom
-                    files_to_download = ti.xcom_pull(
-                        key="files_to_download",
+                    # Pull list of datafiles for this run from the Xcom
+                    release_metadata = ti.xcom_pull(
+                        key="release_metadata",
                         task_ids=task_id,
                         include_prior_dates=False,
                     )
 
-                    # Loop through the changefiles and check to see if they're the same
-                    changefiles_to_download = [Changefile.from_dict(changefile) for changefile in files_to_download]
-                    self.assertEqual(len(changefiles_to_download), len(run["changefiles"]))
-                    for i in range(len(run["changefiles"])):
-                        self.assertTrue(changefiles_to_download[i].__eq__(run["changefiles"][i]))
+                    # Check that dates and bools for workflow are correct from the release metadata dictionary.
+                    self.assertEqual(
+                        run["release_interval_start"],
+                        pendulum.from_timestamp(release_metadata["release_interval_start"]),
+                    )
+                    self.assertEqual(
+                        run["release_interval_end"], pendulum.from_timestamp(release_metadata["release_interval_end"])
+                    )
+                    self.assertEqual(
+                        run["baseline_upload_date"], pendulum.from_timestamp(release_metadata["baseline_upload_date"])
+                    )
+                    self.assertEqual(run["year_first_run"], release_metadata["year_first_run"])
+
+                    # Make sure list of datafiles were built correctly for the workflow run.
+                    datafiles_to_download = [
+                        Datafile.from_dict(datafile) for datafile in release_metadata["files_to_download"]
+                    ]
+                    self.assertEqual(len(datafiles_to_download), len(run["datafiles"]))
+                    for i in range(len(run["datafiles"])):
+                        self.assertTrue(datafiles_to_download[i].__eq__(run["datafiles"][i]))
 
                     # Create the release
                     release = PubMedRelease(
                         dag_id=self.dag_id,
                         run_id=dag_run.run_id,
                         cloud_workspace=workflow.cloud_workspace,
-                        start_date=dag_run.data_interval_start,
-                        end_date=pendulum.instance(dag_run.data_interval_end),  # bug with the observatory instance.
-                        is_first_run=run["is_first_run"],
-                        changefile_list=run["changefiles"],
+                        start_date=run["release_interval_start"],
+                        end_date=run["release_interval_end"],
+                        year_first_run=run["year_first_run"],
+                        datafile_list=run["datafiles"],
                     )
 
-                    ### Download ###
-                    task_id = workflow.download.__name__
+                    ##### BASELINE #####
+
+                    baseline_datafiles = [datafile for datafile in release.datafile_list if datafile.baseline]
+
+                    ### Download baseline ###
+                    task_id = workflow.download_baseline.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Loop through downloaded files, check that they exist and that hashes match.
-                    for changefile in release.changefile_list:
-                        self.assertTrue(os.path.exists(changefile.download_file_path))
-                        with open(changefile.download_file_path, "rb") as f_hash:
+                    # Loop through downloaded baseline files, check that they exist and that hashes match.
+                    for datafile in baseline_datafiles:
+                        self.assertTrue(os.path.exists(datafile.download_file_path))
+                        with open(datafile.download_file_path, "rb") as f_hash:
                             data = f_hash.read()
                             md5hash = hashlib.md5(data).hexdigest()
-                            logging.info(f"md5hash for {changefile.filename} - {md5hash}")
-                            self.assertEqual(md5hash, run["md5hash_download"][changefile.filename])
+                            logging.info(f"md5hash for {datafile.filename} - {md5hash}")
+                            self.assertEqual(md5hash, run["md5hash_download"][datafile.filename])
 
-                    ### Upload downloaded ###
-                    task_id = workflow.upload_downloaded.__name__
+                    ### Upload downloaded baseline ###
+                    task_id = workflow.upload_downloaded_baseline.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    for changefile in release.changefile_list:
+                    for datafile in baseline_datafiles:
                         self.assert_blob_integrity(
                             env.download_bucket,
-                            gcs_blob_name_from_path(changefile.download_file_path),
-                            changefile.download_file_path,
+                            gcs_blob_name_from_path(datafile.download_file_path),
+                            datafile.download_file_path,
                         )
 
-                    ### Transform ###
-                    task_id = workflow.transform.__name__
+                    ### Transform baseline ###
+                    task_id = workflow.transform_baseline.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    for changefile in release.changefile_list:
-                        for entity in workflow.entity_list:
-                            transform_file = changefile.transform_file_path(entity.type)
+                    for datafile in baseline_datafiles:
+                        for entity in [workflow.entity_list["baseline"]]:
+                            transform_file = datafile.transform_file_path(entity.type)
                             self.assertTrue(os.path.exists(transform_file))
 
-                    ### Merge transformed ###
-                    task_id = workflow.merge_updatefiles.__name__
+                    ### Upload transformed baseline ###
+                    task_id = workflow.upload_transformed_baseline.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Check that the file exists for this run.
-                    for entity in workflow.entity_list:
-                        merged_file = os.path.join(release.transform_folder, run["merged_file_output"][entity.type])
-                        self.assertTrue(os.path.exists(merged_file))
+                    # Get list of transformed files for upload.
+                    files_to_upload = [
+                        datafile.transform_file_path("baseline") for datafile in baseline_datafiles if datafile.baseline
+                    ]
 
-                    ### Upload transformed ###
-                    task_id = workflow.upload_transformed.__name__
-                    ti = env.run_task(task_id)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    changefile = release.changefile_list[0]
-                    for entity in workflow.entity_list:
-                        merged_transform_file_path = changefile.merged_transform_file_path(
-                            entity.type,
-                            release.changefile_list[0].file_index,
-                            release.changefile_list[-1].file_index,
-                            part_num=1,
-                        )
-
-                        logging.info(f"Merged_transform_file_path - {merged_transform_file_path}")
+                    for file in files_to_upload:
+                        logging.info(f"Transform_file_path - {file}")
                         self.assert_blob_integrity(
                             env.transform_bucket,
-                            gcs_blob_name_from_path(merged_transform_file_path),
-                            merged_transform_file_path,
+                            gcs_blob_name_from_path(file),
+                            file,
                         )
 
-                    ### bq_ingest_update_tables ###
-                    task_id = workflow.bq_ingest_update_tables.__name__
+                    ###  BQ load main table ###
+                    task_id = workflow.bq_load_main_table.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    for entity in workflow.entity_list:
-                        table_id = (
-                            f"{workflow.cloud_workspace.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}"
-                        )
-                        self.assert_table_integrity(table_id, 4)
+                    full_table_id = (
+                        f"{workflow.cloud_workspace.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}"
+                    )
+                    self.assert_table_integrity(full_table_id, 4)
 
-                    ### bq_add_updates_to_main_table
-                    task_id = workflow.bq_add_updates_to_table.__name__
+                    ### Create Snapshot ###
+                    task_id = workflow.create_snapshot.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # On first run of the workflow, the baseline main_table should be untouched.
-                    main_table_id = f"{env.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}"
-                    self.assert_table_integrity(main_table_id, 4)
+                    # Check that that snapshot table exists.
+                    snapshot_table_id = bq_sharded_table_id(
+                        workflow.cloud_workspace.project_id,
+                        workflow.bq_dataset_id,
+                        f"{workflow.bq_table_id}_backup",
+                        release.start_date,
+                    )
+                    self.assert_table_integrity(snapshot_table_id, 4)
 
-                    # Run query to get list of PMIDs that are present in the table and compare against what it should be.
-                    actual_output = query_table(
-                        main_table_id,
+                    ##### UPDATEFILES #####
+
+                    updatefile_datafile = [datafile for datafile in release.datafile_list if not datafile.baseline]
+
+                    ### Download updatefiles ###
+                    task_id = workflow.download_updatefiles.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Loop through downloaded baseline files, check that they exist and that hashes match.
+                    for datafile in updatefile_datafile:
+                        self.assertTrue(os.path.exists(datafile.download_file_path))
+                        with open(datafile.download_file_path, "rb") as f_hash:
+                            data = f_hash.read()
+                            md5hash = hashlib.md5(data).hexdigest()
+                            logging.info(f"md5hash for {datafile.filename} - {md5hash}")
+                            self.assertEqual(md5hash, run["md5hash_download"][datafile.filename])
+
+                    ### Upload downloaded updatefiles ###
+                    task_id = workflow.upload_downloaded_updatefiles.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    for datafile in updatefile_datafile:
+                        self.assert_blob_integrity(
+                            env.download_bucket,
+                            gcs_blob_name_from_path(datafile.download_file_path),
+                            datafile.download_file_path,
+                        )
+
+                    ### Transform updatefiles ###
+                    task_id = workflow.transform_updatefiles.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # This step pulls out the upserts and delete records from the files
+                    for datafile in updatefile_datafile:
+                        for entity in [workflow.entity_list["upsert"], workflow.entity_list["delete"]]:
+                            transform_file = datafile.transform_file_path(entity.type)
+                            self.assertTrue(os.path.exists(transform_file))
+
+                    ##### UPSERTS #####
+
+                    ### Merge upsert records  ###
+                    task_id = workflow.merge_upsert_records.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that the files exists for this run.
+                    merged_upsert_files = ti.xcom_pull(
+                        key="merged_upsert_files", task_ids=task_id, include_prior_dates=False
+                    )
+
+                    self.assertEqual(len(merged_upsert_files), len(run["merged_upsert_files"]))
+                    for expected, result in zip(run["merged_upsert_files"], merged_upsert_files):
+                        self.assertEqual(os.path.join(release.transform_folder, expected), result)
+                        self.assertTrue(os.path.exists(result))
+                        logging.info(f"Merged upsert file exists: {result}")
+
+                    ### Upload merged upsert records ###
+                    task_id = workflow.upload_merged_upsert_records.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that they exist in the cloud.
+                    for file in merged_upsert_files:
+                        logging.info(f"Transform_file_path - {file}")
+                        self.assert_blob_integrity(
+                            env.transform_bucket,
+                            gcs_blob_name_from_path(file),
+                            file,
+                        )
+
+                    ###  BQ load upsert table ###
+                    task_id = workflow.bq_load_upsert_table.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    upsert_table_id = ti.xcom_pull(key="upsert_table_id", task_ids=task_id, include_prior_dates=False)
+                    self.assert_table_integrity(upsert_table_id, 4)
+
+                    ###  BQ upsert records ###
+                    task_id = workflow.bq_upsert_records.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    ##### DELETES #####
+
+                    ### Merge delete records  ###
+                    task_id = workflow.merge_delete_records.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that the files exists for this run.
+                    merged_delete_files = ti.xcom_pull(
+                        key="merged_delete_files", task_ids=task_id, include_prior_dates=False
+                    )
+
+                    self.assertEqual(len(merged_delete_files), len(run["merged_delete_files"]))
+                    for expected, result in zip(run["merged_delete_files"], merged_delete_files):
+                        self.assertEqual(os.path.join(release.transform_folder, expected), result)
+                        self.assertTrue(os.path.exists(result))
+                        logging.info(f"Merged delete file exists: {result}")
+
+                    ### Upload merged delete records ###
+                    task_id = workflow.upload_merged_delete_records.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that they exist in the cloud.
+                    for file in merged_delete_files:
+                        logging.info(f"Transform_file_path - {file}")
+                        self.assert_blob_integrity(
+                            env.transform_bucket,
+                            gcs_blob_name_from_path(file),
+                            file,
+                        )
+
+                    ###  BQ load delete table ###
+                    task_id = workflow.bq_load_delete_table.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    delete_table_id = ti.xcom_pull(key="delete_table_id", task_ids=task_id, include_prior_dates=False)
+                    self.assert_table_integrity(delete_table_id, 2)
+
+                    ###  BQ delete records ###
+                    task_id = workflow.bq_delete_records.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that upserts and deletes were applied properly.
+                    self.assert_table_integrity(full_table_id, 5)
+                    result = query_table(
+                        full_table_id,
                         "(MedlineCitation.PMID.Version, MedlineCitation.PMID.value)",
                         "MedlineCitation.PMID.value",
                     )
-                    self.assertEqual(actual_output, run["PMID_list"])
+                    self.assertEqual(result, run["PMID_list"])
 
                     ### add_new_dataset_release ###
                     task_id = workflow.add_new_dataset_release.__name__
@@ -412,7 +634,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(len(dataset_releases), 1)
 
                     ### cleanup ###
-                    # Test that all workflow data deleted
+                    # Test that all workflow data was deleted
                     ti = env.run_task(workflow.cleanup.__name__)
                     self.assertEqual(State.SUCCESS, ti.state)
                     self.assert_cleanup(release.workflow_folder)
@@ -425,8 +647,22 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 ##### SECOND RUN #####
 
                 run = self.second_run
-                with env.create_dag_run(dag, run["data_interval_start"]) as dag_run:
-                    logging.info(f"Start date of the workflow run - {run['data_interval_start']}")
+                with env.create_dag_run(dag, run["execution_date"]) as dag_run:
+                    # Before the tests start, we need to manually change the modified dates of the datafiles
+                    # on the locally hosted FTP server so that the workflow can grab the correct updatefiles.
+
+                    # Change the date modified on the FTP server.
+                    # Login as root and change the modified time for the datafiles
+                    ftp_conn = FTP()
+                    ftp_conn.connect(host=self.ftp_server_url, port=self.ftp_port)
+                    ftp_conn.login(user="root", passwd="pass")
+                    for file_path, upload_date in run["ftp_hosted_files"].items():
+                        ftp_command = f"MFMT {upload_date.format('YYYYMMDDHHmmss')} {file_path}"
+                        logging.info("FTP send command - {ftp_command}")
+                        ftp_conn.sendcmd(ftp_command)
+                    ftp_conn.close()
+
+                    logging.info(f"Start date this workflow run {run['execution_date']}")
 
                     ### Wait for the previous DAG run to finish ###
                     ti = env.run_task("wait_for_prev_dag_run")
@@ -436,149 +672,232 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task("check_dependencies")
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    ### List change files for release ###
-                    task_id = workflow.list_changefiles_for_release.__name__
+                    ### List datafiles for release ###
+
+                    # Fetch datafiles
+                    task_id = workflow.list_datafiles_for_release.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Pull list of changefiles for this run from the Xcom
-                    files_to_download = ti.xcom_pull(
-                        key="files_to_download",
+                    # Pull list of datafiles for this run from the Xcom
+                    release_metadata = ti.xcom_pull(
+                        key="release_metadata",
                         task_ids=task_id,
                         include_prior_dates=False,
                     )
 
-                    # Loop through the changefiles and check to see if they're the same
-                    changefiles_to_download = [Changefile.from_dict(changefile) for changefile in files_to_download]
-                    self.assertEqual(len(changefiles_to_download), len(run["changefiles"]))
-                    for i in range(len(run["changefiles"])):
-                        self.assertTrue(changefiles_to_download[i].__eq__(run["changefiles"][i]))
+                    # Check that dates and bools for workflow are correct from the release metadata dictionary.
+                    self.assertEqual(
+                        run["release_interval_start"],
+                        pendulum.from_timestamp(release_metadata["release_interval_start"]),
+                    )
+                    self.assertEqual(
+                        run["release_interval_end"], pendulum.from_timestamp(release_metadata["release_interval_end"])
+                    )
+                    self.assertEqual(
+                        run["baseline_upload_date"], pendulum.from_timestamp(release_metadata["baseline_upload_date"])
+                    )
+                    self.assertEqual(run["year_first_run"], release_metadata["year_first_run"])
+
+                    # Make sure list of datafiles were built correctly for the workflow run.
+                    datafiles_to_download = [
+                        Datafile.from_dict(datafile) for datafile in release_metadata["files_to_download"]
+                    ]
+                    self.assertEqual(len(datafiles_to_download), len(run["datafiles"]))
+                    for i in range(len(run["datafiles"])):
+                        self.assertTrue(datafiles_to_download[i].__eq__(run["datafiles"][i]))
 
                     # Create the release
                     release = PubMedRelease(
                         dag_id=self.dag_id,
                         run_id=dag_run.run_id,
                         cloud_workspace=workflow.cloud_workspace,
-                        start_date=dag_run.data_interval_start,
-                        end_date=pendulum.instance(dag_run.data_interval_end),
-                        is_first_run=run["is_first_run"],
-                        changefile_list=run["changefiles"],
+                        start_date=run["release_interval_start"],
+                        end_date=run["release_interval_end"],
+                        year_first_run=run["year_first_run"],
+                        datafile_list=run["datafiles"],
                     )
 
-                    ### Download ###
-                    task_id = workflow.download.__name__
+                    ##### BASELINE #####
+
+                    # No new baseline files should be downloaded as it's already been done for this year.
+                    baseline_datafiles = [datafile for datafile in release.datafile_list if datafile.baseline]
+                    self.assertEqual(len(baseline_datafiles), 0)
+
+                    task_ids = [
+                        "download_baseline",
+                        "upload_downloaded_baseline",
+                        "transform_baseline",
+                        "upload_transformed_baseline",
+                        "bq_load_main_table",
+                    ]
+
+                    for task_id in task_ids:
+                        ti = env.run_task(task_id)
+                        self.assertEqual(State.SUCCESS, ti.state)
+
+                    full_table_id = (
+                        f"{workflow.cloud_workspace.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}"
+                    )
+                    self.assert_table_integrity(full_table_id, 5)
+
+                    ### Create Snapshot ###
+                    task_id = workflow.create_snapshot.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Loop through downloaded files, check that they exist and that hashes match.
-                    for changefile in release.changefile_list:
-                        self.assertTrue(os.path.exists(changefile.download_file_path))
-                        with open(changefile.download_file_path, "rb") as f_hash:
-                            data = f_hash.read()
-                            md5hash = hashlib.md5(data).hexdigest()
-                            logging.info(f"md5hash for {changefile.filename} - {md5hash}")
-                            self.assertEqual(md5hash, run["md5hash_download"][changefile.filename])
-
-                    ### Upload downloaded ###
-                    task_id = workflow.upload_downloaded.__name__
-                    ti = env.run_task(task_id)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    for changefile in release.changefile_list:
-                        self.assert_blob_integrity(
-                            env.download_bucket,
-                            gcs_blob_name_from_path(changefile.download_file_path),
-                            changefile.download_file_path,
-                        )
-
-                    ### Transform ###
-                    task_id = workflow.transform.__name__
-                    ti = env.run_task(task_id)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    for changefile in release.changefile_list:
-                        for entity in workflow.entity_list:
-                            transform_file = changefile.transform_file_path(entity.type)
-                            self.assertTrue(os.path.exists(transform_file))
-
-                    ### Merge transformed ###
-                    task_id = workflow.merge_updatefiles.__name__
-                    ti = env.run_task(task_id)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Check that the file exists for this run.
-                    for entity in workflow.entity_list:
-                        merged_file = os.path.join(release.transform_folder, run["merged_file_output"][entity.type])
-                        self.assertTrue(os.path.exists(merged_file))
-
-                    ### Upload transformed ###
-                    task_id = workflow.upload_transformed.__name__
-                    ti = env.run_task(task_id)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    for changefile in release.changefile_list:
-                        for entity in workflow.entity_list:
-                            merged_transform_file_path = changefile.merged_transform_file_path(
-                                entity.type,
-                                release.changefile_list[0].file_index,
-                                release.changefile_list[-1].file_index,
-                                part_num=None,
-                            )
-
-                            logging.info(f"Merged_transform_file_path - {merged_transform_file_path}")
-                            self.assert_blob_integrity(
-                                env.transform_bucket,
-                                gcs_blob_name_from_path(merged_transform_file_path),
-                                merged_transform_file_path,
-                            )
-
-                    ### bq_ingest_update_tables ###
-                    task_id = workflow.bq_ingest_update_tables.__name__
-                    ti = env.run_task(task_id)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    for entity in workflow.entity_list:
-                        table_id = bq_sharded_table_id(
-                            workflow.cloud_workspace.project_id,
-                            workflow.bq_dataset_id,
-                            entity.name,
-                            date=release.end_date,
-                        )
-                        logging.info(f"Table id of update tables - {table_id}")
-                        self.assert_table_integrity(table_id, run["update_tables"][entity.type])
-
-                    ### bq_add_updates_to_main_table
-                    task_id = workflow.bq_add_updates_to_table.__name__
-                    ti = env.run_task(task_id)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Check that the snapshot backup has been created.
+                    # Check that that snapshot table exists.
                     snapshot_table_id = bq_sharded_table_id(
                         workflow.cloud_workspace.project_id,
                         workflow.bq_dataset_id,
                         f"{workflow.bq_table_id}_backup",
-                        date=release.end_date,
+                        release.start_date,
                     )
-                    self.assert_table_integrity(snapshot_table_id, 4)
+                    self.assert_table_integrity(snapshot_table_id, 5)
 
-                    # Check that additions, updates and deletions have been applied successfully.
-                    main_table_id = (
-                        f"{workflow.cloud_workspace.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}"
+                    ##### UPDATEFILES #####
+
+                    updatefile_datafile = [datafile for datafile in release.datafile_list if not datafile.baseline]
+
+                    ### Download updatefiles ###
+                    task_id = workflow.download_updatefiles.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Loop through downloaded baseline files, check that they exist and that hashes match.
+                    for datafile in updatefile_datafile:
+                        self.assertTrue(os.path.exists(datafile.download_file_path))
+                        with open(datafile.download_file_path, "rb") as f_hash:
+                            data = f_hash.read()
+                            md5hash = hashlib.md5(data).hexdigest()
+                            logging.info(f"md5hash for {datafile.filename} - {md5hash}")
+                            self.assertEqual(md5hash, run["md5hash_download"][datafile.filename])
+
+                    ### Upload downloaded updatefiles ###
+                    task_id = workflow.upload_downloaded_updatefiles.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    for datafile in updatefile_datafile:
+                        self.assert_blob_integrity(
+                            env.download_bucket,
+                            gcs_blob_name_from_path(datafile.download_file_path),
+                            datafile.download_file_path,
+                        )
+
+                    ### Transform updatefiles ###
+                    task_id = workflow.transform_updatefiles.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # This step pulls out the upserts and delete records from the files
+                    for datafile in updatefile_datafile:
+                        for entity in [workflow.entity_list["upsert"], workflow.entity_list["delete"]]:
+                            transform_file = datafile.transform_file_path(entity.type)
+                            self.assertTrue(os.path.exists(transform_file))
+
+                    ##### UPSERTS #####
+
+                    ### Merge upsert records  ###
+                    task_id = workflow.merge_upsert_records.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that the files exists for this run.
+                    merged_upsert_files = ti.xcom_pull(
+                        key="merged_upsert_files", task_ids=task_id, include_prior_dates=False
                     )
-                    self.assert_table_integrity(main_table_id, 5)
 
-                    # Run query to get list of PMIDs that are present in the table and compare against what it should be.
-                    actual_output = query_table(
-                        main_table_id,
+                    self.assertEqual(len(merged_upsert_files), len(run["merged_upsert_files"]))
+                    for expected, result in zip(run["merged_upsert_files"], merged_upsert_files):
+                        self.assertEqual(os.path.join(release.transform_folder, expected), result)
+                        self.assertTrue(os.path.exists(result))
+                        logging.info(f"Merged upsert file exists: {result}")
+
+                    ### Upload merged upsert records ###
+                    task_id = workflow.upload_merged_upsert_records.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that they exist in the cloud.
+                    for file in merged_upsert_files:
+                        logging.info(f"Transform_file_path - {file}")
+                        self.assert_blob_integrity(
+                            env.transform_bucket,
+                            gcs_blob_name_from_path(file),
+                            file,
+                        )
+
+                    ###  BQ load upsert table ###
+                    task_id = workflow.bq_load_upsert_table.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    upsert_table_id = ti.xcom_pull(key="upsert_table_id", task_ids=task_id, include_prior_dates=False)
+                    self.assert_table_integrity(upsert_table_id, 2)
+
+                    ###  BQ upsert records ###
+                    task_id = workflow.bq_upsert_records.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    ##### DELETES #####
+
+                    ### Merge delete records  ###
+                    task_id = workflow.merge_delete_records.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that the files exists for this run.
+                    merged_delete_files = ti.xcom_pull(
+                        key="merged_delete_files", task_ids=task_id, include_prior_dates=False
+                    )
+
+                    self.assertEqual(len(merged_delete_files), len(run["merged_delete_files"]))
+                    for expected, result in zip(run["merged_delete_files"], merged_delete_files):
+                        self.assertEqual(os.path.join(release.transform_folder, expected), result)
+                        self.assertTrue(os.path.exists(result))
+                        logging.info(f"Merged delete file exists: {result}")
+
+                    ### Upload merged delete records ###
+                    task_id = workflow.upload_merged_delete_records.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that they exist in the cloud.
+                    for file in merged_delete_files:
+                        logging.info(f"Transform_file_path - {file}")
+                        self.assert_blob_integrity(
+                            env.transform_bucket,
+                            gcs_blob_name_from_path(file),
+                            file,
+                        )
+
+                    ###  BQ load delete table ###
+                    task_id = workflow.bq_load_delete_table.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    delete_table_id = ti.xcom_pull(key="delete_table_id", task_ids=task_id, include_prior_dates=False)
+                    self.assert_table_integrity(delete_table_id, 1)
+
+                    ###  BQ delete records ###
+                    task_id = workflow.bq_delete_records.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that upserts and deletes were applied properly.
+                    self.assert_table_integrity(full_table_id, 6)
+                    result = query_table(
+                        full_table_id,
                         "(MedlineCitation.PMID.Version, MedlineCitation.PMID.value)",
                         "MedlineCitation.PMID.value",
                     )
-                    self.assertEqual(actual_output, run["PMID_list"])
+                    self.assertEqual(result, run["PMID_list"])
 
                     ### add_new_dataset_release ###
                     task_id = workflow.add_new_dataset_release.__name__
-
-                    # Ensure that the dataset release has been added to the observatory-api
+                    # Assert that the dataset has been added to the observatory-api
                     # Get dataset releases before task run
                     dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.bq_dataset_id)
                     self.assertEqual(len(dataset_releases), 1)
@@ -588,6 +907,168 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     # Check after task run.
                     dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.bq_dataset_id)
                     self.assertEqual(len(dataset_releases), 2)
+
+                    ### cleanup ###
+                    # Test that all workflow data was deleted
+                    ti = env.run_task(workflow.cleanup.__name__)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    self.assert_cleanup(release.workflow_folder)
+
+                    ### dag_run_complete ###
+                    ti = env.run_task("dag_run_complete")
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                ######################
+                ##### THIRD RUN #####
+
+                run = self.third_run
+                with env.create_dag_run(dag, run["execution_date"]) as dag_run:
+                    # Before the tests start, we need to manually change the modified dates of the datafiles
+                    # on the locally hosted FTP server so that the workflow can grab the correct updatefiles.
+
+                    # Change the date modified on the FTP server.
+                    # Login as root and change the modified time for the datafiles
+                    ftp_conn = FTP()
+                    ftp_conn.connect(host=self.ftp_server_url, port=self.ftp_port)
+                    ftp_conn.login(user="root", passwd="pass")
+                    for file_path, upload_date in run["ftp_hosted_files"].items():
+                        ftp_command = f"MFMT {upload_date.format('YYYYMMDDHHmmss')} {file_path}"
+                        logging.info("FTP send command - {ftp_command}")
+                        ftp_conn.sendcmd(ftp_command)
+                    ftp_conn.close()
+
+                    logging.info(f"Start date this workflow run {run['execution_date']}")
+
+                    # Forcing this to SUCCESS because we are skipping a year between releases.
+                    ### Check Dependancies ###
+                    ti = env.run_task("check_dependencies")
+                    ti.set_state(State.SUCCESS)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    ### List datafiles for release ###
+
+                    # Fetch datafiles
+                    task_id = workflow.list_datafiles_for_release.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Pull list of datafiles for this run from the Xcom
+                    release_metadata = ti.xcom_pull(
+                        key="release_metadata",
+                        task_ids=task_id,
+                        include_prior_dates=False,
+                    )
+
+                    # Check that dates and bools for workflow are correct from the release metadata dictionary.
+                    self.assertEqual(
+                        run["release_interval_start"],
+                        pendulum.from_timestamp(release_metadata["release_interval_start"]),
+                    )
+                    self.assertEqual(
+                        run["release_interval_end"], pendulum.from_timestamp(release_metadata["release_interval_end"])
+                    )
+                    self.assertEqual(
+                        run["baseline_upload_date"], pendulum.from_timestamp(release_metadata["baseline_upload_date"])
+                    )
+                    self.assertEqual(run["year_first_run"], release_metadata["year_first_run"])
+
+                    # Make sure list of datafiles were built correctly for the workflow run.
+                    datafiles_to_download = [
+                        Datafile.from_dict(datafile) for datafile in release_metadata["files_to_download"]
+                    ]
+                    self.assertEqual(len(datafiles_to_download), len(run["datafiles"]))
+                    for i in range(len(run["datafiles"])):
+                        self.assertTrue(datafiles_to_download[i].__eq__(run["datafiles"][i]))
+
+                    # Create the release
+                    release = PubMedRelease(
+                        dag_id=self.dag_id,
+                        run_id=dag_run.run_id,
+                        cloud_workspace=workflow.cloud_workspace,
+                        start_date=run["release_interval_start"],
+                        end_date=run["release_interval_end"],
+                        year_first_run=run["year_first_run"],
+                        datafile_list=run["datafiles"],
+                    )
+
+                    # This run only needs to confirm that the first year run bool works and download the new baseline dataset.
+
+                    ##### BASELINE #####
+
+                    baseline_datafiles = [datafile for datafile in release.datafile_list if datafile.baseline]
+                    self.assertEqual(len(baseline_datafiles), 2)
+
+                    task_ids = [
+                        "download_baseline",
+                        "upload_downloaded_baseline",
+                        "transform_baseline",
+                        "upload_transformed_baseline",
+                        "bq_load_main_table",
+                        "create_snapshot",
+                        "download_updatefiles",
+                        "upload_downloaded_updatefiles",
+                        "transform_updatefiles",
+                    ]
+
+                    for task_id in task_ids:
+                        logging.info(f"Running task: {task_id}")
+                        ti = env.run_task(task_id)
+                        self.assertEqual(State.SUCCESS, ti.state)
+
+                    full_table_id = (
+                        f"{workflow.cloud_workspace.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}"
+                    )
+                    self.assert_table_integrity(full_table_id, 4)
+
+                    ##### UPSERTS #####
+
+                    task_ids = [
+                        "merge_upsert_records",
+                        "upload_merged_upsert_records",
+                        "bq_load_upsert_table",
+                        "bq_upsert_records",
+                    ]
+
+                    for task_id in task_ids:
+                        logging.info(f"Running task: {task_id}")
+                        ti = env.run_task(task_id)
+                        self.assertEqual(State.SUCCESS, ti.state)
+
+                    ##### DELETES #####
+
+                    task_ids = [
+                        "merge_delete_records",
+                        "upload_merged_delete_records",
+                        "bq_load_delete_table",
+                        "bq_delete_records",
+                    ]
+
+                    for task_id in task_ids:
+                        logging.info(f"Running task: {task_id}")
+                        ti = env.run_task(task_id)
+                        self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that upserts and deletes were applied properly.
+                    self.assert_table_integrity(full_table_id, 5)
+                    result = query_table(
+                        full_table_id,
+                        "(MedlineCitation.PMID.Version, MedlineCitation.PMID.value)",
+                        "MedlineCitation.PMID.value",
+                    )
+                    self.assertEqual(result, run["PMID_list"])
+
+                    ### add_new_dataset_release ###
+                    task_id = workflow.add_new_dataset_release.__name__
+                    # Assert that the dataset has been added to the observatory-api
+                    # Get dataset releases before task run
+                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.bq_dataset_id)
+                    self.assertEqual(len(dataset_releases), 2)
+                    # Run task
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+                    # Check after task run.
+                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.bq_dataset_id)
+                    self.assertEqual(len(dataset_releases), 3)
 
                     ### cleanup ###
                     # Test that all workflow data deleted
@@ -608,6 +1089,66 @@ class TestPubMedUtils(ObservatoryTestCase):
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
 
+        # FTP Server params
+        self.ftp_server_url = "localhost"
+        self.ftp_port = find_free_port()
+        self.baseline_path = "/pubmed/baseline/"
+        self.updatefiles_path = "/pubmed/updatefiles/"
+
+    def test_download_datafiles_from_ftp_server(self):
+        """Test that an exmaple PubMed XMLs can be transformed successfully."""
+
+        # Create mock FTP server that holds the testing Pubmed Files.
+        ftp_server = FtpServer(
+            host=self.ftp_server_url, port=self.ftp_port, directory=os.path.join(test_fixtures_folder())
+        )
+
+        with ftp_server.create():
+            # Setup environment
+            env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
+
+            with env.create(task_logging=True):
+                changefile_release = ChangefileRelease(
+                    dag_id="pubmed_telescope",
+                    run_id="something",
+                    start_date=pendulum.now(),
+                    end_date=pendulum.now(),
+                    sequence_start=1,
+                    sequence_end=1,
+                )
+
+                datafiles_to_download = [
+                    Datafile(
+                        filename="pubmed22n0001.xml.gz",
+                        file_index=1,
+                        path_on_ftp=f"{self.baseline_path}pubmed22n0001.xml.gz",
+                        baseline=True,
+                        datafile_date=pendulum.now(),
+                        datafile_release=changefile_release,
+                    ),
+                    Datafile(
+                        filename="pubmed22n0003.xml.gz",
+                        file_index=1,
+                        path_on_ftp=f"{self.updatefiles_path}pubmed22n0003.xml.gz",
+                        baseline=False,
+                        datafile_date=pendulum.now(),
+                        datafile_release=changefile_release,
+                    ),
+                ]
+
+                success = download_datafiles_from_ftp_server(
+                    datafile_list=datafiles_to_download,
+                    ftp_server_url=self.ftp_server_url,
+                    ftp_port=self.ftp_port,
+                    reset_ftp_counter=1,
+                    max_download_retry=1,
+                )
+
+                self.assertTrue(success)
+
+                for datafile in datafiles_to_download:
+                    self.assertTrue(os.path.exists(datafile.download_file_path))
+
     def test_transform_pubmed_xml_file_to_jsonl(self):
         """Test that an exmaple PubMed XMLs can be transformed successfully."""
 
@@ -626,142 +1167,59 @@ class TestPubMedUtils(ObservatoryTestCase):
 
             entity_list = [
                 PubmedEntity(
-                    name="article_additions",
-                    type="additions",
+                    type="upsert",
                     sub_key="PubmedArticle",
                     set_key="PubmedArticleSet",
                     pmid_location="MedlineCitation",
+                    table_name="upserts",
                     table_description="""PubmedArticle""",
                 ),
                 PubmedEntity(
-                    name="article_deletions",
-                    type="deletions",
+                    type="delete",
                     sub_key="PMID",
                     set_key="DeleteCitation",
                     pmid_location=None,
+                    table_name="deletes",
                     table_description="""DeleteCitation""",
                 ),
             ]
 
             ### Bad XML ###
-            changefile_bad = Changefile(
-                filename="pubmed23n0001_bad_fields.xml.gz",
+            datafile_bad = Datafile(
+                filename="pubmed22n0001_bad_fields.xml.gz",
                 file_index=1,
                 path_on_ftp="dummy_string",
-                is_first_run=True,
-                changefile_date=pendulum.now(),
-                changefile_release=changefile_release,
+                baseline=True,
+                datafile_date=pendulum.now(),
+                datafile_release=changefile_release,
             )
-            bad_xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "pubmed23n0001_bad_fields.xml.gz")
-            shutil.copy2(bad_xml_file_path, changefile_bad.download_file_path)
+            bad_xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "pubmed22n0001_bad_fields.xml.gz")
+            shutil.copy2(bad_xml_file_path, datafile_bad.download_file_path)
 
             # Attempt to transform bad xml.
-            changefile_returned = transform_pubmed_xml_file_to_jsonl(changefile=changefile_bad, entity_list=entity_list)
-            self.assertFalse(changefile_returned)
+            datafile_returned = transform_pubmed_xml_file_to_jsonl(datafile=datafile_bad, entity_list=entity_list)
+            self.assertFalse(datafile_returned)
 
-            changefile_good = Changefile(
-                filename="pubmed23n0001.xml.gz",
+            datafile_good = Datafile(
+                filename="pubmed22n0001.xml.gz",
                 file_index=1,
                 path_on_ftp="dummy_string",
-                is_first_run=True,
-                changefile_date=pendulum.now(),
-                changefile_release=changefile_release,
+                baseline=True,
+                datafile_date=pendulum.now(),
+                datafile_release=changefile_release,
             )
 
             ### VALID XML ###
-            valid_xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "baseline", "pubmed23n0001.xml.gz")
-            shutil.copy2(valid_xml_file_path, changefile_good.download_file_path)
+            valid_xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "baseline", "pubmed22n0001.xml.gz")
+            shutil.copy2(valid_xml_file_path, datafile_good.download_file_path)
 
             # Attempt to transform valid xml - returns Changefile instance only if it's successful.
-            changefile_returned = transform_pubmed_xml_file_to_jsonl(
-                changefile=changefile_good, entity_list=entity_list
-            )
-            self.assertTrue(isinstance(changefile_returned, Changefile))
+            datafile_returned = transform_pubmed_xml_file_to_jsonl(datafile=datafile_good, entity_list=entity_list)
+            self.assertTrue(isinstance(datafile_returned, Datafile))
 
             # Ensure that transform files were written to disk.
             for entity in entity_list:
-                self.assertTrue(os.path.exists(changefile_returned.transform_file_path(entity.type)))
-
-    def test_merge_changefiles_together(
-        self,
-    ):
-        """Test that *.jsonl.gz files can be reliably merged into one or more files."""
-
-        expected_hash = {
-            "article_additions": "8823ea43ca4619175d21dad430a03826",
-            "article_deletions": "c8b6f684ad613e1e8be46022afc83916",
-        }
-
-        # Setup environment
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
-
-        with env.create(task_logging=True):
-            changefile_release = ChangefileRelease(
-                dag_id="pubmed_telescope",
-                run_id="something",
-                start_date=pendulum.now(),
-                end_date=pendulum.now(),
-                sequence_start=1,
-                sequence_end=1,
-            )
-
-            entity_list = [
-                PubmedEntity(
-                    name="article_additions",
-                    type="additions",
-                    sub_key="PubmedArticle",
-                    set_key="PubmedArticleSet",
-                    pmid_location="MedlineCitation",
-                    table_description="""PubmedArticle""",
-                ),
-                PubmedEntity(
-                    name="article_deletions",
-                    type="deletions",
-                    sub_key="PMID",
-                    set_key="DeleteCitation",
-                    pmid_location=None,
-                    table_description="""DeleteCitation""",
-                ),
-            ]
-
-            # Changefiles to merge
-            changefile_list = [
-                Changefile(
-                    filename="pubmed23n0003.xml.gz",
-                    file_index=3,
-                    path_on_ftp="dummy_string",
-                    is_first_run=False,
-                    changefile_date=pendulum.now(),
-                    changefile_release=changefile_release,
-                ),
-                Changefile(
-                    filename="pubmed23n0004.xml.gz",
-                    file_index=4,
-                    path_on_ftp="dummy_string",
-                    is_first_run=False,
-                    changefile_date=pendulum.now(),
-                    changefile_release=changefile_release,
-                ),
-            ]
-
-            # Perform merge step on the tranformed files.
-            for entity in entity_list:
-                # Copy test files into temp test directory
-                for changefile in changefile_list:
-                    copy_path = os.path.join(
-                        test_fixtures_folder(),
-                        "pubmed",
-                        "other",
-                        f"test_{entity.type}_{changefile.filename.split('.')[0]}.jsonl.gz",
-                    )
-                    shutil.copy2(copy_path, changefile.transform_file_path(entity.type))
-
-                output_file = merge_changefiles_together(changefile_list, part_num=1, entity_type=entity.type)
-
-                # Check against expected hash for the files.
-                self.assertEqual(
-                    hashlib.md5(gzip.open(output_file, "rb").read()).hexdigest(), expected_hash[entity.name]
-                )
+                self.assertTrue(os.path.exists(datafile_returned.transform_file_path(entity.type)))
 
     def test_add_attributes_to_data_from_biopython(self):
         """
@@ -794,6 +1252,67 @@ class TestPubMedUtils(ObservatoryTestCase):
                 objects_in = [json.loads(line) for line in f_in]
 
         self.assertEqual(objects_in, expected)
+
+    def test_change_pubmed_list_structure(self):
+        """Test that the data in list fields can be moved up one level to the parent list field."""
+
+        input = [
+            {
+                "DataBankList": {
+                    "CompleteYN": "Y",
+                    "DataBank": [
+                        {"DataBankName": "TestDB1", "AccessionNumberList": {"AccessionNumber": ["12345", "678910"]}},
+                        {"DataBankName": "TestDB2", "AccessionNumberList": {"AccessionNumber": "12345"}},
+                    ],
+                },
+                "NotDataBankList": {"Background": "data", "OTHER": "data"},
+                "Fake_upper_level": {
+                    "MeshHeadingList": {
+                        "MeshHeading": [
+                            {
+                                "QualifierName": [],
+                                "DescriptorName": {"value": "Animals", "UI": "D000818", "MajorTopicYN": "N"},
+                            },
+                            {
+                                "QualifierName": [{"value": "drug effects", "UI": "Q000187", "MajorTopicYN": "N"}],
+                                "DescriptorName": {
+                                    "value": "Cell Differentiation",
+                                    "UI": "D002454",
+                                    "MajorTopicYN": "N",
+                                },
+                            },
+                        ]
+                    },
+                },
+            },
+        ]
+
+        expected = [
+            {
+                "DataBankListCompleteYN": "Y",
+                "DataBankList": [
+                    {"DataBankName": "TestDB1", "AccessionNumberList": ["12345", "678910"]},
+                    {"DataBankName": "TestDB2", "AccessionNumberList": "12345"},
+                ],
+                "NotDataBankList": {"Background": "data", "OTHER": "data"},
+                "Fake_upper_level": {
+                    "MeshHeadingList": [
+                        {
+                            "QualifierName": [],
+                            "DescriptorName": {"value": "Animals", "UI": "D000818", "MajorTopicYN": "N"},
+                        },
+                        {
+                            "QualifierName": [{"value": "drug effects", "UI": "Q000187", "MajorTopicYN": "N"}],
+                            "DescriptorName": {"value": "Cell Differentiation", "UI": "D002454", "MajorTopicYN": "N"},
+                        },
+                    ],
+                },
+            }
+        ]
+
+        result = change_pubmed_list_structure(input)
+
+        self.assertEqual(result, expected)
 
     def test_PubMedCustomEncoder(self):
         """Test that files are written out as expected using the CustomEncoder for PubMed-like files."""
