@@ -1687,6 +1687,7 @@ def make_aggregate_table(agg: str, dataset: ObservatoryDataset) -> List[Dict]:
                     "hybrid": at.hybrid,
                     "bronze": at.bronze,
                     "green_only": at.green_only,
+                    "black": at.black,
                     # COKI Open Access Types
                     "open": oa_coki.open,
                     "closed": oa_coki.closed,
@@ -1752,6 +1753,7 @@ def make_aggregate_table(agg: str, dataset: ObservatoryDataset) -> List[Dict]:
         "hybrid": "sum",
         "bronze": "sum",
         "green_only": "sum",
+        "black": "sum",
         # COKI OA types
         "open": "sum",
         "closed": "sum",
@@ -1787,6 +1789,7 @@ def make_aggregate_table(agg: str, dataset: ObservatoryDataset) -> List[Dict]:
         hybrid = row["hybrid"]
         bronze = row["bronze"]
         green_only = row["green_only"]
+        black = row["black"]
 
         # COKI access types
         open = row["open"]
@@ -1841,39 +1844,44 @@ def make_aggregate_table(agg: str, dataset: ObservatoryDataset) -> List[Dict]:
                 "subregion": row["subregion"],
                 "coordinates": row["coordinates"],
                 "total_outputs": total_outputs,
-                "access_types": {
-                    "oa": {"total_outputs": oa, "percent": calc_percent(oa, total_outputs)},
-                    "green": {"total_outputs": green, "percent": calc_percent(green, total_outputs)},
-                    "gold": {"total_outputs": gold, "percent": calc_percent(gold, total_outputs)},
-                    "gold_doaj": {"total_outputs": gold_doaj, "percent": calc_percent(gold_doaj, total_outputs)},
-                    "hybrid": {"total_outputs": hybrid, "percent": calc_percent(hybrid, total_outputs)},
-                    "bronze": {"total_outputs": bronze, "percent": calc_percent(bronze, total_outputs)},
-                    "green_only": {"total_outputs": green_only, "percent": calc_percent(green_only, total_outputs)},
-                },
-                "oa_coki": {
-                    "open": {"total": open, "percent": calc_percent(open, total_outputs)},
-                    "closed": {"total": closed, "percent": calc_percent(closed, total_outputs)},
-                    "publisher": {"total": publisher, "percent": calc_percent(publisher, total_outputs)},
-                    "other_platform": {"total": other_platform, "percent": calc_percent(other_platform, total_outputs)},
-                    "publisher_only": {"total": publisher_only, "percent": calc_percent(publisher_only, total_outputs)},
-                    "both": {"total": both, "percent": calc_percent(both, total_outputs)},
-                    "other_platform_only": {"total": other_platform_only, "percent": calc_percent(other_platform_only, total_outputs)},
-                    "publisher_categories": {
-                        "oa_journal": {"total": publisher_categories_oa_journal, "percent": calc_percent(publisher_categories_oa_journal, publisher)},
-                        "hybrid": {"total": publisher_categories_hybrid, "percent": calc_percent(publisher_categories_hybrid, publisher)},
-                        "no_guarantees": {"total": publisher_categories_no_guarantees, "percent": calc_percent(publisher_categories_no_guarantees, publisher)}
+                "coki": {
+                    "oa": {
+                        "color": {
+                            "oa": {"total_outputs": oa, "percent": calc_percent(oa, total_outputs)},
+                            "green": {"total_outputs": green, "percent": calc_percent(green, total_outputs)},
+                            "gold": {"total_outputs": gold, "percent": calc_percent(gold, total_outputs)},
+                            "gold_doaj": {"total_outputs": gold_doaj, "percent": calc_percent(gold_doaj, total_outputs)},
+                            "hybrid": {"total_outputs": hybrid, "percent": calc_percent(hybrid, total_outputs)},
+                            "bronze": {"total_outputs": bronze, "percent": calc_percent(bronze, total_outputs)},
+                            "green_only": {"total_outputs": green_only, "percent": calc_percent(green_only, total_outputs)},
+                            "black": {"total_outputs": black, "percent": calc_percent(black, total_outputs)},
+                        },
+                        "coki": {
+                            "open": {"total": open, "percent": calc_percent(open, total_outputs)},
+                            "closed": {"total": closed, "percent": calc_percent(closed, total_outputs)},
+                            "publisher": {"total": publisher, "percent": calc_percent(publisher, total_outputs)},
+                            "other_platform": {"total": other_platform, "percent": calc_percent(other_platform, total_outputs)},
+                            "publisher_only": {"total": publisher_only, "percent": calc_percent(publisher_only, total_outputs)},
+                            "both": {"total": both, "percent": calc_percent(both, total_outputs)},
+                            "other_platform_only": {"total": other_platform_only, "percent": calc_percent(other_platform_only, total_outputs)},
+                            "publisher_categories": {
+                                "oa_journal": {"total": publisher_categories_oa_journal, "percent": calc_percent(publisher_categories_oa_journal, publisher)},
+                                "hybrid": {"total": publisher_categories_hybrid, "percent": calc_percent(publisher_categories_hybrid, publisher)},
+                                "no_guarantees": {"total": publisher_categories_no_guarantees, "percent": calc_percent(publisher_categories_no_guarantees, publisher)}
+                            },
+                            "other_platform_categories": {
+                                "preprint": {"total": publisher_categories_preprint, "percent": calc_percent(publisher_categories_preprint, other_platform)},
+                                "domain": {"total": publisher_categories_domain, "percent": calc_percent(publisher_categories_domain, other_platform)},
+                                "institution": {"total": publisher_categories_institution, "percent": calc_percent(publisher_categories_institution, other_platform)},
+                                "public": {"total": publisher_categories_public, "percent": calc_percent(publisher_categories_public, other_platform)},
+                                "aggregator": {"total": publisher_categories_aggregator, "percent": calc_percent(publisher_categories_aggregator, other_platform)},
+                                "other_internet": {"total": publisher_categories_other_internet, "percent": calc_percent(publisher_categories_other_internet, other_platform)},
+                                "unknown": {"total": publisher_categories_unknown, "percent": calc_percent(publisher_categories_unknown, other_platform)},
+                            },
+                        }
                     },
-                    "other_platform_categories": {
-                        "preprint": {"total": publisher_categories_preprint, "percent": calc_percent(publisher_categories_preprint, other_platform)},
-                        "domain": {"total": publisher_categories_domain, "percent": calc_percent(publisher_categories_domain, other_platform)},
-                        "institution": {"total": publisher_categories_institution, "percent": calc_percent(publisher_categories_institution, other_platform)},
-                        "public": {"total": publisher_categories_public, "percent": calc_percent(publisher_categories_public, other_platform)},
-                        "aggregator": {"total": publisher_categories_aggregator, "percent": calc_percent(publisher_categories_aggregator, other_platform)},
-                        "other_internet": {"total": publisher_categories_other_internet, "percent": calc_percent(publisher_categories_other_internet, other_platform)},
-                        "unknown": {"total": publisher_categories_unknown, "percent": calc_percent(publisher_categories_unknown, other_platform)},
-                    },
+                    "repositories": repositories
                 },
-                "repositories": repositories,
                 "citations": {},
                 "output_types": [],
                 "disciplines": {},

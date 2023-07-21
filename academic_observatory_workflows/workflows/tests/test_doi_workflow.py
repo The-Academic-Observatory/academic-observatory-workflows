@@ -605,23 +605,24 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "region",
                 "subregion",
                 "total_outputs",
-                "repositories",
             ]:
                 self.assertEqual(expected_item[key], actual_item[key])
 
             # Access types
+            expected_coki = expected_item["coki"]
+            actual_coki = actual_item["coki"]
             self.assert_sub_fields(
-                expected_item,
-                actual_item,
-                "access_types",
-                ["oa", "green", "gold", "gold_doaj", "hybrid", "bronze", "green_only"],
+                expected_coki["oa"],
+                actual_coki["oa"],
+                "color",
+                ["oa", "green", "gold", "gold_doaj", "hybrid", "bronze", "green_only", "black"],
             )
 
             # COKI Access types
             self.assert_sub_fields(
-                expected_item,
-                actual_item,
-                "oa_coki",
+                expected_coki["oa"],
+                actual_coki["oa"],
+                "coki",
                 [
                     "open",
                     "closed",
@@ -634,6 +635,9 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     "other_platform_categories",
                 ],
             )
+
+            # Repositories
+            self.assertEqual(expected_coki["repositories"], actual_coki["repositories"])
 
     def assert_sub_fields(self, expected: Dict, actual: Dict, field: str, sub_fields: List[str]):
         """Checks that the sub fields in the aggregate match.
