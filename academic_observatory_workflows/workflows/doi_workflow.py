@@ -203,110 +203,6 @@ def make_dataset_transforms(
     )
 
 
-def make_elastic_tables(
-    aggregate_table_name: str,
-    relate_to_institutions: bool = False,
-    relate_to_countries: bool = False,
-    relate_to_groups: bool = False,
-    relate_to_members: bool = False,
-    relate_to_journals: bool = False,
-    relate_to_funders: bool = False,
-    relate_to_publishers: bool = False,
-):
-    # Always export
-    tables = [
-        {
-            "file_name": make_sql_jinja2_filename("export_unique_list"),
-            "aggregate": aggregate_table_name,
-            "facet": "unique_list",
-        },
-        {
-            "file_name": make_sql_jinja2_filename("export_access_types"),
-            "aggregate": aggregate_table_name,
-            "facet": "access_types",
-        },
-        {
-            "file_name": make_sql_jinja2_filename("export_disciplines"),
-            "aggregate": aggregate_table_name,
-            "facet": "disciplines",
-        },
-        {
-            "file_name": make_sql_jinja2_filename("export_output_types"),
-            "aggregate": aggregate_table_name,
-            "facet": "output_types",
-        },
-        {"file_name": make_sql_jinja2_filename("export_events"), "aggregate": aggregate_table_name, "facet": "events"},
-        {
-            "file_name": make_sql_jinja2_filename("export_metrics"),
-            "aggregate": aggregate_table_name,
-            "facet": "metrics",
-        },
-    ]
-
-    # Optional Relationships
-    export_relations = make_sql_jinja2_filename("export_relations")
-    if relate_to_institutions:
-        tables.append(
-            {
-                "file_name": export_relations,
-                "aggregate": aggregate_table_name,
-                "facet": "institutions",
-            }
-        )
-    if relate_to_countries:
-        tables.append(
-            {
-                "file_name": export_relations,
-                "aggregate": aggregate_table_name,
-                "facet": "countries",
-            }
-        )
-    if relate_to_groups:
-        tables.append(
-            {
-                "file_name": export_relations,
-                "aggregate": aggregate_table_name,
-                "facet": "groupings",
-            }
-        )
-    if relate_to_members:
-        tables.append(
-            {
-                "file_name": export_relations,
-                "aggregate": aggregate_table_name,
-                "facet": "members",
-            }
-        )
-    if relate_to_journals:
-        tables.append(
-            {
-                "file_name": export_relations,
-                "aggregate": aggregate_table_name,
-                "facet": "journals",
-            }
-        )
-
-    if relate_to_funders:
-        tables.append(
-            {
-                "file_name": export_relations,
-                "aggregate": aggregate_table_name,
-                "facet": "funders",
-            }
-        )
-
-    if relate_to_publishers:
-        tables.append(
-            {
-                "file_name": export_relations,
-                "aggregate": aggregate_table_name,
-                "facet": "publishers",
-            }
-        )
-
-    return tables
-
-
 def fetch_ror_affiliations(repository_institution: str, num_retries: int = 3) -> Dict:
     """Fetch the ROR affiliations for a given affiliation string.
 
@@ -343,9 +239,7 @@ def get_snapshot_date(project_id: str, dataset_id: str, table_id: str, snapshot_
     if len(table_shard_dates):
         shard_date = table_shard_dates[0]
     else:
-        raise AirflowException(
-            f"{table_id} with a table shard date <= {snapshot_date} not found"
-        )
+        raise AirflowException(f"{table_id} with a table shard date <= {snapshot_date} not found")
 
     return shard_date
 
@@ -508,7 +402,6 @@ class DoiWorkflow(Workflow):
         bq_intermediate_dataset_id: str = "observatory_intermediate",
         bq_dashboards_dataset_id: str = "coki_dashboards",
         bq_observatory_dataset_id: str = "observatory",
-        bq_elastic_dataset_id: str = "data_export",
         bq_unpaywall_dataset_id: str = "unpaywall",
         bq_ror_dataset_id: str = "ror",
         api_dataset_id: str = "doi",
@@ -525,9 +418,8 @@ class DoiWorkflow(Workflow):
         :param bq_intermediate_dataset_id: the BigQuery intermediate dataset id.
         :param bq_dashboards_dataset_id: the BigQuery dashboards dataset id.
         :param bq_observatory_dataset_id: the BigQuery observatory dataset id.
-        :param bq_elastic_dataset_id: the BigQuery elastic dataset id.
-        :param bq_unpaywall_dataset_id: the BigQuery elastic dataset id.
-        :param bq_ror_dataset_id: the BigQuery elastic dataset id.
+        :param bq_unpaywall_dataset_id: the BigQuery Unpaywall dataset id.
+        :param bq_ror_dataset_id: the BigQuery ROR dataset id.
         :param api_dataset_id: the DOI dataset id.
         :param max_fetch_threads: maximum number of threads to use when fetching.
         :param start_date: the start date.
@@ -554,7 +446,6 @@ class DoiWorkflow(Workflow):
         self.bq_intermediate_dataset_id = bq_intermediate_dataset_id
         self.bq_dashboards_dataset_id = bq_dashboards_dataset_id
         self.bq_observatory_dataset_id = bq_observatory_dataset_id
-        self.bq_elastic_dataset_id = bq_elastic_dataset_id
         self.bq_unpaywall_dataset_id = bq_unpaywall_dataset_id
         self.bq_ror_dataset_id = bq_ror_dataset_id
         self.api_dataset_id = api_dataset_id
@@ -636,16 +527,6 @@ class DoiWorkflow(Workflow):
         self.add_task(self.update_table_descriptions)
         self.add_task(self.copy_to_dashboards)
         self.add_task(self.create_dashboard_views)
-
-        # Export for Elastic
-        with self.parallel_tasks():
-            # Remove the author aggregation from the list of aggregations to reduce cluster size on Elastic
-            for agg in self.remove_aggregations(self.AGGREGATIONS, {"author"}):
-                task_id = f"export_{agg.table_name}"
-                self.add_task(
-                    self.export_for_elastic, op_kwargs={"aggregation": agg, "task_id": task_id}, task_id=task_id
-                )
-
         self.add_task(self.add_new_dataset_releases)
 
     def make_release(self, **kwargs) -> SnapshotRelease:
@@ -672,7 +553,6 @@ class DoiWorkflow(Workflow):
             (self.bq_intermediate_dataset_id, "Intermediate processing dataset for the Academic Observatory."),
             (self.bq_dashboards_dataset_id, "The latest data for display in the COKI dashboards."),
             (self.bq_observatory_dataset_id, "The Academic Observatory dataset."),
-            (self.bq_elastic_dataset_id, "The Academic Observatory dataset for Elasticsearch."),
         ]
 
         for dataset_id, description in datasets:
@@ -891,62 +771,6 @@ class DoiWorkflow(Workflow):
             view_id = bq_table_id(self.output_project_id, self.bq_dashboards_dataset_id, view_name)
             bq_create_view(view_id=view_id, query=query)
 
-    def export_for_elastic(self, release: SnapshotRelease, **kwargs):
-        """Export data in a de-nested form for Elasticsearch."""
-
-        agg = kwargs["aggregation"]
-        tables = make_elastic_tables(
-            agg.table_name,
-            relate_to_institutions=agg.relate_to_institutions,
-            relate_to_countries=agg.relate_to_countries,
-            relate_to_groups=agg.relate_to_groups,
-            relate_to_members=agg.relate_to_members,
-            relate_to_journals=agg.relate_to_journals,
-            relate_to_funders=agg.relate_to_funders,
-            relate_to_publishers=agg.relate_to_publishers,
-        )
-
-        # Calculate the number of parallel queries. Since all of the real work is done on BigQuery run each export task
-        # in a separate thread so that they can be done in parallel.
-        num_queries = min(len(tables), MAX_QUERIES)
-        results = []
-
-        with ThreadPoolExecutor(max_workers=num_queries) as executor:
-            futures = list()
-            futures_msgs = {}
-            for table in tables:
-                template_file_name = table["file_name"]
-                aggregate = table["aggregate"]
-                facet = table["facet"]
-
-                msg = f"Exporting file_name={template_file_name}, aggregate={aggregate}, facet={facet}"
-                logging.info(msg)
-                input_table_id = bq_sharded_table_id(
-                    self.output_project_id, self.bq_observatory_dataset_id, agg.table_name, release.snapshot_date
-                )
-                output_table_id = bq_sharded_table_id(
-                    self.output_project_id, self.bq_elastic_dataset_id, f"ao_{aggregate}_{facet}", release.snapshot_date
-                )
-                future = executor.submit(
-                    export_aggregate_table, template_file_name, input_table_id, output_table_id, aggregate, facet
-                )
-
-                futures.append(future)
-                futures_msgs[future] = msg
-
-            # Wait for completed tasks
-            for future in as_completed(futures):
-                success = future.result()
-                msg = futures_msgs[future]
-                results.append(success)
-                if success:
-                    logging.info(f"Exporting feed success: {msg}")
-                else:
-                    logging.error(f"Exporting feed failed: {msg}")
-
-        success = all(results)
-        set_task_state(success, kwargs["task_id"])
-
     def add_new_dataset_releases(self, release: SnapshotRelease, **kwargs):
         """Adds release information to API."""
 
@@ -986,25 +810,3 @@ class DoiWorkflow(Workflow):
                 aggregations_removed.append(agg)
 
         return aggregations_removed
-
-
-def export_aggregate_table(
-    template_file_name: str,
-    input_table_id: str,
-    output_table_id: str,
-    aggregate: str,
-    facet: str,
-):
-    template_path = os.path.join(sql_folder(), template_file_name)
-    sql = render_template(
-        template_path,
-        table_id=input_table_id,
-        aggregate=aggregate,
-        facet=facet,
-    )
-    success = bq_create_table_from_query(
-        sql=sql,
-        table_id=output_table_id,
-    )
-
-    return success

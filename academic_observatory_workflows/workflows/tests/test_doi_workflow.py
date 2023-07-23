@@ -37,7 +37,6 @@ from academic_observatory_workflows.model import (
 from academic_observatory_workflows.workflows.doi_workflow import (
     DoiWorkflow,
     make_dataset_transforms,
-    make_elastic_tables,
     fetch_ror_affiliations,
     ror_to_ror_hierarchy_index,
 )
@@ -247,24 +246,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "create_subregion": ["update_table_descriptions"],
                 "update_table_descriptions": ["copy_to_dashboards"],
                 "copy_to_dashboards": ["create_dashboard_views"],
-                "create_dashboard_views": [
-                    "export_country",
-                    "export_funder",
-                    "export_group",
-                    "export_institution",
-                    "export_journal",
-                    "export_publisher",
-                    "export_region",
-                    "export_subregion",
-                ],
-                "export_country": ["add_new_dataset_releases"],
-                "export_funder": ["add_new_dataset_releases"],
-                "export_group": ["add_new_dataset_releases"],
-                "export_institution": ["add_new_dataset_releases"],
-                "export_journal": ["add_new_dataset_releases"],
-                "export_publisher": ["add_new_dataset_releases"],
-                "export_region": ["add_new_dataset_releases"],
-                "export_subregion": ["add_new_dataset_releases"],
+                "create_dashboard_views": ["add_new_dataset_releases"],
                 "add_new_dataset_releases": [],
             },
             dag,
@@ -316,7 +298,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
         bq_intermediate_dataset_id = env.add_dataset(prefix="intermediate")
         bq_dashboards_dataset_id = env.add_dataset(prefix="dashboards")
         bq_observatory_dataset_id = env.add_dataset(prefix="observatory")
-        bq_elastic_dataset_id = env.add_dataset(prefix="elastic")
         bq_settings_dataset_id = env.add_dataset(prefix="settings")
         dataset_transforms = make_dataset_transforms(
             input_project_id=self.project_id,
@@ -344,7 +325,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 bq_intermediate_dataset_id=bq_intermediate_dataset_id,
                 bq_dashboards_dataset_id=bq_dashboards_dataset_id,
                 bq_observatory_dataset_id=bq_observatory_dataset_id,
-                bq_elastic_dataset_id=bq_elastic_dataset_id,
                 bq_unpaywall_dataset_id=fake_dataset_id,
                 bq_ror_dataset_id=fake_dataset_id,
                 transforms=dataset_transforms,
@@ -545,33 +525,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 for table_name in ["country", "funder", "group", "institution", "publisher", "subregion"]:
                     table_id = bq_table_id(self.project_id, bq_dashboards_dataset_id, f"{table_name}_comparison")
                     self.assert_table_integrity(table_id)
-
-                # Test create exported tables for Elasticsearch
-                # Remove author from AGGREGATIONS list to save space on Elastic.
-                for agg in DoiWorkflow.remove_aggregations(DoiWorkflow, DoiWorkflow.AGGREGATIONS, {"author"}):
-                    table_name = agg.table_name
-                    task_id = f"export_{table_name}"
-                    ti = env.run_task(task_id)
-                    self.assertEqual(expected_state, ti.state)
-
-                    # Check that the correct tables exist for each aggregation
-                    tables = make_elastic_tables(
-                        agg.table_name,
-                        relate_to_institutions=agg.relate_to_institutions,
-                        relate_to_countries=agg.relate_to_countries,
-                        relate_to_groups=agg.relate_to_groups,
-                        relate_to_members=agg.relate_to_members,
-                        relate_to_journals=agg.relate_to_journals,
-                        relate_to_funders=agg.relate_to_funders,
-                        relate_to_publishers=agg.relate_to_publishers,
-                    )
-                    for table in tables:
-                        aggregate = table["aggregate"]
-                        facet = table["facet"]
-                        table_id = bq_sharded_table_id(
-                            self.project_id, bq_elastic_dataset_id, f"ao_{aggregate}_{facet}", snapshot_date
-                        )
-                        self.assert_table_integrity(table_id)
 
                 # add_dataset_release_task
                 dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
