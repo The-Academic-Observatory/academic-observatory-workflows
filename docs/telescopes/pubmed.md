@@ -1,78 +1,128 @@
-# Pubmed
+# Pubmed Telescope
 
-((( DRAFT, please edit as necessary )))
-
-The Pubmed Medline database is a bibliographioc database of over 29 million medical related citations over the last 30 years.
+The Pubmed Medline database is a bibliographioc database of over 35 million medical related citations over the last 30 years.
 
 More information on the database and the fields present in the data can be found here:
 
 https://www.nlm.nih.gov/medline/medline_overview.html
 
-## Telescope workflow
+## Workflow
 
-This workflow for Pubmed Medline database downloads the baseline yearly snaphot and applies the addition and deletion updates weekly, storing the raw, transformed and final data in Googles Cloud Storage and Bigquery.
+This workflow processes the Pubmed Medline database by downloading the yearly snaphot and applies the necessary changes in weekly intervals while storing the raw, transformed and final tables in Googles Cloud Storage and Bigquery.
 
-## Download
+Pubmed's Medline database is split up into two parts; baseline and updatefiles. The 'baseline' portion is the yearly snapshot and the 'updatefiles' are the additions and or edits to the database that are released daily throughout the year. Each year the 'baseline' is re-released with the all of the previous 'updatefiles' and 'baseline' compiled together.
 
-The Baseline records are release December of each year, the last being released on 2022-12-08. The URL to the FTP server for the 'baseline' files is
+If it is the first run of the year for the workflow, it will download and process the baseline snapshot and any updatefiles that were released from the baseline release date until the execution date of the workflow. Subsequent runs of the workflow are scheduled at weekly intervals and will merge the updatefile modifications and apply the changes to the main table (in Bigquery) all at once. If it is a new yearly run of the workflow, it will download the new baseline release and apply any changes from updatefiles since the baseline release date.
+
+The baseline files from the Pubmed essentially only hold records to upsert to the main table, whereas the updatefiles can hold both upserts and a list of records to delete.
+
+### Download
+
+The Baseline yearly snapshots are released in December of each year. The URL to the FTP server for the 'baseline' files is
 
 https://ftp.ncbi.nlm.nih.gov/pubmed/baseline/
 
-If it is the first run of the workflow, the telescope only processes the baseline portion of the Pubmed Medline database.
-
-Subsequent updatefiles to modify the Pubmed database are released 7-days a week.
+and similarly the updatefiles are released daily
 
 https://ftp.ncbi.nlm.nih.gov/pubmed/updatefiles/
 
-The telescope runs weekly and finds all updatefiles uploaded onto the server within that time period and apply the changes to main table on Google Biguqery.
+Updatefiles can hold both records to upsert and delete. If there are more than 30,000 upserts, there are multiple updatefiles released for that day. All files that are downloaded and are also uploaded to Google Cloud Storage for archival purposes.
 
-All files that are downloaded and are also uploaded to Google Cloud Storage for archival.
+### Transform
 
-## Tranform
+All files downloaded from Pubmed have to be transformed from a compressed XML into a well defined json format so it can be import into Google Bigquery.
 
-All files downloaded from Pubmed have to be transformed from a compressed XML into a strict format such as \*.jsonl.gz to be import into Google Bigquery.
+The package "Biopython" is used to parse and verify the Pubmed XMLs against it's own schema DTD file (defined in the header of each XML file). The resulting data dictionary from Biopython's `Entrez.read` holds the XML attributes on it's own data-classes. The attributes such as "CompleteYN" and others are pulled out and added as their own keys to the records.
 
-The Biopython package (TODO link to package) is used to read-in, parse and verify the Pubmed XMLs against it's own schema DTD file (TODO link to schema file).
-All entities such as Pubmed Articles, Book Articles, Book Documents, Delete Citation and Delete Document are defined in the DTD schema file, however
-only Pubmed Articles and Delete Citation fields are present in the baseline and updatefiles.
+In this transform step, XML lists are also simplified as the original XML structure can be difficult to query in Bigquery. Multiple unnests and aggregations are needed to pull data from particular fields. To reduce the complexity of the SQL quries for the table, the original XML-like formated data could be in the form of,
 
-After cahngefiles are transformed, they are uploaded to Google Cloud Storage for archive and ingested into Biguqery using a glob pattern.
+```json
+{
+  "AuthorList": [
+    {
+      "CompleteYN": "Y",
+      "Author": [
+        { "First": "Foo", "Last": "Bar" },
+        { "First": "James", "Last": "Bond" }
+      ]
+    }
+  ]
+}
+```
 
-The schema for the Pubmed Article table was derived from the DTD file. It was firstly converted from DTD to XSD using IntelliJ IDEA and was manually gone through
-to make sure no fields were missed.
+To simplify the above, the "Author" field will be removed and the data from it will be moved up
+to the "List" level, along with any data specified under the List field,
 
-Due to how XMLs can be stored, there can be multiple didferent types of data can present in a field. For example, AbstractText is most commonly a string, however there are times
-where maths formula involved which create times where strings and arrays of strings can be mixed together, but Bigquery does not permit this. As a workaround, known text fields
-with issues are written to file as a string ONLY, which allows the Pubmed records to be imported into Bigquery.
+```json
+{
+  "AuthorListCompleteYN": "Y",
+  "AuthorList": [
+    { "First": "Foo", "Last": "Bar" },
+    { "First": "James", "Last": "Bond" }
+  ]
+}
+```
 
-The Biguqery version of the Pubmed Article schema (including field descriptions) for the 2023 release of Pubmed can be found here:
+The following list-like fields that have their structure modified in the workflow are:
 
-(link to github repo of schema file)
+- AuthorList
+- ArticleIdList
+- AuthorList
+- GrantList
+- ChemicalList
+- CommentsCorrectionsList
+- GeneSymbolList
+- MeshHeadingList
+- PersonalNameSubjectList
+- InvestigatorList
+- PublicationTypeList
+- ObjectList
+- KeywordList
+- SupplMeshList
+- DataBankList
+- AccessionNumberList
 
-## Applying changefiles
+Additionally, some fields that are commonly strings such as "AbstractText" could also be a list of values that include formulas or could be split up with fields such as Backgroud, Methods, etc. Since the data has to be well defined for importing into Bigquery, text fields that have this problem are forced to be strings when written to file using a custom encoder. The fields that are forced to be strings are:
 
-As mentioned previously, daily updatefiles for Pubmed are collected over a week period at a time and applied to the table all at once.
-This is to reduce computation and Bigquery cost, as the main table ends up being 100 Gb, which will cost a lot to run and query the table daily.
+- AbstractText
+- Affiliation
+- ArticleTitle
+- b
+- BookTitle
+- Citation
+- CoiStatement
+- CollectionTitle
+- CollectiveName
+- i
+- Param
+- PublisherName
+- SectionTitle
+- sub
+- Suffix
+- sup
+- u
+- VernacularTitle
+- VolumeTitle
 
-Additions and deletions are applied using the PMID and Version values.
+All transformed files are uploaded into Google Cloud Storage for ingesting the data into Bigquery.
 
-If there is an updated record in in the same week period, only the newest record is kept and merged with the main Pubmed Article table on Bigquery.
-All Delete Citation records are merged and removed from the main table all at once.
+### Applying upserts and deletes
 
-Steps of how Pubmed's changefiles are applied on Biquery:
+Merging both upsert and delete records are done to reduce Bigquery cost, as the main table ends up being approximatelly ~100 Gb. Everytime an upsert or delete is applied, the entire table has to be queried for the records to upsert and delete and doing that query for each daily updatefile will add the cost up quickly.
 
-0. A backup copy of the main table is made before the additions and deletions are applied, just in case there is a problem part way through the update process.
-1. The main table is queried to find the PMIDs that are to be upddated. These records are deleted from the table.
-2. The list of record to be updated are then appended to the main table.
-3. The main table is then queried again to find all records to be deleted, matching on both PMID and Version, and then deleting those records.
+It is important to note that each upsert record contains the entire record again including the newer updated information, not just the new information for that particular record. Thus when merging the upsert records for a release, only the newest available upsert records are kept and applied to the main table. All the upsert records for a release period are merged and ingested into a date sharded table called "upsert". Additionally, delete records can sometimes appear multiple times in multiple different updatefiles. Duplicates are removed and ingested into a date sharded table called "delete". These upsert and delete tables are set to expire in 7 days after being created.
+
+Upserts and delete records are applied by matching on the PMID value and the Version number of a record. A backup is taken of the main table before any of the upserts and deletions are applied. The backup table is set to expire in 31 days after it was created (to reduce table storage costs in Bigquery).
+
+# Workflow Summary
 
 ```eval_rst
 +------------------------------+-----------------------------------------+
 | Summary                      |                                         |
 +==============================+=========================================+
-| Average runtime              | 6 hrs baseline, 5-20 min weekly updates |
+| Average runtime              | 6-8 hrs baseline,20 min weekly updates  |
 +------------------------------+-----------------------------------------+
-| Average download size        | 80-100gb baseline, ~500mb weekly        |
+| Average download size        | ~100gb baseline, ~500mb weekly          |
 +------------------------------+-----------------------------------------+
 | Harvest Type                 | FTP transfer                            |
 +------------------------------+-----------------------------------------+
@@ -82,7 +132,7 @@ Steps of how Pubmed's changefiles are applied on Biquery:
 +------------------------------+-----------------------------------------+
 | Catchup missed runs          | False                                   |
 +------------------------------+-----------------------------------------+
-| Table Write Disposition      | Append                                  |
+| Table Write Disposition      | Write Truncate                          |
 +------------------------------+-----------------------------------------+
 | Provider Update Frequency    | Daily                                   |
 +------------------------------+-----------------------------------------+

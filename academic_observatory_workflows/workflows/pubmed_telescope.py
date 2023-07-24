@@ -1040,7 +1040,6 @@ class PubMedTelescope(Workflow):
         the main table.
         """
 
-        # Pull list of update tables from xcom
         ti: TaskInstance = kwargs["ti"]
         upsert_table_id = ti.xcom_pull(key="upsert_table_id")
 
@@ -1057,6 +1056,8 @@ class PubMedTelescope(Workflow):
     def merge_delete_records(self, release: PubMedRelease, **kwargs):
         """
         Merge the delete records that will be applied to the main table.
+
+        Remove duplicates and write file.
         """
 
         delete_files_to_merge = [datafile for datafile in release.datafile_list if not datafile.baseline]
@@ -1210,14 +1211,14 @@ def download_datafiles_from_ftp_server(
     reset_ftp_counter: int,
     max_download_retry: int,
 ) -> bool:
-    """Download a list of Pubmed Datafiles from their FTP server.
+    """Download a list of Pubmed datafiles from their FTP server.
 
-    :param datafile_list: List of Datafiles to download from their FTP server.
+    :param datafile_list: List of datafiles to download from their FTP server.
     :param ftp_server_url: FTP server URL.
     :param ftp_port: Port for the FTP connection.
-    :param reset_ftp_counter: After this variable number of files, it will reset the FTP connection
-    to make sure that the files can be downloaded reliably.
-    :param max_download_retry: Maximum number of retries for downloading one Datafile before throwing an error.
+    :param reset_ftp_counter: After this number of files, reset the FTP connection
+    to make sure that the connect is not reset by the host.
+    :param max_download_retry: Maximum number of retries for downloading one datafile before throwing an error.
 
     :return download_success: If downloading all of the datafiles were successful.
     """
@@ -1306,7 +1307,7 @@ def download_datafiles_from_ftp_server(
 def transform_pubmed_xml_file_to_jsonl(datafile: Datafile, entity_list: List[PubmedEntity]) -> Union[Datafile, bool]:
     """
     Convert a single Pubmed XML file to JSONL, pulling out any of the Pubmed entities and their upserts and or deletes.
-    Used in parallelised transform sections.
+    Used in parallelised transform section.
 
     :param datafile: Incoming datafile to transform.
     :param entity_list: List of entities to pull out from the datafile.
@@ -1316,27 +1317,28 @@ def transform_pubmed_xml_file_to_jsonl(datafile: Datafile, entity_list: List[Pub
     logging.info(f"Reading in file - {datafile.filename}")
 
     with gzip.open(datafile.download_file_path, "rb") as f_in:
-        # Use the BioPython library for reading in the Pubmed XML files.
+        # Use the BioPython package for reading in the Pubmed XML files.
+        # This package also checks against it's own DTD schema defined in the XML header.
         try:
-            data_dict_dirty1 = Entrez.read(f_in, validate=True)
+            data_dirty1 = Entrez.read(f_in, validate=True)
         except ValidationError:
             logging.info(f"Fields in XML are not valid against it's own DTD file - {datafile.filename}")
             return False
 
-        # Need to have the XML attributes pulled out from the Biopython data classes.
-        data_dict2 = add_attributes_to_data_from_biopython_classes(data_dict_dirty1)
-        del data_dict_dirty1
+        # Need pull out XML attributes from the Biopython data classes.
+        data_dirty2 = add_attributes_to_data_from_biopython_classes(data_dirty1)
+        del data_dirty1
 
         #  Remove unwanted nested list structure from the Pubmed dictionary.
-        data_dict = change_pubmed_list_structure(data_dict2)
-        del data_dict2
+        data = change_pubmed_list_structure(data_dirty2)
+        del data_dirty2
 
     for entity in entity_list:
         try:
             try:
-                data_part = [retrieve for retrieve in data_dict[entity.set_key][entity.sub_key]]
+                data_part = [retrieve for retrieve in data[entity.set_key][entity.sub_key]]
             except KeyError:
-                data_part = [retrieve for retrieve in data_dict[entity.sub_key]]
+                data_part = [retrieve for retrieve in data[entity.sub_key]]
 
             logging.info(
                 f"Pulled out {len(data_part)} {f'{entity.sub_key} {entity.type}'} from file - {datafile.filename}"
@@ -1367,7 +1369,9 @@ def add_attributes_to_data_from_biopython_classes(
     obj: Union[StringElement, DictionaryElement, ListElement, OrderedListElement, list]
 ):
     """
-    Recursively travel down the Pubmed data tree and add attributes from the Biopython classes as dictionary keys.
+    Recursively travel down the Pubmed data tree to add attributes from Biopython classes as key-value pairs.
+
+    Only pulling data from StringElements, DictionaryElements, ListElements and OrderedListElements.
 
     :param obj: Input object, being one of the Biopython data classes.
     :return new: Object with attributes added as keys to the dictionary.
@@ -1424,8 +1428,9 @@ def add_attributes_to_data_from_biopython_classes(
 
 # List of problematic fields that have nested lists.
 # Elements in the list are extra fields to append to the same level as the *List field.
+# Only for the 2023 schema. May change with a new revision.
 bad_list_fields = {
-    "AuthorIdList": [],
+    "AuthorList": [],
     "ArticleIdList": [],
     "AuthorList": ["CompleteYN", "Type"],
     "GrantList": ["CompleteYN"],
@@ -1437,6 +1442,11 @@ bad_list_fields = {
     "InvestigatorList": [],
     "PublicationTypeList": [],
     "ObjectList": [],
+    # The following are taken care of with if statements as they are special cases:
+    # KeywordList
+    # SupplMeshList
+    # DataBankList
+    # AccessionNumberList
 }
 
 
@@ -1449,16 +1459,21 @@ def change_pubmed_list_structure(
     For example, the original data can look something like
 
     {
-        ArticleIdList: {
-            "ArticleId": [{ "value": "12345", "Type": "pubmed" }]
+        "AuthorList": {
+            "CompleteYN": "Y",
+            "Author": [{ "First": "Foo", "Last": "Bar" },
+                       { "First": "James", "Last": "Bond" }]
         }
     }
 
-    The "ArticleId" field name will be removed and the data from it will be moved up
-    to the "List" level:
+    The "Author" field will be removed and the data from it will be moved up
+    to the "List" level, along with any data specified in the "bad_list_fields" dictionary:
 
     {
-        "ArticleIdList": [{ "value": "12345", "Type": "pubmed" }]
+        "AuthorListCompleteYN": "Y",
+        "AuthorListType": None,
+        "AuthorList":  [{ "First": "Foo", "Last": "Bar" },
+                       { "First": "James", "Last": "Bond" }]
     }
 
     :param obj: Incoming data object.
