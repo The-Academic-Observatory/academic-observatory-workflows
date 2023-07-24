@@ -318,7 +318,8 @@ bronze.percent	            FLOAT	NULLABLE
 green_only	                RECORD	NULLABLE
 green_only.total_outputs	INTEGER	NULLABLE
 green_only.percent	        FLOAT	NULLABLE
-breakdown	                RECORD	REPEATED
+black.total_outputs	        INTEGER	NULLABLE
+black.percent	            FLOAT	NULLABLE
 
 * breakdown object array captured in compute_conditional_citations schema above
 #}
@@ -366,17 +367,6 @@ CREATE TEMP FUNCTION compute_access_types(
       COUNTIF(black) as total_outputs,
       ROUND(SAFE_DIVIDE( (COUNTIF(black is True)) * 100 , COUNT(doi)), 2) as percent
     ) as black,
-
-    ARRAY_CONCAT(
-      compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(is_oa, false) as is_x)), "oa", "Open Access", "Not Open Access"),
-      compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(green, false) as is_x)), "green", "Green", "Not Green"),
-      compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(gold, false) as is_x)), "gold", "Gold", "Not Gold"),
-      compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(gold_just_doaj, false) as is_x)), "gold_just_doaj", "Gold just DOAJ", "Not Gold just DOAJ"),
-      compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(hybrid, false) as is_x)), "hybrid", "Hybrid", "Not Hybrid"),
-      compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(bronze, false) as is_x)), "bronze", "Bronze", "Not Bronze"),
-      compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(green_only, false) as is_x)), "green_only", "Green Only", "Not Green Only"),
-      compute_conditional_citations(ARRAY_AGG(STRUCT(citations, IFNULL(black, false) as is_x)), "black", "Black", "Not Black")
-    ) as breakdown
 
   FROM UNNEST(items))
 );

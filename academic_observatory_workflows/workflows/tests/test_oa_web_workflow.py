@@ -457,7 +457,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     True,
                     dataset_id_all,
                     institution,
-                    bq_find_schema(path=oa_web_schema_path, table_name="institution", release_date=snapshot_date),
+                    bq_find_schema(path=oa_web_schema_path, table_name="institution"),
                 ),
                 Table(
                     "country",

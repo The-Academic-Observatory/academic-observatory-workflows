@@ -191,6 +191,12 @@ repositories as (
   GROUP BY doi
 ),
 
+-- Scihub has duplicate DOIs after doing an upper trim
+scihub as (
+  SELECT DISTINCT UPPER(TRIM(doi)) as doi
+  FROM `{{ scihub.project_id }}.{{ scihub.dataset_id }}.{{ scihub.table_id }}`
+),
+
 -- The OA colour and license calculations
 base_oa_calcs as (
   SELECT
@@ -309,7 +315,7 @@ base_oa_calcs as (
 
   FROM {{ crossref_metadata.project_id }}.{{ crossref_metadata.dataset_id }}.{{ crossref_metadata.table_id }} AS crossref
   LEFT JOIN `{{ unpaywall.project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}` AS unpaywall ON UPPER(TRIM(unpaywall.doi)) = UPPER(TRIM(crossref.doi))
-  LEFT JOIN `{{ scihub.project_id }}.{{ scihub.dataset_id }}.{{ scihub.table_id }}` AS scihub ON UPPER(TRIM(scihub.doi)) = UPPER(TRIM(crossref.doi))
+  LEFT JOIN scihub AS scihub ON UPPER(TRIM(scihub.doi)) = UPPER(TRIM(crossref.doi))
   LEFT JOIN issnl_index ON issnl_index.identifier = unpaywall.journal_issn_l
   LEFT JOIN repositories AS repo ON repo.doi = unpaywall.doi
 )

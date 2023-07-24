@@ -181,7 +181,7 @@ def make_dataset_transforms(
         Transform(
             inputs={
                 "observatory_intermediate": Table(output_project_id, dataset_id_observatory_intermediate),
-                "unpaywall": Table(output_project_id, dataset_id_unpaywall, "unpaywall"),
+                "unpaywall": Table(input_project_id, dataset_id_unpaywall, "unpaywall"),
                 "crossref_metadata": Table(
                     input_project_id, dataset_id_crossref_metadata, "crossref_metadata", sharded=True
                 ),
@@ -320,7 +320,6 @@ class DoiWorkflow(Workflow):
         Aggregation(
             "country",
             "countries",
-            relate_to_members=True,
             relate_to_journals=True,
             relate_to_funders=True,
             relate_to_publishers=True,
@@ -331,7 +330,6 @@ class DoiWorkflow(Workflow):
             relate_to_institutions=True,
             relate_to_countries=True,
             relate_to_groups=True,
-            relate_to_members=True,
             relate_to_funders=True,
             relate_to_publishers=True,
         ),
@@ -339,7 +337,6 @@ class DoiWorkflow(Workflow):
             "group",
             "groupings",
             relate_to_institutions=True,
-            relate_to_members=True,
             relate_to_journals=True,
             relate_to_funders=True,
             relate_to_publishers=True,
@@ -377,8 +374,8 @@ class DoiWorkflow(Workflow):
             "publishers",
             relate_to_institutions=True,
             relate_to_countries=True,
-            relate_to_groups=True,
-            relate_to_funders=True,
+            relate_to_groups=False,
+            relate_to_funders=False,
         ),
         Aggregation(
             "region",
