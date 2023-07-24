@@ -220,6 +220,7 @@ class Paper:
     publisher_is_free_to_read: bool = False
     repositories: List[Repository] = None
     in_scihub: bool = False
+    in_unpaywall: bool = True
 
     @property
     def access_type(self) -> AccessType:
@@ -817,8 +818,14 @@ def make_papers(
             publisher_is_free_to_read=publisher_is_free_to_read_,
             repositories=paper_repos,
             in_scihub=bool(random.getrandbits(1)),
+            in_unpaywall=True,
         )
         papers.append(paper)
+
+    # Make a subset of the not oa, not in Unpaywall
+    not_in_unpaywall = random.sample([paper for paper in papers if not paper.access_type.oa], 3)
+    for paper in not_in_unpaywall:
+        paper.in_unpaywall = False
 
     # Create paper citations
     # Sort from oldest to newest
@@ -944,50 +951,52 @@ def make_unpaywall(dataset: ObservatoryDataset) -> List[Dict]:
     }
 
     for paper in dataset.papers:
-        # Make OA status
-        journal_is_in_doaj = paper.journal.license is not None
+        # In our simulated model, a small number of papers can be closed and not in Unpaywall
+        if paper.in_unpaywall:
+            # Make OA status
+            journal_is_in_doaj = paper.journal.license is not None
 
-        # Add publisher oa locations
-        oa_locations = []
-        if paper.publisher_is_free_to_read:
-            oa_location = {"host_type": "publisher", "license": paper.publisher_license, "url": ""}
-            oa_locations.append(oa_location)
+            # Add publisher oa locations
+            oa_locations = []
+            if paper.publisher_is_free_to_read:
+                oa_location = {"host_type": "publisher", "license": paper.publisher_license, "url": ""}
+                oa_locations.append(oa_location)
 
-        # Add repository oa locations
-        for repo in paper.repositories:
-            pmh_id = None
-            if repo.pmh_domain is not None:
-                pmh_id = f"oai:{repo.pmh_domain}:{str(uuid.uuid4())}"
-            oa_location = {
-                "host_type": "repository",
-                "endpoint_id": repo.endpoint_id,
-                "url": f"https://{repo.url_domain}/{urllib.parse.quote(paper.title)}.pdf",
-                "pmh_id": pmh_id,
-                "repository_institution": repo.name,
-            }
-            oa_locations.append(oa_location)
+            # Add repository oa locations
+            for repo in paper.repositories:
+                pmh_id = None
+                if repo.pmh_domain is not None:
+                    pmh_id = f"oai:{repo.pmh_domain}:{str(uuid.uuid4())}"
+                oa_location = {
+                    "host_type": "repository",
+                    "endpoint_id": repo.endpoint_id,
+                    "url": f"https://{repo.url_domain}/{urllib.parse.quote(paper.title)}.pdf",
+                    "pmh_id": pmh_id,
+                    "repository_institution": repo.name,
+                }
+                oa_locations.append(oa_location)
 
-        is_oa = len(oa_locations) > 0
-        if is_oa:
-            best_oa_location = oa_locations[0]
-        else:
-            best_oa_location = None
+            is_oa = len(oa_locations) > 0
+            if is_oa:
+                best_oa_location = oa_locations[0]
+            else:
+                best_oa_location = None
 
-        # Create record
-        records.append(
-            {
-                "doi": paper.doi,
-                "year": paper.published_date.year,
-                "genre": random.choice(genre_lookup[paper.output_type]),
-                "publisher": paper.publisher.name,
-                "journal_name": paper.journal.name,
-                "journal_issn_l": paper.journal.id,
-                "is_oa": is_oa,
-                "journal_is_in_doaj": journal_is_in_doaj,
-                "best_oa_location": best_oa_location,
-                "oa_locations": oa_locations,
-            }
-        )
+            # Create record
+            records.append(
+                {
+                    "doi": paper.doi,
+                    "year": paper.published_date.year,
+                    "genre": random.choice(genre_lookup[paper.output_type]),
+                    "publisher": paper.publisher.name,
+                    "journal_name": paper.journal.name,
+                    "journal_issn_l": paper.journal.id,
+                    "is_oa": is_oa,
+                    "journal_is_in_doaj": journal_is_in_doaj,
+                    "best_oa_location": best_oa_location,
+                    "oa_locations": oa_locations,
+                }
+            )
 
     return records
 
@@ -1322,7 +1331,7 @@ def make_doi_table(dataset: ObservatoryDataset) -> List[Dict]:
         regions = make_doi_regions(paper.authors)
         subregions = make_doi_subregions(paper.authors)
         funders = make_doi_funders(paper.funders)
-        journals = make_doi_journals(paper.journal)
+        journals = make_doi_journals(paper.in_unpaywall, paper.journal)
         publishers = make_doi_publishers(paper.publisher)
 
         # Make final record
@@ -1416,18 +1425,26 @@ def make_doi_funders(funder_list: FunderList) -> List[Dict]:
     return funders
 
 
-def make_doi_journals(journal: Journal) -> List[Dict]:
+def make_doi_journals(in_unpaywall: bool, journal: Journal) -> List[Dict]:
     """Make the journal affiliation list for a DOI table row.
 
+    :param in_unpaywall: whether the work is in Unpaywall or not. At the moment the journal IDs come from Unpaywall,
+    and if the work is not in Unpaywall then the journal id and name will be null.
     :param journal: the paper's journal.
     :return: the journal affiliation list.
     """
 
+    identifier = None
+    name = None
+    if in_unpaywall:
+        identifier = journal.id
+        name = journal.name
+
     return [
         {
-            "identifier": journal.id,
+            "identifier": identifier,
             "types": ["Journal"],
-            "name": journal.name,
+            "name": name,
             "country": None,
             "country_code": None,
             "country_code_2": None,
