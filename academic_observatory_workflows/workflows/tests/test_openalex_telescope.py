@@ -142,6 +142,10 @@ class TestOpenAlexUtils(ObservatoryTestCase):
         self.assertEqual(pendulum.datetime(2022, 12, 20), entry.updated_date)
         self.assertEqual("part_000.gz", entry.file_name)
 
+        # Assert that manifest entry without a s3:// url prefix is still valid.
+        manifest_entry_no_s3 = ManifestEntry("openalex/data/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))
+        self.assertEqual(manifest_entry_no_s3.url, "s3://openalex/data/works/updated_date=2022-12-20/part_000.gz")
+
         # object_key
         manifest_entry = ManifestEntry("s3://openalex/data/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))
         self.assertEqual("data/works/updated_date=2022-12-20/part_000.gz", manifest_entry.object_key)
@@ -373,50 +377,34 @@ class TestOpenAlexUtils(ObservatoryTestCase):
         """Test the transform_object function."""
 
         # Null
-        obj = {
-            "corresponding_institution_ids": None
-        }
+        obj = {"corresponding_institution_ids": None}
         transform_object(obj)
         self.assertDictEqual(
-            {
-                "corresponding_institution_ids": []
-            },
+            {"corresponding_institution_ids": []},
             obj,
         )
 
         # Null
-        obj = {
-            "corresponding_author_ids": None
-        }
+        obj = {"corresponding_author_ids": None}
         transform_object(obj)
         self.assertDictEqual(
-            {
-                "corresponding_author_ids": []
-            },
+            {"corresponding_author_ids": []},
             obj,
         )
 
         # Null in array
-        obj = {
-            "corresponding_institution_ids": [None]
-        }
+        obj = {"corresponding_institution_ids": [None]}
         transform_object(obj)
         self.assertDictEqual(
-            {
-                "corresponding_institution_ids": []
-            },
+            {"corresponding_institution_ids": []},
             obj,
         )
 
         # Null in array
-        obj = {
-            "corresponding_author_ids": [None]
-        }
+        obj = {"corresponding_author_ids": [None]}
         transform_object(obj)
         self.assertDictEqual(
-            {
-                "corresponding_author_ids": []
-            },
+            {"corresponding_author_ids": []},
             obj,
         )
 

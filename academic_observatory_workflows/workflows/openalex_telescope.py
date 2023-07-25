@@ -789,7 +789,7 @@ def s3_uri_parts(s3_uri: str) -> Tuple[str, str]:
     """
 
     if not s3_uri.startswith("s3://"):
-        raise ValueError("Invalid S3 URI. URI should start with 's3://'")
+        raise ValueError(f"Invalid S3 URI. URI should start with 's3://' - {s3_uri}")
 
     parts = s3_uri[5:].split("/", 1)  # Remove 's3://' and split the remaining string
     bucket_name = parts[0]
@@ -820,7 +820,11 @@ class Meta:
 
 class ManifestEntry:
     def __init__(self, url: str, meta: Meta):
-        self.url = url
+        # URLs given from OpenAlex may not be given with the 's3://' prefix.
+        if not url.startswith("s3://"):
+            self.url = f"s3://{url}"
+        else:
+            self.url = url
         self.meta = meta
 
     def __eq__(self, other):
@@ -927,6 +931,9 @@ def fetch_manifest(
     ).client("s3")
     obj = client.get_object(Bucket=bucket, Key=f"data/{entity_name}/manifest")
     data = json.loads(obj["Body"].read().decode())
+
+    # Add s3:// as necessary
+
     return Manifest.from_dict(data)
 
 
