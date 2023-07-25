@@ -1133,7 +1133,6 @@ def bq_load_observatory_dataset(
     ror = load_jsonl(os.path.join(test_doi_path, "ror.jsonl"))
     country = load_jsonl(os.path.join(test_doi_path, "country.jsonl"))
     groupings = load_jsonl(os.path.join(test_doi_path, "groupings.jsonl"))
-    mag_affiliation_override = load_jsonl(os.path.join(test_doi_path, "mag_affiliation_override.jsonl"))
 
     schema_path = schema_folder()
     with CliRunner().isolated_filesystem() as t:
@@ -1224,13 +1223,6 @@ def bq_load_observatory_dataset(
                 dataset_id_settings,
                 groupings,
                 bq_find_schema(path=os.path.join(schema_path, "doi"), table_name="groupings"),
-            ),
-            Table(
-                "mag_affiliation_override",
-                False,
-                dataset_id_settings,
-                mag_affiliation_override,
-                bq_find_schema(path=os.path.join(schema_path, "doi"), table_name="mag_affiliation_override"),
             ),
             Table(
                 "orcid",
