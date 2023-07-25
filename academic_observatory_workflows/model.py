@@ -229,13 +229,13 @@ class Paper:
         :return: AccessType.
         """
 
-        gold_doaj = self.journal.license is not None
-        gold = gold_doaj or (self.publisher_is_free_to_read and self.publisher_license is not None and not gold_doaj)
-        hybrid = self.publisher_is_free_to_read and self.publisher_license is not None and not gold_doaj
-        bronze = self.publisher_is_free_to_read and self.publisher_license is None and not gold_doaj
-        green = len(self.repositories) > 0
-        green_only = green and not gold_doaj and not self.publisher_is_free_to_read
-        oa = gold or hybrid or bronze or green
+        gold_doaj = self.in_unpaywall and self.journal.license is not None
+        gold = self.in_unpaywall and (gold_doaj or (self.publisher_is_free_to_read and self.publisher_license is not None and not gold_doaj))
+        hybrid = self.in_unpaywall and self.publisher_is_free_to_read and self.publisher_license is not None and not gold_doaj
+        bronze = self.in_unpaywall and self.publisher_is_free_to_read and self.publisher_license is None and not gold_doaj
+        green = self.in_unpaywall and len(self.repositories) > 0
+        green_only = self.in_unpaywall and green and not gold_doaj and not self.publisher_is_free_to_read
+        oa = self.in_unpaywall and (gold or hybrid or bronze or green)
         black = self.in_scihub  # Add LibGen etc here
 
         return AccessType(
@@ -272,13 +272,13 @@ class Paper:
         publisher_categories = PublisherCategories(oa_journal, hybrid, no_guarantees)
 
         # Other platform categories
-        preprint = any([repo.category == "Preprint" for repo in self.repositories])
-        domain = any([repo.category == "Domain" for repo in self.repositories])
-        institution = any([repo.category == "Institution" for repo in self.repositories])
-        public = any([repo.category == "Public" for repo in self.repositories])
-        aggregator = any([repo.category == "Aggregator" for repo in self.repositories])
-        other_internet = any([repo.category == "Other Internet" for repo in self.repositories])
-        unknown = any([repo.category == "Unknown" for repo in self.repositories])
+        preprint = self.in_unpaywall and any([repo.category == "Preprint" for repo in self.repositories])
+        domain = self.in_unpaywall and any([repo.category == "Domain" for repo in self.repositories])
+        institution = self.in_unpaywall and any([repo.category == "Institution" for repo in self.repositories])
+        public = self.in_unpaywall and any([repo.category == "Public" for repo in self.repositories])
+        aggregator = self.in_unpaywall and any([repo.category == "Aggregator" for repo in self.repositories])
+        other_internet = self.in_unpaywall and any([repo.category == "Other Internet" for repo in self.repositories])
+        unknown = self.in_unpaywall and any([repo.category == "Unknown" for repo in self.repositories])
         other_platform_categories = OtherPlatformCategories(
             preprint, domain, institution, public, aggregator, other_internet, unknown
         )
@@ -788,7 +788,7 @@ def make_papers(
             if license_ is None:
                 # Bronze: free to read on publisher website but no license
                 publisher_is_free_to_read_ = bool(random.getrandbits(1))
-            # Hybrid: license=True
+        # Hybrid: license=True
 
         # Green: in a 'repository'
         paper_repos = []
@@ -822,8 +822,8 @@ def make_papers(
         )
         papers.append(paper)
 
-    # Make a subset of the not oa, not in Unpaywall
-    not_in_unpaywall = random.sample([paper for paper in papers if not paper.access_type.oa], 3)
+    # Make a subset of papers not in Unpaywall
+    not_in_unpaywall = random.sample([paper for paper in papers], 3)
     for paper in not_in_unpaywall:
         paper.in_unpaywall = False
 
@@ -1667,21 +1667,22 @@ def make_aggregate_table(agg: str, dataset: ObservatoryDataset) -> List[Dict]:
 
             # Add repository info
             for repo in paper.repositories:
-                repos.append(
-                    {
-                        "paper_id": paper.id,
-                        "agg_id": id,
-                        "time_period": paper.published_date.year,
-                        "name": repo.name,
-                        "name_lower": repo.name.lower(),
-                        "endpoint_id": repo.endpoint_id,
-                        "pmh_domain": repo.pmh_domain,
-                        "url_domain": repo.url_domain,
-                        "category": repo.category,
-                        "ror_id": repo.ror_id,
-                        "total_outputs": 1,
-                    }
-                )
+                if paper.in_unpaywall:
+                    repos.append(
+                        {
+                            "paper_id": paper.id,
+                            "agg_id": id,
+                            "time_period": paper.published_date.year,
+                            "name": repo.name,
+                            "name_lower": repo.name.lower(),
+                            "endpoint_id": repo.endpoint_id,
+                            "pmh_domain": repo.pmh_domain,
+                            "url_domain": repo.url_domain,
+                            "category": repo.category,
+                            "ror_id": repo.ror_id,
+                            "total_outputs": 1,
+                        }
+                    )
 
             data.append(
                 {
