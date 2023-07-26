@@ -462,10 +462,25 @@ class TestOpenAlexUtils(ObservatoryTestCase):
             obj3,
         )
 
-        # Test object with nested "abstract_inverted_index" none
-        obj4 = {"abstract_inverted_index": None}
+        # Test object when "abstract_inverted_index" is a json string dump
+        obj4 = {
+            "abstract_inverted_index": '{"IndexLength": 7, "InvertedIndex": { "Malignant": [0], "hyperthermia": [1], "susceptibility": [2],"(MHS)": [3], "is": [4, 6], "primarily": [5]}}'
+        }
         transform_object(obj4)
-        self.assertDictEqual({"abstract_inverted_index": None}, obj4)
+        self.assertDictEqual(
+            {
+                "abstract_inverted_index": {
+                    "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
+                    "values": ["0", "1", "2", "3", "4, 6", "5"],
+                }
+            },
+            obj4,
+        )
+
+        # Test object with nested "abstract_inverted_index" none
+        obj5 = {"abstract_inverted_index": None}
+        transform_object(obj5)
+        self.assertDictEqual({"abstract_inverted_index": None}, obj5)
 
 
 def upload_folder_to_s3(bucket_name: str, folder_path: str, s3_prefix=None):

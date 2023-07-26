@@ -1016,12 +1016,30 @@ def transform_object(obj: dict):
 
     field = "abstract_inverted_index"
     if field in obj:
-        if not isinstance(obj.get(field), dict):
+        if not isinstance(obj.get(field), (dict, str)):
             return
-        keys = list(obj[field].keys())
-        values = [str(value)[1:-1] for value in obj[field].values()]
+        else:
+            # If data is held in a string dump, load json string again.
+            if isinstance(obj.get(field), str):
+                obj_part = json.loads(obj[field])
+                field2 = "InvertedIndex"
+                if isinstance(obj_part.get(field2), dict):
+                    keys = list(obj_part[field2].keys())
+                    values = [str(value)[1:-1] for value in obj_part[field2].values()]
 
-        obj[field] = {"keys": keys, "values": values}
+                    index_sum = sum(len(value.split(", ")) for value in values)
+                    assert (
+                        index_sum == obj_part["IndexLength"]
+                    ), f"Calculated IndexLength {index_sum} does not match value from file {obj_part['IndexLength']}."
+
+                    obj[field] = {"keys": keys, "values": values}
+                else:
+                    raise TypeError(f"obj_part['InvertedIndex'] is not a dictionary: {obj_part}")
+            else:
+                keys = list(obj[field].keys())
+                values = [str(value)[1:-1] for value in obj[field].values()]
+
+                obj[field] = {"keys": keys, "values": values}
 
     field = "international"
     if field in obj:
