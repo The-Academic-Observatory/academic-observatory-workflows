@@ -1,0 +1,93 @@
+[
+  {
+    "name": "table_name",
+    "description": "Name of the table.",
+    "type": "STRING",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "full_table_id",
+    "description": "The fully qualified table name: project_id.dataset_id.table_id",
+    "type": "STRING",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "hash_id",
+    "description": "A unique table identifier based off of the full_table_id, number of bytes, number of rows and numbre of columms.",
+    "type": "STRING",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "sharded",
+    "description": "If the table is sharded or not.",
+    "type": "BOOL",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "date_shard",
+    "description": "Date from the table shard (if null it is not a sharded table).",
+    "type": "DATE",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "date_created",
+    "description": "Date of when the table was created.",
+    "type": "DATETIME",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "date_last_modified",
+    "description": "Date of when the table was modified - obtained from Observatory API DatasetRelease.data_interval_end.",
+    "type": "DATETIME",
+    "mode": "REQUIRED"
+  },
+
+  {
+    "name": "date_checked",
+    "description": "Date of when this table was checked by the QA workflow.",
+    "type": "DATETIME",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "Size_Gb",
+    "description": "Size of the table in Gigabytes.",
+    "type": "FLOAT",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "primary_key",
+    "description": "Array of primary keys that are used to identify records.",
+    "type": "STRING",
+    "mode": "REPEATED"
+  },
+  {
+    "name": "num_rows",
+    "description": "Number of rows / records in the table.",
+    "type": "INTEGER",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "num_distinct_records",
+    "description": "Number of distinct records in the table, based off of 'primary_key'.",
+    "type": "INTEGER",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "num_null_records",
+    "description": "Number of records that do not have an entry under 'primary_key' (None or nulls).",
+    "type": "INTEGER",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "num_duplicates",
+    "description": "Number of duplicate records under the 'primary_key' (None or nulls).",
+    "type": "INTEGER",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "num_all_fields",
+    "description": "Number fields that the table has in total, included nested fields.",
+    "type": "INTEGER",
+    "mode": "REQUIRED"
+  }
+]
