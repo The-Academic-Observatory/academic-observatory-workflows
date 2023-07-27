@@ -1016,12 +1016,19 @@ def transform_object(obj: dict):
 
     field = "abstract_inverted_index"
     if field in obj:
-        if not isinstance(obj.get(field), dict):
-            return
-        keys = list(obj[field].keys())
-        values = [str(value)[1:-1] for value in obj[field].values()]
 
-        obj[field] = {"keys": keys, "values": values}
+        def parse_abstract(dict_: dict):
+            keys_ = list(dict_.keys())
+            values_ = [str(value_)[1:-1] for value_ in dict_.values()]
+            return {"keys": keys_, "values": values_}
+
+        if isinstance(obj.get(field), str):
+            data = json.loads(obj[field])
+            obj[field] = parse_abstract(data["InvertedIndex"])
+        elif isinstance(obj.get(field), dict):
+            obj[field] = parse_abstract(obj[field])
+        else:
+            return
 
     field = "international"
     if field in obj:
