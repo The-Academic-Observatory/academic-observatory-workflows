@@ -1472,7 +1472,7 @@ def make_entities(entity_type: str, df_index: pd.DataFrame, df_data: pd.DataFram
     total = len(df_index)
 
     logging.info(f"Making entities: {entity_type}")
-    ts_groups = df_data.groupby([key_id])
+    ts_groups = df_data.groupby(key_id)
 
     for entity_id, df_group in ts_groups:
         # Exclude countries and institutions with small num outputs
