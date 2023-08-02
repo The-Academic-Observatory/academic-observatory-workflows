@@ -288,7 +288,7 @@ class OaWebWorkflow(Workflow):
         github_conn_id="oa_web_github_token",
         zenodo_conn_id="oa_web_zenodo_token",
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2021, 5, 2),
-        schedule_interval: Optional[str] = "@weekly",
+        schedule: Optional[str] = "@weekly",
     ):
         """Create the OaWebWorkflow.
 
@@ -309,7 +309,7 @@ class OaWebWorkflow(Workflow):
         :param github_conn_id: the Github Token Airflow Connection ID.
         :param zenodo_conn_id: the Zenodo Token Airflow Connection ID.
         :param start_date: the start date.
-        :param schedule_interval: the schedule interval.
+        :param schedule: the schedule interval.
         """
 
         if table_names is None:
@@ -318,7 +318,7 @@ class OaWebWorkflow(Workflow):
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
-            schedule_interval=schedule_interval,
+            schedule=schedule,
             catchup=False,
             airflow_conns=[github_conn_id, zenodo_conn_id],
             tags=[Tag.academic_observatory],

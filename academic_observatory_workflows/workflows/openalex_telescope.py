@@ -299,7 +299,7 @@ class OpenAlexTelescope(Workflow):
         aws_openalex_bucket: str = "openalex",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         start_date: pendulum.DateTime = pendulum.datetime(2021, 12, 1),
-        schedule_interval: str = "@weekly",
+        schedule: str = "@weekly",
         queue: str = "remote_queue",
     ):
         """Construct an OpenAlexTelescope instance.
@@ -320,7 +320,7 @@ class OpenAlexTelescope(Workflow):
         :param aws_openalex_bucket: the OpenAlex AWS bucket name.
         :param observatory_api_conn_id: the Observatory API Airflow Connection ID.
         :param start_date: the Apache Airflow DAG start date.
-        :param schedule_interval: the Apache Airflow schedule interval. Whilst OpenAlex snapshots are released monthly,
+        :param schedule: the Apache Airflow schedule interval. Whilst OpenAlex snapshots are released monthly,
         they are not released on any particular day of the month, so we instead simply run the workflow weekly on a
         Sunday as this will pickup new updates regularly. See here for past release dates: https://openalex.s3.amazonaws.com/RELEASE_NOTES.txt
         :param queue:
@@ -340,7 +340,7 @@ class OpenAlexTelescope(Workflow):
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
-            schedule_interval=schedule_interval,
+            schedule=schedule,
             catchup=False,
             airflow_conns=[observatory_api_conn_id, aws_conn_id],
             queue=queue,
@@ -366,7 +366,7 @@ class OpenAlexTelescope(Workflow):
             PreviousDagRunSensor(
                 dag_id=self.dag_id,
                 external_task_id=external_task_id,
-                execution_delta=timedelta(days=7),  # To match the @weekly schedule_interval
+                execution_delta=timedelta(days=7),  # To match the @weekly schedule
             )
         )
         self.add_setup_task(self.check_dependencies)

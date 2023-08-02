@@ -75,7 +75,7 @@ class OpenCitationsTelescope(Workflow):
         table_description: str = "The OpenCitations COCI CSV table: http://opencitations.net/",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         start_date: pendulum.DateTime = pendulum.datetime(2018, 7, 1),
-        schedule_interval: str = "@weekly",
+        schedule: str = "@weekly",
         catchup: bool = True,
         queue: str = "remote_queue",
     ):
@@ -92,14 +92,14 @@ class OpenCitationsTelescope(Workflow):
         :param observatory_api_conn_id: the Observatory API connection key.
         :param catchup: whether to catchup the DAG or not.
         :param start_date: the start date of the DAG.
-        :param schedule_interval: the schedule interval of the DAG.
+        :param schedule: the schedule interval of the DAG.
         :param queue: what Airflow queue to use.
         """
 
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
-            schedule_interval=schedule_interval,
+            schedule=schedule,
             catchup=catchup,
             airflow_conns=[observatory_api_conn_id],
             queue=queue,

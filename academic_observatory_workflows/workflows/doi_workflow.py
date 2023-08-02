@@ -406,7 +406,7 @@ class DoiWorkflow(Workflow):
         max_fetch_threads: int = 4,
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 8, 30),
-        schedule_interval: Optional[str] = "@weekly",
+        schedule: Optional[str] = "@weekly",
         sensor_dag_ids: List[str] = None,
     ):
         """Create the DoiWorkflow.
@@ -420,13 +420,13 @@ class DoiWorkflow(Workflow):
         :param api_dataset_id: the DOI dataset id.
         :param max_fetch_threads: maximum number of threads to use when fetching.
         :param start_date: the start date.
-        :param schedule_interval: the schedule interval.
+        :param schedule: the schedule interval.
         """
 
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
-            schedule_interval=schedule_interval,
+            schedule=schedule,
             catchup=False,
             airflow_conns=[observatory_api_conn_id],
             tags=[Tag.academic_observatory],

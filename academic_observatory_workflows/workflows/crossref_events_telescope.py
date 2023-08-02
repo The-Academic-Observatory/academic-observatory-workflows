@@ -179,7 +179,7 @@ class CrossrefEventsTelescope(Workflow):
         primary_key: str = "id",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         start_date: pendulum.DateTime = pendulum.datetime(2017, 2, 12),
-        schedule_interval: str = "@weekly",
+        schedule: str = "@weekly",
         queue: str = "remote_queue",
     ):
         """Construct a CrossrefEventsTelescope instance.
@@ -202,14 +202,14 @@ class CrossrefEventsTelescope(Workflow):
         :param primary_key: the primary key to use when merging files.
         :param observatory_api_conn_id: the Observatory API connection key.
         :param start_date: the start date of the DAG.
-        :param schedule_interval: the schedule interval of the DAG.
+        :param schedule: the schedule interval of the DAG.
         :param queue: what queue to run the DAG on.
         """
 
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
-            schedule_interval=schedule_interval,
+            schedule=schedule,
             catchup=False,
             airflow_conns=[observatory_api_conn_id],
             tags=[Tag.academic_observatory],
@@ -240,7 +240,7 @@ class CrossrefEventsTelescope(Workflow):
             PreviousDagRunSensor(
                 dag_id=self.dag_id,
                 external_task_id=external_task_id,
-                execution_delta=timedelta(days=7),  # To match the @weekly schedule_interval
+                execution_delta=timedelta(days=7),  # To match the @weekly schedule
             )
         )
 
