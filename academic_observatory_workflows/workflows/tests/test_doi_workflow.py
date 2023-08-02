@@ -37,7 +37,6 @@ from academic_observatory_workflows.model import (
 from academic_observatory_workflows.workflows.doi_workflow import (
     DoiWorkflow,
     make_dataset_transforms,
-    make_elastic_tables,
     fetch_ror_affiliations,
     ror_to_ror_hierarchy_index,
 )
@@ -212,19 +211,17 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     "create_crossref_events",
                     "create_crossref_fundref",
                     "create_ror",
-                    "create_mag",
                     "create_orcid",
                     "create_open_citations",
-                    "create_unpaywall",
+                    "create_openaccess",
                     "create_openalex",
                 ],
                 "create_crossref_events": ["create_doi"],
                 "create_crossref_fundref": ["create_doi"],
                 "create_ror": ["create_doi"],
-                "create_mag": ["create_doi"],
                 "create_orcid": ["create_doi"],
                 "create_open_citations": ["create_doi"],
-                "create_unpaywall": ["create_doi"],
+                "create_openaccess": ["create_doi"],
                 "create_openalex": ["create_doi"],
                 "create_doi": ["create_book"],
                 "create_book": [
@@ -249,24 +246,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "create_subregion": ["update_table_descriptions"],
                 "update_table_descriptions": ["copy_to_dashboards"],
                 "copy_to_dashboards": ["create_dashboard_views"],
-                "create_dashboard_views": [
-                    "export_country",
-                    "export_funder",
-                    "export_group",
-                    "export_institution",
-                    "export_journal",
-                    "export_publisher",
-                    "export_region",
-                    "export_subregion",
-                ],
-                "export_country": ["add_new_dataset_releases"],
-                "export_funder": ["add_new_dataset_releases"],
-                "export_group": ["add_new_dataset_releases"],
-                "export_institution": ["add_new_dataset_releases"],
-                "export_journal": ["add_new_dataset_releases"],
-                "export_publisher": ["add_new_dataset_releases"],
-                "export_region": ["add_new_dataset_releases"],
-                "export_subregion": ["add_new_dataset_releases"],
+                "create_dashboard_views": ["add_new_dataset_releases"],
                 "add_new_dataset_releases": [],
             },
             dag,
@@ -318,7 +298,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
         bq_intermediate_dataset_id = env.add_dataset(prefix="intermediate")
         bq_dashboards_dataset_id = env.add_dataset(prefix="dashboards")
         bq_observatory_dataset_id = env.add_dataset(prefix="observatory")
-        bq_elastic_dataset_id = env.add_dataset(prefix="elastic")
         bq_settings_dataset_id = env.add_dataset(prefix="settings")
         dataset_transforms = make_dataset_transforms(
             input_project_id=self.project_id,
@@ -327,10 +306,10 @@ class TestDoiWorkflow(ObservatoryTestCase):
             dataset_id_crossref_metadata=fake_dataset_id,
             dataset_id_crossref_fundref=fake_dataset_id,
             dataset_id_ror=fake_dataset_id,
-            dataset_id_mag=fake_dataset_id,
             dataset_id_orcid=fake_dataset_id,
             dataset_id_open_citations=fake_dataset_id,
             dataset_id_unpaywall=fake_dataset_id,
+            dataset_id_scihub=fake_dataset_id,
             dataset_id_settings=bq_settings_dataset_id,
             dataset_id_observatory=bq_observatory_dataset_id,
             dataset_id_observatory_intermediate=bq_intermediate_dataset_id,
@@ -346,7 +325,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 bq_intermediate_dataset_id=bq_intermediate_dataset_id,
                 bq_dashboards_dataset_id=bq_dashboards_dataset_id,
                 bq_observatory_dataset_id=bq_observatory_dataset_id,
-                bq_elastic_dataset_id=bq_elastic_dataset_id,
                 bq_unpaywall_dataset_id=fake_dataset_id,
                 bq_ror_dataset_id=fake_dataset_id,
                 transforms=dataset_transforms,
@@ -370,8 +348,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     self.assertEqual(expected_state, ti.state)
 
             # Run Dummy Dags
-            execution_date = pendulum.datetime(year=2021, month=10, day=17)
-            snapshot_date = pendulum.datetime(year=2021, month=10, day=24)
+            execution_date = pendulum.datetime(year=2023, month=6, day=18)
+            snapshot_date = pendulum.datetime(year=2023, month=6, day=25)
             expected_state = "success"
             for dag_id in DoiWorkflow.SENSOR_DAG_IDS:
                 dag = make_dummy_dag(dag_id, execution_date)
@@ -548,33 +526,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     table_id = bq_table_id(self.project_id, bq_dashboards_dataset_id, f"{table_name}_comparison")
                     self.assert_table_integrity(table_id)
 
-                # Test create exported tables for Elasticsearch
-                # Remove author from AGGREGATIONS list to save space on Elastic.
-                for agg in DoiWorkflow.remove_aggregations(DoiWorkflow, DoiWorkflow.AGGREGATIONS, {"author"}):
-                    table_name = agg.table_name
-                    task_id = f"export_{table_name}"
-                    ti = env.run_task(task_id)
-                    self.assertEqual(expected_state, ti.state)
-
-                    # Check that the correct tables exist for each aggregation
-                    tables = make_elastic_tables(
-                        agg.table_name,
-                        relate_to_institutions=agg.relate_to_institutions,
-                        relate_to_countries=agg.relate_to_countries,
-                        relate_to_groups=agg.relate_to_groups,
-                        relate_to_members=agg.relate_to_members,
-                        relate_to_journals=agg.relate_to_journals,
-                        relate_to_funders=agg.relate_to_funders,
-                        relate_to_publishers=agg.relate_to_publishers,
-                    )
-                    for table in tables:
-                        aggregate = table["aggregate"]
-                        facet = table["facet"]
-                        table_id = bq_sharded_table_id(
-                            self.project_id, bq_elastic_dataset_id, f"ao_{aggregate}_{facet}", snapshot_date
-                        )
-                        self.assert_table_integrity(table_id)
-
                 # add_dataset_release_task
                 dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
                 self.assertEqual(len(dataset_releases), 0)
@@ -607,23 +558,24 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "region",
                 "subregion",
                 "total_outputs",
-                "repositories",
             ]:
                 self.assertEqual(expected_item[key], actual_item[key])
 
             # Access types
+            expected_coki = expected_item["coki"]
+            actual_coki = actual_item["coki"]
             self.assert_sub_fields(
-                expected_item,
-                actual_item,
-                "access_types",
-                ["oa", "green", "gold", "gold_doaj", "hybrid", "bronze", "green_only"],
+                expected_coki["oa"],
+                actual_coki["oa"],
+                "color",
+                ["oa", "green", "gold", "gold_doaj", "hybrid", "bronze", "green_only", "black"],
             )
 
             # COKI Access types
             self.assert_sub_fields(
-                expected_item,
-                actual_item,
-                "oa_coki",
+                expected_coki["oa"],
+                actual_coki["oa"],
+                "coki",
                 [
                     "open",
                     "closed",
@@ -636,6 +588,9 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     "other_platform_categories",
                 ],
             )
+
+            # Repositories
+            self.assertEqual(expected_coki["repositories"], actual_coki["repositories"])
 
     def assert_sub_fields(self, expected: Dict, actual: Dict, field: str, sub_fields: List[str]):
         """Checks that the sub fields in the aggregate match.
@@ -710,7 +665,9 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
         # Subfields
         fields = ["institutions", "countries", "subregions", "regions", "journals", "publishers", "funders"]
+        print("assert_doi_affiliations:")
         for field in fields:
+            print(f"\t{field}")
             self.assert_doi_affiliation(expected, actual, field)
 
     def assert_doi_affiliation(self, expected: Dict, actual: Dict, key: str):
