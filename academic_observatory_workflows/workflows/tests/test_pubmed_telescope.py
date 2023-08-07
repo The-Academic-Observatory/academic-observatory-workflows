@@ -14,6 +14,7 @@
 
 # Author: Alex Massen-Hane
 
+import ast
 import os
 import json
 import gzip
@@ -29,11 +30,11 @@ from airflow.utils.state import State
 
 from observatory.platform.api import get_dataset_releases
 from observatory.platform.observatory_config import Workflow
-from observatory.platform.workflows.workflow import ChangefileRelease, set_task_state
+from observatory.platform.workflows.workflow import ChangefileRelease
 from Bio.Entrez.Parser import StringElement, ListElement, DictionaryElement
-from observatory.platform.gcs import gcs_blob_name_from_path, gcs_download_blob
+from observatory.platform.gcs import gcs_blob_name_from_path
 from observatory.platform.observatory_environment import ObservatoryEnvironment, ObservatoryTestCase
-from observatory.platform.bigquery import bq_run_query, bq_sharded_table_id, bq_create_table_from_query, bq_export_table
+from observatory.platform.bigquery import bq_run_query, bq_sharded_table_id
 from observatory.platform.observatory_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
@@ -47,11 +48,15 @@ from academic_observatory_workflows.workflows.pubmed_telescope import (
     PubMedCustomEncoder,
     PubMedRelease,
     PubMedTelescope,
-    PubmedEntity,
-    add_attributes_to_data_from_biopython_classes,
+    add_attributes,
     change_pubmed_list_structure,
-    download_datafiles_from_ftp_server,
-    transform_pubmed_xml_file_to_jsonl,
+    download_datafiles,
+    load_datafile,
+    parse_articles,
+    parse_deletes,
+    save_pubmed_jsonl,
+    save_pubmed_merged_records,
+    transform_pubmed,
 )
 
 
@@ -136,8 +141,20 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 "pubmed22n0003.xml.gz": "d6da2c87390489d22cdeb6e046b77da1",
                 "pubmed22n0004.xml.gz": "83764fc19cd98d247dc5603ca65569e6",
             },
-            "merged_upsert_files": ["merged_upsert_3-4_part_1.jsonl.gz", "merged_upsert_3-4_part_2.jsonl.gz"],
-            "merged_delete_files": ["merged_delete_3-4_part_1.jsonl.gz"],
+            "valid_record_keys": {
+                "pubmed22n0003.xml.gz": {
+                    "upserts": ["{'value': '2', 'Version': '2'}"],
+                    "deletes": ["{'value': '2', 'Version': '1'}"],
+                },
+                "pubmed22n0004.xml.gz": {
+                    "upserts": [
+                        "{'value': '1', 'Version': '1'}",
+                        "{'value': '36519887', 'Version': '1'}",
+                        "{'value': '36519888', 'Version': '1'}",
+                    ],
+                    "deletes": ["{'value': '30971', 'Version': '1'}"],
+                },
+            },
             "PMID_list": [
                 {"f0_": {"_field_1": "1", "_field_2": "1"}},
                 {"f0_": {"_field_1": "2", "_field_2": "2"}},
@@ -174,8 +191,12 @@ class TestPubMedTelescope(ObservatoryTestCase):
             "md5hash_download": {
                 "pubmed22n0005.xml.gz": "9c61c5b19f021cadfc57845d0d1dcbc9",
             },
-            "merged_upsert_files": ["merged_upsert_5-5_part_1.jsonl.gz"],
-            "merged_delete_files": ["merged_delete_5-5_part_1.jsonl.gz"],
+            "valid_record_keys": {
+                "pubmed22n0005.xml.gz": {
+                    "upserts": ["{'value': '2994179', 'Version': '1'}", "{'value': '2994180', 'Version': '1'}"],
+                    "deletes": ["{'value': '2', 'Version': '2'}"],
+                },
+            },
             "update_tables": {
                 "additions": 2,
                 "deletions": 1,
@@ -266,12 +287,12 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 "create_snapshot": ["download_updatefiles"],
                 "download_updatefiles": ["upload_downloaded_updatefiles"],
                 "upload_downloaded_updatefiles": ["transform_updatefiles"],
-                "transform_updatefiles": ["merge_upsert_records"],
-                "merge_upsert_records": ["upload_merged_upsert_records"],
+                "transform_updatefiles": ["merge_upserts_and_deletes"],
+                "merge_upserts_and_deletes": ["save_merged_upserts_and_deletes"],
+                "save_merged_upserts_and_deletes": ["upload_merged_upsert_records"],
                 "upload_merged_upsert_records": ["bq_load_upsert_table"],
                 "bq_load_upsert_table": ["bq_upsert_records"],
-                "bq_upsert_records": ["merge_delete_records"],
-                "merge_delete_records": ["upload_merged_delete_records"],
+                "bq_upsert_records": ["upload_merged_delete_records"],
                 "upload_merged_delete_records": ["bq_load_delete_table"],
                 "bq_load_delete_table": ["bq_delete_records"],
                 "bq_delete_records": ["add_new_dataset_release"],
@@ -325,6 +346,8 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                 #####################
                 ##### FIRST RUN #####
+
+                # Initial intake of the Pubmed dataset.
 
                 run = self.first_run
                 with env.create_dag_run(dag, run["execution_date"]) as dag_run:
@@ -400,7 +423,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                     ##### BASELINE #####
 
-                    baseline_datafiles = [datafile for datafile in release.datafile_list if datafile.baseline]
+                    baseline = [datafile for datafile in release.datafile_list if datafile.baseline]
 
                     ### Download baseline ###
                     task_id = workflow.download_baseline.__name__
@@ -408,7 +431,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Loop through downloaded baseline files, check that they exist and that hashes match.
-                    for datafile in baseline_datafiles:
+                    for datafile in baseline:
                         self.assertTrue(os.path.exists(datafile.download_file_path))
                         with open(datafile.download_file_path, "rb") as f_hash:
                             data = f_hash.read()
@@ -421,7 +444,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    for datafile in baseline_datafiles:
+                    for datafile in baseline:
                         self.assert_blob_integrity(
                             env.download_bucket,
                             gcs_blob_name_from_path(datafile.download_file_path),
@@ -433,10 +456,8 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    for datafile in baseline_datafiles:
-                        for entity in [workflow.entity_list["baseline"]]:
-                            transform_file = datafile.transform_file_path(entity.type)
-                            self.assertTrue(os.path.exists(transform_file))
+                    for datafile in baseline:
+                        self.assertTrue(os.path.exists(datafile.transform_baseline_file_path))
 
                     ### Upload transformed baseline ###
                     task_id = workflow.upload_transformed_baseline.__name__
@@ -444,11 +465,9 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Get list of transformed files for upload.
-                    files_to_upload = [
-                        datafile.transform_file_path("baseline") for datafile in baseline_datafiles if datafile.baseline
-                    ]
+                    file_paths = [datafile.transform_baseline_file_path for datafile in baseline if datafile.baseline]
 
-                    for file in files_to_upload:
+                    for file in file_paths:
                         logging.info(f"Transform_file_path - {file}")
                         self.assert_blob_integrity(
                             env.transform_bucket,
@@ -466,23 +485,14 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     )
                     self.assert_table_integrity(full_table_id, 4)
 
-                    ### Create Snapshot ###
+                    ### Create Snapshot ### - This is skipped on the first yearly run of the workflow.
                     task_id = workflow.create_snapshot.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Check that that snapshot table exists.
-                    snapshot_table_id = bq_sharded_table_id(
-                        workflow.cloud_workspace.project_id,
-                        workflow.bq_dataset_id,
-                        f"{workflow.bq_table_id}_backup",
-                        release.start_date,
-                    )
-                    self.assert_table_integrity(snapshot_table_id, 4)
-
                     ##### UPDATEFILES #####
 
-                    updatefile_datafile = [datafile for datafile in release.datafile_list if not datafile.baseline]
+                    updatefiles = [datafile for datafile in release.datafile_list if not datafile.baseline]
 
                     ### Download updatefiles ###
                     task_id = workflow.download_updatefiles.__name__
@@ -490,7 +500,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Loop through downloaded baseline files, check that they exist and that hashes match.
-                    for datafile in updatefile_datafile:
+                    for datafile in updatefiles:
                         self.assertTrue(os.path.exists(datafile.download_file_path))
                         with open(datafile.download_file_path, "rb") as f_hash:
                             data = f_hash.read()
@@ -503,7 +513,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    for datafile in updatefile_datafile:
+                    for datafile in updatefiles:
                         self.assert_blob_integrity(
                             env.download_bucket,
                             gcs_blob_name_from_path(datafile.download_file_path),
@@ -516,28 +526,44 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # This step pulls out the upserts and delete records from the files
-                    for datafile in updatefile_datafile:
-                        for entity in [workflow.entity_list["upsert"], workflow.entity_list["delete"]]:
-                            transform_file = datafile.transform_file_path(entity.type)
-                            self.assertTrue(os.path.exists(transform_file))
+                    for datafile in updatefiles:
+                        self.assertTrue(os.path.exists(datafile.transform_upsert_file_path))
+                        self.assertTrue(os.path.exists(datafile.transform_delete_file_path))
 
-                    ##### UPSERTS #####
-
-                    ### Merge upsert records  ###
-                    task_id = workflow.merge_upsert_records.__name__
+                    ### Merge upserts and deletes  ###
+                    task_id = workflow.merge_upserts_and_deletes.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Check that the files exists for this run.
-                    merged_upsert_files = ti.xcom_pull(
-                        key="merged_upsert_files", task_ids=task_id, include_prior_dates=False
+                    # Check that keys for upserts and deletes have been merged correctly.
+                    valid_record_keys = ti.xcom_pull(
+                        key="valid_record_keys", task_ids=task_id, include_prior_dates=False
                     )
+                    self.assertEqual(len(valid_record_keys.keys()), len(run["valid_record_keys"].keys()))
 
-                    self.assertEqual(len(merged_upsert_files), len(run["merged_upsert_files"]))
-                    for expected, result in zip(run["merged_upsert_files"], merged_upsert_files):
-                        self.assertEqual(os.path.join(release.transform_folder, expected), result)
-                        self.assertTrue(os.path.exists(result))
-                        logging.info(f"Merged upsert file exists: {result}")
+                    for updatefile, records in run["valid_record_keys"].items():
+                        self.assertTrue(updatefile in valid_record_keys)
+
+                        self.assertListEqual(
+                            valid_record_keys[updatefile]["upserts"], run["valid_record_keys"][updatefile]["upserts"]
+                        )
+                        self.assertListEqual(
+                            valid_record_keys[updatefile]["deletes"], run["valid_record_keys"][updatefile]["deletes"]
+                        )
+
+                    ### Save merged upserts and deletes  ###
+                    task_id = workflow.save_merged_upserts_and_deletes.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that files have been created for each datafile.
+                    for datafile in updatefiles:
+                        self.assertTrue(os.path.exists(datafile.merged_upsert_file_path))
+                        self.assertTrue(os.path.exists(datafile.merged_delete_file_path))
+
+                    ##### UPSERTS #####
+
+                    file_paths = [datafile.merged_upsert_file_path for datafile in updatefiles if not datafile.baseline]
 
                     ### Upload merged upsert records ###
                     task_id = workflow.upload_merged_upsert_records.__name__
@@ -545,7 +571,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Check that they exist in the cloud.
-                    for file in merged_upsert_files:
+                    for file in file_paths:
                         logging.info(f"Transform_file_path - {file}")
                         self.assert_blob_integrity(
                             env.transform_bucket,
@@ -558,8 +584,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    upsert_table_id = ti.xcom_pull(key="upsert_table_id", task_ids=task_id, include_prior_dates=False)
-                    self.assert_table_integrity(upsert_table_id, 4)
+                    self.assert_table_integrity(workflow.upsert_table_id, 4)
 
                     ###  BQ upsert records ###
                     task_id = workflow.bq_upsert_records.__name__
@@ -568,21 +593,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                     ##### DELETES #####
 
-                    ### Merge delete records  ###
-                    task_id = workflow.merge_delete_records.__name__
-                    ti = env.run_task(task_id)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Check that the files exists for this run.
-                    merged_delete_files = ti.xcom_pull(
-                        key="merged_delete_files", task_ids=task_id, include_prior_dates=False
-                    )
-
-                    self.assertEqual(len(merged_delete_files), len(run["merged_delete_files"]))
-                    for expected, result in zip(run["merged_delete_files"], merged_delete_files):
-                        self.assertEqual(os.path.join(release.transform_folder, expected), result)
-                        self.assertTrue(os.path.exists(result))
-                        logging.info(f"Merged delete file exists: {result}")
+                    file_paths = [datafile.merged_delete_file_path for datafile in updatefiles if not datafile.baseline]
 
                     ### Upload merged delete records ###
                     task_id = workflow.upload_merged_delete_records.__name__
@@ -590,7 +601,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Check that they exist in the cloud.
-                    for file in merged_delete_files:
+                    for file in file_paths:
                         logging.info(f"Transform_file_path - {file}")
                         self.assert_blob_integrity(
                             env.transform_bucket,
@@ -598,13 +609,12 @@ class TestPubMedTelescope(ObservatoryTestCase):
                             file,
                         )
 
-                    ###  BQ load delete table ###
+                    ###  BQ load delete table
                     task_id = workflow.bq_load_delete_table.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    delete_table_id = ti.xcom_pull(key="delete_table_id", task_ids=task_id, include_prior_dates=False)
-                    self.assert_table_integrity(delete_table_id, 2)
+                    self.assert_table_integrity(workflow.delete_table_id, 2)
 
                     ###  BQ delete records ###
                     task_id = workflow.bq_delete_records.__name__
@@ -645,6 +655,8 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                 ######################
                 ##### SECOND RUN #####
+
+                # This run is to make sure that it can apply a sequential update.
 
                 run = self.second_run
                 with env.create_dag_run(dag, run["execution_date"]) as dag_run:
@@ -721,8 +733,8 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ##### BASELINE #####
 
                     # No new baseline files should be downloaded as it's already been done for this year.
-                    baseline_datafiles = [datafile for datafile in release.datafile_list if datafile.baseline]
-                    self.assertEqual(len(baseline_datafiles), 0)
+                    baseline = [datafile for datafile in release.datafile_list if datafile.baseline]
+                    self.assertEqual(len(baseline), 0)
 
                     task_ids = [
                         "download_baseline",
@@ -750,14 +762,14 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     snapshot_table_id = bq_sharded_table_id(
                         workflow.cloud_workspace.project_id,
                         workflow.bq_dataset_id,
-                        f"{workflow.bq_table_id}_backup",
+                        f"{workflow.bq_table_id}_snapshot",
                         release.start_date,
                     )
                     self.assert_table_integrity(snapshot_table_id, 5)
 
                     ##### UPDATEFILES #####
 
-                    updatefile_datafile = [datafile for datafile in release.datafile_list if not datafile.baseline]
+                    updatefiles = [datafile for datafile in release.datafile_list if not datafile.baseline]
 
                     ### Download updatefiles ###
                     task_id = workflow.download_updatefiles.__name__
@@ -765,7 +777,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Loop through downloaded baseline files, check that they exist and that hashes match.
-                    for datafile in updatefile_datafile:
+                    for datafile in updatefiles:
                         self.assertTrue(os.path.exists(datafile.download_file_path))
                         with open(datafile.download_file_path, "rb") as f_hash:
                             data = f_hash.read()
@@ -778,7 +790,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    for datafile in updatefile_datafile:
+                    for datafile in updatefiles:
                         self.assert_blob_integrity(
                             env.download_bucket,
                             gcs_blob_name_from_path(datafile.download_file_path),
@@ -791,36 +803,56 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # This step pulls out the upserts and delete records from the files
-                    for datafile in updatefile_datafile:
-                        for entity in [workflow.entity_list["upsert"], workflow.entity_list["delete"]]:
-                            transform_file = datafile.transform_file_path(entity.type)
-                            self.assertTrue(os.path.exists(transform_file))
+                    for datafile in updatefiles:
+                        self.assertTrue(os.path.exists(datafile.transform_upsert_file_path))
+                        self.assertTrue(os.path.exists(datafile.transform_delete_file_path))
 
-                    ##### UPSERTS #####
-
-                    ### Merge upsert records  ###
-                    task_id = workflow.merge_upsert_records.__name__
+                    ### Merge upserts and deletes  ###
+                    task_id = workflow.merge_upserts_and_deletes.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Check that the files exists for this run.
-                    merged_upsert_files = ti.xcom_pull(
-                        key="merged_upsert_files", task_ids=task_id, include_prior_dates=False
+                    valid_record_keys = ti.xcom_pull(
+                        key="valid_record_keys", task_ids=task_id, include_prior_dates=False
                     )
 
-                    self.assertEqual(len(merged_upsert_files), len(run["merged_upsert_files"]))
-                    for expected, result in zip(run["merged_upsert_files"], merged_upsert_files):
-                        self.assertEqual(os.path.join(release.transform_folder, expected), result)
-                        self.assertTrue(os.path.exists(result))
-                        logging.info(f"Merged upsert file exists: {result}")
+                    # Check that keys for upserts and deletes have been merged correctly.
+                    valid_record_keys = ti.xcom_pull(
+                        key="valid_record_keys", task_ids=task_id, include_prior_dates=False
+                    )
+                    self.assertEqual(len(valid_record_keys.keys()), len(run["valid_record_keys"].keys()))
+
+                    for updatefile, records in run["valid_record_keys"].items():
+                        self.assertTrue(updatefile in valid_record_keys)
+
+                        self.assertListEqual(
+                            valid_record_keys[updatefile]["upserts"], run["valid_record_keys"][updatefile]["upserts"]
+                        )
+                        self.assertListEqual(
+                            valid_record_keys[updatefile]["deletes"], run["valid_record_keys"][updatefile]["deletes"]
+                        )
+
+                    ### Save merged upserts and deletes  ###
+                    task_id = workflow.save_merged_upserts_and_deletes.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that files have been created for each datafile.
+                    for datafile in updatefiles:
+                        self.assertTrue(os.path.exists(datafile.merged_upsert_file_path))
+                        self.assertTrue(os.path.exists(datafile.merged_delete_file_path))
+
+                    ##### UPSERTS #####
 
                     ### Upload merged upsert records ###
                     task_id = workflow.upload_merged_upsert_records.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
+                    file_paths = [datafile.merged_upsert_file_path for datafile in updatefiles if not datafile.baseline]
+
                     # Check that they exist in the cloud.
-                    for file in merged_upsert_files:
+                    for file in file_paths:
                         logging.info(f"Transform_file_path - {file}")
                         self.assert_blob_integrity(
                             env.transform_bucket,
@@ -833,8 +865,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    upsert_table_id = ti.xcom_pull(key="upsert_table_id", task_ids=task_id, include_prior_dates=False)
-                    self.assert_table_integrity(upsert_table_id, 2)
+                    self.assert_table_integrity(workflow.upsert_table_id, 2)
 
                     ###  BQ upsert records ###
                     task_id = workflow.bq_upsert_records.__name__
@@ -843,21 +874,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                     ##### DELETES #####
 
-                    ### Merge delete records  ###
-                    task_id = workflow.merge_delete_records.__name__
-                    ti = env.run_task(task_id)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Check that the files exists for this run.
-                    merged_delete_files = ti.xcom_pull(
-                        key="merged_delete_files", task_ids=task_id, include_prior_dates=False
-                    )
-
-                    self.assertEqual(len(merged_delete_files), len(run["merged_delete_files"]))
-                    for expected, result in zip(run["merged_delete_files"], merged_delete_files):
-                        self.assertEqual(os.path.join(release.transform_folder, expected), result)
-                        self.assertTrue(os.path.exists(result))
-                        logging.info(f"Merged delete file exists: {result}")
+                    file_paths = [datafile.merged_delete_file_path for datafile in updatefiles if not datafile.baseline]
 
                     ### Upload merged delete records ###
                     task_id = workflow.upload_merged_delete_records.__name__
@@ -865,7 +882,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Check that they exist in the cloud.
-                    for file in merged_delete_files:
+                    for file in file_paths:
                         logging.info(f"Transform_file_path - {file}")
                         self.assert_blob_integrity(
                             env.transform_bucket,
@@ -878,8 +895,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    delete_table_id = ti.xcom_pull(key="delete_table_id", task_ids=task_id, include_prior_dates=False)
-                    self.assert_table_integrity(delete_table_id, 1)
+                    self.assert_table_integrity(workflow.delete_table_id, 1)
 
                     ###  BQ delete records ###
                     task_id = workflow.bq_delete_records.__name__
@@ -920,6 +936,8 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                 ######################
                 ##### THIRD RUN #####
+
+                # This run only needs to confirm that the first year run bool works and it downloads the new baseline dataset.
 
                 run = self.third_run
                 with env.create_dag_run(dag, run["execution_date"]) as dag_run:
@@ -991,8 +1009,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         datafile_list=run["datafiles"],
                     )
 
-                    # This run only needs to confirm that the first year run bool works and download the new baseline dataset.
-
                     ##### BASELINE #####
 
                     baseline_datafiles = [datafile for datafile in release.datafile_list if datafile.baseline]
@@ -1008,6 +1024,8 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         "download_updatefiles",
                         "upload_downloaded_updatefiles",
                         "transform_updatefiles",
+                        "merge_upserts_and_deletes",
+                        "save_merged_upserts_and_deletes",
                     ]
 
                     for task_id in task_ids:
@@ -1023,7 +1041,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ##### UPSERTS #####
 
                     task_ids = [
-                        "merge_upsert_records",
                         "upload_merged_upsert_records",
                         "bq_load_upsert_table",
                         "bq_upsert_records",
@@ -1037,7 +1054,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ##### DELETES #####
 
                     task_ids = [
-                        "merge_delete_records",
                         "upload_merged_delete_records",
                         "bq_load_delete_table",
                         "bq_delete_records",
@@ -1095,10 +1111,10 @@ class TestPubMedUtils(ObservatoryTestCase):
         self.baseline_path = "/pubmed/baseline/"
         self.updatefiles_path = "/pubmed/updatefiles/"
 
-    def test_download_datafiles_from_ftp_server(self):
+    def test_download_datafiles(self):
         """Test that an exmaple PubMed XMLs can be transformed successfully."""
 
-        # Create mock FTP server that holds the testing Pubmed Files.
+        # Create mock FTP server to host the test Pubmed Files.
         ftp_server = FtpServer(
             host=self.ftp_server_url, port=self.ftp_port, directory=os.path.join(test_fixtures_folder())
         )
@@ -1136,7 +1152,7 @@ class TestPubMedUtils(ObservatoryTestCase):
                     ),
                 ]
 
-                success = download_datafiles_from_ftp_server(
+                success = download_datafiles(
                     datafile_list=datafiles_to_download,
                     ftp_server_url=self.ftp_server_url,
                     ftp_port=self.ftp_port,
@@ -1149,8 +1165,115 @@ class TestPubMedUtils(ObservatoryTestCase):
                 for datafile in datafiles_to_download:
                     self.assertTrue(os.path.exists(datafile.download_file_path))
 
-    def test_transform_pubmed_xml_file_to_jsonl(self):
-        """Test that an exmaple PubMed XMLs can be transformed successfully."""
+    def test_load_datafile(self):
+        """Test that a Pubmed datafile can be read in and parsed."""
+
+        xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "baseline", "pubmed22n0001.xml.gz")
+        data = load_datafile(input_path=xml_file_path)
+
+        self.assertTrue(data)
+
+    def test_save_pubmed_jsonl(self):
+        """Test that data can be saved from to a json.gz or a .jsonl file correctly."""
+
+        data_to_write = [{"value": 12345, "Version": 1}]
+
+        with CliRunner().isolated_filesystem() as tmp_dir:
+            ### Uncompressed ###
+            output_path = os.path.join(tmp_dir, "test_output_file.jsonl")
+            save_pubmed_jsonl(output_path=output_path, data=data_to_write)
+            self.assertTrue(os.path.exists(output_path))
+
+            with open(output_path, "r") as f_in:
+                data_read_in = [json.loads(line) for line in f_in]
+
+            self.assertEqual(data_to_write, data_read_in)
+
+            ### Compressed ###
+            output_path = os.path.join(tmp_dir, "test_output_file.jsonl.gz")
+            save_pubmed_jsonl(output_path=output_path, data=data_to_write)
+            self.assertTrue(os.path.exists(output_path))
+
+            with gzip.open(output_path, "rb") as f_in:
+                data_read_in = [json.loads(line) for line in f_in]
+
+            self.assertEqual(data_to_write, data_read_in)
+
+    def test_save_pubmed_merged_records(self):
+        """Test if records can be reliably pulled from transformed files and written to merged record files."""
+
+        record_keys_per_file = {
+            "upserts": ["{'value': 12345, 'Version': 1}"],
+            "deletes": ["{'value': 67891, 'Version': 2}"],
+        }
+
+        record = [
+            {
+                "MedlineCitation": {
+                    "PMID": {"value": 12345, "Version": 1},
+                    "AuthorList": [{"FirstName": "Foo", "Lastname": "Bar"}, {"FirstName": "James", "Lastname": "Bond"}],
+                    "AbstractText": "Something",
+                }
+            }
+        ]
+
+        filename = "pubmed_temp.jsonl"
+
+        with CliRunner().isolated_filesystem() as tmp_dir:
+            input_dir = os.path.join(tmp_dir, filename)
+            save_pubmed_jsonl(input_dir, record)
+
+            upsert_output_path = os.path.join(tmp_dir, "upsert_output.jsonl.gz")
+            delete_output_path = os.path.join(tmp_dir, "delete_output.jsonl.gz")
+
+            save_pubmed_merged_records(
+                filename, record_keys_per_file, input_dir, upsert_output_path, delete_output_path
+            )
+
+            with gzip.open(upsert_output_path, "rb") as f_in:
+                data = [json.loads(line) for line in f_in]
+            self.assertListEqual(record, data)
+
+            with gzip.open(delete_output_path, "rb") as f_in:
+                data = [json.loads(line) for line in f_in]
+            self.assertListEqual([ast.literal_eval(record) for record in record_keys_per_file["deletes"]], data)
+
+    def test_parse_articles(self):
+        """Test if PubmedArticle records can be pulled out from a data dictionary."""
+
+        data_good = {
+            "PubmedArticle": [{"value": 12345, "Version": 1}, {"value": 67891, "Version": 2}],
+            "NotPubmedArticle": [{"value": 999, "Version": 999}],
+            "DeleteCitation": {"PMID": [{"value": 1, "Version": 1}]},
+        }
+
+        data_bad = {
+            "NotPubmedArticle": [{"value": 999, "Version": 999}],
+            "NotDeleteCitation": {"PMID": [{"value": 1, "Version": 1}]},
+        }
+
+        self.assertEqual([{"value": 12345, "Version": 1}, {"value": 67891, "Version": 2}], parse_articles(data_good))
+        self.assertEqual([], parse_articles(data_bad))
+
+    def test_parse_deletes(self):
+        """Test if DeleteCiation records can be pulled out from a data dictionary."""
+
+        data_good = {
+            "PubmedArticle": [{"value": 12345, "Version": 1}, {"value": 67891, "Version": 2}],
+            "NotPubmedArticle": [{"value": 999, "Version": 999}],
+            "DeleteCitation": {"PMID": [{"value": 1, "Version": 1}]},
+        }
+
+        data_bad = {
+            "NotPubmedArticle": [{"value": 999, "Version": 999}],
+            "NotDeleteCitation": {"PMID": [{"value": 1, "Version": 1}]},
+        }
+
+        self.assertEqual([{"value": 1, "Version": 1}], parse_deletes(data_good))
+        self.assertEqual([], parse_deletes(data_bad))
+
+    def test_transform_pubmed(self):
+        """Test that exmaple PubMed XMLs can be transformed successfully."""
 
         # Setup environment
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
@@ -1165,25 +1288,6 @@ class TestPubMedUtils(ObservatoryTestCase):
                 sequence_end=1,
             )
 
-            entity_list = [
-                PubmedEntity(
-                    type="upsert",
-                    sub_key="PubmedArticle",
-                    set_key="PubmedArticleSet",
-                    pmid_location="MedlineCitation",
-                    table_name="upserts",
-                    table_description="""PubmedArticle""",
-                ),
-                PubmedEntity(
-                    type="delete",
-                    sub_key="PMID",
-                    set_key="DeleteCitation",
-                    pmid_location=None,
-                    table_name="deletes",
-                    table_description="""DeleteCitation""",
-                ),
-            ]
-
             ### Bad XML ###
             datafile_bad = Datafile(
                 filename="pubmed22n0001_bad_fields.xml.gz",
@@ -1196,9 +1300,12 @@ class TestPubMedUtils(ObservatoryTestCase):
             bad_xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "pubmed22n0001_bad_fields.xml.gz")
             shutil.copy2(bad_xml_file_path, datafile_bad.download_file_path)
 
-            # Attempt to transform bad xml.
-            datafile_returned = transform_pubmed_xml_file_to_jsonl(datafile=datafile_bad, entity_list=entity_list)
-            self.assertFalse(datafile_returned)
+            # Attempt to transform bad xml - just a baseline file, returns a baseline file if it is successful.
+            output = transform_pubmed(
+                input_path=datafile_bad.download_file_path, upsert_path=datafile_bad.transform_upsert_file_path
+            )
+            self.assertFalse(os.path.exists(datafile_bad.transform_baseline_file_path))
+            self.assertFalse(output)
 
             datafile_good = Datafile(
                 filename="pubmed22n0001.xml.gz",
@@ -1209,19 +1316,50 @@ class TestPubMedUtils(ObservatoryTestCase):
                 datafile_release=changefile_release,
             )
 
-            ### VALID XML ###
+            ### VALID BASELINE XML ###
             valid_xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "baseline", "pubmed22n0001.xml.gz")
             shutil.copy2(valid_xml_file_path, datafile_good.download_file_path)
 
-            # Attempt to transform valid xml - returns Changefile instance only if it's successful.
-            datafile_returned = transform_pubmed_xml_file_to_jsonl(datafile=datafile_good, entity_list=entity_list)
-            self.assertTrue(isinstance(datafile_returned, Datafile))
+            # Attempt to transform valid xml - should output a transformed file if it is successful.
+            filename = transform_pubmed(
+                input_path=datafile_good.download_file_path, upsert_path=datafile_good.transform_baseline_file_path
+            )
+            self.assertTrue(os.path.exists(datafile_good.transform_baseline_file_path))
+            self.assertEqual(os.path.basename(datafile_good.download_file_path), filename)
 
-            # Ensure that transform files were written to disk.
-            for entity in entity_list:
-                self.assertTrue(os.path.exists(datafile_returned.transform_file_path(entity.type)))
+            ### VALID UPDATEFILE XML ###
 
-    def test_add_attributes_to_data_from_biopython(self):
+            expected_keys = {
+                "deletes": ["{'value': '2', 'Version': '1'}"],
+                "upserts": [
+                    "{'value': '1', 'Version': '1'}",
+                    "{'value': '2', 'Version': '2'}",
+                ],
+            }
+
+            datafile_good = Datafile(
+                filename="pubmed22n0003.xml.gz",
+                file_index=1,
+                path_on_ftp="dummy_string",
+                baseline=False,
+                datafile_date=pendulum.now(),
+                datafile_release=changefile_release,
+            )
+
+            valid_xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "updatefiles", "pubmed22n0003.xml.gz")
+            shutil.copy2(valid_xml_file_path, datafile_good.download_file_path)
+
+            filename, output_keys = transform_pubmed(
+                input_path=datafile_good.download_file_path,
+                upsert_path=datafile_good.transform_upsert_file_path,
+                delete_path=datafile_good.transform_delete_file_path,
+            )
+            self.assertTrue(os.path.exists(datafile_good.transform_upsert_file_path))
+            self.assertTrue(os.path.exists(datafile_good.transform_delete_file_path))
+            self.assertEqual(os.path.basename(datafile_good.download_file_path), filename)
+            self.assertDictEqual(output_keys, expected_keys)
+
+    def test_add_attributes(self):
         """
         Test that attributes from the Biopython data classes can be reliably pulled out and added to the dictionary.
         """
@@ -1245,7 +1383,7 @@ class TestPubMedUtils(ObservatoryTestCase):
             output_file = os.path.join(tmp_dir, "test_output_file.jsonl")
             with open(output_file, "wb") as f_out:
                 for line in objects:
-                    output = add_attributes_to_data_from_biopython_classes(line)
+                    output = add_attributes(line)
                     f_out.write(str.encode(json.dumps(output, cls=PubMedCustomEncoder) + "\n"))
 
             with open(output_file, "r") as f_in:
