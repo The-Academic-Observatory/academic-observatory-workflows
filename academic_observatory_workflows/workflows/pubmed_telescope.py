@@ -36,7 +36,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from Bio.Entrez.Parser import StringElement, ListElement, DictionaryElement, OrderedListElement, ValidationError
 
 from airflow import AirflowException
-from airflow.operators.dummy import DummyOperator
+from airflow.operators.empty import EmptyOperator
 from airflow.models.taskinstance import TaskInstance
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
@@ -375,7 +375,7 @@ class PubMedTelescope(Workflow):
 
         # The last task that the next DAG run's ExternalTaskSensor waits for.
         self.add_operator(
-            DummyOperator(
+            EmptyOperator(
                 task_id=external_task_id,
             )
         )
