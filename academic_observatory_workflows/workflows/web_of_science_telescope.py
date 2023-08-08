@@ -107,7 +107,7 @@ class WebOfScienceTelescope(Workflow):
         table_description: str = "The Web of Science citation database: https://clarivate.com/webofsciencegroup/solutions/web-of-science",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
-        schedule_interval: str = "@monthly",
+        schedule: str = "@monthly",
     ):
         """Web of Science telescope.
 
@@ -124,13 +124,13 @@ class WebOfScienceTelescope(Workflow):
         :param table_description: description for the BigQuery table.
         :param observatory_api_conn_id: the Observatory API connection key.
         :param start_date: the start date of the DAG.
-        :param schedule_interval: the schedule interval of the DAG.
+        :param schedule: the schedule interval of the DAG.
         """
 
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
-            schedule_interval=schedule_interval,
+            schedule=schedule,
             catchup=False,
             airflow_conns=[observatory_api_conn_id, wos_conn_id],
             tags=[Tag.academic_observatory],

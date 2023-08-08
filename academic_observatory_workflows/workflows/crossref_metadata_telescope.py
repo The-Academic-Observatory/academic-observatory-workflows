@@ -101,7 +101,7 @@ class CrossrefMetadataTelescope(Workflow):
         max_processes: int = os.cpu_count(),
         batch_size: int = 20,
         start_date: pendulum.DateTime = pendulum.datetime(2020, 6, 7),
-        schedule_interval: str = "0 0 7 * *",
+        schedule: str = "0 0 7 * *",
         catchup: bool = True,
         queue: str = "remote_queue",
         max_active_runs: int = 1,
@@ -121,7 +121,7 @@ class CrossrefMetadataTelescope(Workflow):
         :param max_processes: the number of processes used with ProcessPoolExecutor to transform files in parallel.
         :param batch_size: the number of files to send to ProcessPoolExecutor at one time.
         :param start_date: the start date of the DAG.
-        :param schedule_interval: the schedule interval of the DAG.
+        :param schedule: the schedule interval of the DAG.
         :param catchup: whether to catchup the DAG or not.
         :param queue: what Airflow queue this job runs on.
         :param max_active_runs: the maximum number of DAG runs that can be run at once.
@@ -130,7 +130,7 @@ class CrossrefMetadataTelescope(Workflow):
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
-            schedule_interval=schedule_interval,
+            schedule=schedule,
             catchup=catchup,
             airflow_conns=[observatory_api_conn_id, crossref_metadata_conn_id],
             tags=[Tag.academic_observatory],

@@ -109,7 +109,7 @@ class ScopusTelescope(Workflow):
         table_description: str = "The Scopus citation database: https://www.scopus.com",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
-        schedule_interval: str = "@monthly",
+        schedule: str = "@monthly",
     ):
         """Scopus telescope.
         :param dag_id: the id of the DAG.
@@ -126,13 +126,13 @@ class ScopusTelescope(Workflow):
         :param table_description: description for the BigQuery table.
         :param observatory_api_conn_id: the Observatory API connection key.
         :param start_date: the start date of the DAG.
-        :param schedule_interval: the schedule interval of the DAG.
+        :param schedule: the schedule interval of the DAG.
         """
 
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
-            schedule_interval=schedule_interval,
+            schedule=schedule,
             catchup=False,
             airflow_conns=[observatory_api_conn_id] + scopus_conn_ids,
             tags=[Tag.academic_observatory],

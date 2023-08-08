@@ -37,7 +37,7 @@ SELECT
   *,
  FROM
   (SELECT
-    {# This SQL block links unpaywall, mag, open citations and crossref events to the DOI and the metadata found in the crossref metadata dataset #}
+    {# This SQL block links unpaywall, open citations and crossref events to the DOI and the metadata found in the crossref metadata dataset #}
     UPPER(TRIM(ref.doi)) as doi,
     STRUCT(
             title, abstract, issued.date_parts[offset(0)] as published_year,
@@ -46,9 +46,9 @@ SELECT
             type, ISSN, ISBN, issn_type, publisher_location, publisher, member, prefix, container_title, short_container_title, group_title, references_count,
             is_referenced_by_count, subject, published_print, license, volume, funder, page, author, link, clinical_trial_number, alternative_id
     ) as crossref,
-    (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.unpaywall{{ snapshot_date.strftime('%Y%m%d') }}` as oa WHERE oa.doi = UPPER(TRIM(ref.doi))) as unpaywall,
+    (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.openaccess{{ snapshot_date.strftime('%Y%m%d') }}` as oa WHERE oa.doi = UPPER(TRIM(ref.doi))) as openaccess,
+    (SELECT as STRUCT * from `{{ unpaywall.project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}` as unpaywall WHERE unpaywall.doi = UPPER(TRIM(ref.doi))) as unpaywall,
     (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.openalex{{ snapshot_date.strftime('%Y%m%d') }}` as openalex WHERE openalex.doi = UPPER(TRIM(ref.doi))) as openalex,
-    (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.mag{{ snapshot_date.strftime('%Y%m%d') }}` as mag WHERE mag.doi = UPPER(TRIM(ref.doi))) as mag,
     (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.open_citations{{ snapshot_date.strftime('%Y%m%d') }}` as oa WHERE oa.doi = UPPER(TRIM(ref.doi))) as open_citations,
     (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.crossref_events{{ snapshot_date.strftime('%Y%m%d') }}` as events WHERE events.doi = UPPER(TRIM(ref.doi))) as events,
     (SELECT as STRUCT * from coki_affiliations_temp as coki_affiliations WHERE coki_affiliations.doi = UPPER(TRIM(ref.doi))) as coki_affiliations,
@@ -101,7 +101,7 @@ SELECT
   -- Discipline
   {#
   Chooses the values that are passed along in the discipline affiliations, the schema is matching all other affiliations to enable flexibility of later SQL templates.
-  The values come from the fields of study in the MAG dataset
+  The values come from the fields of study in the OpenAlex dataset
   #}
   ARRAY(SELECT as STRUCT field.display_name as identifier, field.display_name as name, ["Discipline"] as types,
         CAST(NULL as STRING) as country, CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region,
@@ -124,7 +124,7 @@ SELECT
   While there is only ever one Journal for a pubication, this single struct is placed inside of an array '[ ]' to ensure it conforms to the same schema as other affiliation types.
   This enables templated queries downstream to be greatly simplified
   #}
-  [ STRUCT( unpaywall.journal_issn_l as identifier, unpaywall.normalised_journal_name as name, ["Journal"] as types, CAST(NULL as STRING) as country,
+  [ STRUCT( openaccess.journal_issn_l as identifier, openaccess.normalised_journal_name as name, ["Journal"] as types, CAST(NULL as STRING) as country,
     CAST(NULL as STRING) as country_code, CAST(NULL as STRING) as country_code_2, CAST(NULL as STRING) as region, CAST(NULL as STRING) as subregion, CAST(NULL as STRING) as coordinates,
     CAST([] AS ARRAY<STRING>) as members )
    ] as journals,
@@ -216,7 +216,7 @@ SELECT
     ) as ror_groups,
 
   {#
-   dois_temp_table is created as the first sub-query in this script. It contains the data from crossref, unpaywall, openalex, mag, open_citations and crossref events
+   dois_temp_table is created as the first sub-query in this script. It contains the data from crossref, unpaywall, openalex, open_citations and crossref events
    This is then LEFT JOINed against the ROR dataset to take the raw ROR IDs that come from the OpenAlex dataset, with a more detailed view of that institution and its location. The county and region information comes from here
    This Instituional information is JOINed against a COKI created dataset, groupings, which allows for arbitrary grouping of institutions (or really RORs).
 
@@ -236,19 +236,15 @@ Brings together the two temporary tables above.
 - affiliations is the derived data that neatly organises all the relationships a doi has to authors, their institutions, countries and regions of those institutions, publisher, journal, funders
 #}
 SELECT
-  dois.* EXCEPT (coki_affiliations, unpaywall),
-  -- Put the unpaywall struct back how it used to be for backwards compatibility
-  (SELECT as STRUCT
-    dois.unpaywall.* EXCEPT(repositories, oa_color, oa_license, oa_coki),
-    dois.unpaywall.oa_color.*,
-    dois.unpaywall.oa_license.*
-  ) as unpaywall,
+  dois.* EXCEPT (coki_affiliations, openaccess),
   -- The coki struct, which contains fields for a work generated by COKI
   STRUCT(
-    dois.unpaywall.oa_color as oa_color,
-    dois.unpaywall.oa_license as oa_license,
-    dois.unpaywall.oa_coki as oa_coki,
-    dois.unpaywall.repositories as repositories,
+    STRUCT(
+      dois.openaccess.oa_color as color,
+      dois.openaccess.oa_license as license,
+      dois.openaccess.oa_coki as coki
+    ) as oa,
+    dois.openaccess.repositories as repositories,
     STRUCT(
        dois.coki_affiliations.author_institutions as author_institutions,
        dois.coki_affiliations.genealogical_institutions as genealogical_institutions

@@ -84,7 +84,7 @@ class CrossrefFundrefTelescope(Workflow):
         table_description: str = "The Crossref Funder Registry dataset: https://www.crossref.org/services/funder-registry/",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         start_date: pendulum.DateTime = pendulum.datetime(2014, 2, 23),
-        schedule_interval: str = "@weekly",
+        schedule: str = "@weekly",
         catchup: bool = True,
         gitlab_pool_name: str = "gitlab_pool",
         gitlab_pool_slots: int = 2,
@@ -102,7 +102,7 @@ class CrossrefFundrefTelescope(Workflow):
         :param table_description: description for the BigQuery table.
         :param observatory_api_conn_id: the Observatory API connection key.
         :param start_date: the start date of the DAG.
-        :param schedule_interval: the schedule interval of the DAG.
+        :param schedule: the schedule interval of the DAG.
         :param catchup: whether to catchup the DAG or not.
         :param gitlab_pool_name: name of the Gitlab Pool.
         :param gitlab_pool_slots: number of slots for the Gitlab Pool.
@@ -112,7 +112,7 @@ class CrossrefFundrefTelescope(Workflow):
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
-            schedule_interval=schedule_interval,
+            schedule=schedule,
             catchup=catchup,
             airflow_conns=[observatory_api_conn_id],
             tags=[Tag.academic_observatory],

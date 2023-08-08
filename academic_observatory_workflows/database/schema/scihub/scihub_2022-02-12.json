@@ -1,0 +1,8 @@
+[
+  {
+    "name": "doi",
+    "description": "A DOI for a work that SciHub covers",
+    "mode": "REQUIRED",
+    "type": "STRING"
+  }
+]
