@@ -331,10 +331,10 @@ class OpenAlexTelescope(Workflow):
                 ("concepts", True),
                 ("institutions", True),
                 ("works", True),
-                ("authors", False),
-                ("publishers", False),
-                ("sources", False),
-                ("funders", False),
+                ("authors", True),
+                ("publishers", True),
+                ("sources", True),
+                ("funders", True),
             ]
 
         super().__init__(
@@ -1014,9 +1014,9 @@ def transform_object(obj: dict):
             value = []
         obj[field] = [x for x in value if x is not None]
 
+    # TODO: when re-ingesting entire dataset: change schema to new version
     field = "abstract_inverted_index"
     if field in obj:
-
         def parse_abstract(dict_: dict):
             keys_ = list(dict_.keys())
             values_ = [str(value_)[1:-1] for value_ in dict_.values()]
@@ -1039,3 +1039,10 @@ def transform_object(obj: dict):
             values = list(obj[field][nested_field].values())
 
             obj[field][nested_field] = {"keys": keys, "values": values}
+
+    # Transform updated_date from a date into a datetime
+    # TODO: when re-ingesting entire dataset: change to date
+    field = "updated_date"
+    if field in obj:
+        obj[field] = pendulum.parse(obj[field]).to_iso8601_string()
+
