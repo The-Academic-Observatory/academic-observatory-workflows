@@ -274,9 +274,6 @@ class OpenAlexRelease(ChangefileRelease):
         self.gcs_openalex_data_uri = (
             f"gs://{cloud_workspace.download_bucket}/{gcs_blob_name_from_path(self.download_folder)}/"
         )
-        self.gsutil_transfer_wildcard = (
-            "{" + ",".join([entity.entity_name for entity in entities if entity.transform]) + "}"
-        )
 
 
 class OpenAlexTelescope(Workflow):
@@ -331,10 +328,10 @@ class OpenAlexTelescope(Workflow):
                 ("concepts", True),
                 ("institutions", True),
                 ("works", True),
-                ("authors", False),
-                ("publishers", False),
-                ("sources", False),
-                ("funders", False),
+                ("authors", True),
+                ("publishers", True),
+                ("sources", True),
+                ("funders", True),
             ]
 
         super().__init__(
@@ -1014,6 +1011,7 @@ def transform_object(obj: dict):
             value = []
         obj[field] = [x for x in value if x is not None]
 
+    # TODO: when re-ingesting entire dataset: change schema to new version
     field = "abstract_inverted_index"
     if field in obj:
 
@@ -1039,3 +1037,9 @@ def transform_object(obj: dict):
             values = list(obj[field][nested_field].values())
 
             obj[field][nested_field] = {"keys": keys, "values": values}
+
+    # Transform updated_date from a date into a datetime
+    # TODO: when re-ingesting entire dataset: change to date
+    field = "updated_date"
+    if field in obj:
+        obj[field] = pendulum.parse(obj[field]).to_iso8601_string()
