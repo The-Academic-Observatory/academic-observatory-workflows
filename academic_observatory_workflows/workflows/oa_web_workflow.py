@@ -75,6 +75,7 @@ PERCENTAGE_FIELD_KEYS = [
     ("outputs_publisher_open_only", "n_outputs"),
     ("outputs_other_platform_open", "n_outputs"),
     ("outputs_other_platform_open_only", "n_outputs"),
+    ("outputs_black", "n_outputs"),
     ("outputs_oa_journal", "n_outputs_publisher_open"),
     ("outputs_hybrid", "n_outputs_publisher_open"),
     ("outputs_no_guarantees", "n_outputs_publisher_open"),
@@ -116,7 +117,11 @@ SELECT
   country.wikipedia_url,
   country.subregion as subregion,
   country.region as region,
-  country.alpha2 as alpha2 -- used for country flags
+  country.alpha2 as alpha2, -- used for country flags
+  CASE 
+      WHEN country.alpha3 = 'GBR' THEN ARRAY<STRING>[country.alpha3, country.alpha2, 'UK']
+      ELSE ARRAY<STRING>[country.alpha3, country.alpha2]
+  END as acronyms
 FROM
   `{country_table_id}` as country
 ORDER BY name ASC
@@ -128,7 +133,7 @@ SELECT
   agg.time_period as year,
   agg.citations.openalex.total_citations as n_citations,  
   agg.total_outputs as n_outputs,
-  
+
   -- COKI OA Categories
   agg.coki.oa.coki.open.total AS n_outputs_open,
   agg.coki.oa.coki.publisher.total AS n_outputs_publisher_open,
@@ -137,18 +142,21 @@ SELECT
   agg.coki.oa.coki.other_platform.total AS n_outputs_other_platform_open,
   agg.coki.oa.coki.other_platform_only.total AS n_outputs_other_platform_open_only,
   agg.coki.oa.coki.closed.total AS n_outputs_closed,
-  
+
   -- Publisher Open Categories
   agg.coki.oa.coki.publisher_categories.oa_journal.total AS n_outputs_oa_journal,
   agg.coki.oa.coki.publisher_categories.hybrid.total AS n_outputs_hybrid,
   agg.coki.oa.coki.publisher_categories.no_guarantees.total AS n_outputs_no_guarantees,
-  
+
   -- Other Platform Open Categories
   agg.coki.oa.coki.other_platform_categories.preprint.total AS n_outputs_preprint,
   agg.coki.oa.coki.other_platform_categories.domain.total AS n_outputs_domain,
   agg.coki.oa.coki.other_platform_categories.institution.total AS n_outputs_institution,
   agg.coki.oa.coki.other_platform_categories.public.total AS n_outputs_public,
   agg.coki.oa.coki.other_platform_categories.aggregator.total + agg.coki.oa.coki.other_platform_categories.other_internet.total + agg.coki.oa.coki.other_platform_categories.unknown.total AS n_outputs_other_internet, 
+
+  -- Black
+  agg.coki.oa.color.black.total_outputs as n_outputs_black,
 
   agg.coki.repositories
 FROM
@@ -806,6 +814,7 @@ class PublicationStats:
     n_outputs_institution: int = None
     n_outputs_public: int = None
     n_outputs_other_internet: int = None
+    n_outputs_black: int = None
 
     # Percentage fields
     p_outputs_open: float = None
@@ -823,6 +832,7 @@ class PublicationStats:
     p_outputs_institution: int = None
     p_outputs_public: int = None
     p_outputs_other_internet: int = None
+    p_outputs_black: int = None
 
     @staticmethod
     def from_dict(dict_: Dict) -> PublicationStats:
@@ -843,6 +853,7 @@ class PublicationStats:
         n_outputs_institution = dict_.get("n_outputs_institution")
         n_outputs_public = dict_.get("n_outputs_public")
         n_outputs_other_internet = dict_.get("n_outputs_other_internet")
+        n_outputs_black = dict_.get("n_outputs_black")
 
         p_outputs_open = dict_.get("p_outputs_open")
         p_outputs_publisher_open = dict_.get("p_outputs_publisher_open")
@@ -859,6 +870,7 @@ class PublicationStats:
         p_outputs_institution = dict_.get("p_outputs_institution")
         p_outputs_public = dict_.get("p_outputs_public")
         p_outputs_other_internet = dict_.get("p_outputs_other_internet")
+        p_outputs_black = dict_.get("p_outputs_black")
 
         return PublicationStats(
             n_citations=n_citations,
@@ -878,6 +890,7 @@ class PublicationStats:
             n_outputs_institution=n_outputs_institution,
             n_outputs_public=n_outputs_public,
             n_outputs_other_internet=n_outputs_other_internet,
+            n_outputs_black=n_outputs_black,
             p_outputs_open=p_outputs_open,
             p_outputs_publisher_open=p_outputs_publisher_open,
             p_outputs_publisher_open_only=p_outputs_publisher_open_only,
@@ -893,6 +906,7 @@ class PublicationStats:
             p_outputs_institution=p_outputs_institution,
             p_outputs_public=p_outputs_public,
             p_outputs_other_internet=p_outputs_other_internet,
+            p_outputs_black=p_outputs_black,
         )
 
     def to_dict(self) -> Dict:
@@ -914,6 +928,7 @@ class PublicationStats:
             "n_outputs_institution": self.n_outputs_institution,
             "n_outputs_public": self.n_outputs_public,
             "n_outputs_other_internet": self.n_outputs_other_internet,
+            "n_outputs_black": self.n_outputs_black,
             "p_outputs_open": self.p_outputs_open,
             "p_outputs_publisher_open": self.p_outputs_publisher_open,
             "p_outputs_publisher_open_only": self.p_outputs_publisher_open_only,
@@ -929,6 +944,7 @@ class PublicationStats:
             "p_outputs_institution": self.p_outputs_institution,
             "p_outputs_public": self.p_outputs_public,
             "p_outputs_other_internet": self.p_outputs_other_internet,
+            "p_outputs_black": self.p_outputs_black,
         }
 
 
@@ -1382,7 +1398,7 @@ def update_df_with_percentages(df: pd.DataFrame, keys: List[Tuple[str, str]]):
 
     for numerator_key, denominator_key in keys:
         p_key = f"p_{numerator_key}"
-        df[p_key] = round(df[f"n_{numerator_key}"] / df[denominator_key] * 100, 2)
+        df[p_key] = df[f"n_{numerator_key}"] / df[denominator_key] * 100
 
         # Fill in NaN caused by denominator of zero
         df[p_key] = df[p_key].fillna(0)
@@ -1429,11 +1445,13 @@ def make_index(entity_type: str, entities: List[Entity]):
         "stats": {
             "n_outputs": None,
             "n_outputs_open": None,
+            "n_outputs_black": None,
             "p_outputs_open": None,
             "p_outputs_publisher_open_only": None,
             "p_outputs_both": None,
             "p_outputs_other_platform_open_only": None,
             "p_outputs_closed": None,
+            "p_outputs_black": None,
         },
     }
     data = []
@@ -1443,7 +1461,7 @@ def make_index(entity_type: str, entities: List[Entity]):
 
         # If country delete unused fields
         if entity_type == "country":
-            for key in ["country_code", "country_name", "institution_type", "acronyms"]:
+            for key in ["country_code", "country_name", "institution_type"]:
                 try:
                     del item[key]
                 except KeyError:
