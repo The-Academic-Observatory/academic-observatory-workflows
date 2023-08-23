@@ -401,6 +401,11 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         datafile_list=run["datafiles"],
                     )
 
+                    ### Create Snapshot ###
+                    task_id = workflow.create_snapshot.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
                     ##### BASELINE #####
 
                     baseline = [datafile for datafile in release.datafile_list if datafile.baseline]
