@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import os
 import re
-import ast
 import gzip
 import json
 import time
@@ -28,10 +27,11 @@ import logging
 import pendulum
 from Bio import Entrez
 from datetime import timedelta
+from dataclasses import dataclass
 from google.cloud import bigquery
 from ftplib import FTP, error_reply
 from google.cloud.bigquery import SourceFormat
-from typing import Tuple, Union, Dict, List, Optional
+from typing import Set, Tuple, Union, Dict, List
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from Bio.Entrez.Parser import StringElement, ListElement, DictionaryElement, OrderedListElement, ValidationError
 
@@ -73,7 +73,7 @@ class Datafile:
         """Holds the metadata about a single Pubmed datafile.
 
         Pubmed is organised into a yearly "baseline" snapshots and then "updatefiles" are released daily afterwards
-        to modify and or add to the table. To avoid confusion, we call both the baseline and updatefiles a "datafile".
+        to modify and or add to the snapshot table. To avoid confusion, we call both the baseline and updatefiles a "datafile".
         Each datafile could hold an upsert or delete record and are extracted in later parts of the workflow.
 
         :param filename: the name of the datafile.
@@ -105,7 +105,6 @@ class Datafile:
             )
         return False
 
-    @staticmethod
     def from_dict(dict_: Dict) -> Datafile:
         filename = dict_["filename"]
         file_index = dict_["file_index"]
@@ -158,10 +157,69 @@ class Datafile:
         assert self.datafile_release is not None, "Datafile.merged_upsert_path: self.datafile_release is None"
         return os.path.join(self.datafile_release.transform_folder, f"upsert_merged_{self.filename[:-7]}.jsonl.gz")
 
-    @property
-    def merged_delete_file_path(self):
-        assert self.datafile_release is not None, "Datafile.merged_delete_file_path: self.datafile_release is None"
-        return os.path.join(self.datafile_release.transform_folder, f"delete_merged_{self.filename[:-7]}.jsonl.gz")
+
+@dataclass
+class PMID:
+
+    """Object to identify a particular PMID record by the PMID value and Version.
+
+    :param value: The PMID value.
+    :param Version: The Version of the PMID record.
+    """
+
+    value: int
+    Version: int
+
+    def __eq__(self, other):
+        if not isinstance(other, self.__class__):
+            return False
+        return self.value == other.value and self.Version == other.Version
+
+    def __hash__(self):
+        return hash(self.to_str())
+
+    def to_dict(self) -> Dict:
+        return dict(value=self.value, Version=self.Version)
+
+    def from_dict(dict_: Dict) -> PMID:
+        return PMID(value=dict_["value"], Version=dict_["Version"])
+
+    def to_str(self) -> str:
+        return str(self.to_dict())
+
+
+@dataclass
+class PubmedUpdatefile:
+
+    """Object to hold the list of upserts and deletes for a single Pubmed updatefile.
+
+    :param name: Filename of the updatefile.
+    :param upserts: List of PMID objects that are to be upserted.
+    :param deletes: List of PMID objects that are to be deleted.
+    """
+
+    name: str
+    upserts: List[PMID]
+    deletes: List[PMID]
+
+    def __eq__(self, other):
+        if not isinstance(other, self.__class__):
+            return False
+        return self.name == other.name and set(self.upserts) == set(self.deletes)
+
+    def to_dict(self) -> Dict:
+        return dict(
+            name=self.name,
+            upserts=[upsert.to_dict() for upsert in self.upserts],
+            deletes=[delete.to_dict() for delete in self.deletes],
+        )
+
+    def from_dict(dict_) -> PubmedUpdatefile:
+        return PubmedUpdatefile(
+            name=dict_["name"],
+            upserts=[PMID.from_dict(upsert) for upsert in dict_["upserts"]],
+            deletes=[PMID.from_dict(delete) for delete in dict_["deletes"]],
+        )
 
 
 class PubMedRelease(DatafileRelease):
@@ -226,17 +284,31 @@ class PubMedRelease(DatafileRelease):
 
         return f"gs://{self.cloud_workspace.transform_bucket}/{gcs_blob_name_from_path(self.datafile_release.transform_folder)}/{table_type}_*.{self.datafile_list[0].file_type}"
 
-    def merged_transfer_blob_pattern(self, table_type: str) -> str:
+    @property
+    def merged_upsert_uri_blob_pattern(self) -> str:
         """
-        Create a blob pattern for importing the transformed merged records from GCS into Bigquery.
+        Create a uri blob pattern for importing the transformed merged upserts from GCS into Bigquery.
 
-        Only the upserts and delete records are merged and will use this glob pattern.
-
-        :param table_type: Type of the record.
         :return: Uri pattern for merged transform files.
         """
 
-        return f"gs://{self.cloud_workspace.transform_bucket}/{gcs_blob_name_from_path(self.datafile_release.transform_folder)}/{table_type}_merged_*.{self.datafile_list[0].file_type}"
+        return f"gs://{self.cloud_workspace.transform_bucket}/{gcs_blob_name_from_path(self.datafile_release.transform_folder)}/upsert_merged_*.{self.datafile_list[0].file_type}"
+
+    @property
+    def merged_delete_transfer_uri(self) -> str:
+        """
+        Create a uri for importing the transformed merged deletes from GCS into Bigquery.
+
+        :return: uri for merged transform files.
+        """
+
+        return f"gs://{self.cloud_workspace.transform_bucket}/{gcs_blob_name_from_path(self.datafile_release.transform_folder)}/delete_merged.{self.datafile_list[0].file_type}"
+
+    @property
+    def merged_delete_file_path(self):
+        # This is just a singular file, not multiple part files from each updatefile.
+        assert self.datafile_release is not None, "release.merged_delete_file_path: self.datafile_release is None"
+        return os.path.join(self.datafile_release.transform_folder, f"delete_merged.{self.datafile_list[0].file_type}")
 
 
 class PubMedTelescope(Workflow):
@@ -336,6 +408,10 @@ class PubMedTelescope(Workflow):
         self.add_setup_task(self.check_dependencies)
         self.add_setup_task(self.list_datafiles_for_release)
 
+        # Create a backup of the main table before applying any changes.
+        # Only run if it is not the first run of the year.
+        self.add_task(self.create_snapshot)
+
         ### BASELINE ###
 
         # Download and process the baseline files - skipped if no new baseline files are available.
@@ -344,10 +420,6 @@ class PubMedTelescope(Workflow):
         self.add_task(self.transform_baseline)
         self.add_task(self.upload_transformed_baseline)
         self.add_task(self.bq_load_main_table)
-
-        # Create a backup of the main table before applying any changes.
-        # Only run if it is not the first run of the year.
-        self.add_task(self.create_snapshot)
 
         ### UPDATEFILES ###
 
@@ -358,7 +430,6 @@ class PubMedTelescope(Workflow):
 
         # Determine which upserts and deletes are necessary to keep for this release.
         self.add_task(self.merge_upserts_and_deletes)
-        self.add_task(self.save_merged_upserts_and_deletes)
 
         # Upload and apply upsert records.
         self.add_task(self.upload_merged_upsert_records)
@@ -608,11 +679,27 @@ class PubMedTelescope(Workflow):
 
         return release
 
+    def create_snapshot(self, release: PubMedRelease, **kwargs):
+        """Create a snapshot of main table as a backup just in case something happens when applying the upserts and deletes."""
+
+        if not release.year_first_run:
+            snapshot_table_id = bq_sharded_table_id(
+                self.cloud_workspace.project_id, self.bq_dataset_id, f"{self.bq_table_id}_snapshot", release.start_date
+            )
+            expiry_date = pendulum.now().add(days=self.snapshot_expiry_days)
+            success = bq_snapshot(
+                src_table_id=self.main_table_id, dst_table_id=snapshot_table_id, expiry_date=expiry_date
+            )
+            logging.info(f"Created snapshot table: {snapshot_table_id}")
+            set_task_state(success, kwargs["ti"].task_id, release=release)
+        else:
+            logging.info("Not required to create a snapshot of the table for this run.")
+
     def download_baseline(self, release: PubMedRelease, **kwargs):
         """
         Download files from PubMed's FTP server for this release.
 
-        Unable to do this in parallel because their FTP server is not able to handle too many requests.
+        Unable to do this in parallel because their FTP server is not able to handle many requests at once.
         """
 
         if not release.year_first_run:
@@ -735,22 +822,6 @@ class PubMedTelescope(Workflow):
 
         set_task_state(success, kwargs["ti"].task_id, release=release)
 
-    def create_snapshot(self, release: PubMedRelease, **kwargs):
-        """Create a snapshot of main table as a backup just in case something happens when applying the upserts and deletes."""
-
-        if not release.year_first_run:
-            snapshot_table_id = bq_sharded_table_id(
-                self.cloud_workspace.project_id, self.bq_dataset_id, f"{self.bq_table_id}_snapshot", release.start_date
-            )
-            expiry_date = pendulum.now().add(days=self.snapshot_expiry_days)
-            success = bq_snapshot(
-                src_table_id=self.main_table_id, dst_table_id=snapshot_table_id, expiry_date=expiry_date
-            )
-            logging.info(f"Created snapshot table: {snapshot_table_id}")
-            set_task_state(success, kwargs["ti"].task_id, release=release)
-        else:
-            logging.info("Not required to create a snapshot of the table for this run.")
-
     def download_updatefiles(self, release: PubMedRelease, **kwargs):
         """
         Download the updatefiles from PubMed's FTP server for this release.
@@ -795,7 +866,7 @@ class PubMedTelescope(Workflow):
         datafiles = [datafile for datafile in release.datafile_list if not datafile.baseline]
 
         # Object to store all of the upserts and delete keys that are present in each file.
-        record_keys = {}
+        updatefiles: List[PubmedUpdatefile] = []
 
         # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
         for i, chunk in enumerate(get_chunks(input_list=datafiles, chunk_size=self.max_processes)):
@@ -807,125 +878,58 @@ class PubMedTelescope(Workflow):
                 for datafile in chunk:
                     input_path = datafile.download_file_path
                     upsert_path = datafile.transform_upsert_file_path
-                    delete_path = datafile.transform_delete_file_path
 
-                    futures.append(executor.submit(transform_pubmed, input_path, upsert_path, delete_path))
+                    futures.append(executor.submit(transform_pubmed, input_path, upsert_path))
 
                 for future in as_completed(futures):
-                    filename, record_keys_per_file = future.result()
-                    record_keys[filename] = record_keys_per_file
+                    updatefiles.append(future.result())
 
         assert len(datafiles) == len(
-            record_keys.keys()
-        ), f"Number of updatefiles does not match the number of keys in record_keys: {len(datafiles)} vs {len(record_keys.keys())}"
+            updatefiles
+        ), f"Number of updatefiles does not match the number of keys in record_keys: {len(datafiles)} vs {len(updatefiles)}"
 
         ti: TaskInstance = kwargs["ti"]
-        ti.xcom_push(key="record_keys", value=record_keys)
+        updatefile_list = [updatefile.to_dict() for updatefile in updatefiles]
+        ti.xcom_push(key="updatefile_list", value=updatefile_list)
 
     def merge_upserts_and_deletes(self, release: PubMedRelease, **kwargs):
-        """
-        Using the keys found from the transform step, loop through each of the updatefiles and determine
-        which records needed to be kept for this release period.
-
-        Upserts are replaced with newer updated versions and duplicated deletes are removed throughout.
-
-        If an upsert appears in a newer file, it is removed from the previous sets of deletes and upserts.
-        Similarly, if a delete appears in a newer file, old upserts and deletes with the same keys are removed
-        from previous updatefiles.
-        """
-
-        ti: TaskInstance = kwargs["ti"]
-        record_keys: dict = ti.xcom_pull(key="record_keys")
-
-        logging.info(f"Dictionary of keys per updatefile: {record_keys}")
-
-        # Ensure that the list of keys is sorted on the filename/file_index.
-        # Order matters here because we are using the order of the updatefiles to base
-        # which upserts and delete records we keep.
-        record_keys_list = list(record_keys.keys())
-        record_keys_list.sort()
-
-        prev_updatefile_list = []
-        for updatefile in record_keys_list:
-            logging.info(f"Looking at keys in file: {updatefile}")
-
-            current_upserts = set(record_keys[updatefile]["upserts"])
-            current_deletes = set(record_keys[updatefile]["deletes"])
-
-            # Loop through previous updatefiles to check for the below cases.
-            for prev_updatefile in prev_updatefile_list:
-                # Convert to sets for easy checking
-                prev_updatefile_upserts = set(record_keys[prev_updatefile]["upserts"])
-                prev_updatefile_deletes = set(record_keys[prev_updatefile]["deletes"])
-
-                logging.info(f"Removing old upserts and deletes from: {prev_updatefile}")
-
-                prev_updatefile_upserts.difference_update(current_upserts)
-
-                # Remove any deletes from previous updatefiles if there is an updated upsert of that key.
-                prev_updatefile_deletes.difference_update(current_upserts)
-
-                # Remove any duplicate deletes across previous updatefiles.
-                prev_updatefile_deletes.difference_update(current_deletes)
-
-                # Remove any upserts across previous all updatefiles if theres a delete in current updatefile.
-                prev_updatefile_upserts.difference_update(current_deletes)
-
-                # Convert back to lists
-                record_keys[prev_updatefile]["upserts"] = list(prev_updatefile_upserts)
-                record_keys[prev_updatefile]["deletes"] = list(prev_updatefile_deletes)
-
-            # Add updatefile to list of previously checked files.
-            prev_updatefile_list.append(updatefile)
-
-            # Remove possible duplicates from updatefile by converting back to list..
-            current_upserts_list = list(current_upserts)
-            current_deletes_list = list(current_deletes)
-
-            current_upserts_list.sort()
-            current_deletes_list.sort()
-
-            record_keys[updatefile]["upserts"] = current_upserts_list
-            record_keys[updatefile]["deletes"] = current_deletes_list
-
-        # Push list of valid records to xcom for the next section.
-        ti.xcom_push(key="valid_record_keys", value=record_keys)
-
-    def save_merged_upserts_and_deletes(self, release: PubMedRelease, **kwargs):
-        """Write the valid upserts and deletes for this release to file."""
+        """Merge the upserts and deletes for this release period."""
 
         datafiles = [datafile for datafile in release.datafile_list if not datafile.baseline]
 
         ti: TaskInstance = kwargs["ti"]
-        valid_record_keys = ti.xcom_pull(key="valid_record_keys")
+        updatefile_list: list = ti.xcom_pull(key="updatefile_list")
+        updatefiles = [PubmedUpdatefile.from_dict(updatefile) for updatefile in updatefile_list]
 
-        # Process datafiles in parallel.
+        # Merge records and return a list of what upserts to pull from the transformed updatefiles.
+        upserts, deletes = merge_upserts_and_deletes(updatefiles)
+
+        # Save deletes
+        save_jsonl_gz(release.merged_delete_file_path, deletes)
+
+        # Save final upserts
         for i, chunk in enumerate(get_chunks(input_list=datafiles, chunk_size=self.max_processes)):
             with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
                 logging.info(f"In chunk {i} and processing files: {chunk}")
 
-                futures = []
+                futures = {}
                 datafile: Datafile
                 for datafile in chunk:
                     filename = os.path.basename(datafile.download_file_path)
-                    assert (
-                        filename in valid_record_keys
-                    ), f"records for file: {filename} are not present in valid_record_keys. "
+                    assert filename in upserts, f"records for file: {filename} are not present in list of upserts. "
 
-                    futures.append(
-                        executor.submit(
-                            save_pubmed_merged_records,
-                            filename,
-                            valid_record_keys[filename],
-                            datafile.transform_upsert_file_path,
-                            datafile.merged_upsert_file_path,
-                            datafile.merged_delete_file_path,
-                        )
+                    future = executor.submit(
+                        save_pubmed_merged_upserts,
+                        filename,
+                        upserts[filename],
+                        datafile.transform_upsert_file_path,
+                        datafile.merged_upsert_file_path,
                     )
+                    futures[future] = filename
 
                 for future in as_completed(futures):
-                    filename = future.result()
-                    logging.info(f"Finished writing out upserts and deletes for updatefile: {filename}")
+                    filename = futures[future]
+                    logging.info(f"Finished writing out upserts for updatefile: {filename}")
 
     ########## UPSERT RECORDS ##########
 
@@ -942,14 +946,12 @@ class PubMedTelescope(Workflow):
         set_task_state(success, kwargs["ti"].task_id, release=release)
 
     def bq_load_upsert_table(self, release: PubMedRelease, **kwargs):
-        """Ingest the upsert records from GCS to BQ using a file pattern."""
-
-        merged_transform_blob_pattern = release.merged_transfer_blob_pattern(table_type="upsert")
+        """Ingest the upsert records from GCS to BQ using a glob pattern."""
 
         logging.info(f"Uploading to table - {self.upsert_table_id}")
 
         success = bq_load_table(
-            uri=merged_transform_blob_pattern,
+            uri=release.merged_upsert_uri_blob_pattern,
             table_id=self.upsert_table_id,
             source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
             schema_file_path=release.schema_file_path(record_type="pubmed"),
@@ -986,7 +988,7 @@ class PubMedTelescope(Workflow):
     def upload_merged_delete_records(self, release: PubMedRelease, **kwargs):
         """Upload the merged delete records to GCS."""
 
-        file_paths = [datafile.merged_delete_file_path for datafile in release.datafile_list if not datafile.baseline]
+        file_paths = [release.merged_delete_file_path]
 
         success = gcs_upload_files(
             bucket_name=self.cloud_workspace.transform_bucket,
@@ -998,12 +1000,10 @@ class PubMedTelescope(Workflow):
     def bq_load_delete_table(self, release: PubMedRelease, **kwargs):
         """Ingest delete records from GCS to BQ."""
 
-        merged_transform_blob_pattern = release.merged_transfer_blob_pattern("delete")
-
         logging.info(f"Uploading to table - {self.delete_table_id}")
 
         success = bq_load_table(
-            uri=merged_transform_blob_pattern,
+            uri=release.merged_delete_transfer_uri,
             table_id=self.delete_table_id,
             source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
             schema_file_path=release.schema_file_path(record_type="delete"),
@@ -1089,7 +1089,7 @@ def download_datafiles(
     to make sure that the connect is not reset by the host.
     :param max_download_retry: Maximum number of retries for downloading one datafile before throwing an error.
 
-    :return download_success: If downloading all of the datafiles were successful.
+    :return download_success: True if downloading all of the datafiles were successful.
     """
 
     # Open FTP connection
@@ -1174,7 +1174,7 @@ def download_datafiles(
 
 
 def load_datafile(input_path: str) -> List[Dict]:
-    """Read in a Pubmed XML file and return it in a well-defined diction/json object.
+    """Read in a Pubmed XML file and return it in a well-defined dictionary/json object.
 
     :param input_path: Path to the Pubmed xml.gz file.
     :return data: A list of Pubmed records.
@@ -1230,17 +1230,14 @@ def parse_deletes(data: Dict) -> Union[List, List[Dict]]:
         return []
 
 
-def transform_pubmed(
-    input_path: str, upsert_path: str, delete_path: Optional[str] = None
-) -> Union[str, Tuple[str, dict]]:
+def transform_pubmed(input_path: str, upsert_path: str) -> Union[bool, str, PubmedUpdatefile]:
     """
-    Convert a single Pubmed XML file to JSONL, pulling out any of the Pubmed entities and their upserts and or deletes.
-    Used in parallelised transform section.
+    Convert a single Pubmed XML file to JSONL, pulling out any of the Pubmed the upserts and or deletes.
+    Used in parallelised transform task.
 
     :param input_path: Path to the donwloaded xml.gz file.
     :param upsert_path: Output file path for the upserts.
-    :param delete_path: Output file path for the deletes.
-    :return bool: True if transform was successful, False if not.
+    :return: filename of the baseline file or a PubmedUpdatefile object if it is an updatefile.
     """
 
     try:
@@ -1255,53 +1252,87 @@ def transform_pubmed(
     # Save upserts to file.
     save_pubmed_jsonl(upsert_path, upserts)
 
-    if delete_path is not None:
-        deletes = parse_deletes(data)
-        logging.info(f"Pulled out {len(deletes)} deletes from file, writing to file: {delete_path}")
+    # Pull out keys of upserts and deletes from an updatefile. This is not required for baseline files.
+    if "upsert" in upsert_path:
+        delete_keys = parse_deletes(data)
+        logging.info(f"Pulled out {len(delete_keys)} deletes from file.")
 
-        # Save deletes to file.
-        save_pubmed_jsonl(delete_path, deletes)
+        upsert_keys = [record["MedlineCitation"]["PMID"] for record in upserts]
 
-        # Pull out keys of upserts and deletes from an updatefile. This is not required for baseline files.
-        upsert_keys = [str(record["MedlineCitation"]["PMID"]) for record in upserts]
-        delete_keys = [str(record) for record in deletes]
-
-        return os.path.basename(input_path), dict(upserts=upsert_keys, deletes=delete_keys)
+        return PubmedUpdatefile(
+            name=os.path.basename(input_path),
+            upserts=[PMID.from_dict(record) for record in upsert_keys],
+            deletes=[PMID.from_dict(record) for record in delete_keys],
+        )
 
     return os.path.basename(input_path)
 
 
-def save_pubmed_merged_records(
+def save_pubmed_merged_upserts(
     filename: str,
-    valid_record_keys_per_file: dict,
-    upsert_input_path: str,
-    upsert_output_path: str,
-    delete_output_path: str,
+    upserts: List[str],
+    input_path: str,
+    output_path: str,
 ) -> str:
-    """Used in parallel by save_merged_upserts_and_deletes to write out the merged upsert and delete records
-    using the custom Pubmed encoder.
+    """Used in parallel by save_merged_upserts_and_deletes to write out the merged upsert records using the custom
+    Pubmed encoder.
 
-    :param valid_record_keys_per_file: A dictionary of what upserts and deletes to pull out from file and write.
-    :param upsert_input_path: Where the original upsert records are stored.
-    :param upsert_output_path: Destination of where to write the merged upsert records.
-    :param delete_output_path: Destination of where to write the merged delete records.
+    :param upserts: A list of upsert keys to pull out and write to file.
+    :param input_path: Where the original upsert records are stored.
+    :param output_path: Destination of where to write the merged upsert records.
     :return filename: Name of the original updatefile, for logging purposes.
     """
 
-    ### Upserts ###
-    # Write out the upserts required from each updatefile.
-    # Need to read in all the upsert records again and pull out the required files.
-    upsert_records = {str(record["MedlineCitation"]["PMID"]): record for record in load_jsonl(upsert_input_path)}
-    save_pubmed_jsonl(
-        upsert_output_path,
-        [upsert_records[record_key] for record_key in valid_record_keys_per_file["upserts"]],
-    )
-
-    ### Deletes ###
-    # Write out deletes from valid_record_keys - deletions are just the PMID value and Version.
-    save_jsonl_gz(delete_output_path, [ast.literal_eval(record) for record in valid_record_keys_per_file["deletes"]])
+    full_upsert_records = {str(record["MedlineCitation"]["PMID"]): record for record in load_jsonl(input_path)}
+    upserts_to_write = [full_upsert_records[record_key] for record_key in upserts]
+    save_pubmed_jsonl(output_path, upserts_to_write)
 
     return filename
+
+
+def merge_upserts_and_deletes(updatefiles: List[PubmedUpdatefile]) -> Tuple[Dict[str, List[str]], List[Dict]]:
+    """Merge the Pubmed upserts and deletes and return them as a list of PMID value-Version pairs so that they can be
+    easily pulled from file.
+
+    :param updatefiles: List of PubmedUpdatefile objects to merge together.
+    :return: The merged upserts and deletes."""
+
+    upsert_index = dict()
+    deletes_set = set()
+
+    updatefiles.sort(key=lambda x: x.name)
+    for file in updatefiles:
+        # Apply upserts
+        for upsert in file.upserts:
+            # Check if item was previously deleted
+            # and remove this delete if so
+            if upsert in deletes_set:
+                deletes_set.remove(upsert)
+
+            # Update the file where the upsert comes from
+            upsert_index[upsert] = file.name
+
+        # Apply deletes
+        for delete in file.deletes:
+            # Delete any previous upserts
+            if delete in upsert_index:
+                del upsert_index[delete]
+
+            # Add to delete set, as the record could still be in the main table
+            deletes_set.add(delete)
+
+    # Need to change back the upsert data structure from record[< PMID key obj >] = filename to record[filename] = List[string of keys]
+    upserts = {}
+    pmid: PMID
+    for pmid, filename in upsert_index.items():
+        if filename in upserts:
+            upserts[filename].append(pmid.to_str())
+        else:
+            upserts[filename] = [pmid.to_str()]
+
+    deletes = [delete.to_dict() for delete in deletes_set]
+
+    return upserts, deletes
 
 
 def add_attributes(obj: Union[StringElement, DictionaryElement, ListElement, OrderedListElement, list, str]):

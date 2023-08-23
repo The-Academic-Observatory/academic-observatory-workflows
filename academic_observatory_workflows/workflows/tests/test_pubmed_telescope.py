@@ -14,7 +14,6 @@
 
 # Author: Alex Massen-Hane
 
-import ast
 import os
 import json
 import gzip
@@ -22,7 +21,6 @@ import shutil
 import hashlib
 import logging
 import pendulum
-import datetime
 from ftplib import FTP
 from typing import List, Dict
 from click.testing import CliRunner
@@ -44,7 +42,9 @@ from observatory.platform.observatory_environment import (
 
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.pubmed_telescope import (
+    PMID,
     Datafile,
+    PubmedUpdatefile,
     PubMedCustomEncoder,
     PubMedRelease,
     PubMedTelescope,
@@ -52,10 +52,11 @@ from academic_observatory_workflows.workflows.pubmed_telescope import (
     change_pubmed_list_structure,
     download_datafiles,
     load_datafile,
+    merge_upserts_and_deletes,
     parse_articles,
     parse_deletes,
     save_pubmed_jsonl,
-    save_pubmed_merged_records,
+    save_pubmed_merged_upserts,
     transform_pubmed,
 )
 
@@ -141,20 +142,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 "pubmed22n0003.xml.gz": "d6da2c87390489d22cdeb6e046b77da1",
                 "pubmed22n0004.xml.gz": "83764fc19cd98d247dc5603ca65569e6",
             },
-            "valid_record_keys": {
-                "pubmed22n0003.xml.gz": {
-                    "upserts": ["{'value': '2', 'Version': '2'}"],
-                    "deletes": ["{'value': '2', 'Version': '1'}"],
-                },
-                "pubmed22n0004.xml.gz": {
-                    "upserts": [
-                        "{'value': '1', 'Version': '1'}",
-                        "{'value': '36519887', 'Version': '1'}",
-                        "{'value': '36519888', 'Version': '1'}",
-                    ],
-                    "deletes": ["{'value': '30971', 'Version': '1'}"],
-                },
-            },
             "PMID_list": [
                 {"f0_": {"_field_1": "1", "_field_2": "1"}},
                 {"f0_": {"_field_1": "2", "_field_2": "2"}},
@@ -190,12 +177,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
             ],
             "md5hash_download": {
                 "pubmed22n0005.xml.gz": "9c61c5b19f021cadfc57845d0d1dcbc9",
-            },
-            "valid_record_keys": {
-                "pubmed22n0005.xml.gz": {
-                    "upserts": ["{'value': '2994179', 'Version': '1'}", "{'value': '2994180', 'Version': '1'}"],
-                    "deletes": ["{'value': '2', 'Version': '2'}"],
-                },
             },
             "update_tables": {
                 "additions": 2,
@@ -278,18 +259,17 @@ class TestPubMedTelescope(ObservatoryTestCase):
             {
                 "wait_for_prev_dag_run": ["check_dependencies"],
                 "check_dependencies": ["list_datafiles_for_release"],
-                "list_datafiles_for_release": ["download_baseline"],
+                "list_datafiles_for_release": ["create_snapshot"],
+                "create_snapshot": ["download_baseline"],
                 "download_baseline": ["upload_downloaded_baseline"],
                 "upload_downloaded_baseline": ["transform_baseline"],
                 "transform_baseline": ["upload_transformed_baseline"],
                 "upload_transformed_baseline": ["bq_load_main_table"],
-                "bq_load_main_table": ["create_snapshot"],
-                "create_snapshot": ["download_updatefiles"],
+                "bq_load_main_table": ["download_updatefiles"],
                 "download_updatefiles": ["upload_downloaded_updatefiles"],
                 "upload_downloaded_updatefiles": ["transform_updatefiles"],
                 "transform_updatefiles": ["merge_upserts_and_deletes"],
-                "merge_upserts_and_deletes": ["save_merged_upserts_and_deletes"],
-                "save_merged_upserts_and_deletes": ["upload_merged_upsert_records"],
+                "merge_upserts_and_deletes": ["upload_merged_upsert_records"],
                 "upload_merged_upsert_records": ["bq_load_upsert_table"],
                 "bq_load_upsert_table": ["bq_upsert_records"],
                 "bq_upsert_records": ["upload_merged_delete_records"],
@@ -485,11 +465,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     )
                     self.assert_table_integrity(full_table_id, 4)
 
-                    ### Create Snapshot ### - This is skipped on the first yearly run of the workflow.
-                    task_id = workflow.create_snapshot.__name__
-                    ti = env.run_task(task_id)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
                     ##### UPDATEFILES #####
 
                     updatefiles = [datafile for datafile in release.datafile_list if not datafile.baseline]
@@ -525,41 +500,19 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # This step pulls out the upserts and delete records from the files
+                    # This step pulls out the upserts from the updatefiles and writes them as *.jsonl
                     for datafile in updatefiles:
                         self.assertTrue(os.path.exists(datafile.transform_upsert_file_path))
-                        self.assertTrue(os.path.exists(datafile.transform_delete_file_path))
 
                     ### Merge upserts and deletes  ###
                     task_id = workflow.merge_upserts_and_deletes.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Check that keys for upserts and deletes have been merged correctly.
-                    valid_record_keys = ti.xcom_pull(
-                        key="valid_record_keys", task_ids=task_id, include_prior_dates=False
-                    )
-                    self.assertEqual(len(valid_record_keys.keys()), len(run["valid_record_keys"].keys()))
-
-                    for updatefile, records in run["valid_record_keys"].items():
-                        self.assertTrue(updatefile in valid_record_keys)
-
-                        self.assertListEqual(
-                            valid_record_keys[updatefile]["upserts"], run["valid_record_keys"][updatefile]["upserts"]
-                        )
-                        self.assertListEqual(
-                            valid_record_keys[updatefile]["deletes"], run["valid_record_keys"][updatefile]["deletes"]
-                        )
-
-                    ### Save merged upserts and deletes  ###
-                    task_id = workflow.save_merged_upserts_and_deletes.__name__
-                    ti = env.run_task(task_id)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
                     # Check that files have been created for each datafile.
+                    self.assertTrue(os.path.exists(release.merged_delete_file_path))
                     for datafile in updatefiles:
                         self.assertTrue(os.path.exists(datafile.merged_upsert_file_path))
-                        self.assertTrue(os.path.exists(datafile.merged_delete_file_path))
 
                     ##### UPSERTS #####
 
@@ -593,21 +546,22 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                     ##### DELETES #####
 
-                    file_paths = [datafile.merged_delete_file_path for datafile in updatefiles if not datafile.baseline]
-
                     ### Upload merged delete records ###
                     task_id = workflow.upload_merged_delete_records.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Check that they exist in the cloud.
-                    for file in file_paths:
-                        logging.info(f"Transform_file_path - {file}")
-                        self.assert_blob_integrity(
-                            env.transform_bucket,
-                            gcs_blob_name_from_path(file),
-                            file,
-                        )
+                    # Only one delete file for all updatefiles.
+                    file = release.merged_delete_file_path
+
+                    # Check that it exists in the cloud.
+
+                    logging.info(f"Transform_file_path - {file}")
+                    self.assert_blob_integrity(
+                        env.transform_bucket,
+                        gcs_blob_name_from_path(file),
+                        file,
+                    )
 
                     ###  BQ load delete table
                     task_id = workflow.bq_load_delete_table.__name__
@@ -730,6 +684,20 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         datafile_list=run["datafiles"],
                     )
 
+                    ### Create Snapshot ###
+                    task_id = workflow.create_snapshot.__name__
+                    ti = env.run_task(task_id)
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    # Check that that snapshot table exists.
+                    snapshot_table_id = bq_sharded_table_id(
+                        workflow.cloud_workspace.project_id,
+                        workflow.bq_dataset_id,
+                        f"{workflow.bq_table_id}_snapshot",
+                        release.start_date,
+                    )
+                    self.assert_table_integrity(snapshot_table_id, 5)
+
                     ##### BASELINE #####
 
                     # No new baseline files should be downloaded as it's already been done for this year.
@@ -752,20 +720,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         f"{workflow.cloud_workspace.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}"
                     )
                     self.assert_table_integrity(full_table_id, 5)
-
-                    ### Create Snapshot ###
-                    task_id = workflow.create_snapshot.__name__
-                    ti = env.run_task(task_id)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Check that that snapshot table exists.
-                    snapshot_table_id = bq_sharded_table_id(
-                        workflow.cloud_workspace.project_id,
-                        workflow.bq_dataset_id,
-                        f"{workflow.bq_table_id}_snapshot",
-                        release.start_date,
-                    )
-                    self.assert_table_integrity(snapshot_table_id, 5)
 
                     ##### UPDATEFILES #####
 
@@ -805,42 +759,16 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     # This step pulls out the upserts and delete records from the files
                     for datafile in updatefiles:
                         self.assertTrue(os.path.exists(datafile.transform_upsert_file_path))
-                        self.assertTrue(os.path.exists(datafile.transform_delete_file_path))
 
                     ### Merge upserts and deletes  ###
                     task_id = workflow.merge_upserts_and_deletes.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    valid_record_keys = ti.xcom_pull(
-                        key="valid_record_keys", task_ids=task_id, include_prior_dates=False
-                    )
-
-                    # Check that keys for upserts and deletes have been merged correctly.
-                    valid_record_keys = ti.xcom_pull(
-                        key="valid_record_keys", task_ids=task_id, include_prior_dates=False
-                    )
-                    self.assertEqual(len(valid_record_keys.keys()), len(run["valid_record_keys"].keys()))
-
-                    for updatefile, records in run["valid_record_keys"].items():
-                        self.assertTrue(updatefile in valid_record_keys)
-
-                        self.assertListEqual(
-                            valid_record_keys[updatefile]["upserts"], run["valid_record_keys"][updatefile]["upserts"]
-                        )
-                        self.assertListEqual(
-                            valid_record_keys[updatefile]["deletes"], run["valid_record_keys"][updatefile]["deletes"]
-                        )
-
-                    ### Save merged upserts and deletes  ###
-                    task_id = workflow.save_merged_upserts_and_deletes.__name__
-                    ti = env.run_task(task_id)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
                     # Check that files have been created for each datafile.
+                    self.assertTrue(os.path.exists(release.merged_delete_file_path))
                     for datafile in updatefiles:
                         self.assertTrue(os.path.exists(datafile.merged_upsert_file_path))
-                        self.assertTrue(os.path.exists(datafile.merged_delete_file_path))
 
                     ##### UPSERTS #####
 
@@ -874,21 +802,20 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                     ##### DELETES #####
 
-                    file_paths = [datafile.merged_delete_file_path for datafile in updatefiles if not datafile.baseline]
+                    file = release.merged_delete_file_path
 
                     ### Upload merged delete records ###
                     task_id = workflow.upload_merged_delete_records.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Check that they exist in the cloud.
-                    for file in file_paths:
-                        logging.info(f"Transform_file_path - {file}")
-                        self.assert_blob_integrity(
-                            env.transform_bucket,
-                            gcs_blob_name_from_path(file),
-                            file,
-                        )
+                    # Check that it exists in the cloud.
+                    logging.info(f"Transform_file_path - {file}")
+                    self.assert_blob_integrity(
+                        env.transform_bucket,
+                        gcs_blob_name_from_path(file),
+                        file,
+                    )
 
                     ###  BQ load delete table ###
                     task_id = workflow.bq_load_delete_table.__name__
@@ -1015,17 +942,16 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(len(baseline_datafiles), 2)
 
                     task_ids = [
+                        "create_snapshot",
                         "download_baseline",
                         "upload_downloaded_baseline",
                         "transform_baseline",
                         "upload_transformed_baseline",
                         "bq_load_main_table",
-                        "create_snapshot",
                         "download_updatefiles",
                         "upload_downloaded_updatefiles",
                         "transform_updatefiles",
                         "merge_upserts_and_deletes",
-                        "save_merged_upserts_and_deletes",
                     ]
 
                     for task_id in task_ids:
@@ -1199,13 +1125,10 @@ class TestPubMedUtils(ObservatoryTestCase):
 
             self.assertEqual(data_to_write, data_read_in)
 
-    def test_save_pubmed_merged_records(self):
+    def test_save_pubmed_merged_upserts(self):
         """Test if records can be reliably pulled from transformed files and written to merged record files."""
 
-        record_keys_per_file = {
-            "upserts": ["{'value': 12345, 'Version': 1}"],
-            "deletes": ["{'value': 67891, 'Version': 2}"],
-        }
+        upsert_records = ["{'value': 12345, 'Version': 1}"]
 
         record = [
             {
@@ -1220,23 +1143,16 @@ class TestPubMedUtils(ObservatoryTestCase):
         filename = "pubmed_temp.jsonl"
 
         with CliRunner().isolated_filesystem() as tmp_dir:
-            input_dir = os.path.join(tmp_dir, filename)
-            save_pubmed_jsonl(input_dir, record)
+            input_path = os.path.join(tmp_dir, filename)
+            save_pubmed_jsonl(input_path, record)
 
             upsert_output_path = os.path.join(tmp_dir, "upsert_output.jsonl.gz")
-            delete_output_path = os.path.join(tmp_dir, "delete_output.jsonl.gz")
 
-            save_pubmed_merged_records(
-                filename, record_keys_per_file, input_dir, upsert_output_path, delete_output_path
-            )
+            save_pubmed_merged_upserts(filename, upsert_records, input_path, upsert_output_path)
 
             with gzip.open(upsert_output_path, "rb") as f_in:
                 data = [json.loads(line) for line in f_in]
             self.assertListEqual(record, data)
-
-            with gzip.open(delete_output_path, "rb") as f_in:
-                data = [json.loads(line) for line in f_in]
-            self.assertListEqual([ast.literal_eval(record) for record in record_keys_per_file["deletes"]], data)
 
     def test_parse_articles(self):
         """Test if PubmedArticle records can be pulled out from a data dictionary."""
@@ -1330,10 +1246,10 @@ class TestPubMedUtils(ObservatoryTestCase):
             ### VALID UPDATEFILE XML ###
 
             expected_keys = {
-                "deletes": ["{'value': '2', 'Version': '1'}"],
+                "deletes": [{"value": "2", "Version": "1"}],
                 "upserts": [
-                    "{'value': '1', 'Version': '1'}",
-                    "{'value': '2', 'Version': '2'}",
+                    {"value": "1", "Version": "1"},
+                    {"value": "2", "Version": "2"},
                 ],
             }
 
@@ -1349,15 +1265,99 @@ class TestPubMedUtils(ObservatoryTestCase):
             valid_xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "updatefiles", "pubmed22n0003.xml.gz")
             shutil.copy2(valid_xml_file_path, datafile_good.download_file_path)
 
-            filename, output_keys = transform_pubmed(
-                input_path=datafile_good.download_file_path,
-                upsert_path=datafile_good.transform_upsert_file_path,
-                delete_path=datafile_good.transform_delete_file_path,
+            result: PubmedUpdatefile = transform_pubmed(
+                input_path=datafile_good.download_file_path, upsert_path=datafile_good.transform_upsert_file_path
             )
             self.assertTrue(os.path.exists(datafile_good.transform_upsert_file_path))
-            self.assertTrue(os.path.exists(datafile_good.transform_delete_file_path))
-            self.assertEqual(os.path.basename(datafile_good.download_file_path), filename)
-            self.assertDictEqual(output_keys, expected_keys)
+            self.assertEqual(os.path.basename(datafile_good.download_file_path), result.name)
+            self.assertListEqual([upsert.to_dict() for upsert in result.upserts], expected_keys["upserts"])
+            self.assertListEqual([delete.to_dict() for delete in result.deletes], expected_keys["deletes"])
+
+    def test_merge_upserts_and_deletes(self):
+        updatefiles = [
+            PubmedUpdatefile(
+                "pubmed23n0001",
+                # Insert new records
+                [PMID(10, 1), PMID(11, 1), PMID(12, 1), PMID(13, 1), PMID(14, 1), PMID(15, 1)],
+                # Delete records from baseline
+                [PMID(1, 1), PMID(2, 1)],
+            ),
+            PubmedUpdatefile(
+                "pubmed23n0002",
+                # Upsert over a previous record: PMID(10, 1)
+                # Add a new version: PMID(12, 2), PMID(13, 2)
+                # Add a new record: PMID(16, 1), PMID(17, 1)
+                [PMID(10, 1), PMID(12, 2), PMID(13, 2), PMID(16, 1), PMID(17, 1)],
+                # Delete a record from the previous day: PMID(11, 1)
+                # Delete a record that was upserted on the same day: PMID(18, 1) n.b. this is removed from upserts
+                [PMID(11, 1), PMID(18, 1)],
+            ),
+            PubmedUpdatefile(
+                "pubmed23n0003",
+                # Upsert over a previous record: PMID(10, 1), PMID(17, 1)
+                # Add new records:
+                [PMID(10, 1), PMID(17, 1), PMID(19, 1), PMID(20, 1), PMID(21, 1)],
+                # Delete record added on previous day: PMID(13, 2)
+                [PMID(13, 2)],
+            ),
+            PubmedUpdatefile(
+                "pubmed23n0004",
+                # Add a record deleted on a previous day: PMID(13, 2)
+                # Add new versions:
+                # Add new records:
+                [PMID(13, 2), PMID(17, 1), PMID(19, 1), PMID(22, 1), PMID(23, 1)],
+                # Delete records:
+                [],
+            ),
+            PubmedUpdatefile(
+                "pubmed23n0005",
+                # Upsert new records:
+                [PMID(24, 1), PMID(25, 1)],
+                # Delete records that were previously upserted multiple times: PMID(17, 1)
+                [PMID(17, 1)],
+            ),
+        ]
+        expected_upserts = {
+            "pubmed23n0003": [
+                "{'value': 10, 'Version': 1}",
+                "{'value': 20, 'Version': 1}",
+                "{'value': 21, 'Version': 1}",
+            ],
+            "pubmed23n0001": [
+                "{'value': 12, 'Version': 1}",
+                "{'value': 13, 'Version': 1}",
+                "{'value': 14, 'Version': 1}",
+                "{'value': 15, 'Version': 1}",
+            ],
+            "pubmed23n0002": [
+                "{'value': 12, 'Version': 2}",
+                "{'value': 16, 'Version': 1}",
+            ],
+            "pubmed23n0004": [
+                "{'value': 19, 'Version': 1}",
+                "{'value': 13, 'Version': 2}",
+                "{'value': 22, 'Version': 1}",
+                "{'value': 23, 'Version': 1}",
+            ],
+            "pubmed23n0005": [
+                "{'value': 24, 'Version': 1}",
+                "{'value': 25, 'Version': 1}",
+            ],
+        }
+        expected_deletes = [
+            {"value": 1, "Version": 1},
+            {"value": 2, "Version": 1},
+            {"value": 11, "Version": 1},
+            {"value": 17, "Version": 1},
+            {"value": 18, "Version": 1},
+        ]
+
+        # Check if we receive expected output
+        actual_upserts, actual_deletes = merge_upserts_and_deletes(updatefiles)
+        actual_deletes.sort(key=lambda delete: delete["value"])
+
+        self.assertDictEqual(expected_upserts, actual_upserts)
+        self.assertListEqual(expected_deletes, actual_deletes)
 
     def test_add_attributes(self):
         """
