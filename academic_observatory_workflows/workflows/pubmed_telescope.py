@@ -44,7 +44,7 @@ from academic_observatory_workflows.config import schema_folder as default_schem
 from observatory.platform.config import AirflowConns
 from observatory.platform.observatory_config import CloudWorkspace
 from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.platform.files import get_chunks, load_jsonl, save_jsonl_gz
+from observatory.platform.files import get_chunks, yield_jsonl, save_jsonl_gz
 from observatory.platform.gcs import gcs_upload_files, gcs_blob_name_from_path
 from observatory.platform.airflow import PreviousDagRunSensor, is_first_dag_run
 from observatory.platform.workflows.workflow import Workflow, set_task_state, cleanup
@@ -902,10 +902,11 @@ class PubMedTelescope(Workflow):
         updatefiles = [PubmedUpdatefile.from_dict(updatefile) for updatefile in updatefile_list]
 
         # Merge records and return a list of what upserts to pull from the transformed updatefiles.
-        upserts, deletes = merge_upserts_and_deletes(updatefiles)
+        upsert_index, deletes = merge_upserts_and_deletes(updatefiles)
 
         # Save deletes
-        save_jsonl_gz(release.merged_delete_file_path, deletes)
+        data = [delete.to_dict() for delete in deletes]
+        save_jsonl_gz(release.merged_delete_file_path, data)
 
         # Save final upserts
         for i, chunk in enumerate(get_chunks(input_list=datafiles, chunk_size=self.max_processes)):
@@ -916,12 +917,11 @@ class PubMedTelescope(Workflow):
                 datafile: Datafile
                 for datafile in chunk:
                     filename = os.path.basename(datafile.download_file_path)
-                    assert filename in upserts, f"records for file: {filename} are not present in list of upserts. "
 
                     future = executor.submit(
                         save_pubmed_merged_upserts,
                         filename,
-                        upserts[filename],
+                        upsert_index,
                         datafile.transform_upsert_file_path,
                         datafile.merged_upsert_file_path,
                     )
@@ -1270,7 +1270,7 @@ def transform_pubmed(input_path: str, upsert_path: str) -> Union[bool, str, Pubm
 
 def save_pubmed_merged_upserts(
     filename: str,
-    upserts: List[str],
+    upsert_index: Dict[PMID, str],
     input_path: str,
     output_path: str,
 ) -> str:
@@ -1282,15 +1282,16 @@ def save_pubmed_merged_upserts(
     :param output_path: Destination of where to write the merged upsert records.
     :return filename: Name of the original updatefile, for logging purposes.
     """
-
-    full_upsert_records = {str(record["MedlineCitation"]["PMID"]): record for record in load_jsonl(input_path)}
-    upserts_to_write = [full_upsert_records[record_key] for record_key in upserts]
-    save_pubmed_jsonl(output_path, upserts_to_write)
-
+    data = []
+    for record in yield_jsonl(input_path):
+        pmid = PMID.from_dict(record["MedlineCitation"]["PMID"])
+        if upsert_index[pmid] == filename:
+            data.append(record)
+    save_pubmed_jsonl(output_path, data)
     return filename
 
 
-def merge_upserts_and_deletes(updatefiles: List[PubmedUpdatefile]) -> Tuple[Dict[str, List[str]], List[Dict]]:
+def merge_upserts_and_deletes(updatefiles: List[PubmedUpdatefile]) -> Tuple[Dict[PMID, str], Set[PMID]]:
     """Merge the Pubmed upserts and deletes and return them as a list of PMID value-Version pairs so that they can be
     easily pulled from file.
 
@@ -1298,7 +1299,7 @@ def merge_upserts_and_deletes(updatefiles: List[PubmedUpdatefile]) -> Tuple[Dict
     :return: The merged upserts and deletes."""
 
     upsert_index = dict()
-    deletes_set = set()
+    deletes = set()
 
     updatefiles.sort(key=lambda x: x.name)
     for file in updatefiles:
@@ -1306,8 +1307,8 @@ def merge_upserts_and_deletes(updatefiles: List[PubmedUpdatefile]) -> Tuple[Dict
         for upsert in file.upserts:
             # Check if item was previously deleted
             # and remove this delete if so
-            if upsert in deletes_set:
-                deletes_set.remove(upsert)
+            if upsert in deletes:
+                deletes.remove(upsert)
 
             # Update the file where the upsert comes from
             upsert_index[upsert] = file.name
@@ -1319,20 +1320,9 @@ def merge_upserts_and_deletes(updatefiles: List[PubmedUpdatefile]) -> Tuple[Dict
                 del upsert_index[delete]
 
             # Add to delete set, as the record could still be in the main table
-            deletes_set.add(delete)
+            deletes.add(delete)
 
-    # Need to change back the upsert data structure from record[< PMID key obj >] = filename to record[filename] = List[string of keys]
-    upserts = {}
-    pmid: PMID
-    for pmid, filename in upsert_index.items():
-        if filename in upserts:
-            upserts[filename].append(pmid.to_str())
-        else:
-            upserts[filename] = [pmid.to_str()]
-
-    deletes = [delete.to_dict() for delete in deletes_set]
-
-    return upserts, deletes
+    return upsert_index, deletes
 
 
 def add_attributes(obj: Union[StringElement, DictionaryElement, ListElement, OrderedListElement, list, str]):

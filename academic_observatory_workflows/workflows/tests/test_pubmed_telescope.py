@@ -1133,7 +1133,8 @@ class TestPubMedUtils(ObservatoryTestCase):
     def test_save_pubmed_merged_upserts(self):
         """Test if records can be reliably pulled from transformed files and written to merged record files."""
 
-        upsert_records = ["{'value': 12345, 'Version': 1}"]
+        filename = "pubmed_temp.jsonl"
+        upsert_index = {PMID(12345, 1): filename}
 
         record = [
             {
@@ -1145,22 +1146,20 @@ class TestPubMedUtils(ObservatoryTestCase):
             }
         ]
 
-        filename = "pubmed_temp.jsonl"
-
         with CliRunner().isolated_filesystem() as tmp_dir:
             input_path = os.path.join(tmp_dir, filename)
             save_pubmed_jsonl(input_path, record)
 
             upsert_output_path = os.path.join(tmp_dir, "upsert_output.jsonl.gz")
 
-            save_pubmed_merged_upserts(filename, upsert_records, input_path, upsert_output_path)
+            save_pubmed_merged_upserts(filename, upsert_index, input_path, upsert_output_path)
 
             with gzip.open(upsert_output_path, "rb") as f_in:
                 data = [json.loads(line) for line in f_in]
             self.assertListEqual(record, data)
 
     def test_parse_articles(self):
-        """Test if PubmedArticle records can be pulled out from a data dictionary."""
+        """Test if PubmedArticle records (upserts) can be pulled out from a data dictionary."""
 
         data_good = {
             "PubmedArticle": [{"value": 12345, "Version": 1}, {"value": 67891, "Version": 2}],
@@ -1177,7 +1176,7 @@ class TestPubMedUtils(ObservatoryTestCase):
         self.assertEqual([], parse_articles(data_bad))
 
     def test_parse_deletes(self):
-        """Test if DeleteCiation records can be pulled out from a data dictionary."""
+        """Test if DeleteCiation records (deletes) can be pulled out from a data dictionary."""
 
         data_good = {
             "PubmedArticle": [{"value": 12345, "Version": 1}, {"value": 67891, "Version": 2}],
@@ -1222,11 +1221,11 @@ class TestPubMedUtils(ObservatoryTestCase):
             shutil.copy2(bad_xml_file_path, datafile_bad.download_file_path)
 
             # Attempt to transform bad xml - just a baseline file, returns a baseline file if it is successful.
-            output = transform_pubmed(
+            result: bool = transform_pubmed(
                 input_path=datafile_bad.download_file_path, upsert_path=datafile_bad.transform_upsert_file_path
             )
             self.assertFalse(os.path.exists(datafile_bad.transform_baseline_file_path))
-            self.assertFalse(output)
+            self.assertFalse(result)
 
             datafile_good = Datafile(
                 filename="pubmed22n0001.xml.gz",
@@ -1242,11 +1241,11 @@ class TestPubMedUtils(ObservatoryTestCase):
             shutil.copy2(valid_xml_file_path, datafile_good.download_file_path)
 
             # Attempt to transform valid xml - should output a transformed file if it is successful.
-            filename = transform_pubmed(
+            result: str = transform_pubmed(
                 input_path=datafile_good.download_file_path, upsert_path=datafile_good.transform_baseline_file_path
             )
             self.assertTrue(os.path.exists(datafile_good.transform_baseline_file_path))
-            self.assertEqual(os.path.basename(datafile_good.download_file_path), filename)
+            self.assertEqual(os.path.basename(datafile_good.download_file_path), result)
 
             ### VALID UPDATEFILE XML ###
 
@@ -1323,46 +1322,34 @@ class TestPubMedUtils(ObservatoryTestCase):
             ),
         ]
         expected_upserts = {
-            "pubmed23n0003": [
-                "{'value': 10, 'Version': 1}",
-                "{'value': 20, 'Version': 1}",
-                "{'value': 21, 'Version': 1}",
-            ],
-            "pubmed23n0001": [
-                "{'value': 12, 'Version': 1}",
-                "{'value': 13, 'Version': 1}",
-                "{'value': 14, 'Version': 1}",
-                "{'value': 15, 'Version': 1}",
-            ],
-            "pubmed23n0002": [
-                "{'value': 12, 'Version': 2}",
-                "{'value': 16, 'Version': 1}",
-            ],
-            "pubmed23n0004": [
-                "{'value': 19, 'Version': 1}",
-                "{'value': 13, 'Version': 2}",
-                "{'value': 22, 'Version': 1}",
-                "{'value': 23, 'Version': 1}",
-            ],
-            "pubmed23n0005": [
-                "{'value': 24, 'Version': 1}",
-                "{'value': 25, 'Version': 1}",
-            ],
+            PMID(12, 1): "pubmed23n0001",
+            PMID(13, 1): "pubmed23n0001",
+            PMID(14, 1): "pubmed23n0001",
+            PMID(15, 1): "pubmed23n0001",
+            PMID(12, 2): "pubmed23n0002",
+            PMID(16, 1): "pubmed23n0002",
+            PMID(10, 1): "pubmed23n0003",
+            PMID(20, 1): "pubmed23n0003",
+            PMID(21, 1): "pubmed23n0003",
+            PMID(19, 1): "pubmed23n0004",
+            PMID(13, 2): "pubmed23n0004",
+            PMID(22, 1): "pubmed23n0004",
+            PMID(23, 1): "pubmed23n0004",
+            PMID(24, 1): "pubmed23n0005",
+            PMID(25, 1): "pubmed23n0005",
         }
-        expected_deletes = [
-            {"value": 1, "Version": 1},
-            {"value": 2, "Version": 1},
-            {"value": 11, "Version": 1},
-            {"value": 17, "Version": 1},
-            {"value": 18, "Version": 1},
-        ]
+        expected_deletes = {
+            PMID(17, 1),
+            PMID(1, 1),
+            PMID(2, 1),
+            PMID(11, 1),
+            PMID(18, 1),
+        }
 
         # Check if we receive expected output
         actual_upserts, actual_deletes = merge_upserts_and_deletes(updatefiles)
-        actual_deletes.sort(key=lambda delete: delete["value"])
-
         self.assertDictEqual(expected_upserts, actual_upserts)
-        self.assertListEqual(expected_deletes, actual_deletes)
+        self.assertSetEqual(expected_deletes, actual_deletes)
 
     def test_add_attributes(self):
         """
@@ -1397,7 +1384,7 @@ class TestPubMedUtils(ObservatoryTestCase):
         self.assertEqual(objects_in, expected)
 
     def test_change_pubmed_list_structure(self):
-        """Test that the data in list fields can be moved up one level to the parent list field."""
+        """Test that the data in *list fields can be moved up one level to the parent field."""
 
         input = [
             {
