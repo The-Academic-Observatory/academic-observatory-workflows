@@ -283,15 +283,28 @@ def ror_to_ror_hierarchy_index(ror: List[Dict]) -> Dict:
     # Add all child -> parent relationships to index
     for row in ror:
         ror_id = row["id"]
+        name = row["name"]
 
         for rel in row["relationships"]:
             rel_id = rel["id"]
             rel_type = rel["type"]
+            rel_label = rel["label"]
 
             if rel_type == "Parent":
-                index[ror_id].add(rel_id)
+                if ror_id in index:
+                    index[ror_id].add(rel_id)
+                else:
+                    logging.warning(
+                        f"Parent does not exist in database for relationship: parent({rel_id}, {rel_label}), child({ror_id}, {name})"
+                    )
+
             elif rel_type == "Child":
-                index[rel_id].add(ror_id)
+                if rel_id in index:
+                    index[rel_id].add(ror_id)
+                else:
+                    logging.warning(
+                        f"Child does not exist in database for relationship: parent({ror_id}, {name}), child({rel_id}, {rel_label})"
+                    )
 
     # Convert parent sets to ancestor sets
     ancestor_index = copy.deepcopy(index)
