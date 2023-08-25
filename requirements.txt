@@ -8,3 +8,4 @@ boto3>=1.15.0,<2
 nltk>=3,<4
 Deprecated>=1,<2
 limits>=3,<4
+biopython>=1.81,<2
