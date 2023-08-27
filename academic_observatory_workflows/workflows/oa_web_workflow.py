@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import glob
 import json
 import logging
 import math
@@ -409,7 +410,7 @@ class OaWebWorkflow(Workflow):
             )
 
             # Fetch data
-            destination_uri = f"gs://{self.cloud_workspace.download_bucket}/{blob_prefix}/{table_name}-data.jsonl.gz"
+            destination_uri = f"gs://{self.cloud_workspace.download_bucket}/{blob_prefix}/{table_name}-data-*.jsonl.gz"
             query = (
                 DATA_QUERY.format(
                     agg_table_id=agg_table_id,
@@ -425,9 +426,7 @@ class OaWebWorkflow(Workflow):
             table_id=ror_table_id,
             end_date=release.snapshot_date,
         )[0]
-        ror_table_id = bq_sharded_table_id(
-            self.input_project_id, self.bq_ror_dataset_id, "ror", ror_snapshot_date
-        )
+        ror_table_id = bq_sharded_table_id(self.input_project_id, self.bq_ror_dataset_id, "ror", ror_snapshot_date)
         country_table_id = bq_table_id(self.input_project_id, self.bq_settings_dataset_id, "country")
 
         # Query institution index table
@@ -540,13 +539,13 @@ class OaWebWorkflow(Workflow):
             logging.info(f"preprocess_data: {category}")
 
             # Load and preprocess data
-            file_name = f"{category}-data.jsonl.gz"
-            data_path = os.path.join(release.download_folder, file_name)
-            df_data = load_data(data_path)
+            data_path = os.path.join(release.download_folder, f"{category}-data-*.jsonl.gz")
+            data = load_data_glob(data_path)
+            df_data = pd.DataFrame(data)
             preprocess_data_df(category, df_data)
 
             # Save to intermediate path
-            data_path = os.path.join(release.intermediate_path, file_name)
+            data_path = os.path.join(release.intermediate_path, f"{category}-data.jsonl.gz")
             records = df_data.to_dict("records")
             save_jsonl_gz(data_path, records)
 
@@ -1256,6 +1255,22 @@ def repositories_merge_category(cat):
 ######################
 # Transform data
 ######################
+
+
+def load_data_glob(pattern: str) -> List[Dict]:
+    """Load country or institution data files into a Pandas DataFrame.
+
+    :param pattern: the file path including a glob pattern.
+    :return: the list of dicts.
+    """
+
+    file_paths = sorted(glob.glob(pattern))
+
+    data = []
+    for file_path in file_paths:
+        data += load_jsonl(file_path)
+
+    return data
 
 
 def load_data(file_path: str) -> pd.DataFrame:

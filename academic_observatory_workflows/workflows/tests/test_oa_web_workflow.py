@@ -55,6 +55,8 @@ from academic_observatory_workflows.workflows.oa_web_workflow import (
     update_df_with_percentages,
     make_index,
     save_json,
+    load_data_glob,
+    save_jsonl_gz,
 )
 from observatory.platform.bigquery import bq_find_schema
 from observatory.platform.files import load_jsonl
@@ -553,8 +555,8 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                 expected_file_names = [
                     "country-index.jsonl.gz",
                     "institution-index.jsonl.gz",
-                    "country-data.jsonl.gz",
-                    "institution-data.jsonl.gz",
+                    "country-data-000000000000.jsonl.gz",
+                    "institution-data-000000000000.jsonl.gz",
                 ]
                 for file_name in expected_file_names:
                     path = os.path.join(release.download_folder, file_name)
@@ -655,6 +657,27 @@ class TestOaWebWorkflow(ObservatoryTestCase):
             writer.write_all(test_data)
         df = pd.DataFrame(test_data)
         return df
+
+    def test_load_data_glob(self):
+        with CliRunner().isolated_filesystem() as t:
+            path = os.path.join(t, "data-000000000000.jsonl.gz")
+            save_jsonl_gz(path, [{"name": "Jim"}, {"name": "David"}, {"name": "Jane"}])
+
+            path = os.path.join(t, "data-000000000001.jsonl.gz")
+            save_jsonl_gz(path, [{"name": "Joe"}, {"name": "Blogs"}, {"name": "Daniels"}])
+
+            # Compare
+            expected = [
+                {"name": "Jim"},
+                {"name": "David"},
+                {"name": "Jane"},
+                {"name": "Joe"},
+                {"name": "Blogs"},
+                {"name": "Daniels"},
+            ]
+
+            actual = load_data_glob(os.path.join(t, "data-*.jsonl.gz"))
+            self.assertEqual(expected, actual)
 
     def test_load_data(self):
         entity_type = "country"
