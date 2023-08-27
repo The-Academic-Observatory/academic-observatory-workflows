@@ -24,6 +24,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo apt-get install pigz -y
+          
           python -m pip install --upgrade pip
 
           cd ..
