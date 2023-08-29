@@ -292,7 +292,7 @@ class OaWebWorkflow(Workflow):
         bq_agg_dataset_id: str = "observatory",
         bq_ror_dataset_id: str = "ror",
         bq_settings_dataset_id: str = "settings",
-        version: str = "v9",
+        version: str = "v10",
         zenodo_host: str = "https://zenodo.org",
         github_conn_id="oa_web_github_token",
         zenodo_conn_id="oa_web_zenodo_token",
