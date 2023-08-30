@@ -37,7 +37,7 @@ SELECT
   *,
  FROM
   (SELECT
-    {# This SQL block links unpaywall, open citations and crossref events to the DOI and the metadata found in the crossref metadata dataset #}
+    {# This SQL block links unpaywall, pubmed, open citations and crossref events to the DOI and the metadata found in the crossref metadata dataset #}
     UPPER(TRIM(ref.doi)) as doi,
     STRUCT(
             title, abstract, issued.date_parts[offset(0)] as published_year,
@@ -51,6 +51,7 @@ SELECT
     (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.openalex{{ snapshot_date.strftime('%Y%m%d') }}` as openalex WHERE openalex.doi = UPPER(TRIM(ref.doi))) as openalex,
     (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.open_citations{{ snapshot_date.strftime('%Y%m%d') }}` as oa WHERE oa.doi = UPPER(TRIM(ref.doi))) as open_citations,
     (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.crossref_events{{ snapshot_date.strftime('%Y%m%d') }}` as events WHERE events.doi = UPPER(TRIM(ref.doi))) as events,
+    (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.pubmed{{ snapshot_date.strftime('%Y%m%d') }}` as pubmed WHERE pubmed.doi = UPPER(TRIM(ref.doi))) as pubmed,
     (SELECT as STRUCT * from coki_affiliations_temp as coki_affiliations WHERE coki_affiliations.doi = UPPER(TRIM(ref.doi))) as coki_affiliations,
   FROM `{{ crossref_metadata.project_id }}.{{ crossref_metadata.dataset_id }}.crossref_metadata{{ crossref_metadata.snapshot_date.strftime('%Y%m%d') }}` as ref
   WHERE ARRAY_LENGTH(issued.date_parts) > 0)
@@ -216,7 +217,7 @@ SELECT
     ) as ror_groups,
 
   {#
-   dois_temp_table is created as the first sub-query in this script. It contains the data from crossref, unpaywall, openalex, open_citations and crossref events
+   dois_temp_table is created as the first sub-query in this script. It contains the data from crossref, unpaywall, openalex, open_citations, pubmed and crossref events
    This is then LEFT JOINed against the ROR dataset to take the raw ROR IDs that come from the OpenAlex dataset, with a more detailed view of that institution and its location. The county and region information comes from here
    This Instituional information is JOINed against a COKI created dataset, groupings, which allows for arbitrary grouping of institutions (or really RORs).
 
