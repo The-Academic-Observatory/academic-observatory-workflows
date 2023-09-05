@@ -14,17 +14,29 @@
 
 # Author: Alex Massen-Hane #}
 
-with PubmedTable as (
-SELECT 
-  UPPER(TRIM(ArticleIds.value)) as doi,
-  *,
-FROM 
-  `{{ pubmed.project_id }}.{{ pubmed.dataset_id }}.{{ pubmed.table_id }}`,
-  UNNEST(PubmedData.ArticleIdList) AS ArticleIds
-WHERE 
-  ArticleIds.IdType = 'doi'
-  and
-  ArticleIds.value is not NULL)
+--- This is to make an intermediate table of all records that have the highest version number from Pubmed which will be joined onto the DOI table. 
 
-SELECT * EXCEPT (IdType, value)
-FROM PubmedTable
+SELECT * EXCEPT(IdType, value, pmid, version) 
+FROM (
+  SELECT 
+    UPPER(TRIM(ArticleIds.value)) AS doi,
+    *
+  FROM 
+    `{{ pubmed.project_id }}.{{ pubmed.dataset_id }}.{{ pubmed.table_id }}`,
+    UNNEST(PubmedData.ArticleIdList) AS ArticleIds
+  JOIN (
+    SELECT
+      MedlineCitation.PMID.value AS pmid,
+      CAST(ARRAY_AGG(MedlineCitation.PMID.Version ORDER BY MedlineCitation.PMID.Version DESC)[0] AS INTEGER) AS version
+    FROM `{{ pubmed.project_id }}.{{ pubmed.dataset_id }}.{{ pubmed.table_id }}`  
+    GROUP BY pmid
+  ) AS highestVersion
+  ON 
+    highestVersion.pmid = MedlineCitation.PMID.value
+    AND 
+    highestVersion.version = CAST(MedlineCitation.PMID.Version AS INTEGER)
+  WHERE 
+    ArticleIds.IdType = 'doi'
+    AND 
+    ArticleIds.value IS NOT NULL
+  )

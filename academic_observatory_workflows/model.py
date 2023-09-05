@@ -1051,17 +1051,6 @@ def make_openalex_dataset(dataset: ObservatoryDataset) -> List[dict]:
     return result
 
 
-def make_pubmed_PMID(input: str) -> Dict[str, str]:
-    """Creates an example PMID value and Version based off of an input string.
-
-    :param input: An input string.
-    :return: A dictionary of holding the PMID value and Version."""
-
-    encoded_bytes = input.encode("utf-8")
-    int_string = str(int(binascii.hexlify(encoded_bytes).decode("utf-8"), 16))
-    return {"value": int_string[:6], "Version": int_string[-1] if int(int_string[-1]) > 0 else "1"}
-
-
 def make_pubmed(dataset: ObservatoryDataset) -> List[Dict]:
     """Generate the Pubmed table from an ObservatoryDataset instance.
 
@@ -1075,7 +1064,7 @@ def make_pubmed(dataset: ObservatoryDataset) -> List[Dict]:
         records.append(
             {
                 "MedlineCitation": {
-                    "PMID": make_pubmed_PMID(paper.doi),
+                    "PMID": {"value": paper.id, "Version": "1"},
                     "Article": {
                         "ArticleTitle": paper.title,
                         "ArticleDate": {
@@ -1093,6 +1082,31 @@ def make_pubmed(dataset: ObservatoryDataset) -> List[Dict]:
                 "PubmedData": {"ArticleIdList": [{"Idtype": "doi", "value": paper.doi}]},
             }
         )
+
+    # Append one last record with the same PMID but Version + 1 to check intermediate table works properly.
+    # There should now be 101 records for the table, but the intermediate table should only have 100 as it only selects the
+    # records with the highest Version value.
+    records.append(
+        {
+            "MedlineCitation": {
+                "PMID": {"value": paper.id, "Version": "2"},
+                "Article": {
+                    "ArticleTitle": paper.title,
+                    "ArticleDate": {
+                        "Day": paper.published_date.day,
+                        "Month": paper.published_date.month,
+                        "Year": paper.published_date.year,
+                    },
+                },
+                "DateCompleted": {
+                    "Day": paper.published_date.day,
+                    "Month": paper.published_date.month,
+                    "Year": paper.published_date.year,
+                },
+            },
+            "PubmedData": {"ArticleIdList": [{"Idtype": "doi", "value": paper.doi}]},
+        }
+    )
 
     return records
 
@@ -1405,28 +1419,7 @@ def make_doi_table(dataset: ObservatoryDataset) -> List[Dict]:
                 "unpaywall": {},
                 "unpaywall_history": {},
                 "open_citations": {},
-                "pubmed": {
-                    "doi": doi,
-                    "MedlineCitation": {
-                        "PMID": make_pubmed_PMID(paper.doi),
-                        "Article": {
-                            "ArticleTitle": paper.title,
-                            "ArticleDate": {
-                                "Day": paper.published_date.day,
-                                "Month": paper.published_date.month,
-                                "Year": paper.published_date.year,
-                            },
-                        },
-                        "DateCompleted": {
-                            "Day": paper.published_date.day,
-                            "Month": paper.published_date.month,
-                            "Year": paper.published_date.year,
-                        },
-                    },
-                    "PubmedData": {
-                        "ArticleIdList": [{"IdType": "doi", "value": paper.doi}],
-                    },
-                },
+                "pubmed": {},
                 "events": events,
                 "affiliations": {
                     "doi": doi,
