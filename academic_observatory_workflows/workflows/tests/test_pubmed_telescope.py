@@ -509,12 +509,12 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     for datafile in updatefiles:
                         self.assertTrue(os.path.exists(datafile.transform_upsert_file_path))
 
-                    ### Merge upserts and deletes  ###
+                    ### Merge upserts and deletes ###
                     task_id = workflow.merge_upserts_and_deletes.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Check that files have been created for each datafile.
+                    # Check that the merged upserts and deletes have been written to disk.
                     self.assertTrue(os.path.exists(release.merged_delete_file_path))
                     for datafile in updatefiles:
                         self.assertTrue(os.path.exists(datafile.merged_upsert_file_path))
@@ -770,7 +770,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Check that files have been created for each datafile.
+                    # Check that the merged upserts and deletes have been written to disk.
                     self.assertTrue(os.path.exists(release.merged_delete_file_path))
                     for datafile in updatefiles:
                         self.assertTrue(os.path.exists(datafile.merged_upsert_file_path))
@@ -1131,7 +1131,7 @@ class TestPubMedUtils(ObservatoryTestCase):
             self.assertEqual(data_to_write, data_read_in)
 
     def test_save_pubmed_merged_upserts(self):
-        """Test if records can be reliably pulled from transformed files and written to merged record files."""
+        """Test if records can be reliably pulled from transformed files and written to file."""
 
         filename = "pubmed_temp.jsonl"
         upsert_index = {PMID(12345, 1): filename}
@@ -1152,7 +1152,10 @@ class TestPubMedUtils(ObservatoryTestCase):
 
             upsert_output_path = os.path.join(tmp_dir, "upsert_output.jsonl.gz")
 
-            save_pubmed_merged_upserts(filename, upsert_index, input_path, upsert_output_path)
+            result_path = save_pubmed_merged_upserts(filename, upsert_index, input_path, upsert_output_path)
+
+            # Ensure that merged records have been written to disk.
+            self.assertTrue(os.path.exists(result_path))
 
             with gzip.open(upsert_output_path, "rb") as f_in:
                 data = [json.loads(line) for line in f_in]

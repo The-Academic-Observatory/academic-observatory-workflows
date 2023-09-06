@@ -886,7 +886,7 @@ class PubMedTelescope(Workflow):
 
         assert len(datafiles) == len(
             updatefiles
-        ), f"Number of updatefiles does not match the number of keys in record_keys: {len(datafiles)} vs {len(updatefiles)}"
+        ), f"Number of updatefiles does not match the number of non baseline datafiles: {len(datafiles)} vs {len(updatefiles)}"
 
         ti: TaskInstance = kwargs["ti"]
         updatefile_list = [updatefile.to_dict() for updatefile in updatefiles]
@@ -904,6 +904,10 @@ class PubMedTelescope(Workflow):
         # Merge records and return a list of what upserts to pull from the transformed updatefiles.
         upsert_index, deletes = merge_upserts_and_deletes(updatefiles)
 
+        logging.info(
+            f"Number of records for this release: {len(upsert_index.keys())} upserts and {len(deletes)} deletes."
+        )
+
         # Save deletes
         data = [delete.to_dict() for delete in deletes]
         save_jsonl_gz(release.merged_delete_file_path, data)
@@ -913,23 +917,22 @@ class PubMedTelescope(Workflow):
             with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
                 logging.info(f"In chunk {i} and processing files: {chunk}")
 
-                futures = {}
+                futures = []
                 datafile: Datafile
                 for datafile in chunk:
                     filename = os.path.basename(datafile.download_file_path)
 
-                    future = executor.submit(
-                        save_pubmed_merged_upserts,
-                        filename,
-                        upsert_index,
-                        datafile.transform_upsert_file_path,
-                        datafile.merged_upsert_file_path,
+                    futures.append(
+                        executor.submit(
+                            save_pubmed_merged_upserts,
+                            filename,
+                            upsert_index,
+                            datafile.transform_upsert_file_path,
+                            datafile.merged_upsert_file_path,
+                        )
                     )
-                    futures[future] = filename
-
                 for future in as_completed(futures):
-                    filename = futures[future]
-                    logging.info(f"Finished writing out upserts for updatefile: {filename}")
+                    logging.info(f"Finished writing out upserts to file: {future.result()}")
 
     ########## UPSERT RECORDS ##########
 
@@ -1277,18 +1280,22 @@ def save_pubmed_merged_upserts(
     """Used in parallel by save_merged_upserts_and_deletes to write out the merged upsert records using the custom
     Pubmed encoder.
 
+    :param filename: Name of the original updatefile used by the upsert_index.
     :param upserts: A list of upsert keys to pull out and write to file.
     :param input_path: Where the original upsert records are stored.
     :param output_path: Destination of where to write the merged upsert records.
-    :return filename: Name of the original updatefile, for logging purposes.
+    :return output_path: For logging purposes and ensuring the multithreaded task completed.
     """
     data = []
     for record in yield_jsonl(input_path):
         pmid = PMID.from_dict(record["MedlineCitation"]["PMID"])
-        if upsert_index[pmid] == filename:
-            data.append(record)
+        # If the PMID is in the upsert_index to write to file and
+        # then if the record is from the correct file. Could be replaced by newer record.
+        if pmid in upsert_index:
+            if upsert_index[pmid] == filename:
+                data.append(record)
     save_pubmed_jsonl(output_path, data)
-    return filename
+    return output_path
 
 
 def merge_upserts_and_deletes(updatefiles: List[PubmedUpdatefile]) -> Tuple[Dict[PMID, str], Set[PMID]]:
@@ -1301,8 +1308,17 @@ def merge_upserts_and_deletes(updatefiles: List[PubmedUpdatefile]) -> Tuple[Dict
     upsert_index = dict()
     deletes = set()
 
+    upsert_count = 0
+    delete_count = 0
+
     updatefiles.sort(key=lambda x: x.name)
     for file in updatefiles:
+        logging.info(
+            f"In file {file.name} - trying to merge {len(file.upserts)} upserts and {len(file.deletes)} deletes."
+        )
+        upsert_count += len(file.upserts)
+        delete_count += len(file.deletes)
+
         # Apply upserts
         for upsert in file.upserts:
             # Check if item was previously deleted
@@ -1321,6 +1337,8 @@ def merge_upserts_and_deletes(updatefiles: List[PubmedUpdatefile]) -> Tuple[Dict
 
             # Add to delete set, as the record could still be in the main table
             deletes.add(delete)
+
+    logging.info(f"Removed {upsert_count - len(upsert_index.keys())} upserts and {delete_count-len(deletes)} deletes.")
 
     return upsert_index, deletes
 
