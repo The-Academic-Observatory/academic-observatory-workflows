@@ -462,9 +462,19 @@ class TestOpenAlexUtils(ObservatoryTestCase):
             obj3,
         )
 
-        # Test object when "abstract_inverted_index" is a json string dump
+        # Test object when "abstract_inverted_index" is a json object with the "InvertedIndex" key
         obj4 = {
-            "abstract_inverted_index": '{"IndexLength": 7, "InvertedIndex": { "Malignant": [0], "hyperthermia": [1], "susceptibility": [2],"(MHS)": [3], "is": [4, 6], "primarily": [5]}}'
+            "abstract_inverted_index": {
+                "IndexLength": 7,
+                "InvertedIndex": {
+                    "Malignant": [0],
+                    "hyperthermia": [1],
+                    "susceptibility": [2],
+                    "(MHS)": [3],
+                    "is": [4, 6],
+                    "primarily": [5],
+                },
+            }
         }
         transform_object(obj4)
         self.assertDictEqual(
@@ -477,10 +487,25 @@ class TestOpenAlexUtils(ObservatoryTestCase):
             obj4,
         )
 
-        # Test object with nested "abstract_inverted_index" none
-        obj5 = {"abstract_inverted_index": None}
+        # Test object when "abstract_inverted_index" is a json string dump
+        obj5 = {
+            "abstract_inverted_index": '{"IndexLength": 7, "InvertedIndex": { "Malignant": [0], "hyperthermia": [1], "susceptibility": [2],"(MHS)": [3], "is": [4, 6], "primarily": [5]}}'
+        }
         transform_object(obj5)
-        self.assertDictEqual({"abstract_inverted_index": None}, obj5)
+        self.assertDictEqual(
+            {
+                "abstract_inverted_index": {
+                    "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
+                    "values": ["0", "1", "2", "3", "4, 6", "5"],
+                }
+            },
+            obj5,
+        )
+
+        # Test object with nested "abstract_inverted_index" none
+        obj6 = {"abstract_inverted_index": None}
+        transform_object(obj6)
+        self.assertDictEqual({"abstract_inverted_index": None}, obj6)
 
 
 def upload_folder_to_s3(bucket_name: str, folder_path: str, s3_prefix=None):

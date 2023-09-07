@@ -1014,17 +1014,10 @@ def transform_object(obj: dict):
     # TODO: when re-ingesting entire dataset: change schema to new version
     field = "abstract_inverted_index"
     if field in obj:
-
-        def parse_abstract(dict_: dict):
-            keys_ = list(dict_.keys())
-            values_ = [str(value_)[1:-1] for value_ in dict_.values()]
-            return {"keys": keys_, "values": values_}
-
-        if isinstance(obj.get(field), str):
-            data = json.loads(obj[field])
-            obj[field] = parse_abstract(data["InvertedIndex"])
-        elif isinstance(obj.get(field), dict):
-            obj[field] = parse_abstract(obj[field])
+        if isinstance(obj.get(field), (str, dict)):
+            load_field = json.loads(obj[field]) if isinstance(obj[field], str) else obj[field]
+            data = load_field.get("InvertedIndex", load_field)
+            obj[field] = {"keys": list(data.keys()), "values": [str(value)[1:-1] for value in data.values()]}
         else:
             return
 
