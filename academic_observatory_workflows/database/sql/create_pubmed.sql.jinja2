@@ -16,27 +16,25 @@
 
 --- This is to make an intermediate table of all records that have the highest version number from Pubmed which will be joined onto the DOI table. 
 
-SELECT * EXCEPT(IdType, value, pmid, version) 
+SELECT 
+  recent.doi,
+  pubmed.*
 FROM (
   SELECT 
-    UPPER(TRIM(ArticleIds.value)) AS doi,
-    *
-  FROM 
-    `{{ pubmed.project_id }}.{{ pubmed.dataset_id }}.{{ pubmed.table_id }}`,
-    UNNEST(PubmedData.ArticleIdList) AS ArticleIds
-  JOIN (
-    SELECT
-      MedlineCitation.PMID.value AS pmid,
-      CAST(ARRAY_AGG(MedlineCitation.PMID.Version ORDER BY MedlineCitation.PMID.Version DESC)[0] AS INTEGER) AS version
-    FROM `{{ pubmed.project_id }}.{{ pubmed.dataset_id }}.{{ pubmed.table_id }}`  
-    GROUP BY pmid
-  ) AS highestVersion
-  ON 
-    highestVersion.pmid = MedlineCitation.PMID.value
-    AND 
-    highestVersion.version = CAST(MedlineCitation.PMID.Version AS INTEGER)
-  WHERE 
-    ArticleIds.IdType = 'doi'
-    AND 
-    ArticleIds.value IS NOT NULL
+    pmid,
+    ARRAY_AGG(version ORDER BY CAST(version AS INT64) DESC LIMIT 1)[0] AS version,
+    ARRAY_AGG(doi     ORDER BY CAST(version AS INT64) DESC LIMIT 1)[0] AS doi,
+  FROM (
+    SELECT DISTINCT
+      MedlineCitation.PMID.value   AS pmid,
+      MedlineCitation.PMID.Version AS version,
+      UPPER(TRIM(pm.value))        AS doi
+    FROM `{{ pubmed.project_id }}.{{ pubmed.dataset_id }}.{{ pubmed.table_id }}`
+    LEFT JOIN UNNEST(PubmedData.ArticleIdList) AS pm 
+    WHERE pm.IdType = 'doi' AND TRIM(pm.value) IS NOT NULL
   )
+  GROUP BY pmid
+) AS recent
+INNER JOIN `{{ pubmed.project_id }}.{{ pubmed.dataset_id }}.{{ pubmed.table_id }}` AS pubmed
+ON  recent.pmid    = MedlineCitation.PMID.value  
+AND recent.version = MedlineCitation.PMID.Version
