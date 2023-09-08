@@ -514,7 +514,7 @@
     "mode": "NULLABLE",
     "name": "unpaywall",
     "type": "RECORD",
-    "description": "Data derived from Unpaywall"
+    "description":  "Data derived from Unpaywall"
   },
   {
     "fields": [
