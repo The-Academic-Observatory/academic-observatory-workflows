@@ -1,7 +1,7 @@
 import re
 import shlex
 import logging
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, TextIO
 from subprocess import Popen, PIPE
 from contextlib import contextmanager
 from tempfile import NamedTemporaryFile
@@ -43,7 +43,7 @@ class S5Cmd:
     def __init__(
         self,
         access_credentials: Tuple[str, str],
-        out_stream: str = PIPE,
+        out_stream: Union[None, int, TextIO] = PIPE,
     ):
         """S5Cmd class for executing s5cmd commands.
 
@@ -132,7 +132,7 @@ class S5Cmd:
             stdout, stderr = proc.communicate(input=blob_stdin.encode())
         returncode = proc.wait()
         if returncode > 0:
-            logging.warn(f"s5cmd cp failed with return code {returncode}: {stderr}")
+            logging.warning(f"s5cmd cp failed with return code {returncode}: {stderr}")
         return stdout, stderr, returncode
 
     def upload_to_bucket(
@@ -168,5 +168,5 @@ class S5Cmd:
             stdout, stderr = proc.communicate(input=blob_stdin.encode())
         returncode = proc.wait()
         if returncode > 0:
-            logging.warn(f"s5cmd cp failed with return code {returncode}: {stderr}")
+            logging.warning(f"s5cmd cp failed with return code {returncode}: {stderr}")
         return stdout, stderr, returncode

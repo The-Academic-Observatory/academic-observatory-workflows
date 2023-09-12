@@ -17,10 +17,12 @@
 
 from __future__ import annotations
 
+from functools import cached_property
 import datetime
 import time
 import logging
 import os
+from os import PathLike
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from datetime import timedelta
 from typing import List, Dict, Tuple, Union
@@ -101,13 +103,6 @@ class OrcidBatch:
         os.makedirs(self.download_batch_dir, exist_ok=True)
 
     @property
-    def expected_records(self) -> List[str]:
-        """List of expected ORCID records for this ORCID directory. Derived from the manifest file"""
-        with open(self.manifest_file, "r") as f:
-            reader = csv.DictReader(f)
-            return [os.path.basename(row["blob_name"]) for row in reader]
-
-    @property
     def existing_records(self) -> List[str]:
         """List of existing ORCID records on disk for this ORCID directory."""
         return [os.path.basename(path) for path in list_files(self.download_batch_dir, ORCID_RECORD_REGEX)]
@@ -117,7 +112,14 @@ class OrcidBatch:
         """List of missing ORCID records on disk for this ORCID directory."""
         return list(set(self.expected_records) - set(self.existing_records))
 
-    @property
+    @cached_property
+    def expected_records(self) -> List[str]:
+        """List of expected ORCID records for this ORCID directory. Derived from the manifest file"""
+        with open(self.manifest_file, "r") as f:
+            reader = csv.DictReader(f)
+            return [os.path.basename(row["blob_name"]) for row in reader]
+
+    @cached_property
     def blob_uris(self) -> List[str]:
         """List of blob URIs from the manifest this ORCID directory."""
         with open(self.manifest_file, "r") as f:
@@ -216,7 +218,7 @@ class OrcidTelescope(Workflow):
         self,
         dag_id: str,
         cloud_workspace: CloudWorkspace,
-        orcid_bucket: str = "orcid-testing",  # TODO: change before publishing
+        orcid_bucket: str = "ao-orcid",
         orcid_summaries_prefix: str = "orcid_summaries",
         bq_dataset_id: str = "orcid",
         bq_main_table_name: str = "orcid",
@@ -235,7 +237,7 @@ class OrcidTelescope(Workflow):
         aws_orcid_conn_id: str = "aws_orcid",
         start_date: pendulum.DateTime = pendulum.datetime(2023, 6, 1),
         schedule: str = "0 0 * * 0",  # Midnight UTC every Sunday
-        queue: str = "default",  # TODO: remote_queue
+        queue: str = "remote",
     ):
         """Construct an ORCID telescope instance"""
 
@@ -363,6 +365,7 @@ class OrcidTelescope(Workflow):
 
     def transfer_orcid(self, release: OrcidRelease, **kwargs):
         """Sync files from AWS bucket to Google Cloud bucket."""
+        success = False
         for i in range(self.transfer_attempts):
             logging.info(f"Beginning AWS to GCP transfer attempt no. {i+1}")
             success, objects_count = gcs_create_aws_transfer(
@@ -519,9 +522,8 @@ class OrcidTelescope(Workflow):
 
     def upload_transformed(self, release: OrcidRelease, **kwargs):
         """Uploads the upsert and delete files to the transform bucket."""
-        success = gcs_upload_files(bucket_name=self.cloud_workspace.transform_bucket, file_paths=release.upsert_files)
-        set_task_state(success, self.upload_transformed.__name__, release)
-        success = gcs_upload_files(bucket_name=self.cloud_workspace.transform_bucket, file_paths=release.delete_files)
+        file_paths = release.upsert_files + release.delete_files
+        success = gcs_upload_files(bucket_name=self.cloud_workspace.transform_bucket, file_paths=file_paths)
         set_task_state(success, self.upload_transformed.__name__, release)
 
     def bq_load_main_table(self, release: OrcidRelease, **kwargs):
@@ -648,7 +650,7 @@ def create_orcid_batch_manifest(
     """Create a manifest (.csv) for each orcid batch containing blob names and modification dates of all the
     modified files in the bucket's orcid directory. Only blobs modified after the reference date are included.
 
-    :param orcid_directory: The OrcidBatch instance for this orcid directory
+    :param orcid_batch: The OrcidBatch instance for this orcid directory
     :param reference_date: The date to use as a reference for the manifest
     :param bucket: The name of the bucket
     :param bucket_prefix: The prefix to use when listing blobs in the bucket. i.e. where the orcid directories are located
@@ -677,7 +679,7 @@ def create_orcid_batch_manifest(
     logging.info(f"Manifest saved to {orcid_batch.manifest_file}")
 
 
-def latest_modified_record_date(manifest_file_path) -> pendulum.DateTime:
+def latest_modified_record_date(manifest_file_path: Union[str, PathLike]) -> pendulum.DateTime:
     """Reads the manifest file and finds the most recent date of modification for the records
 
     :param manifest_file_path: the path to the manifest file
@@ -700,7 +702,7 @@ def orcid_batch_names() -> List[str]:
     return ["".join(i) for i in combinations]
 
 
-def transform_orcid_record(record_path: str) -> Union(Dict, str):
+def transform_orcid_record(record_path: str) -> Union[Dict, str]:
     """Transform a single ORCID file/record.
     Streams the content from the blob URI and turns this into a dictionary.
     The xml file is turned into a dictionary, a record should have either a valid 'record' section or an 'error'section.

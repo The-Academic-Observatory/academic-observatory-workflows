@@ -30,6 +30,4 @@ apt-key --keyring /usr/share/keyrings/cloud.google.gpg  add - && apt-get update 
 # ORCID install s5cmd
 curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_linux_amd64.deb && \
 dpkg -i s5cmd_2.1.0_linux_amd64.deb
-#chmod +x s5cmd_2.1.0_linux_amd64.deb | \
-#apt install ./s5cmd_2.1.0_linux_amd64.deb -y 
 
