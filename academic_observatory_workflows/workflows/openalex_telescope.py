@@ -31,7 +31,7 @@ import jsonlines
 import pendulum
 from airflow.hooks.base import BaseHook
 from airflow.models.taskinstance import TaskInstance
-from airflow.operators.empty import EmptyOperator as DummyOperator
+from airflow.operators.empty import EmptyOperator
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
 
@@ -399,7 +399,7 @@ class OpenAlexTelescope(Workflow):
 
         # The last task that the next DAG run's ExternalTaskSensor waits for.
         self.add_operator(
-            DummyOperator(
+            EmptyOperator(
                 task_id=external_task_id,
             )
         )

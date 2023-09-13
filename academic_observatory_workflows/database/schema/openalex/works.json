@@ -12,7 +12,7 @@
       {
         "name": "InvertedIndex",
         "type": "RECORD",
-        "mode": "REPEATED",
+        "mode": "NULLABLE",
         "fields": [
           {
             "name": "keys",
