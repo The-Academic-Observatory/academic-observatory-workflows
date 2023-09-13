@@ -377,7 +377,8 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                 self.assert_table_integrity(release.bq_main_table_id, expected_rows=10)
                 expected_content = load_and_parse_json(
                     test_fixtures_folder(self.dag_id, "expected", "run1_bq_load_main_table.json"),
-                    date_fields={"updated", "oa_date", "published_date"},
+                    date_fields={"oa_date", "published_date"},
+                    timestamp_fields={"updated"},
                 )
                 self.assert_table_content(release.bq_main_table_id, expected_content, "doi")
 
@@ -433,7 +434,8 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                 self.assert_table_integrity(release.bq_main_table_id, expected_rows=10)
                 expected_content = load_and_parse_json(
                     test_fixtures_folder(self.dag_id, "expected", "run1_bq_upsert_records.json"),
-                    date_fields={"updated", "oa_date", "published_date"},
+                    date_fields={"oa_date", "published_date"},
+                    timestamp_fields={"updated"},
                 )
                 self.assert_table_content(release.bq_main_table_id, expected_content, "doi")
 
@@ -618,7 +620,8 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                 self.assert_table_integrity(release.bq_main_table_id, expected_rows=12)
                 expected_content = load_and_parse_json(
                     test_fixtures_folder(self.dag_id, "expected", "run3_bq_upsert_records.json"),
-                    date_fields={"updated", "oa_date", "published_date"},
+                    date_fields={"oa_date", "published_date"},
+                    timestamp_fields={"updated"},
                 )
                 self.assert_table_content(release.bq_main_table_id, expected_content, "doi")
 

@@ -244,7 +244,7 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
                 # Assert that we have correct dataset state
                 expected_content = load_and_parse_json(
                     test_fixtures_folder(self.dag_id, "run1-expected.json"),
-                    date_fields={"occurred_at", "timestamp", "updated_date"},
+                    timestamp_fields={"occurred_at", "timestamp", "updated_date"},
                 )
                 self.assert_table_content(release.bq_main_table_id, expected_content, workflow.primary_key)
 
@@ -409,7 +409,7 @@ class TestCrossrefEventsTelescope(ObservatoryTestCase):
                 # Assert that we have correct dataset state
                 expected_content = load_and_parse_json(
                     test_fixtures_folder(self.dag_id, "run2-expected.json"),
-                    date_fields={"occurred_at", "timestamp", "updated_date"},
+                    timestamp_fields={"occurred_at", "timestamp", "updated_date"},
                 )
                 self.assert_table_content(release.bq_main_table_id, expected_content, workflow.primary_key)
 
