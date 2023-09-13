@@ -440,7 +440,7 @@ class TestOpenAlexUtils(ObservatoryTestCase):
         transform_object(obj2)
         self.assertDictEqual({"international": {"display_name": None}}, obj2)
 
-        # Test object with nested "abstract_inverted_index" fields
+        # Test object with nested "abstract_inverted_index" fields, without InvertedIndex key in obj
         obj3 = {
             "abstract_inverted_index": {
                 "Malignant": [0],
@@ -455,14 +455,17 @@ class TestOpenAlexUtils(ObservatoryTestCase):
         self.assertDictEqual(
             {
                 "abstract_inverted_index": {
-                    "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
-                    "values": ["0", "1", "2", "3", "4, 6", "5"],
+                    "IndexLength": None,
+                    "InvertedIndex": {
+                        "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
+                        "values": ["0", "1", "2", "3", "4, 6", "5"],
+                    },
                 }
             },
             obj3,
         )
 
-        # Test object when "abstract_inverted_index" is a json object with the "InvertedIndex" key
+        # Test object when "abstract_inverted_index" is a json object
         obj4 = {
             "abstract_inverted_index": {
                 "IndexLength": 7,
@@ -476,36 +479,72 @@ class TestOpenAlexUtils(ObservatoryTestCase):
                 },
             }
         }
+
         transform_object(obj4)
         self.assertDictEqual(
             {
                 "abstract_inverted_index": {
-                    "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
-                    "values": ["0", "1", "2", "3", "4, 6", "5"],
+                    "IndexLength": 7,
+                    "InvertedIndex": {
+                        "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
+                        "values": ["0", "1", "2", "3", "4, 6", "5"],
+                    },
                 }
             },
             obj4,
         )
 
-        # Test object when "abstract_inverted_index" is a json string dump
+        # Test object when "abstract_inverted_index" is a json object and IndexLength is None
         obj5 = {
-            "abstract_inverted_index": '{"IndexLength": 7, "InvertedIndex": { "Malignant": [0], "hyperthermia": [1], "susceptibility": [2],"(MHS)": [3], "is": [4, 6], "primarily": [5]}}'
+            "abstract_inverted_index": {
+                "IndexLength": None,
+                "InvertedIndex": {
+                    "Malignant": [0],
+                    "hyperthermia": [1],
+                    "susceptibility": [2],
+                    "(MHS)": [3],
+                    "is": [4, 6],
+                    "primarily": [5],
+                },
+            }
         }
+
         transform_object(obj5)
         self.assertDictEqual(
             {
                 "abstract_inverted_index": {
-                    "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
-                    "values": ["0", "1", "2", "3", "4, 6", "5"],
+                    "IndexLength": None,
+                    "InvertedIndex": {
+                        "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
+                        "values": ["0", "1", "2", "3", "4, 6", "5"],
+                    },
                 }
             },
             obj5,
         )
 
-        # Test object with nested "abstract_inverted_index" none
-        obj6 = {"abstract_inverted_index": None}
+        # Test object when "abstract_inverted_index" is a json string dump
+        obj6 = {
+            "abstract_inverted_index": '{"IndexLength": 7, "InvertedIndex": { "Malignant": [0], "hyperthermia": [1], "susceptibility": [2],"(MHS)": [3], "is": [4, 6], "primarily": [5]}}'
+        }
         transform_object(obj6)
-        self.assertDictEqual({"abstract_inverted_index": None}, obj6)
+        self.assertDictEqual(
+            {
+                "abstract_inverted_index": {
+                    "IndexLength": 7,
+                    "InvertedIndex": {
+                        "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
+                        "values": ["0", "1", "2", "3", "4, 6", "5"],
+                    },
+                }
+            },
+            obj6,
+        )
+
+        # Test object with nested "abstract_inverted_index" none
+        obj7 = {"abstract_inverted_index": None}
+        transform_object(obj7)
+        self.assertDictEqual({"abstract_inverted_index": None}, obj7)
 
 
 def upload_folder_to_s3(bucket_name: str, folder_path: str, s3_prefix=None):

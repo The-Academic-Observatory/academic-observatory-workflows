@@ -31,7 +31,7 @@ import jsonlines
 import pendulum
 from airflow.hooks.base import BaseHook
 from airflow.models.taskinstance import TaskInstance
-from airflow.operators.dummy import DummyOperator
+from airflow.operators.empty import EmptyOperator as DummyOperator
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
 
@@ -1017,7 +1017,14 @@ def transform_object(obj: dict):
         if isinstance(obj.get(field), (str, dict)):
             load_field = json.loads(obj[field]) if isinstance(obj[field], str) else obj[field]
             data = load_field.get("InvertedIndex", load_field)
-            obj[field] = {"keys": list(data.keys()), "values": [str(value)[1:-1] for value in data.values()]}
+
+            # Clear object to only have required fields.
+            obj[field] = {}
+            obj[field]["InvertedIndex"] = {
+                "keys": list(data.keys()),
+                "values": [str(value)[1:-1] for value in data.values()],
+            }
+            obj[field]["IndexLength"] = load_field.get("IndexLength", None)
         else:
             return
 
