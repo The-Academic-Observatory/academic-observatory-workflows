@@ -111,6 +111,7 @@ def make_dataset_transforms(
     dataset_id_unpaywall: str = "unpaywall",
     dataset_id_scihub: str = "scihub",
     dataset_id_openalex: str = "openalex",
+    dataset_id_pubmed: str = "pubmed",
     dataset_id_settings: str = "settings",
     dataset_id_observatory: str = "observatory",
     dataset_id_observatory_intermediate: str = "observatory_intermediate",
@@ -175,6 +176,11 @@ def make_dataset_transforms(
             Transform(
                 inputs={"openalex": Table(input_project_id, dataset_id_openalex, "works", sharded=False)},
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "openalex"),
+                output_clustering_fields=["doi"],
+            ),
+            Transform(
+                inputs={"pubmed": Table(input_project_id, dataset_id_pubmed, "pubmed", sharded=False)},
+                output_table=Table(output_project_id, dataset_id_observatory_intermediate, "pubmed"),
                 output_clustering_fields=["doi"],
             ),
         ],
@@ -327,6 +333,7 @@ class DoiWorkflow(Workflow):
         "orcid",
         "crossref_events",
         "openalex",
+        "pubmed",
     ]
 
     AGGREGATIONS = [
@@ -798,7 +805,6 @@ class DoiWorkflow(Workflow):
     def remove_aggregations(
         self, input_aggregations: List[Aggregation], aggregations_to_remove: Set[str]
     ) -> List[Aggregation]:
-
         """Remove a set of aggregations from a given list. Removal is based on mathcing the table_name
         string in the Aggregation object.
 

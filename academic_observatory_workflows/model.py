@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import random
+import binascii
 import urllib.parse
 import uuid
 from dataclasses import dataclass
@@ -230,9 +231,18 @@ class Paper:
         """
 
         gold_doaj = self.in_unpaywall and self.journal.license is not None
-        gold = self.in_unpaywall and (gold_doaj or (self.publisher_is_free_to_read and self.publisher_license is not None and not gold_doaj))
-        hybrid = self.in_unpaywall and self.publisher_is_free_to_read and self.publisher_license is not None and not gold_doaj
-        bronze = self.in_unpaywall and self.publisher_is_free_to_read and self.publisher_license is None and not gold_doaj
+        gold = self.in_unpaywall and (
+            gold_doaj or (self.publisher_is_free_to_read and self.publisher_license is not None and not gold_doaj)
+        )
+        hybrid = (
+            self.in_unpaywall
+            and self.publisher_is_free_to_read
+            and self.publisher_license is not None
+            and not gold_doaj
+        )
+        bronze = (
+            self.in_unpaywall and self.publisher_is_free_to_read and self.publisher_license is None and not gold_doaj
+        )
         green = self.in_unpaywall and len(self.repositories) > 0
         green_only = self.in_unpaywall and green and not gold_doaj and not self.publisher_is_free_to_read
         oa = self.in_unpaywall and (gold or hybrid or bronze or green)
@@ -1041,6 +1051,66 @@ def make_openalex_dataset(dataset: ObservatoryDataset) -> List[dict]:
     return result
 
 
+def make_pubmed(dataset: ObservatoryDataset) -> List[Dict]:
+    """Generate the Pubmed table from an ObservatoryDataset instance.
+
+    :param dataset: the Observatory Dataset.
+    :return: table rows.
+    """
+
+    records = []
+    for paper in dataset.papers:
+        # Create record
+        records.append(
+            {
+                "MedlineCitation": {
+                    "PMID": {"value": paper.id, "Version": "1"},
+                    "Article": {
+                        "ArticleTitle": paper.title,
+                        "ArticleDate": {
+                            "Day": paper.published_date.day,
+                            "Month": paper.published_date.month,
+                            "Year": paper.published_date.year,
+                        },
+                    },
+                    "DateCompleted": {
+                        "Day": paper.published_date.day,
+                        "Month": paper.published_date.month,
+                        "Year": paper.published_date.year,
+                    },
+                },
+                "PubmedData": {"ArticleIdList": [{"Idtype": "doi", "value": paper.doi}]},
+            }
+        )
+
+    # Append one last record with the same PMID but Version + 1 to check intermediate table works properly.
+    # There should now be 101 records for the table, but the intermediate table should only have 100 as it only selects the
+    # records with the highest Version value.
+    records.append(
+        {
+            "MedlineCitation": {
+                "PMID": {"value": paper.id, "Version": "2"},
+                "Article": {
+                    "ArticleTitle": paper.title,
+                    "ArticleDate": {
+                        "Day": paper.published_date.day,
+                        "Month": paper.published_date.month,
+                        "Year": paper.published_date.year,
+                    },
+                },
+                "DateCompleted": {
+                    "Day": paper.published_date.day,
+                    "Month": paper.published_date.month,
+                    "Year": paper.published_date.year,
+                },
+            },
+            "PubmedData": {"ArticleIdList": [{"Idtype": "doi", "value": paper.doi}]},
+        }
+    )
+
+    return records
+
+
 def make_crossref_fundref(dataset: ObservatoryDataset) -> List[Dict]:
     """Generate the Crossref Fundref table from an ObservatoryDataset instance.
 
@@ -1127,6 +1197,7 @@ def bq_load_observatory_dataset(
     unpaywall = make_unpaywall(observatory_dataset)
     crossref_metadata = make_crossref_metadata(observatory_dataset)
     scihub = make_scihub(observatory_dataset)
+    pubmed: List[dict] = make_pubmed(observatory_dataset)
 
     # Load fake ROR and settings datasets
     test_doi_path = test_fixtures_folder("doi")
@@ -1238,6 +1309,13 @@ def bq_load_observatory_dataset(
                 openalex,
                 bq_find_schema(path=os.path.join(schema_path, "openalex"), table_name="works"),
             ),
+            Table(
+                "pubmed",
+                False,
+                dataset_id_all,
+                pubmed,
+                bq_find_schema(path=os.path.join(schema_path, "pubmed"), table_name="pubmed"),
+            ),
         ]
 
         bq_load_tables(
@@ -1341,6 +1419,7 @@ def make_doi_table(dataset: ObservatoryDataset) -> List[Dict]:
                 "unpaywall": {},
                 "unpaywall_history": {},
                 "open_citations": {},
+                "pubmed": {},
                 "events": events,
                 "affiliations": {
                     "doi": doi,

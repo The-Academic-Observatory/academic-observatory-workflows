@@ -204,6 +204,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "orcid_sensor": ["check_dependencies"],
                 "crossref_events_sensor": ["check_dependencies"],
                 "openalex_sensor": ["check_dependencies"],
+                "pubmed_sensor": ["check_dependencies"],
                 "check_dependencies": ["create_datasets"],
                 "create_datasets": ["create_repo_institution_to_ror_table"],
                 "create_repo_institution_to_ror_table": ["create_ror_hierarchy_table"],
@@ -215,6 +216,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     "create_open_citations",
                     "create_openaccess",
                     "create_openalex",
+                    "create_pubmed",
                 ],
                 "create_crossref_events": ["create_doi"],
                 "create_crossref_fundref": ["create_doi"],
@@ -223,6 +225,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "create_open_citations": ["create_doi"],
                 "create_openaccess": ["create_doi"],
                 "create_openalex": ["create_doi"],
+                "create_pubmed": ["create_doi"],
                 "create_doi": ["create_book"],
                 "create_book": [
                     "create_country",
@@ -314,6 +317,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
             dataset_id_observatory=bq_observatory_dataset_id,
             dataset_id_observatory_intermediate=bq_intermediate_dataset_id,
             dataset_id_openalex=fake_dataset_id,
+            dataset_id_pubmed=fake_dataset_id,
         )
         transforms, transform_doi, transform_book = dataset_transforms
 
