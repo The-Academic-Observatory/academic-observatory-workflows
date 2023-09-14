@@ -238,6 +238,8 @@ class DataQualityCheckWorkflow(Workflow):
             ],
         }
 
+        # Check that all dags are present in the sensors vs the table list.
+
         # "openalex": [
         #     Table(
         #         project_id=production_project,
