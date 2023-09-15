@@ -31,7 +31,7 @@ import jsonlines
 import pendulum
 from airflow.hooks.base import BaseHook
 from airflow.models.taskinstance import TaskInstance
-from airflow.operators.dummy import DummyOperator
+from airflow.operators.empty import EmptyOperator
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
 
@@ -399,7 +399,7 @@ class OpenAlexTelescope(Workflow):
 
         # The last task that the next DAG run's ExternalTaskSensor waits for.
         self.add_operator(
-            DummyOperator(
+            EmptyOperator(
                 task_id=external_task_id,
             )
         )
@@ -1014,17 +1014,17 @@ def transform_object(obj: dict):
     # TODO: when re-ingesting entire dataset: change schema to new version
     field = "abstract_inverted_index"
     if field in obj:
+        if isinstance(obj.get(field), (str, dict)):
+            load_field = json.loads(obj[field]) if isinstance(obj[field], str) else obj[field]
+            data = load_field.get("InvertedIndex", load_field)
 
-        def parse_abstract(dict_: dict):
-            keys_ = list(dict_.keys())
-            values_ = [str(value_)[1:-1] for value_ in dict_.values()]
-            return {"keys": keys_, "values": values_}
-
-        if isinstance(obj.get(field), str):
-            data = json.loads(obj[field])
-            obj[field] = parse_abstract(data["InvertedIndex"])
-        elif isinstance(obj.get(field), dict):
-            obj[field] = parse_abstract(obj[field])
+            # Clear object to only have required fields.
+            obj[field] = {}
+            obj[field]["InvertedIndex"] = {
+                "keys": list(data.keys()),
+                "values": [str(value)[1:-1] for value in data.values()],
+            }
+            obj[field]["IndexLength"] = load_field.get("IndexLength", None)
         else:
             return
 

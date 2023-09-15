@@ -5,16 +5,28 @@
     "mode": "NULLABLE",
     "fields": [
       {
-        "name": "keys",
-        "type": "STRING",
-        "mode": "REPEATED",
-        "description": "Custom field created by COKI. Originally each word in the abstract was a key and the indices of where this word occurred inside the abstract the corresponding value."
+        "name": "IndexLength",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
       },
       {
-        "name": "values",
-        "type": "STRING",
-        "mode": "REPEATED",
-        "description": "Custom field created by COKI. Originally each word in the abstract was a key and the indices of where this word occurred inside the abstract the corresponding value."
+        "name": "InvertedIndex",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "keys",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "Custom field created by COKI. Originally each word in the abstract was a key and the indices of where this word occurred inside the abstract the corresponding value."
+          },
+          {
+            "name": "values",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "Custom field created by COKI. Originally each word in the abstract was a key and the indices of where this word occurred inside the abstract the corresponding value."
+          }
+        ]
       }
     ],
     "description": "The abstract of the work, as an inverted index, which encodes information about the abstract's words and their positions within the text. Like Microsoft Academic Graph, OpenAlex doesn't include plaintext abstracts due to legal constraints."
@@ -100,7 +112,7 @@
     ]
   },
   {
-    "name": "apc_payment",
+    "name": "apc_list",
     "type": "RECORD",
     "mode": "NULLABLE",
     "fields": [
@@ -126,7 +138,36 @@
         "mode": "NULLABLE"
       }
     ],
-    "description": "Objects containing information about the APC (article processing charge) for this work. If we can get the APC price from OpenAPC, we use that. Those APCs are specific to an article and are the actual APC paid by an author or institution to publish the article. As a fallback, we use the DOAJ APC prices that are available in sources. Those are an estimate of what authors would have had to pay to publish the article, since the DOAJ apc prices apply to an entire journal."
+    "description": "Objects containing information about the APC (article processing charge) for this work. This value is the APC list price–the price as listed by the journal’s publisher. That’s not always the price actually paid, because publishers may offer various discounts to authors. Unfortunately we don’t always know this discounted price, but when we do you can find it in apc_paid. Currently our only source for this data is DOAJ, and so doaj is the only value for apc_list.provenance, but we’ll add other sources over time."
+  },
+  {
+    "name": "apc_paid",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "currency",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "price",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "price_usd",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "APC converted to USD"
+      },
+      {
+        "name": "provenance",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ],
+    "description": "Object: Information about the paid APC (article processing charge) for this work. You can find the listed APC price (when we know it) for a given work using apc_list. However, authors don’t always pay the listed price; often they get a discounted price from publishers. So it’s useful to know the APC actually paid by authors, as distinct from the list price. This is our effort to provide this. Our best source for the actually paid price is the OpenAPC project. Where available, we use that data, and so apc_paid.provenance is openapc. Where OpenAPC data is unavailable (and unfortunately this is common) we make our best guess by assuming the author paid the APC list price, and apc_paid.provenance will be set to wherever we got the list price from."
   },
   {
     "name": "authorships",
@@ -284,6 +325,12 @@
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The OpenAlex ID for this source."
+          },
+          {
+            "name": "is_in_doaj",
+            "type": "BOOLEAN",
+            "mode": "NULLABLE",
+            "description": "Whether this is a journal listed in the Directory of Open Access Journals (DOAJ)."
           },
           {
             "name": "issn",
@@ -744,6 +791,12 @@
             "description": "The OpenAlex ID for this source."
           },
           {
+            "name": "is_in_doaj",
+            "type": "BOOLEAN",
+            "mode": "NULLABLE",
+            "description": "Whether this is a journal listed in the Directory of Open Access Journals (DOAJ)."
+          },
+          {
             "name": "issn",
             "type": "STRING",
             "mode": "REPEATED",
@@ -918,6 +971,12 @@
             "description": "The OpenAlex ID for this source."
           },
           {
+            "name": "is_in_doaj",
+            "type": "BOOLEAN",
+            "mode": "NULLABLE",
+            "description": "Whether this is a journal listed in the Directory of Open Access Journals (DOAJ)."
+          },
+          {
             "name": "issn",
             "type": "STRING",
             "mode": "REPEATED",
@@ -1048,6 +1107,12 @@
     "type": "STRING",
     "mode": "NULLABLE",
     "description": "The type or genre of the work. This field uses Crossref's \"type\" controlled vocabulary; you can see all possible values via the Crossref api here: https://api.crossref.org/types. Where possible, we just pass along Crossref's type value for each work. When that's impossible (eg the work isn't in Crossref), we do our best to figure out the type ourselves. Unfortunately the accuracy of Crossref's data for this isn't great, and ours isn't much better. We're working to develop better type classification."
+  },
+  {
+    "name": "type_crossref",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Legacy type information, using Crossref's \"type\" controlled vocabulary."
   },
   {
     "name": "updated_date",
