@@ -259,6 +259,12 @@
         "name": "raw_affiliation_strings",
         "type": "STRING",
         "mode": "REPEATED"
+      },
+      {
+        "name": "raw_author_name",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "This author's name as it originally came to us (on a webpage or in an API), as a raw unformatted string."
       }
     ],
     "description": "List of Authorship objects, each representing an author and their institution."
@@ -462,6 +468,12 @@
     "type": "STRING",
     "mode": "REPEATED",
     "description": "OpenAlex IDs of any institutions found within an authorship for which authorships.is_corresponding is true."
+  },
+  {
+    "name": "countries_distinct_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "Number of distinct country_codes among the authorships for this work."
   },
   {
     "name": "counts_by_year",
@@ -698,6 +710,12 @@
     "description": "All the persistent identifiers (PIDs) that we know about for this work, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible."
   },
   {
+    "name": "institutions_distinct_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "Number of distinct institutions among the authorships for this work."
+  },
+  {
     "name": "is_oa",
     "type": "BOOLEAN",
     "mode": "NULLABLE",
@@ -733,10 +751,22 @@
     "mode": "REPEATED",
     "fields": [
       {
+        "name": "is_accepted",
+        "type": "BOOLEAN",
+        "mode": "NULLABLE",
+        "description": "True if this location's version is either acceptedVersion or publishedVersion; otherwise false."
+      },
+      {
         "name": "is_oa",
         "type": "BOOLEAN",
         "mode": "NULLABLE",
         "description": "True if this work is Open Access (OA)."
+      },
+      {
+        "name": "is_published",
+        "type": "BOOLEAN",
+        "mode": "NULLABLE",
+        "description": "True if this location's version is publishedVersion; otherwise false."
       },
       {
         "name": "landing_page_url",
@@ -1040,6 +1070,30 @@
     "type": "STRING",
     "mode": "REPEATED",
     "description": "OpenAlex IDs for works related to this work. "
+  },
+  {
+    "name": "sustainable_development_goals",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "List of sustainable developement goal objects. The United Nations' 17 Sustainable Development Goals are a collection of goals at the heart of a global \"shared blueprint for peace and prosperity for people and the planet.\" We use a machine learning model to tag works with their relevance to these goals based on our OpenAlex SDG Classifier, an mBERT machine learning model developed by the Aurora Universities Network. The score represents the model's predicted probability of the work's relevance for a particular goal. ",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "score",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": "All of the SDGs with a prediction score higher than 0.1."
+      }
+    ]
   },
   {
     "name": "summary_stats",
