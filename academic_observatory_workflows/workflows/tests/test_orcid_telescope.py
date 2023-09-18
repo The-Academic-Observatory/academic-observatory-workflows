@@ -273,6 +273,9 @@ class TestOrcidTelescope(ObservatoryTestCase):
                 self.assertTrue(os.path.exists(first_release.master_manifest_file))
                 for batch in first_release.orcid_batches():
                     self.assertTrue(os.path.exists(batch.manifest_file))
+                with open(first_release.master_manifest_file, "r") as f:
+                    content = list(csv.DictReader(f))
+                self.assertEqual(len(content), len(OrcidTestRecords.first_run_records))
 
                 # Download the files from the transfer bucket
                 # s5cmd fails for any reason:
@@ -448,6 +451,7 @@ class TestOrcidTelescope(ObservatoryTestCase):
                     bucket_name=workflow.orcid_bucket, file_paths=file_paths, blob_names=blob_names
                 )
                 self.assertTrue(success)
+
                 # Create snapshot
                 ti = env.run_task(workflow.bq_create_main_table_snapshot.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
@@ -462,6 +466,9 @@ class TestOrcidTelescope(ObservatoryTestCase):
                 ti = env.run_task(workflow.create_manifests.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
                 self.assertTrue(os.path.exists(second_release.master_manifest_file))
+                with open(second_release.master_manifest_file, "r") as f:
+                    content = list(csv.DictReader(f))
+                self.assertEqual(len(content), len(OrcidTestRecords.second_run_records))
                 for batch in second_release.orcid_batches():
                     self.assertTrue(os.path.exists(batch.manifest_file))
 

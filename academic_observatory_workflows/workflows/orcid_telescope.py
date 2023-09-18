@@ -102,6 +102,11 @@ class OrcidBatch:
 
         os.makedirs(self.download_batch_dir, exist_ok=True)
 
+    @cached_property
+    def _manifest_data(self) -> List[Dict]:
+        with open(self.manifest_file, "r") as f:
+            return list(csv.DictReader(f))
+
     @property
     def existing_records(self) -> List[str]:
         """List of existing ORCID records on disk for this ORCID directory."""
@@ -115,16 +120,12 @@ class OrcidBatch:
     @cached_property
     def expected_records(self) -> List[str]:
         """List of expected ORCID records for this ORCID directory. Derived from the manifest file"""
-        with open(self.manifest_file, "r") as f:
-            reader = csv.DictReader(f)
-            return [os.path.basename(row["blob_name"]) for row in reader]
+        return [os.path.basename(row["blob_name"]) for row in self._manifest_data]
 
     @cached_property
     def blob_uris(self) -> List[str]:
         """List of blob URIs from the manifest this ORCID directory."""
-        with open(self.manifest_file, "r") as f:
-            reader = csv.DictReader(f)
-            return [gcs_blob_uri(bucket_name=row["bucket_name"], blob_name=row["blob_name"]) for row in reader]
+        return [gcs_blob_uri(bucket_name=row["bucket_name"], blob_name=row["blob_name"]) for row in self._manifest_data]
 
 
 class OrcidRelease(ChangefileRelease):
@@ -436,6 +437,8 @@ class OrcidTelescope(Workflow):
                 if not orcid_batch.missing_records:
                     logging.info(f"All files present for {orcid_batch.batch_str}. Skipping download.")
                     continue
+                print(orcid_batch.batch_str)
+                print(orcid_batch._manifest_data)
 
                 logging.info(f"Downloading files for ORCID directory: {orcid_batch.batch_str}")
                 with open(orcid_batch.download_log_file, "w") as f:
