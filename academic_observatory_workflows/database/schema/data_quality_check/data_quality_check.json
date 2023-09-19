@@ -36,12 +36,23 @@
     "mode": "REQUIRED"
   },
   {
+    "name": "expires",
+    "description": "If the table is set to expire or not.",
+    "type": "BOOLEAN",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "date_expires",
+    "description": "Date of when the table expires.",
+    "type": "DATETIME",
+    "mode": "NULLABLE"
+  },
+  {
     "name": "date_last_modified",
     "description": "Date of when the table was modified - obtained from Observatory API DatasetRelease.data_interval_end.",
     "type": "DATETIME",
     "mode": "REQUIRED"
   },
-
   {
     "name": "date_checked",
     "description": "Date of when this table was checked by the QA workflow.",
