@@ -79,7 +79,8 @@ class Table:
 
 
 @dataclass
-class Transform:
+class SQLQuery:
+    name: str
     inputs: Dict = None
     output_table: Table = None
     output_clustering_fields: List = None
@@ -99,7 +100,7 @@ class Aggregation:
     relate_to_publishers: bool = False
 
 
-def make_dataset_transforms(
+def make_sql_queries(
     input_project_id: str,
     output_project_id: str,
     dataset_id_crossref_events: str = "crossref_events",
@@ -115,46 +116,62 @@ def make_dataset_transforms(
     dataset_id_settings: str = "settings",
     dataset_id_observatory: str = "observatory",
     dataset_id_observatory_intermediate: str = "observatory_intermediate",
-) -> Tuple[List[Transform], Transform, Transform]:
+) -> Tuple[List[SQLQuery], SQLQuery, SQLQuery]:
     return (
         [
-            Transform(
+            SQLQuery(
+                "create_crossref_metadata",
+                inputs={
+                    "crossref_metadata": Table(
+                        input_project_id, dataset_id_crossref_metadata, "crossref_metadata", sharded=True
+                    )
+                },
+                output_table=Table(output_project_id, dataset_id_observatory_intermediate, "crossref_metadata"),
+                output_clustering_fields=["doi"],
+            ),
+            SQLQuery(
+                "create_crossref_events",
                 inputs={"crossref_events": Table(input_project_id, dataset_id_crossref_events, "crossref_events")},
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "crossref_events"),
                 output_clustering_fields=["doi"],
             ),
-            Transform(
+            SQLQuery(
+                "create_crossref_fundref",
                 inputs={
                     "crossref_fundref": Table(
                         input_project_id, dataset_id_crossref_fundref, "crossref_fundref", sharded=True
                     ),
                     "crossref_metadata": Table(
-                        input_project_id, dataset_id_crossref_metadata, "crossref_metadata", sharded=True
+                        output_project_id, dataset_id_observatory_intermediate, "crossref_metadata", sharded=True
                     ),
                 },
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "crossref_fundref"),
                 output_clustering_fields=["doi"],
             ),
-            Transform(
+            SQLQuery(
+                "create_ror",
                 inputs={
                     "ror": Table(input_project_id, dataset_id_ror, "ror", sharded=True),
                     "country": Table(input_project_id, dataset_id_settings, "country"),
                 },
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "ror"),
             ),
-            Transform(
+            SQLQuery(
+                "create_orcid",
                 inputs={"orcid": Table(input_project_id, dataset_id_orcid, "orcid")},
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "orcid"),
                 output_clustering_fields=["doi"],
             ),
-            Transform(
+            SQLQuery(
+                "create_open_citations",
                 inputs={
                     "open_citations": Table(input_project_id, dataset_id_open_citations, "open_citations", sharded=True)
                 },
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "open_citations"),
                 output_clustering_fields=["doi"],
             ),
-            Transform(
+            SQLQuery(
+                "create_openaccess",
                 inputs={
                     "scihub": Table(input_project_id, dataset_id_scihub, "scihub", sharded=True),
                     "unpaywall": Table(input_project_id, dataset_id_unpaywall, "unpaywall", sharded=False),
@@ -167,36 +184,56 @@ def make_dataset_transforms(
                         sharded=True,
                     ),
                     "crossref_metadata": Table(
-                        input_project_id, dataset_id_crossref_metadata, "crossref_metadata", sharded=True
+                        output_project_id, dataset_id_observatory_intermediate, "crossref_metadata", sharded=True
                     ),
                 },
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "openaccess"),
                 output_clustering_fields=["doi"],
             ),
-            Transform(
+            SQLQuery(
+                "create_openalex",
                 inputs={"openalex": Table(input_project_id, dataset_id_openalex, "works", sharded=False)},
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "openalex"),
                 output_clustering_fields=["doi"],
             ),
-            Transform(
+            SQLQuery(
+                "create_pubmed",
                 inputs={"pubmed": Table(input_project_id, dataset_id_pubmed, "pubmed", sharded=False)},
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "pubmed"),
                 output_clustering_fields=["doi"],
             ),
         ],
-        Transform(
+        SQLQuery(
+            "create_doi",
             inputs={
-                "observatory_intermediate": Table(output_project_id, dataset_id_observatory_intermediate),
-                "unpaywall": Table(input_project_id, dataset_id_unpaywall, "unpaywall"),
-                "crossref_metadata": Table(
-                    input_project_id, dataset_id_crossref_metadata, "crossref_metadata", sharded=True
+                "openalex": Table(output_project_id, dataset_id_observatory_intermediate, "openalex", sharded=True),
+                "ror_hierarchy": Table(
+                    output_project_id, dataset_id_observatory_intermediate, "ror_hierarchy", sharded=True
                 ),
+                "openaccess": Table(output_project_id, dataset_id_observatory_intermediate, "openaccess", sharded=True),
+                "unpaywall": Table(input_project_id, dataset_id_unpaywall, "unpaywall"),
+                "open_citations": Table(
+                    output_project_id, dataset_id_observatory_intermediate, "open_citations", sharded=True
+                ),
+                "crossref_events": Table(
+                    output_project_id, dataset_id_observatory_intermediate, "crossref_events", sharded=True
+                ),
+                "pubmed": Table(output_project_id, dataset_id_observatory_intermediate, "pubmed", sharded=True),
+                "crossref_metadata": Table(
+                    output_project_id, dataset_id_observatory_intermediate, "crossref_metadata", sharded=True
+                ),
+                "ror": Table(output_project_id, dataset_id_observatory_intermediate, "ror", sharded=True),
                 "groupings": Table(input_project_id, dataset_id_settings, "groupings"),
+                "crossref_fundref": Table(
+                    output_project_id, dataset_id_observatory_intermediate, "crossref_fundref", sharded=True
+                ),
+                "orcid": Table(output_project_id, dataset_id_observatory_intermediate, "orcid", sharded=True),
             },
             output_table=Table(output_project_id, dataset_id_observatory, "doi"),
             output_clustering_fields=["doi"],
         ),
-        Transform(
+        SQLQuery(
+            "create_book",
             inputs={
                 "observatory": Table(output_project_id, dataset_id_observatory, "doi", sharded=True),
                 "crossref_events": Table(
@@ -242,6 +279,7 @@ def get_snapshot_date(project_id: str, dataset_id: str, table_id: str, snapshot_
     logging.info(f"get_snapshot_date {project_id}.{dataset_id}.{table_id} {snapshot_date}")
     table_id = bq_table_id(project_id, dataset_id, table_id)
     table_shard_dates = bq_select_table_shard_dates(table_id=table_id, end_date=snapshot_date)
+
     if len(table_shard_dates):
         shard_date = table_shard_dates[0]
     else:
@@ -422,7 +460,7 @@ class DoiWorkflow(Workflow):
         bq_unpaywall_dataset_id: str = "unpaywall",
         bq_ror_dataset_id: str = "ror",
         api_dataset_id: str = "doi",
-        transforms: Tuple = None,
+        sql_queries: Tuple = None,
         max_fetch_threads: int = 4,
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 8, 30),
@@ -470,12 +508,12 @@ class DoiWorkflow(Workflow):
         self.observatory_api_conn_id = observatory_api_conn_id
         self.input_table_id_tasks = []
 
-        if transforms is None:
-            self.transforms, self.transform_doi, self.transform_book = make_dataset_transforms(
+        if sql_queries is None:
+            self.sql_queries, self.sql_query_doi, self.sql_query_book = make_sql_queries(
                 self.input_project_id, self.output_project_id, dataset_id_observatory=bq_observatory_dataset_id
             )
         else:
-            self.transforms, self.transform_doi, self.transform_book = transforms
+            self.sql_queries, self.sql_query_doi, self.sql_query_book = sql_queries
 
         self.create_tasks()
 
@@ -506,29 +544,29 @@ class DoiWorkflow(Workflow):
         # Create tasks for processing intermediate tables
         self.input_table_task_ids = []
         with self.parallel_tasks():
-            for transform in self.transforms:
-                task_id = f"create_{transform.output_table.table_name}"
+            for sql_query in self.sql_queries:
+                task_id = sql_query.name
                 self.add_task(
                     self.create_intermediate_table,
-                    op_kwargs={"transform": transform, "task_id": task_id},
+                    op_kwargs={"sql_query": sql_query, "task_id": task_id},
                     task_id=task_id,
                 )
                 self.input_table_task_ids.append(task_id)
 
         # Create DOI Table
-        task_id = f"create_{self.transform_doi.output_table.table_name}"
+        task_id = self.sql_query_doi.name
         self.add_task(
             self.create_intermediate_table,
-            op_kwargs={"transform": self.transform_doi, "task_id": task_id},
+            op_kwargs={"sql_query": self.sql_query_doi, "task_id": task_id},
             task_id=task_id,
         )
         self.input_table_task_ids.append(task_id)
 
         # Create Book Table
-        task_id = f"create_{self.transform_book.output_table.table_name}"
+        task_id = self.sql_query_book.name
         self.add_task(
             self.create_intermediate_table,
-            op_kwargs={"transform": self.transform_book, "task_id": task_id},
+            op_kwargs={"sql_query": self.sql_query_book, "task_id": task_id},
             task_id=task_id,
         )
 
@@ -641,9 +679,12 @@ class DoiWorkflow(Workflow):
     def create_intermediate_table(self, release: SnapshotRelease, **kwargs):
         """Create an intermediate table."""
 
-        transform: Transform = kwargs["transform"]
+        task_id = kwargs['task_id']
+        print(f"create_intermediate_table: {task_id}")
+        sql_query: SQLQuery = kwargs["sql_query"]
+
         input_tables = []
-        for k, table in transform.inputs.items():
+        for k, table in sql_query.inputs.items():
             # Add release_date so that table_id can be computed
             if table.sharded:
                 table.snapshot_date = get_snapshot_date(
@@ -656,31 +697,29 @@ class DoiWorkflow(Workflow):
                 input_tables.append(f"{table.project_id}.{table.dataset_id}.{table.table_id}")
 
         # Create processed table
-        template_path = os.path.join(
-            sql_folder(), make_sql_jinja2_filename(f"create_{transform.output_table.table_name}")
-        )
+        template_path = os.path.join(sql_folder(), make_sql_jinja2_filename(sql_query.name))
         sql = render_template(
             template_path,
             snapshot_date=release.snapshot_date,
-            **transform.inputs,
+            **sql_query.inputs,
         )
         table_id = bq_sharded_table_id(
             self.output_project_id,
-            transform.output_table.dataset_id,
-            transform.output_table.table_name,
+            sql_query.output_table.dataset_id,
+            sql_query.output_table.table_name,
             release.snapshot_date,
         )
         success = bq_create_table_from_query(
             sql=sql,
             table_id=table_id,
-            clustering_fields=transform.output_clustering_fields,
+            clustering_fields=sql_query.output_clustering_fields,
         )
 
         # Publish XComs with full table paths
         ti = kwargs["ti"]
         ti.xcom_push(key="input_tables", value=json.dumps(input_tables))
 
-        set_task_state(success, kwargs["task_id"])
+        set_task_state(success, task_id)
 
     def create_aggregate_table(self, release: SnapshotRelease, **kwargs):
         """Runs the aggregate table query."""

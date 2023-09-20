@@ -36,7 +36,7 @@ from academic_observatory_workflows.model import (
 )
 from academic_observatory_workflows.workflows.doi_workflow import (
     DoiWorkflow,
-    make_dataset_transforms,
+    make_sql_queries,
     fetch_ror_affiliations,
     ror_to_ror_hierarchy_index,
 )
@@ -209,6 +209,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "create_datasets": ["create_repo_institution_to_ror_table"],
                 "create_repo_institution_to_ror_table": ["create_ror_hierarchy_table"],
                 "create_ror_hierarchy_table": [
+                    "create_crossref_metadata",
                     "create_crossref_events",
                     "create_crossref_fundref",
                     "create_ror",
@@ -218,6 +219,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     "create_openalex",
                     "create_pubmed",
                 ],
+                "create_crossref_metadata": ["create_doi"],
                 "create_crossref_events": ["create_doi"],
                 "create_crossref_fundref": ["create_doi"],
                 "create_ror": ["create_doi"],
@@ -302,7 +304,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
         bq_dashboards_dataset_id = env.add_dataset(prefix="dashboards")
         bq_observatory_dataset_id = env.add_dataset(prefix="observatory")
         bq_settings_dataset_id = env.add_dataset(prefix="settings")
-        dataset_transforms = make_dataset_transforms(
+        sql_queries_all = make_sql_queries(
             input_project_id=self.project_id,
             output_project_id=self.project_id,
             dataset_id_crossref_events=fake_dataset_id,
@@ -319,7 +321,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
             dataset_id_openalex=fake_dataset_id,
             dataset_id_pubmed=fake_dataset_id,
         )
-        transforms, transform_doi, transform_book = dataset_transforms
+        sql_queries, sql_create_doi, sql_create_book = sql_queries_all
 
         with env.create(task_logging=True):
             start_date = pendulum.datetime(year=2021, month=10, day=10)
@@ -331,7 +333,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 bq_observatory_dataset_id=bq_observatory_dataset_id,
                 bq_unpaywall_dataset_id=fake_dataset_id,
                 bq_ror_dataset_id=fake_dataset_id,
-                transforms=dataset_transforms,
+                sql_queries=sql_queries_all,
                 start_date=start_date,
                 max_fetch_threads=1,
             )
@@ -450,8 +452,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 self.assertEqual(expected_state, ti.state)
 
                 # Test that source dataset transformations run
-                for transform in transforms:
-                    task_id = f"create_{transform.output_table.table_name}"
+                for sql_query in sql_queries:
+                    task_id = sql_query.name
                     ti = env.run_task(task_id)
                     self.assertEqual(expected_state, ti.state)
 

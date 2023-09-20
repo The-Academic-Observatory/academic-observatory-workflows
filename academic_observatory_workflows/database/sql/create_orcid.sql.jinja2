@@ -34,7 +34,7 @@ WITH
 
 {# This is the main query, which inverts the ORCID centered data to be DOI centric, so it has a list of authors per DOI, instead of a list of DOIs per author#}
 SELECT
-  doi,
+  UPPER(TRIM(doi)) as doi,
   ARRAY_AGG(orcid) AS orcid
 FROM (
   SELECT
