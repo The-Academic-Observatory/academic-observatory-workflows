@@ -23,13 +23,16 @@ import re
 import logging
 import pendulum
 from datetime import timedelta
+from google.cloud import bigquery
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
-
-from google.cloud import bigquery
 from google.cloud.bigquery import Table as BQTable
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+
+from observatory.platform.observatory_config import CloudWorkspace
+from observatory.platform.utils.dag_run_sensor import DagRunSensor
+from observatory.platform.workflows.workflow import Workflow, set_task_state, Release
 from observatory.platform.bigquery import (
     bq_load_from_memory,
     bq_create_dataset,
@@ -37,9 +40,6 @@ from observatory.platform.bigquery import (
     bq_table_exists,
     bq_select_columns,
 )
-from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.utils.dag_run_sensor import DagRunSensor
-from observatory.platform.workflows.workflow import Workflow, set_task_state, Release
 
 
 @dataclass
@@ -77,7 +77,7 @@ class Table:
 def make_datasets(project_id: str) -> Dict[str, List[Table]]:
     """Create a list of datasets for the DQC Workflow to process.
 
-    This list can be easily updated, and can be modified for tables outside the given project_id if needed.
+    This list can be easily updated, and can be modified for tables outside the given project_id if required.
 
     :param project_id: Name of the Google project that the tables are stored in.
     :return: A dictionary of key: dataset_id and the list of tables in that dataset."""
@@ -521,7 +521,6 @@ class DataQualityCheckWorkflow(Workflow):
                     dataset_id=table_to_check.dataset_id, base_name=table_to_check.name
                 )
             else:
-                print(f"table_to_check.full_table_id: {table_to_check.full_table_id}")
                 sub_tables: List[BQTable] = [bq_get_table(table_to_check.full_table_id)]
 
             assert (
