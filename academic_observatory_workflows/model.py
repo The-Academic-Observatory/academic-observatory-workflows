@@ -1568,10 +1568,10 @@ def make_doi_funders(funder_list: FunderList) -> List[Dict]:
     # Funders
     funders = {}
     for funder in funder_list:
-        funders[funder.doi] = {
+        funders[funder.doi.upper()] = {
             "identifier": funder.name,
             "name": funder.name,
-            "doi": funder.doi,
+            "doi": funder.doi.upper(),
             "types": ["Funder"],
             "country": None,
             "country_code": funder.country_code,
