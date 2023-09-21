@@ -384,7 +384,7 @@ def make_datasets(project_id: str) -> Dict[str, List[Table]]:
     return datasets
 
 
-class DataQualityCheckWorkflow(Workflow):
+class DQCWorkflow(Workflow):
     # This workflow will wait until all of the below dags have finished before running.
     SENSOR_DAG_IDS = [
         "crossref_events",
@@ -450,7 +450,7 @@ class DataQualityCheckWorkflow(Workflow):
 
         self.sensor_dag_ids = sensor_dag_ids
         if sensor_dag_ids is None:
-            self.sensor_dag_ids = DataQualityCheckWorkflow.SENSOR_DAG_IDS
+            self.sensor_dag_ids = DQCWorkflow.SENSOR_DAG_IDS
 
         self.datasets = datasets
         if datasets is None:

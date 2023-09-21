@@ -24,8 +24,8 @@ from google.cloud.bigquery import Table as BQTable
 from academic_observatory_workflows.workflows.tests.test_doi_workflow import TestDoiWorkflow
 from academic_observatory_workflows.model import bq_load_observatory_dataset, make_observatory_dataset
 from academic_observatory_workflows.config import test_fixtures_folder, schema_folder as default_schema_folder
-from academic_observatory_workflows.workflows.data_quality_check_workflow import (
-    DataQualityCheckWorkflow,
+from academic_observatory_workflows.workflows.dqc_workflow import (
+    DQCWorkflow,
     Table,
     create_dqc_record,
     bq_count_distinct_records,
@@ -55,17 +55,17 @@ from observatory.platform.bigquery import (
 )
 
 
-class TestDataQualityCheckWorkflow(ObservatoryTestCase):
+class TestDQCWorkflow(ObservatoryTestCase):
     """Tests for the Data Quality Check Workflow"""
 
     def __init__(self, *args, **kwargs):
-        self.dag_id = "data_quality_check_workflow"
+        self.dag_id = "dqc_workflow"
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
 
         self.doi_fixtures = "doi"
 
-        super(TestDataQualityCheckWorkflow, self).__init__(*args, **kwargs)
+        super(TestDQCWorkflow, self).__init__(*args, **kwargs)
 
     def test_dag_load(self):
         """Test that the DataQualityCheck DAG can be loaded from a DAG bag."""
@@ -75,7 +75,7 @@ class TestDataQualityCheckWorkflow(ObservatoryTestCase):
                 Workflow(
                     dag_id=self.dag_id,
                     name="Data Quality Check Workflow",
-                    class_name="academic_observatory_workflows.workflows.data_quality_check_workflow.DataQualityCheckWorkflow",
+                    class_name="academic_observatory_workflows.workflows.dqc_workflow.DQCWorkflow",
                     cloud_workspace=self.fake_cloud_workspace,
                 )
             ]
@@ -87,7 +87,7 @@ class TestDataQualityCheckWorkflow(ObservatoryTestCase):
     def test_dag_structure(self):
         """Test that the DAG has the correct structure."""
 
-        workflow = DataQualityCheckWorkflow(
+        workflow = DQCWorkflow(
             dag_id=self.dag_id,
             cloud_workspace=self.fake_cloud_workspace,
         )
