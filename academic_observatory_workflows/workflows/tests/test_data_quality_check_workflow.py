@@ -15,18 +15,13 @@
 # Author: Alex Massen-Hane
 
 import os
-import json
-import gzip
-import shutil
-import hashlib
-import logging
 import pendulum
-from pendulum import DateTime
-from ftplib import FTP
-from typing import List, Dict
-from click.testing import CliRunner
-from airflow.utils.state import State
-from datetime import datetime, timedelta
+
+
+from typing import List
+
+
+from datetime import timedelta
 from google.cloud import bigquery
 from google.cloud.bigquery import Table as BQTable
 
@@ -34,33 +29,16 @@ from academic_observatory_workflows.config import schema_folder as default_schem
 
 
 from academic_observatory_workflows.model import (
-    Institution,
-    Repository,
-    ObservatoryDataset,
     bq_load_observatory_dataset,
     make_observatory_dataset,
-    sort_events,
-    make_doi_table,
-    make_aggregate_table,
-    make_open_citations,
-    make_crossref_events,
-    make_openalex_dataset,
-    make_crossref_fundref,
-    make_unpaywall,
-    make_crossref_metadata,
-    make_scihub,
 )
 
 from observatory.platform.files import load_jsonl
-from observatory.platform.api import get_dataset_releases
 from observatory.platform.observatory_config import Workflow
-from observatory.platform.workflows.workflow import ChangefileRelease
-from observatory.platform.gcs import gcs_blob_name_from_path
 from observatory.platform.observatory_environment import ObservatoryEnvironment, ObservatoryTestCase
 from observatory.platform.observatory_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
-    bq_load_tables,
     make_dummy_dag,
     find_free_port,
     random_id,
@@ -68,9 +46,7 @@ from observatory.platform.observatory_environment import (
 from observatory.platform.bigquery import (
     bq_table_id,
     bq_load_from_memory,
-    bq_run_query,
     bq_select_columns,
-    bq_find_schema,
     bq_delete_old_datasets_with_prefix,
     bq_create_dataset,
 )
@@ -89,20 +65,6 @@ from academic_observatory_workflows.workflows.data_quality_check_workflow import
     is_in_dqc_table,
 )
 from academic_observatory_workflows.workflows.tests.test_doi_workflow import TestDoiWorkflow
-
-
-def query_table(table_id: str, select_columns: str, order_by_field: str) -> List[Dict]:
-    """Query a BigQuery table, sorting the results and returning results as a list of dicts.
-
-    :param table_id: the table id.
-    :param select_columns: Columns to pull from the table.
-    :param order_by_field: what field or fields to order by.
-    :return: the table rows.
-    """
-
-    return [
-        dict(row) for row in bq_run_query(f"SELECT {select_columns} FROM {table_id} ORDER BY {order_by_field} ASC;")
-    ]
 
 
 class TestDataQualityCheckWorkflow(ObservatoryTestCase):
@@ -245,15 +207,6 @@ class TestDataQualityCheckWorkflow(ObservatoryTestCase):
                             fields="doi",
                         ),
                     ],
-                    "orcid": [
-                        Table(
-                            project_id=self.project_id,
-                            dataset_id=fake_dataset_id,
-                            name="orcid",
-                            sharded=False,
-                            fields="orcid_identifier.uri",
-                        ),
-                    ],
                     "openalex": [
                         Table(
                             project_id=self.project_id,
@@ -337,8 +290,8 @@ class TestDataQualityCheckWorkflow(ObservatoryTestCase):
 
             ### FIRST RUN ###
 
-            # Creating the first instance of the observatory_dataset object means that there .
-            # There should be more DQC records added to the table.
+            # Creating the first instance of the observatory_dataset object means that there
+            # should only be one record in the DQC table for each dataset
 
             # Run end to end tests for DQC DAG
             with env.create_dag_run(dqc_dag, execution_date):
@@ -372,11 +325,7 @@ class TestDataQualityCheckWorkflow(ObservatoryTestCase):
                 table_id = bq_table_id(self.project_id, fake_dataset_id, "works")
                 self.assert_table_integrity(table_id, expected_rows=expected_rows)
 
-                expected_rows = len(observatory_dataset.papers) + 1
-                table_id = bq_table_id(self.project_id, fake_dataset_id, "pubmed")
-                self.assert_table_integrity(table_id, expected_rows=expected_rows)
-
-                # Perform data quality check on the two example tables.
+                # Perform data quality check
                 for task_id, _ in workflow.datasets.items():
                     ti = env.run_task(task_id)
                     self.assertEqual("success", ti.state)
@@ -439,7 +388,7 @@ class TestDataQualityCheckWorkflow(ObservatoryTestCase):
                 table_id = bq_table_id(self.project_id, fake_dataset_id, "works")
                 self.assert_table_integrity(table_id, expected_rows=expected_rows)
 
-                # Perform data quality check on the two example tables.
+                # Perform data quality check
                 for task_id, _ in workflow.datasets.items():
                     ti = env.run_task(task_id)
                     self.assertEqual("success", ti.state)
@@ -447,6 +396,7 @@ class TestDataQualityCheckWorkflow(ObservatoryTestCase):
                 # Check that DQC tables have been created.
                 for dataset, _ in workflow.datasets.items():
                     table_id = bq_table_id(self.project_id, dqc_dataset_id, dataset)
+                    print(f"Checking integrity of table: {table_id}")
                     self.assert_table_integrity(table_id, expected_rows=2)
 
             ### THIRD RUN ###
@@ -479,7 +429,7 @@ class TestDataQualityCheckWorkflow(ObservatoryTestCase):
                 ti = env.run_task(workflow.create_dataset.__name__)
                 self.assertEqual("success", ti.state)
 
-                # Perform data quality check on the two example tables.
+                # Perform data quality check
                 for task_id, _ in workflow.datasets.items():
                     ti = env.run_task(task_id)
                     self.assertEqual("success", ti.state)
@@ -501,7 +451,7 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
         self.schema_path = os.path.join(default_schema_folder(), "data_quality_check", "data_quality_check.json")
 
         # Can't use faker here because the number of bytes in a table is needed to be the same for each test run.
-        self.test_table_hash = "36625d9df8b32e9d237c68866b36d057"
+        self.test_table_hash = "771c9176e77c1b03f64b1b5fa4a39cdb"
         self.test_table = [
             dict(id="something", count="1", abstract_text="Hello"),
             dict(id="something", count="2", abstract_text="World"),
@@ -521,7 +471,7 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
             date_shard=None,
             expires=False,
             date_expires=None,
-            size_gb=1.387670636177063e-07,
+            size_gb=1.2200325727462769e-07,
             primary_key=["id"],
             num_rows=5,
             num_distinct_records=3,
@@ -534,7 +484,7 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
         """Test if hash can be reliably created."""
 
         bq_table_id = "create_table_hash_id"
-        result = create_table_hash_id(full_table_id=bq_table_id, num_bytes=149, nrows=5, ncols=3)
+        result = create_table_hash_id(full_table_id=bq_table_id, num_bytes=131, nrows=5, ncols=3)
         self.assertEqual(result, self.test_table_hash)
 
     def test_create_dqc_record(self):
@@ -584,9 +534,7 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
                 self.assertEqual(dqc_record[key], self.expected_dqc_record[key])
 
     def test_is_in_dqc_table(self):
-        """Test if a data quality check has already been previously performed.
-
-        Test if it can determine if the check has been performed before based on a hash that it creates."""
+        """Test if a data quality check has already been previously performed by checking the table hash that it creates."""
 
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
         dqc_dataset_id = env.add_dataset(prefix="data_quality_check")
@@ -669,7 +617,7 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
             self.assertTrue(table)
             self.assertEqual(table.num_rows, 5)
             self.assertEqual(table.table_id, bq_table_id)
-            self.assertEqual(table.num_bytes, 149)
+            self.assertEqual(table.num_bytes, 131)
 
     def test_bq_list_tables_shards(self):
         """Test if a list of table shards can be reliably grabbed using the Bigquery API"""
@@ -687,7 +635,7 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
                 self.assertTrue(success)
 
             # Get table object from Bigquery API
-            tables: List[BQTable] = bq_list_tables_shards(dataset_id=bq_dataset_id, table_name=base_name)
+            tables: List[BQTable] = bq_list_tables_shards(dataset_id=bq_dataset_id, base_name=base_name)
 
             # Check metadata objects
             for table, data, bq_table_id in zip(tables, [self.test_table, self.test_table2], bq_table_ids):

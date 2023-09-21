@@ -42,26 +42,6 @@ from observatory.platform.utils.dag_run_sensor import DagRunSensor
 from observatory.platform.workflows.workflow import Workflow, set_task_state, Release
 
 
-class DataQualityCheckRelease(Release):
-
-    """Construct a DDQCRelease for the workflow."""
-
-    def __init__(
-        self,
-        *,
-        dag_id: str,
-        run_id: str,
-        workflow_list: List[str],
-        schema_path: str,
-    ):
-        super().__init__(
-            dag_id=dag_id,
-            run_id=run_id,
-        )
-        self.workflow_list = workflow_list
-        self.schema_path = schema_path
-
-
 @dataclass
 class Table:
     def __init__(
@@ -73,18 +53,14 @@ class Table:
         sharded: bool,
         fields: Union[List[str], str],
     ):
-        """Create a metadata class for each of the tables to be produced.
+        """Create a metadata class for tables to be processed by the DQC Workflow.
 
-        There will be one one table for each dataset made.
-
-        Each table will hold the QA information from each table, e.g.
-
-        :param project_id: Which project where the table is located.
+        :param project_id: The Google project_id of where the tables are located.
         :param dataset_id: The dataset that the table is under.
         :param name: The name of the table (not the full qualifed table name).
         :param source_dataset: Where the table is from.
         :param sharded: True if the table is shared or not.
-        :param fields: Location of where the primary key is located in the table e.g. MedlineCiation.PMID.value, could be multiple different identifiers.
+        :param fields: Location of where the primary key is located in the table e.g. doi, could be multiple different identifiers.
 
         """
         self.project_id = project_id
@@ -98,8 +74,318 @@ class Table:
         return f"{self.project_id}.{self.dataset_id}.{self.name}"
 
 
+def make_datasets(project_id: str) -> Dict[str, List[Table]]:
+    """Create a list of datasets for the DQC Workflow to process.
+
+    This list can be easily updated, and can be modified for tables outside the given project_id if needed.
+
+    :param project_id: Name of the Google project that the tables are stored in.
+    :return: A dictionary of key: dataset_id and the list of tables in that dataset."""
+
+    datasets = {
+        "crossref_events": [
+            Table(
+                project_id=project_id,
+                dataset_id="crossref_fundref",
+                name="crossref_events",
+                sharded=False,
+                fields="id",
+            ),
+        ],
+        "crossref_fundref": [
+            Table(
+                project_id=project_id,
+                dataset_id="crossref_fundref",
+                name="crossref_fundref",
+                sharded=True,
+                fields="funder",
+            ),
+        ],
+        "crossref_metadata": [
+            Table(
+                project_id=project_id,
+                dataset_id="crossref_metadata",
+                name="crossref_metadata",
+                sharded=True,
+                fields="doi",
+            ),
+        ],
+        "geonames": [
+            Table(
+                project_id=project_id,
+                dataset_id="geonames",
+                name="geonames",
+                sharded=True,
+                fields="oci",
+            ),
+        ],
+        "grid": [
+            Table(
+                project_id=project_id,
+                dataset_id="grid",
+                name="grid",
+                sharded=True,
+                fields="oci",
+            ),
+        ],
+        "observatory": [
+            Table(
+                project_id=project_id,
+                dataset_id="observatory",
+                name="author",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="observatory",
+                name="book",
+                sharded=True,
+                fields="isbn",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="observatory",
+                name="country",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="observatory",
+                name="doi",
+                sharded=True,
+                fields="doi",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="observatory",
+                name="funder",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="observatory",
+                name="group",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="observatory",
+                name="institution",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="observatory",
+                name="journal",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="observatory",
+                name="publisher",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="observatory",
+                name="region",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="observatory",
+                name="subregion",
+                sharded=True,
+                fields="id",
+            ),
+        ],
+        "open_citations": [
+            Table(
+                project_id=project_id,
+                dataset_id="open_citations",
+                name="open_citations",
+                sharded=True,
+                fields="oci",
+            ),
+        ],
+        "openaire": [
+            Table(
+                project_id=project_id,
+                dataset_id="openaire",
+                name="community_infrastructure",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="openaire",
+                name="dataset",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="openaire",
+                name="datasource",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="openaire",
+                name="organization",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="openaire",
+                name="otherresearchproduct",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="openaire",
+                name="publication",
+                sharded=True,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="openaire",
+                name="relation",
+                sharded=True,
+                fields=["source", "target"],
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="openaire",
+                name="software",
+                sharded=True,
+                fields="id",
+            ),
+        ],
+        "openalex": [
+            Table(
+                project_id=project_id,
+                dataset_id="openalex",
+                name="authors",
+                sharded=False,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="openalex",
+                name="concepts",
+                sharded=False,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="openalex",
+                name="funders",
+                sharded=False,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="openalex",
+                name="institutions",
+                sharded=False,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="openalex",
+                name="publishers",
+                sharded=False,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="openalex",
+                name="sources",
+                sharded=False,
+                fields="id",
+            ),
+            Table(
+                project_id=project_id,
+                dataset_id="openalex",
+                name="works",
+                sharded=False,
+                fields="id",
+            ),
+        ],
+        "orcid": [
+            Table(
+                project_id=project_id,
+                dataset_id="orcid",
+                name="orcid",
+                sharded=False,
+                fields="orcid_identifier.uri",
+            ),
+        ],
+        "pubmed": [
+            Table(
+                project_id=project_id,
+                dataset_id="pubmed",
+                name="pubmed",
+                sharded=False,
+                fields=["MedlineCitation.PMID.value", "MedlineCitation.PMID.Version"],
+            ),
+        ],
+        "ror": [
+            Table(
+                project_id=project_id,
+                dataset_id="observatory",
+                name="ror",
+                sharded=True,
+                fields="id",
+            ),
+        ],
+        "scihub": [
+            Table(
+                project_id=project_id,
+                dataset_id="scihub",
+                name="scihub",
+                sharded=True,
+                fields="doi",
+            ),
+        ],
+        "unpaywall": [
+            Table(
+                project_id=project_id,
+                dataset_id="unpaywall",
+                name="unpaywall",
+                sharded=False,
+                fields="doi",
+            )
+        ],
+        "unpaywall_snapshot": [
+            Table(
+                project_id=project_id,
+                dataset_id="unpaywall_snapshot",
+                name="unpaywall_snapshot",
+                sharded=True,
+                fields="doi",
+            ),
+        ],
+    }
+
+    return datasets
+
+
 class DataQualityCheckWorkflow(Workflow):
-    # This workflow will wait until all of the below have finished before running the data quality check workflow.
+    # This workflow will wait until all of the below dags have finished before running.
     SENSOR_DAG_IDS = [
         "crossref_events",
         "crossref_fundref",
@@ -115,306 +401,6 @@ class DataQualityCheckWorkflow(Workflow):
         "unpaywall",
     ]
 
-    # These are a list of datasets from workflows or imported from other sources that are under the academic-observatory project.
-    DATASETS = {
-        "crossref_events": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="crossref_fundref",
-                name="crossref_events",
-                sharded=False,
-                fields="id",
-            ),
-        ],
-        "crossref_fundref": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="crossref_fundref",
-                name="crossref_fundref",
-                sharded=True,
-                fields="funder",
-            ),
-        ],
-        "crossref_metadata": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="crossref_metadata",
-                name="crossref_metadata",
-                sharded=True,
-                fields="doi",
-            ),
-        ],
-        "geonames": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="geonames",
-                name="geonames",
-                sharded=True,
-                fields="oci",
-            ),
-        ],
-        "grid": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="grid",
-                name="grid",
-                sharded=True,
-                fields="oci",
-            ),
-        ],
-        "observatory": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="observatory",
-                name="author",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="observatory",
-                name="book",
-                sharded=True,
-                fields="isbn",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="observatory",
-                name="country",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="observatory",
-                name="doi",
-                sharded=True,
-                fields="doi",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="observatory",
-                name="funder",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="observatory",
-                name="group",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="observatory",
-                name="institution",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="observatory",
-                name="journal",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="observatory",
-                name="publisher",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="observatory",
-                name="region",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="observatory",
-                name="subregion",
-                sharded=True,
-                fields="id",
-            ),
-        ],
-        "open_citations": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="open_citations",
-                name="open_citations",
-                sharded=True,
-                fields="oci",
-            ),
-        ],
-        "openaire": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openaire",
-                name="community_infrastructure",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openaire",
-                name="dataset",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openaire",
-                name="datasource",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openaire",
-                name="organization",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openaire",
-                name="otherresearchproduct",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openaire",
-                name="publication",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openaire",
-                name="relation",
-                sharded=True,
-                fields=["source", "target"],
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openaire",
-                name="software",
-                sharded=True,
-                fields="id",
-            ),
-        ],
-        "openalex": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openalex",
-                name="authors",
-                sharded=False,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openalex",
-                name="concepts",
-                sharded=False,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openalex",
-                name="funders",
-                sharded=False,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openalex",
-                name="institutions",
-                sharded=False,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openalex",
-                name="publishers",
-                sharded=False,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openalex",
-                name="sources",
-                sharded=False,
-                fields="id",
-            ),
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="openalex",
-                name="works",
-                sharded=False,
-                fields="id",
-            ),
-        ],
-        "orcid": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="orcid",
-                name="orcid",
-                sharded=False,
-                fields="orcid_identifier.uri",
-            ),
-        ],
-        "pubmed": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="pubmed",
-                name="pubmed",
-                sharded=False,
-                fields=["MedlineCitation.PMID.value", "MedlineCitation.PMID.Version"],
-            ),
-        ],
-        "ror": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="observatory",
-                name="ror",
-                sharded=True,
-                fields="id",
-            ),
-        ],
-        "scihub": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="scihub",
-                name="scihub",
-                sharded=True,
-                fields="doi",
-            ),
-        ],
-        "unpaywall": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="unpaywall",
-                name="unpaywall",
-                sharded=False,
-                fields="doi",
-            )
-        ],
-        "unpaywall_snapshot": [
-            Table(
-                project_id="alex-dev-356105",
-                dataset_id="unpaywall_snapshot",
-                name="unpaywall_snapshot",
-                sharded=True,
-                fields="doi",
-            ),
-        ],
-    }
-
     def __init__(
         self,
         *,
@@ -429,17 +415,22 @@ class DataQualityCheckWorkflow(Workflow):
         sensor_dag_ids: List[str] = None,
         datasets: Dict[str, List[Table]] = None,
     ):
-        # TODO: Fix the param details for all functions.
         """Create the DataQualityCheck Workflow.
 
-        This workflow creates metadata for all
+        This workflow creates metadata for all the tables defined in the "datasets" dictionary.
+        If a table has already been checked before, it will no do it again. This based on if the
+        number of columns, rows or bytesof data stored in the table changes. We cannot use the "date modified"
+        from the Biguqery table object because it changes if any other metadata is modified, i.e. description, etc.
 
         :param dag_id: the DAG ID.
         :param cloud_workspace: the cloud workspace settings.
-        :param bq_dataset_id:
-        :param bq_dataset_description:
-        :param start_date: the start date.
+        :param bq_dataset_id: The dataset_id of where the dqc records will be stored.
+        :param bq_dataset_description: Description of the data quality check dataset
+        :param start_date: The start date of the workflow.
         :param schedule: Schedule of how often the workflow runs.
+        :param queue: Which queue this workflow will run.
+        :param sensor_dag_ids: List of dags that this workflow will wait to finish before running.
+        :param datasets: A dictionary tables from datasets that will be processed by this workflow.
         """
 
         super().__init__(
@@ -463,7 +454,7 @@ class DataQualityCheckWorkflow(Workflow):
 
         self.datasets = datasets
         if datasets is None:
-            self.datasets = DataQualityCheckWorkflow.DATASETS
+            self.datasets = make_datasets(self.project_id)
 
         # Add sensors
         with self.parallel_tasks():
@@ -490,22 +481,17 @@ class DataQualityCheckWorkflow(Workflow):
                     task_id=task_id,
                 )
 
-    def make_release(self, **kwargs) -> DataQualityCheckRelease:
-        """Make a data quality check release instance.
+    def make_release(self, **kwargs) -> Release:
+        """Make a release instance.
 
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
         to this argument.
-        :return: A release instance or list of release instances
+        :return: A release instance.
         """
-        return DataQualityCheckRelease(
-            dag_id=self.dag_id,
-            run_id=kwargs["run_id"],
-            workflow_list=self.datasets,
-            schema_path=self.schema_path,
-        )
+        return Release(dag_id=self.dag_id, run_id=kwargs["run_id"])
 
-    def create_dataset(self, release: DataQualityCheckRelease, **kwargs):
+    def create_dataset(self, release: Release, **kwargs):
         """Create a dataset for all of the DQC tables for the workflows."""
 
         success = bq_create_dataset(
@@ -517,20 +503,16 @@ class DataQualityCheckWorkflow(Workflow):
 
         set_task_state(success, self.create_dataset.__name__, release)
 
-    def perform_data_quality_check(self, release: DataQualityCheckRelease, **kwargs):
+    def perform_data_quality_check(self, release: Release, **kwargs):
         """
-        For each dataset, create a table where the rows of the table hold the qa metadata of each of the tables.
-
-        and append it onto the last row that exists."""
+        For each dataset, create a table that holds metadata about each table in that dataset.
+        Please refer to the output of the create_dqc_record function for all the metadata included in this workflow."""
 
         task_id = kwargs["task_id"]
         tables: List[Table] = kwargs["tables"]
 
         # Full table ID for this instance
         dqc_full_table_id = f"{self.project_id}.{self.bq_dataset_id}.{task_id}"
-
-        # Create the DQC table for the dataset that this instance of the workflow is checking.
-        logging.info(f"Creating DQC table for workflow/dataset: {task_id}: {dqc_full_table_id}")
 
         # Loop through each of the tables that are produced under this
         for table_to_check in tables:
@@ -543,10 +525,8 @@ class DataQualityCheckWorkflow(Workflow):
                 sub_tables: List[BQTable] = [bq_get_table(table_to_check.full_table_id)]
 
             assert (
-                len(sub_tables) > 0
+                len(sub_tables) > 0 and sub_tables[0] is not None
             ), f"No table or sharded tables found in Bigquery for: {table_to_check.dataset_id}.{table_to_check.name}"
-
-            print(f"Sub tables is {sub_tables}")
 
             records = []
             table: BQTable
@@ -575,10 +555,11 @@ class DataQualityCheckWorkflow(Workflow):
                         f"Table {table_to_check.full_table_id} with hash {hash_id} has already been checked before. Not performing check again."
                     )
 
+            logging.info(f"Creating DQC table for dataset: {task_id}: {dqc_full_table_id}")
             success = bq_load_from_memory(
                 table_id=dqc_full_table_id,
                 records=records,
-                schema_file_path=release.schema_path,
+                schema_file_path=self.schema_path,
                 write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
                 table_description=f"Data quality check for tables in dataset/workflow: {task_id}",
             )
@@ -594,13 +575,15 @@ def create_dqc_record(
     fields: Union[str, List[str]],
     is_sharded: bool,
     table_in_bq: BQTable,
-) -> dict:
+) -> Dict[str, Union[str, List[str], float, bool, int]]:
     """
     Perform novel data quality checks on a given table in Bigquery.
 
-    :param table: Workflow table object.
+    :param hash_id: Unique md5 style identifier of the table.
     :param full_table_id: The fully qualified table id, including the shard date suffix.
-    :param table_in_bq: Google Bigquery table object from python API.
+    :param fields: The fields/columns that are inspected for the given table.
+    :param is_sharded: If the table is supposed to be sharded or not.
+    :param table_in_bq: Table metadata object retrieved from the Bigquery API.
     :return: Dictionary of values from the data quality check.
     """
 
