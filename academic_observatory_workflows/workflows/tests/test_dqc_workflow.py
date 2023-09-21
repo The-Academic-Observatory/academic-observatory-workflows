@@ -162,7 +162,7 @@ class TestDQCWorkflow(ObservatoryTestCase):
 
         with env.create(task_logging=True):
             start_date = pendulum.datetime(year=2021, month=10, day=10)
-            workflow = DataQualityCheckWorkflow(
+            workflow = DQCWorkflow(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
                 bq_dataset_id=dqc_dataset_id,
@@ -262,14 +262,14 @@ class TestDQCWorkflow(ObservatoryTestCase):
             # If there is no dag run for the DAG being monitored, the sensor will pass.  This is so we can
             # skip waiting on weeks when the DAG being waited on is not scheduled to run.
             with env.create_dag_run(dqc_dag, start_date):
-                for task_id in DataQualityCheckWorkflow.SENSOR_DAG_IDS:
+                for task_id in DQCWorkflow.SENSOR_DAG_IDS:
                     ti = env.run_task(f"{task_id}_sensor")
                     self.assertEqual("success", ti.state)
 
             # Run Dummy Dags
             execution_date = pendulum.datetime(year=2023, month=1, day=1)
             snapshot_date = pendulum.datetime(year=2023, month=1, day=8)
-            for dag_id in DataQualityCheckWorkflow.SENSOR_DAG_IDS:
+            for dag_id in DQCWorkflow.SENSOR_DAG_IDS:
                 dag = make_dummy_dag(dag_id, execution_date)
                 with env.create_dag_run(dag, execution_date):
                     # Running all of a DAGs tasks sets the DAG to finished
@@ -284,7 +284,7 @@ class TestDQCWorkflow(ObservatoryTestCase):
             # Run end to end tests for DQC DAG
             with env.create_dag_run(dqc_dag, execution_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
-                for task_id in DataQualityCheckWorkflow.SENSOR_DAG_IDS:
+                for task_id in DQCWorkflow.SENSOR_DAG_IDS:
                     ti = env.run_task(f"{task_id}_sensor")
                     self.assertEqual("success", ti.state)
 
@@ -331,7 +331,7 @@ class TestDQCWorkflow(ObservatoryTestCase):
             # Run Dummy Dags
             execution_date = pendulum.datetime(year=2023, month=2, day=1)
             snapshot_date = pendulum.datetime(year=2023, month=2, day=8)
-            for dag_id in DataQualityCheckWorkflow.SENSOR_DAG_IDS:
+            for dag_id in DQCWorkflow.SENSOR_DAG_IDS:
                 dag = make_dummy_dag(dag_id, execution_date)
                 with env.create_dag_run(dag, execution_date):
                     # Running all of a DAGs tasks sets the DAG to finished
@@ -341,7 +341,7 @@ class TestDQCWorkflow(ObservatoryTestCase):
             # Run end to end tests for DQC DAG
             with env.create_dag_run(dqc_dag, execution_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
-                for task_id in DataQualityCheckWorkflow.SENSOR_DAG_IDS:
+                for task_id in DQCWorkflow.SENSOR_DAG_IDS:
                     ti = env.run_task(f"{task_id}_sensor")
                     self.assertEqual("success", ti.state)
 
@@ -395,7 +395,7 @@ class TestDQCWorkflow(ObservatoryTestCase):
             # Run Dummy Dags
             execution_date = pendulum.datetime(year=2023, month=3, day=1)
             snapshot_date = pendulum.datetime(year=2023, month=3, day=8)
-            for dag_id in DataQualityCheckWorkflow.SENSOR_DAG_IDS:
+            for dag_id in DQCWorkflow.SENSOR_DAG_IDS:
                 dag = make_dummy_dag(dag_id, execution_date)
                 with env.create_dag_run(dag, execution_date):
                     # Running all of a DAGs tasks sets the DAG to finished
@@ -405,7 +405,7 @@ class TestDQCWorkflow(ObservatoryTestCase):
             # Run end to end tests for DQC DAG
             with env.create_dag_run(dqc_dag, execution_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
-                for task_id in DataQualityCheckWorkflow.SENSOR_DAG_IDS:
+                for task_id in DQCWorkflow.SENSOR_DAG_IDS:
                     ti = env.run_task(f"{task_id}_sensor")
                     self.assertEqual("success", ti.state)
 

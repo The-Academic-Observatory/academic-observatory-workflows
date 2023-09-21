@@ -49,7 +49,7 @@
   },
   {
     "name": "date_last_modified",
-    "description": "Date of when the table was modified - obtained from Observatory API DatasetRelease.data_interval_end.",
+    "description": "Date of when the table was modified.",
     "type": "DATETIME",
     "mode": "REQUIRED"
   },
@@ -79,7 +79,7 @@
   },
   {
     "name": "num_distinct_records",
-    "description": "Number of distinct records in the table, based off of 'primary_key'.",
+    "description": "Number of records in the table that have a distinct 'primary_key'.",
     "type": "INTEGER",
     "mode": "REQUIRED"
   },
