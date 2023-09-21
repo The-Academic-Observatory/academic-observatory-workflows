@@ -23,11 +23,12 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Dict, List, Set, Optional, Tuple
+from typing import Dict, List, Set, Optional
 
 import pendulum
 import requests
 from airflow.exceptions import AirflowException
+from airflow.operators.empty import EmptyOperator
 
 from academic_observatory_workflows.config import sql_folder, Tag
 from observatory.api.client.model.dataset_release import DatasetRelease
@@ -116,8 +117,8 @@ def make_sql_queries(
     dataset_id_settings: str = "settings",
     dataset_id_observatory: str = "observatory",
     dataset_id_observatory_intermediate: str = "observatory_intermediate",
-) -> Tuple[List[SQLQuery], SQLQuery, SQLQuery]:
-    return (
+) -> List[List[SQLQuery]]:
+    return [
         [
             SQLQuery(
                 "create_crossref_metadata",
@@ -128,7 +129,9 @@ def make_sql_queries(
                 },
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "crossref_metadata"),
                 output_clustering_fields=["doi"],
-            ),
+            )
+        ],
+        [
             SQLQuery(
                 "create_crossref_events",
                 inputs={"crossref_events": Table(input_project_id, dataset_id_crossref_events, "crossref_events")},
@@ -203,47 +206,40 @@ def make_sql_queries(
                 output_clustering_fields=["doi"],
             ),
         ],
-        SQLQuery(
-            "create_doi",
-            inputs={
-                "openalex": Table(output_project_id, dataset_id_observatory_intermediate, "openalex", sharded=True),
-                "ror_hierarchy": Table(
-                    output_project_id, dataset_id_observatory_intermediate, "ror_hierarchy", sharded=True
-                ),
-                "openaccess": Table(output_project_id, dataset_id_observatory_intermediate, "openaccess", sharded=True),
-                "unpaywall": Table(input_project_id, dataset_id_unpaywall, "unpaywall"),
-                "open_citations": Table(
-                    output_project_id, dataset_id_observatory_intermediate, "open_citations", sharded=True
-                ),
-                "crossref_events": Table(
-                    output_project_id, dataset_id_observatory_intermediate, "crossref_events", sharded=True
-                ),
-                "pubmed": Table(output_project_id, dataset_id_observatory_intermediate, "pubmed", sharded=True),
-                "crossref_metadata": Table(
-                    output_project_id, dataset_id_observatory_intermediate, "crossref_metadata", sharded=True
-                ),
-                "ror": Table(output_project_id, dataset_id_observatory_intermediate, "ror", sharded=True),
-                "groupings": Table(input_project_id, dataset_id_settings, "groupings"),
-                "crossref_fundref": Table(
-                    output_project_id, dataset_id_observatory_intermediate, "crossref_fundref", sharded=True
-                ),
-                "orcid": Table(output_project_id, dataset_id_observatory_intermediate, "orcid", sharded=True),
-            },
-            output_table=Table(output_project_id, dataset_id_observatory, "doi"),
-            output_clustering_fields=["doi"],
-        ),
-        SQLQuery(
-            "create_book",
-            inputs={
-                "observatory": Table(output_project_id, dataset_id_observatory, "doi", sharded=True),
-                "crossref_events": Table(
-                    output_project_id, dataset_id_observatory_intermediate, "crossref_events", sharded=True
-                ),
-            },
-            output_table=Table(output_project_id, dataset_id_observatory, "book"),
-            output_clustering_fields=["isbn"],
-        ),
-    )
+        [
+            SQLQuery(
+                "create_doi",
+                inputs={
+                    "openalex": Table(output_project_id, dataset_id_observatory_intermediate, "openalex", sharded=True),
+                    "ror_hierarchy": Table(
+                        output_project_id, dataset_id_observatory_intermediate, "ror_hierarchy", sharded=True
+                    ),
+                    "openaccess": Table(
+                        output_project_id, dataset_id_observatory_intermediate, "openaccess", sharded=True
+                    ),
+                    "unpaywall": Table(input_project_id, dataset_id_unpaywall, "unpaywall"),
+                    "open_citations": Table(
+                        output_project_id, dataset_id_observatory_intermediate, "open_citations", sharded=True
+                    ),
+                    "crossref_events": Table(
+                        output_project_id, dataset_id_observatory_intermediate, "crossref_events", sharded=True
+                    ),
+                    "pubmed": Table(output_project_id, dataset_id_observatory_intermediate, "pubmed", sharded=True),
+                    "crossref_metadata": Table(
+                        output_project_id, dataset_id_observatory_intermediate, "crossref_metadata", sharded=True
+                    ),
+                    "ror": Table(output_project_id, dataset_id_observatory_intermediate, "ror", sharded=True),
+                    "groupings": Table(input_project_id, dataset_id_settings, "groupings"),
+                    "crossref_fundref": Table(
+                        output_project_id, dataset_id_observatory_intermediate, "crossref_fundref", sharded=True
+                    ),
+                    "orcid": Table(output_project_id, dataset_id_observatory_intermediate, "orcid", sharded=True),
+                },
+                output_table=Table(output_project_id, dataset_id_observatory, "doi"),
+                output_clustering_fields=["doi"],
+            )
+        ],
+    ]
 
 
 def fetch_ror_affiliations(repository_institution: str, num_retries: int = 3) -> Dict:
@@ -460,7 +456,7 @@ class DoiWorkflow(Workflow):
         bq_unpaywall_dataset_id: str = "unpaywall",
         bq_ror_dataset_id: str = "ror",
         api_dataset_id: str = "doi",
-        sql_queries: Tuple = None,
+        sql_queries: List[List[SQLQuery]] = None,
         max_fetch_threads: int = 4,
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 8, 30),
@@ -509,11 +505,11 @@ class DoiWorkflow(Workflow):
         self.input_table_id_tasks = []
 
         if sql_queries is None:
-            self.sql_queries, self.sql_query_doi, self.sql_query_book = make_sql_queries(
+            self.sql_queries = make_sql_queries(
                 self.input_project_id, self.output_project_id, dataset_id_observatory=bq_observatory_dataset_id
             )
         else:
-            self.sql_queries, self.sql_query_doi, self.sql_query_book = sql_queries
+            self.sql_queries = sql_queries
 
         self.create_tasks()
 
@@ -541,34 +537,23 @@ class DoiWorkflow(Workflow):
         self.add_task(self.create_repo_institution_to_ror_table)
         self.add_task(self.create_ror_hierarchy_table)
 
-        # Create tasks for processing intermediate tables
+        # Create tasks for running SQL queries
         self.input_table_task_ids = []
-        with self.parallel_tasks():
-            for sql_query in self.sql_queries:
-                task_id = sql_query.name
-                self.add_task(
-                    self.create_intermediate_table,
-                    op_kwargs={"sql_query": sql_query, "task_id": task_id},
-                    task_id=task_id,
+        for i, batch in enumerate(self.sql_queries):
+            with self.parallel_tasks():
+                for sql_query in batch:
+                    task_id = sql_query.name
+                    self.add_task(
+                        self.create_intermediate_table,
+                        op_kwargs={"sql_query": sql_query, "task_id": task_id},
+                        task_id=task_id,
+                    )
+                    self.input_table_task_ids.append(task_id)
+            self.add_operator(
+                EmptyOperator(
+                    task_id=f"merge_{i}",
                 )
-                self.input_table_task_ids.append(task_id)
-
-        # Create DOI Table
-        task_id = self.sql_query_doi.name
-        self.add_task(
-            self.create_intermediate_table,
-            op_kwargs={"sql_query": self.sql_query_doi, "task_id": task_id},
-            task_id=task_id,
-        )
-        self.input_table_task_ids.append(task_id)
-
-        # Create Book Table
-        task_id = self.sql_query_book.name
-        self.add_task(
-            self.create_intermediate_table,
-            op_kwargs={"sql_query": self.sql_query_book, "task_id": task_id},
-            task_id=task_id,
-        )
+            )
 
         # Create final tables
         with self.parallel_tasks():
@@ -679,7 +664,7 @@ class DoiWorkflow(Workflow):
     def create_intermediate_table(self, release: SnapshotRelease, **kwargs):
         """Create an intermediate table."""
 
-        task_id = kwargs['task_id']
+        task_id = kwargs["task_id"]
         print(f"create_intermediate_table: {task_id}")
         sql_query: SQLQuery = kwargs["sql_query"]
 
