@@ -408,7 +408,7 @@ class DataQualityCheckWorkflow(Workflow):
         cloud_workspace: CloudWorkspace,
         bq_dataset_id: str = "data_quality_checks",
         bq_dataset_description: str = "This dataset holds metadata about the tables that the Academic Observatory Worflows produce. If there are multiple shards tables, it will go back on the table and check if it hasn't done that table previously.",
-        schema_path: str = os.path.join(default_schema_folder(), "data_quality_check", "data_quality_check.json"),
+        schema_path: str = os.path.join(default_schema_folder(), "dqc", "dqc.json"),
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 1, 1),
         schedule: Optional[str] = "@weekly",
         queue: str = "default",
