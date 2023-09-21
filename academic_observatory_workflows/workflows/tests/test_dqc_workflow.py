@@ -436,7 +436,7 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
 
-        self.schema_path = os.path.join(default_schema_folder(), "data_quality_check", "data_quality_check.json")
+        self.schema_path = os.path.join(default_schema_folder(), "dqc", "dqc.json")
 
         # Can't use faker here because the number of bytes in a table is needed to be the same for each test run.
         self.test_table_hash = "771c9176e77c1b03f64b1b5fa4a39cdb"
