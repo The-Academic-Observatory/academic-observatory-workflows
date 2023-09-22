@@ -17,7 +17,7 @@
 --- This is to make an intermediate table of all records that have the highest version number from Pubmed which will be joined onto the DOI table. 
 
 SELECT 
-  recent.doi,
+  UPPER(TRIM(recent.doi)) as doi,
   pubmed.*
 FROM (
   SELECT 

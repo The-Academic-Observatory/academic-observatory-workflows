@@ -16,16 +16,15 @@
 
 from __future__ import annotations
 
+import math
 import os
 import random
-import binascii
 import urllib.parse
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Tuple
 
-import math
 import pandas as pd
 import pendulum
 from click.testing import CliRunner
@@ -1051,6 +1050,99 @@ def make_openalex_dataset(dataset: ObservatoryDataset) -> List[dict]:
     return result
 
 
+def make_orcid(dataset: ObservatoryDataset) -> List[Dict]:
+    # A single fake record so that the get_snapshot_date function works (can't have an empty table)
+    return [
+        {
+            "orcid_identifier": {
+                "host": "orcid.org",
+                "path": "0000-0000-0000-0000",
+                "uri": "http://orcid.org/0000-0000-0000-0000",
+            },
+            "person": {
+                "last_modified_date": None,
+                "name": {
+                    "given_names": "Joe",
+                    "family_name": "Blogs",
+                },
+            },
+            "activities_summary": {
+                "works": {
+                    "last_modified_date": "2022-01-01 00:00:00.000000 UTC",
+                    "group": [
+                        {
+                            "last_modified_date": "2022-01-01 00:00:00.000000 UTC",
+                            "work_summary": [
+                                {
+                                    "created_date": "2022-01-01 00:00:00.000000 UTC",
+                                    "last_modified_date": "2022-01-01 00:00:00.000000 UTC",
+                                    "source": {
+                                        "source_orcid": None,
+                                        "source_client_id": {
+                                            "host": "orcid.org",
+                                            "path": "0000-0000-0000-0000",
+                                            "uri": "http://orcid.org/client/0000-0000-0000-0000",
+                                        },
+                                        "source_name": "Crossref Metadata Search",
+                                        "assertion_origin_orcid": None,
+                                        "assertion_origin_client_id": None,
+                                        "assertion_origin_name": None,
+                                    },
+                                    "put_code": "00000000",
+                                    "visibility": "public",
+                                    "display_index": "0",
+                                    "path": "/0000-0000-0000-0000/work/00000000",
+                                    "title": {"title": "A Paper", "subtitle": None, "translated_title": None},
+                                    "external_ids": {
+                                        "external_id": [
+                                            {
+                                                "created_date": None,
+                                                "last_modified_date": None,
+                                                "source": None,
+                                                "put_code": None,
+                                                "visibility": None,
+                                                "display_index": None,
+                                                "path": None,
+                                                "external_id_type": "doi",
+                                                "external_id_value": "10.0000/s00000-000-00000-0",
+                                                "external_id_normalized": None,
+                                                "external_id_normalized_error": None,
+                                                "external_id_url": None,
+                                                "external_id_relationship": "self",
+                                            },
+                                            {
+                                                "created_date": None,
+                                                "last_modified_date": None,
+                                                "source": None,
+                                                "put_code": None,
+                                                "visibility": None,
+                                                "display_index": None,
+                                                "path": None,
+                                                "external_id_type": "issn",
+                                                "external_id_value": "0000-0000",
+                                                "external_id_normalized": None,
+                                                "external_id_normalized_error": None,
+                                                "external_id_url": None,
+                                                "external_id_relationship": "part-of",
+                                            },
+                                        ]
+                                    },
+                                    "url": None,
+                                    "type": "journal-article",
+                                    "publication_date": {"year": "2020", "month": "9", "day": None},
+                                    "journal_title": None,
+                                }
+                            ],
+                        }
+                    ],
+                    "path": "/0000-0000-0000-0000/works",
+                },
+                "path": "/0000-0000-0000-0000/activities",
+            },
+        }
+    ]
+
+
 def make_pubmed(dataset: ObservatoryDataset) -> List[Dict]:
     """Generate the Pubmed table from an ObservatoryDataset instance.
 
@@ -1198,6 +1290,7 @@ def bq_load_observatory_dataset(
     crossref_metadata = make_crossref_metadata(observatory_dataset)
     scihub = make_scihub(observatory_dataset)
     pubmed: List[dict] = make_pubmed(observatory_dataset)
+    orcid: List[dict] = make_orcid(observatory_dataset)
 
     # Load fake ROR and settings datasets
     test_doi_path = test_fixtures_folder("doi")
@@ -1299,8 +1392,8 @@ def bq_load_observatory_dataset(
                 "orcid",
                 False,
                 dataset_id_all,
-                [],
-                bq_find_schema(path=os.path.join(schema_path, "orcid"), table_name="orcid", release_date=snapshot_date),
+                orcid,
+                bq_find_schema(path=os.path.join(schema_path, "orcid"), table_name="orcid"),
             ),
             Table(
                 "works",
@@ -1414,7 +1507,7 @@ def make_doi_table(dataset: ObservatoryDataset) -> List[Dict]:
                     "published_year": paper.published_date.year,
                     "published_month": paper.published_date.month,
                     "published_year_month": f"{paper.published_date.year}-{paper.published_date.month}",
-                    "funder": [{"name": funder.name, "DOI": funder.doi} for funder in paper.funders],
+                    "funder": [{"name": funder.name, "DOI": funder.doi.upper()} for funder in paper.funders],
                 },
                 "unpaywall": {},
                 "unpaywall_history": {},
@@ -1475,10 +1568,10 @@ def make_doi_funders(funder_list: FunderList) -> List[Dict]:
     # Funders
     funders = {}
     for funder in funder_list:
-        funders[funder.doi] = {
+        funders[funder.doi.upper()] = {
             "identifier": funder.name,
             "name": funder.name,
-            "doi": funder.doi,
+            "doi": funder.doi.upper(),
             "types": ["Funder"],
             "country": None,
             "country_code": funder.country_code,
@@ -1500,7 +1593,7 @@ def make_doi_journals(in_unpaywall: bool, journal: Journal) -> List[Dict]:
     """Make the journal affiliation list for a DOI table row.
 
     :param in_unpaywall: whether the work is in Unpaywall or not. At the moment the journal IDs come from Unpaywall,
-    and if the work is not in Unpaywall then the journal id and name will be null.
+    and if the work is not in Unpaywall then the journal id and name will be None.
     :param journal: the paper's journal.
     :return: the journal affiliation list.
     """

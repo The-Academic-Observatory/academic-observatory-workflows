@@ -25,8 +25,8 @@ WITH coki_affiliations_temp as (
       openalex.doi,
       ARRAY_AGG(DISTINCT ror_hierarchy.child_id IGNORE NULLS) as author_institutions,
       ARRAY_CONCAT_AGG(ror_hierarchy.ror_ids) as genealogical_institutions
-    FROM `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.openalex{{ snapshot_date.strftime('%Y%m%d') }}` as openalex, UNNEST(IF(openalex.authorships is not null, openalex.authorships, [])) AS authors, UNNEST(IF(authors.institutions is not null, authors.institutions, [])) as institution
-    LEFT JOIN `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.ror_hierarchy{{ snapshot_date.strftime('%Y%m%d') }}` as ror_hierarchy ON ror_hierarchy.child_id = institution.ror
+    FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.{{ openalex.table_id }}` as openalex, UNNEST(IF(openalex.authorships is not null, openalex.authorships, [])) AS authors, UNNEST(IF(authors.institutions is not null, authors.institutions, [])) as institution
+    LEFT JOIN `{{ ror_hierarchy.project_id }}.{{ ror_hierarchy.dataset_id }}.{{ ror_hierarchy.table_id }}` as ror_hierarchy ON ror_hierarchy.child_id = institution.ror
     GROUP BY openalex.doi) as coki_affiliations
 ),
 
@@ -38,23 +38,16 @@ SELECT
  FROM
   (SELECT
     {# This SQL block links unpaywall, pubmed, open citations and crossref events to the DOI and the metadata found in the crossref metadata dataset #}
-    UPPER(TRIM(ref.doi)) as doi,
-    STRUCT(
-            title, abstract, issued.date_parts[offset(0)] as published_year,
-            CASE WHEN ARRAY_LENGTH(issued.date_parts) > 1 THEN issued.date_parts[offset(1)] ELSE 13 END as published_month,
-            CONCAT(issued.date_parts[offset(0)], "-", CASE WHEN ARRAY_LENGTH(issued.date_parts) > 1 THEN issued.date_parts[offset(1)] ELSE 13 END) as published_year_month,
-            type, ISSN, ISBN, issn_type, publisher_location, publisher, member, prefix, container_title, short_container_title, group_title, references_count,
-            is_referenced_by_count, subject, published_print, license, volume, funder, page, author, link, clinical_trial_number, alternative_id
-    ) as crossref,
-    (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.openaccess{{ snapshot_date.strftime('%Y%m%d') }}` as oa WHERE oa.doi = UPPER(TRIM(ref.doi))) as openaccess,
-    (SELECT as STRUCT * from `{{ unpaywall.project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}` as unpaywall WHERE unpaywall.doi = UPPER(TRIM(ref.doi))) as unpaywall,
-    (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.openalex{{ snapshot_date.strftime('%Y%m%d') }}` as openalex WHERE openalex.doi = UPPER(TRIM(ref.doi))) as openalex,
-    (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.open_citations{{ snapshot_date.strftime('%Y%m%d') }}` as oa WHERE oa.doi = UPPER(TRIM(ref.doi))) as open_citations,
-    (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.crossref_events{{ snapshot_date.strftime('%Y%m%d') }}` as events WHERE events.doi = UPPER(TRIM(ref.doi))) as events,
-    (SELECT as STRUCT * from `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.pubmed{{ snapshot_date.strftime('%Y%m%d') }}` as pubmed WHERE pubmed.doi = UPPER(TRIM(ref.doi))) as pubmed,
-    (SELECT as STRUCT * from coki_affiliations_temp as coki_affiliations WHERE coki_affiliations.doi = UPPER(TRIM(ref.doi))) as coki_affiliations,
-  FROM `{{ crossref_metadata.project_id }}.{{ crossref_metadata.dataset_id }}.crossref_metadata{{ crossref_metadata.snapshot_date.strftime('%Y%m%d') }}` as ref
-  WHERE ARRAY_LENGTH(issued.date_parts) > 0)
+    ref.doi as doi,
+    (SELECT as STRUCT * from `{{ crossref_metadata.project_id }}.{{ crossref_metadata.dataset_id }}.{{ crossref_metadata.table_id }}` as ref_row WHERE ref_row.doi = ref.doi) as crossref,
+    (SELECT as STRUCT * from `{{ openaccess.project_id }}.{{ openaccess.dataset_id }}.{{ openaccess.table_id }}` as oa WHERE oa.doi = ref.doi) as openaccess,
+    (SELECT as STRUCT * from `{{ unpaywall.project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}` as unpaywall WHERE unpaywall.doi = ref.doi) as unpaywall,
+    (SELECT as STRUCT * from `{{ openalex.project_id }}.{{ openalex.dataset_id }}.{{ openalex.table_id }}` as openalex WHERE openalex.doi = ref.doi) as openalex,
+    (SELECT as STRUCT * from `{{ open_citations.project_id }}.{{ open_citations.dataset_id }}.{{ open_citations.table_id }}` as oa WHERE oa.doi = ref.doi) as open_citations,
+    (SELECT as STRUCT * from `{{ crossref_events.project_id }}.{{ crossref_events.dataset_id }}.{{ crossref_events.table_id }}` as events WHERE events.doi = ref.doi) as events,
+    (SELECT as STRUCT * from `{{ pubmed.project_id }}.{{ pubmed.dataset_id }}.{{ pubmed.table_id }}` as pubmed WHERE pubmed.doi = ref.doi) as pubmed,
+    (SELECT as STRUCT * from coki_affiliations_temp as coki_affiliations WHERE coki_affiliations.doi = ref.doi) as coki_affiliations,
+  FROM `{{ crossref_metadata.project_id }}.{{ crossref_metadata.dataset_id }}.{{ crossref_metadata.table_id }}` as ref)
 ),
 
 {# this query builds the .affiliation section of the final doi table. The primary purpose of this is to allow the aggregrate_doi query #}
@@ -224,11 +217,10 @@ SELECT
    Lastly, Fundref and ORCID are also LEFT JOINed in order to drive the Funder and Author relationships
   #}
   FROM dois_temp_table as dois, UNNEST(coki_affiliations.genealogical_institutions) as ror_id
-  LEFT JOIN `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.ror{{ snapshot_date.strftime('%Y%m%d') }}` as institution on ror_id = institution.id
-  LEFT JOIN (SELECT ror, ARRAY_AGG(STRUCT(group_id, group_name, country_code)) as groupings FROM `{{ groupings.project_id }}.{{ groupings.dataset_id }}.groupings` CROSS JOIN UNNEST(rors) as ror GROUP BY ror) as ror_groups on institution.id = ror_groups.ror
-  GROUP BY doi) as base on extras.doi = base.doi
-  LEFT JOIN `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.crossref_fundref{{ snapshot_date.strftime('%Y%m%d') }}` as fundref on fundref.doi = extras.doi
-  LEFT JOIN `{{ observatory_intermediate.project_id }}.{{ observatory_intermediate.dataset_id }}.orcid{{ snapshot_date.strftime('%Y%m%d') }}` as orcid on UPPER(TRIM(orcid.doi)) = UPPER(TRIM(extras.doi))
+  LEFT JOIN `{{ ror.project_id }}.{{ ror.dataset_id }}.{{ ror.table_id }}` as institution on ror_id = institution.id
+  LEFT JOIN (SELECT ror, ARRAY_AGG(STRUCT(group_id, group_name, country_code)) as groupings FROM `{{ groupings.project_id }}.{{ groupings.dataset_id }}.{{ groupings.table_id }}` CROSS JOIN UNNEST(rors) as ror GROUP BY ror) as ror_groups on institution.id = ror_groups.ror GROUP BY doi) as base on extras.doi = base.doi
+  LEFT JOIN `{{ crossref_fundref.project_id }}.{{ crossref_fundref.dataset_id }}.{{ crossref_fundref.table_id }}` as fundref on fundref.doi = extras.doi
+  LEFT JOIN `{{ orcid.project_id }}.{{ orcid.dataset_id }}.{{ orcid.table_id }}` as orcid on orcid.doi = extras.doi
 )
 
 {#
