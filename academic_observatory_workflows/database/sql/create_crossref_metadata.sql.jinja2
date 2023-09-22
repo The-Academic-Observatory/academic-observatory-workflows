@@ -1,0 +1,62 @@
+{# Copyright 2023 Curtin University
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Author: James Diprose #}
+
+WITH crossref_subset AS (
+  SELECT
+    UPPER(TRIM(DOI)) as doi,
+    title,
+    abstract,
+    issued.date_parts[offset(0)] as published_year,
+    CASE WHEN ARRAY_LENGTH(issued.date_parts) > 1 THEN issued.date_parts[offset(1)] ELSE 13 END as published_month,
+    CONCAT(issued.date_parts[offset(0)], "-", CASE WHEN ARRAY_LENGTH(issued.date_parts) > 1 THEN issued.date_parts[offset(1)] ELSE 13 END) as published_year_month,
+    type,
+    ISSN,
+    ISBN,
+    issn_type,
+    publisher_location,
+    publisher,
+    member,
+    prefix,
+    container_title,
+    short_container_title,
+    group_title,
+    references_count,
+    is_referenced_by_count,
+    subject,
+    published_print,
+    license,
+    volume,
+    ARRAY(
+      SELECT AS STRUCT
+        UPPER(TRIM(f.DOI)) as doi,
+        f.award,
+        f.doi_asserted_by,
+        f.name
+      FROM UNNEST(funder) as f
+    ) as funder,
+    page,
+    author,
+    link,
+    clinical_trial_number,
+    alternative_id,
+    ROW_NUMBER() OVER (PARTITION BY UPPER(TRIM(DOI)) ORDER BY indexed.date_time DESC) AS rn
+  FROM `{{ crossref_metadata.project_id }}.{{ crossref_metadata.dataset_id }}.{{ crossref_metadata.table_id }}`
+  WHERE ARRAY_LENGTH(issued.date_parts) > 0
+)
+
+SELECT * EXCEPT(rn)
+FROM crossref_subset
+WHERE rn = 1

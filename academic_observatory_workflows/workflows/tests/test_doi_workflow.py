@@ -36,7 +36,7 @@ from academic_observatory_workflows.model import (
 )
 from academic_observatory_workflows.workflows.doi_workflow import (
     DoiWorkflow,
-    make_dataset_transforms,
+    make_sql_queries,
     fetch_ror_affiliations,
     ror_to_ror_hierarchy_index,
 )
@@ -208,7 +208,9 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 "check_dependencies": ["create_datasets"],
                 "create_datasets": ["create_repo_institution_to_ror_table"],
                 "create_repo_institution_to_ror_table": ["create_ror_hierarchy_table"],
-                "create_ror_hierarchy_table": [
+                "create_ror_hierarchy_table": ["create_crossref_metadata"],
+                "create_crossref_metadata": ["merge_0"],
+                "merge_0": [
                     "create_crossref_events",
                     "create_crossref_fundref",
                     "create_ror",
@@ -218,16 +220,17 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     "create_openalex",
                     "create_pubmed",
                 ],
-                "create_crossref_events": ["create_doi"],
-                "create_crossref_fundref": ["create_doi"],
-                "create_ror": ["create_doi"],
-                "create_orcid": ["create_doi"],
-                "create_open_citations": ["create_doi"],
-                "create_openaccess": ["create_doi"],
-                "create_openalex": ["create_doi"],
-                "create_pubmed": ["create_doi"],
-                "create_doi": ["create_book"],
-                "create_book": [
+                "create_crossref_events": ["merge_1"],
+                "create_crossref_fundref": ["merge_1"],
+                "create_ror": ["merge_1"],
+                "create_orcid": ["merge_1"],
+                "create_open_citations": ["merge_1"],
+                "create_openaccess": ["merge_1"],
+                "create_openalex": ["merge_1"],
+                "create_pubmed": ["merge_1"],
+                "merge_1": ["create_doi"],
+                "create_doi": ["merge_2"],
+                "merge_2": [
                     "create_country",
                     "create_funder",
                     "create_group",
@@ -302,7 +305,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
         bq_dashboards_dataset_id = env.add_dataset(prefix="dashboards")
         bq_observatory_dataset_id = env.add_dataset(prefix="observatory")
         bq_settings_dataset_id = env.add_dataset(prefix="settings")
-        dataset_transforms = make_dataset_transforms(
+        sql_queries = make_sql_queries(
             input_project_id=self.project_id,
             output_project_id=self.project_id,
             dataset_id_crossref_events=fake_dataset_id,
@@ -319,7 +322,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
             dataset_id_openalex=fake_dataset_id,
             dataset_id_pubmed=fake_dataset_id,
         )
-        transforms, transform_doi, transform_book = dataset_transforms
 
         with env.create(task_logging=True):
             start_date = pendulum.datetime(year=2021, month=10, day=10)
@@ -331,7 +333,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 bq_observatory_dataset_id=bq_observatory_dataset_id,
                 bq_unpaywall_dataset_id=fake_dataset_id,
                 bq_ror_dataset_id=fake_dataset_id,
-                transforms=dataset_transforms,
+                sql_queries=sql_queries,
                 start_date=start_date,
                 max_fetch_threads=1,
             )
@@ -450,14 +452,13 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 self.assertEqual(expected_state, ti.state)
 
                 # Test that source dataset transformations run
-                for transform in transforms:
-                    task_id = f"create_{transform.output_table.table_name}"
-                    ti = env.run_task(task_id)
+                for i, batch in enumerate(sql_queries):
+                    for sql_query in batch:
+                        task_id = sql_query.name
+                        ti = env.run_task(task_id)
+                        self.assertEqual(expected_state, ti.state)
+                    ti = env.run_task(f"merge_{i}")
                     self.assertEqual(expected_state, ti.state)
-
-                # Test create DOI task
-                ti = env.run_task("create_doi")
-                self.assertEqual(expected_state, ti.state)
 
                 # DOI assert table exists
                 table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, "doi", snapshot_date)
@@ -475,15 +476,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 expected_output = make_doi_table(observatory_dataset)
                 table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, "doi", snapshot_date)
                 actual_output = query_table(table_id, "doi")
-
                 self.assert_doi(expected_output, actual_output)
-
-                # Test create book
-                ti = env.run_task("create_book")
-                self.assertEqual(expected_state, ti.state)
-                table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, "book", snapshot_date)
-                expected_rows = 0
-                self.assert_table_integrity(table_id, expected_rows)
 
                 # Test aggregations tasks
                 for agg in DoiWorkflow.AGGREGATIONS:
