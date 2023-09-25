@@ -5,28 +5,16 @@
     "mode": "NULLABLE",
     "fields": [
       {
-        "name": "IndexLength",
-        "type": "INTEGER",
-        "mode": "NULLABLE"
+        "name": "keys",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "Custom field created by COKI. Originally each word in the abstract was a key and the indices of where this word occurred inside the abstract the corresponding value."
       },
       {
-        "name": "InvertedIndex",
-        "type": "RECORD",
-        "mode": "NULLABLE",
-        "fields": [
-          {
-            "name": "keys",
-            "type": "STRING",
-            "mode": "REPEATED",
-            "description": "Custom field created by COKI. Originally each word in the abstract was a key and the indices of where this word occurred inside the abstract the corresponding value."
-          },
-          {
-            "name": "values",
-            "type": "STRING",
-            "mode": "REPEATED",
-            "description": "Custom field created by COKI. Originally each word in the abstract was a key and the indices of where this word occurred inside the abstract the corresponding value."
-          }
-        ]
+        "name": "values",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "Custom field created by COKI. Originally each word in the abstract was a key and the indices of where this word occurred inside the abstract the corresponding value."
       }
     ],
     "description": "The abstract of the work, as an inverted index, which encodes information about the abstract's words and their positions within the text. Like Microsoft Academic Graph, OpenAlex doesn't include plaintext abstracts due to legal constraints."
