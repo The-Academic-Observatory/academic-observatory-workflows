@@ -273,6 +273,26 @@ class OpenAlexRelease(ChangefileRelease):
         return None
 
 
+def get_task_id(**kwargs):
+    return kwargs["ti"]["task_id"]
+
+
+def make_no_updated_data_msg(task_id: str, entity_name: str) -> str:
+    return (
+        f"{task_id}: skipping this task, as there is no updated data for OpenAlexEntity({entity_name}) in this release"
+    )
+
+
+def make_first_run_message(task_id: str):
+    return f"{task_id}: skipping this task, as it is not executed on the first run"
+
+
+def make_no_merged_ids_msg(task_id: str, entity_name: str) -> str:
+    return (
+        f"{task_id}: skipping this task, as there are no merged_ids for OpenAlexEntity({entity_name}) in this release"
+    )
+
+
 class OpenAlexTelescope(Workflow):
     """OpenAlex telescope"""
 
@@ -489,13 +509,11 @@ class OpenAlexTelescope(Workflow):
 
             # Don't add this entity because it has no updates
             if start_date is None or end_date is None:
-                logging.info(
-                    f"fetch_releases: skipping OpenAlexEntity(entity_name={entity_name}) as it has no updated data"
-                )
+                logging.info(f"fetch_releases: skipping OpenAlexEntity({entity_name}) as it has no updated data")
                 continue
 
             logging.info(
-                f"fetch_releases: adding OpenAlexEntity(entity_name={entity_name}, start_date={start_date}, end_date={end_date})"
+                f"fetch_releases: adding OpenAlexEntity({entity_name}), start_date={start_date}, end_date={end_date})"
             )
 
             # Save metadata
@@ -570,25 +588,24 @@ class OpenAlexTelescope(Workflow):
         """Create a snapshot of each main table. The purpose of this table is to be able to rollback the table
         if something goes wrong. The snapshot expires after self.snapshot_expiry_days."""
 
+        task_id = get_task_id(**kwargs)
         if release.is_first_run:
-            raise AirflowSkipException(
-                f"bq_create_snapshots: skipping as snapshots are not created on the first run"
-            )
+            raise AirflowSkipException(make_first_run_message(task_id))
 
         entity = release.get_entity(entity_name)
         if entity is None:
-            raise AirflowSkipException()
+            raise AirflowSkipException(make_no_updated_data_msg(get_task_id(**kwargs), entity_name))
 
         expiry_date = pendulum.now().add(days=self.snapshot_expiry_days)
         logging.info(
-            f"bq_create_snapshots: creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
+            f"{task_id}: creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
         )
         success = bq_snapshot(
             src_table_id=entity.bq_main_table_id, dst_table_id=entity.bq_snapshot_table_id, expiry_date=expiry_date
         )
         assert (
             success
-        ), f"bq_create_snapshots: error creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
+        ), f"{task_id}: error creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
 
     def aws_to_gcs_transfer(self, release: OpenAlexRelease, **kwargs):
         """Transfer files from AWS bucket to Google Cloud bucket"""
@@ -638,10 +655,10 @@ class OpenAlexTelescope(Workflow):
                 bucket=self.aws_openalex_bucket, aws_key=self.aws_key, entity_name=entity.entity_name
             )
             if entity.manifest != current_manifest:
-                logging.error(f"aws_to_gcs_transfer: entity {entity.entity_name} manifests have changed")
+                logging.error(f"aws_to_gcs_transfer: OpenAlexEntity({entity.entity_name}) manifests have changed")
                 success = False
             if entity.merged_ids != current_merged_ids:
-                logging.error(f"aws_to_gcs_transfer: entity {entity.entity_name} merged_ids have changed")
+                logging.error(f"aws_to_gcs_transfer: OpenAlexEntity({entity.entity_name}) merged_ids have changed")
                 success = False
 
         if success:
@@ -651,20 +668,21 @@ class OpenAlexTelescope(Workflow):
     def transform(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Transform all files for the Work, Concept and Institution entities. Transforms one file per process."""
 
+        task_id = get_task_id(**kwargs)
         entity = release.get_entity(entity_name)
         if entity is None:
-            raise AirflowSkipException()
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
 
         # Cleanup in case we re-run task
         output_folder = os.path.join(release.transform_folder, "data", entity_name)
-        logging.info(f"Cleaning path: {output_folder}")
+        logging.info(f"{task_id}: cleaning path: {output_folder}")
         clean_dir(output_folder)
 
         # These will all get executed as different tasks, so only use many processes for works which is the largest
         max_processes = 1
         if entity.entity_name == "works":
             max_processes = self.max_processes
-        logging.info(f"Transforming files, no. workers: {max_processes}")
+        logging.info(f"{task_id}: transforming files for OpenAlexEntity({entity_name}), no. workers: {max_processes}")
 
         with ProcessPoolExecutor(max_workers=max_processes) as executor:
             futures = []
@@ -693,11 +711,12 @@ class OpenAlexTelescope(Workflow):
     def bq_load_upsert_tables(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Load the upsert table for each entity."""
 
+        task_id = get_task_id(**kwargs)
         entity = release.get_entity(entity_name)
         if entity is None:
-            raise AirflowSkipException("")
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
 
-        logging.info(f"bq_load_upsert_tables: loading {entity.entity_name} upsert table {entity.bq_upsert_table_id}")
+        logging.info(f"{task_id}: loading OpenAlexEntity({entity_name}) upsert table {entity.bq_upsert_table_id}")
         success = bq_load_table(
             uri=entity.upsert_uri,
             table_id=entity.bq_upsert_table_id,
@@ -708,24 +727,27 @@ class OpenAlexTelescope(Workflow):
         )
         assert (
             success
-        ), f"bq_load_upsert_tables: error loading {entity.entity_name} upsert table {entity.bq_upsert_table_id}"
+        ), f"{task_id}: error loading OpenAlexEntity({entity_name}) upsert table {entity.bq_upsert_table_id}"
 
     def bq_upsert_records(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Upsert the records from each upserts table into the main table."""
 
+        task_id = get_task_id(**kwargs)
         entity = release.get_entity(entity_name)
         if entity is None:
-            raise AirflowSkipException("")
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
 
         # Create main table if it doesn't exist
         if not bq_table_exists(entity.bq_main_table_id):
-            logging.info(f"bq_upsert_records: creating empty {entity.entity_name} main table {entity.bq_main_table_id}")
+            logging.info(
+                f"{task_id}: creating empty OpenAlexEntity({entity_name}) main table {entity.bq_main_table_id}"
+            )
             bq_create_empty_table(table_id=entity.bq_main_table_id, schema_file_path=entity.schema_file_path)
             bq_update_table_description(table_id=entity.bq_main_table_id, description=entity.table_description)
 
         # Upsert records from upsert table to main table
         logging.info(
-            f"bq_upsert_records: upserting {entity.entity_name} records from {entity.bq_upsert_table_id} to {entity.bq_main_table_id}"
+            f"{task_id}: upserting OpenAlexEntity({entity_name}) records from {entity.bq_upsert_table_id} to {entity.bq_main_table_id}"
         )
         bq_upsert_records(
             main_table_id=entity.bq_main_table_id,
@@ -736,16 +758,14 @@ class OpenAlexTelescope(Workflow):
     def bq_load_delete_tables(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Load the delete tables."""
 
+        task_id = get_task_id(**kwargs)
         entity = release.get_entity(entity_name)
         if entity is None:
-            raise AirflowSkipException("")
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
         elif not entity.has_merged_ids:
-            logging.info(
-                f"bq_load_delete_tables: skipping loading delete table for {entity.entity_name} as there are no merged_ids for this entity in this release"
-            )
-            raise AirflowSkipException("")
+            raise AirflowSkipException(make_no_merged_ids_msg(task_id, entity_name))
 
-        logging.info(f"bq_load_delete_tables: loading {entity.entity_name} delete table {entity.bq_delete_table_id}")
+        logging.info(f"{task_id}: loading OpenAlexEntity({entity_name}) delete table {entity.bq_delete_table_id}")
         success = bq_load_table(
             uri=entity.merged_ids_uri,
             table_id=entity.bq_delete_table_id,
@@ -757,22 +777,20 @@ class OpenAlexTelescope(Workflow):
         )
         assert (
             success
-        ), f"bq_load_delete_tables: error loading {entity.entity_name} delete table {entity.bq_delete_table_id}"
+        ), f"{task_id}: error loading OpenAlexEntity({entity_name}) delete table {entity.bq_delete_table_id}"
 
     def bq_delete_records(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Delete records from main tables that are in delete tables."""
 
+        task_id = get_task_id(**kwargs)
         entity = release.get_entity(entity_name)
         if entity is None:
-            raise AirflowSkipException("")
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
         elif not entity.has_merged_ids:
-            logging.info(
-                f"bq_load_delete_tables: skipping delete records for {entity.entity_name} as there are no merged_ids for this entity in this release"
-            )
-            raise AirflowSkipException("")
+            raise AirflowSkipException(make_no_merged_ids_msg(task_id, entity_name))
 
         logging.info(
-            f"bq_delete_records: deleting {entity.entity_name} records in {entity.bq_main_table_id} from {entity.bq_delete_table_id}"
+            f"{task_id}: deleting OpenAlexEntity({entity_name}) records in {entity.bq_main_table_id} from {entity.bq_delete_table_id}"
         )
         bq_delete_records(
             main_table_id=entity.bq_main_table_id,
@@ -785,11 +803,12 @@ class OpenAlexTelescope(Workflow):
     def add_dataset_releases(self, release: OpenAlexRelease, entity_name: str = None, **kwargs) -> None:
         """Adds release information to API."""
 
+        task_id = get_task_id(**kwargs)
         entity = release.get_entity(entity_name)
         if entity is None:
-            raise AirflowSkipException("")
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
 
-        logging.info(f"add_dataset_releases: creating dataset release for {entity.entity_name}")
+        logging.info(f"{task_id}: creating dataset release for OpenAlexEntity({entity_name})")
         dataset_release = DatasetRelease(
             dag_id=self.dag_id,
             dataset_id=entity.entity_name,
@@ -797,7 +816,7 @@ class OpenAlexTelescope(Workflow):
             changefile_start_date=entity.start_date,
             changefile_end_date=entity.end_date,
         )
-        logging.info(f"add_dataset_releases: dataset_release={dataset_release}")
+        logging.info(f"{task_id}: dataset_release={dataset_release}")
         api = make_observatory_api(observatory_api_conn_id=self.observatory_api_conn_id)
         api.post_dataset_release(dataset_release)
 
