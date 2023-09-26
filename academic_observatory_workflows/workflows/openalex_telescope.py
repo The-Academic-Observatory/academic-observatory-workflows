@@ -274,7 +274,7 @@ class OpenAlexRelease(ChangefileRelease):
 
 
 def get_task_id(**kwargs):
-    return kwargs["ti"]["task_id"]
+    return kwargs["ti"].task_id
 
 
 def make_no_updated_data_msg(task_id: str, entity_name: str) -> str:
@@ -339,7 +339,7 @@ class OpenAlexTelescope(Workflow):
         """
 
         if entity_names is None:
-            entity_names = ["authors", "concepts", "funders" "institutions", "publishers", "sources", "works"]
+            entity_names = ["authors", "concepts", "funders", "institutions", "publishers", "sources", "works"]
 
         super().__init__(
             dag_id=dag_id,
@@ -389,7 +389,9 @@ class OpenAlexTelescope(Workflow):
                     )
 
             if merge:
-                return tasks, EmptyOperator(task_id=f"merge_{group_id}", trigger_rule=TriggerRule.NONE_FAILED)
+                return tasks, EmptyOperator(
+                    task_id=f"merge_{group_id}", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS
+                )
 
             return tasks, None
 
@@ -403,22 +405,22 @@ class OpenAlexTelescope(Workflow):
                 external_task_id=external_task_id,
                 execution_delta=timedelta(days=7),  # To match the @weekly schedule
             )
-            task_check_dependencies = ShortCircuitOperator(python_callable=self.check_dependencies, task_id="check_dependencies")
+            task_check_dependencies = PythonOperator(python_callable=self.check_dependencies, task_id="check_dependencies")
             task_fetch_releases = ShortCircuitOperator(python_callable=self.fetch_releases, task_id="fetch_releases")
-            task_create_datasets = ShortCircuitOperator(python_callable=self.create_datasets, task_id="create_datasets")
+            task_create_datasets = PythonOperator(python_callable=self.create_datasets, task_id="create_datasets")
             tasks_snapshot, _ = create_taskgroup(self.bq_create_snapshots, "bq_create_snapshots", merge=False)
-            task_aws_to_gcs_transfer = self.make_python_operator(self.aws_to_gcs_transfer, "aws_to_gcs_transfer")
+            task_aws_to_gcs_transfer = PythonOperator(python_callable=partial(self.task_callable, self.aws_to_gcs_transfer), task_id="aws_to_gcs_transfer", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS) #self.make_python_operator(self.aws_to_gcs_transfer, "aws_to_gcs_transfer", )
 
             # Download tasks
             tasks_download = []
             with TaskGroup(group_id="download"):
                 for entity_name in self.entity_names:
                     tasks_download.append(make_download_bash_op(self, entity_name))
-            task_merge_download = EmptyOperator(task_id="merge_download", trigger_rule=TriggerRule.NONE_FAILED)
+            task_merge_download = EmptyOperator(task_id="merge_download", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS)
 
             # Transform and upload
             tasks_transform, _ = create_taskgroup(self.transform, "transform", merge=False)
-            task_upload = self.make_python_operator(self.upload_upsert_files, "upload_upsert_files", trigger_rule=TriggerRule.NONE_FAILED)
+            task_upload = self.make_python_operator(self.upload_upsert_files, "upload_upsert_files", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS)
 
             # Upsert records
             tasks_bq_load_upserts, task_merge_bq_load_upserts = create_taskgroup(self.bq_load_upsert_tables, "bq_load_upserts")
@@ -430,7 +432,7 @@ class OpenAlexTelescope(Workflow):
 
             # Add release info to API and cleanup
             tasks_add_dataset_releases, _ = create_taskgroup(self.add_dataset_releases, "add_dataset_releases", merge=False)
-            task_cleanup = self.make_python_operator(self.cleanup, "cleanup", trigger_rule=TriggerRule.NONE_FAILED)
+            task_cleanup = self.make_python_operator(self.cleanup, "cleanup", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS)
             task_wait = EmptyOperator(task_id=external_task_id)
             # fmt: on
 
@@ -482,6 +484,7 @@ class OpenAlexTelescope(Workflow):
 
         :return: True to continue, False to skip.
         """
+
         dag_run = kwargs["dag_run"]
         is_first_run = is_first_dag_run(dag_run)
 
@@ -676,7 +679,8 @@ class OpenAlexTelescope(Workflow):
         # Cleanup in case we re-run task
         output_folder = os.path.join(release.transform_folder, "data", entity_name)
         logging.info(f"{task_id}: cleaning path: {output_folder}")
-        clean_dir(output_folder)
+        if os.path.exists(output_folder):
+            clean_dir(output_folder)
 
         # These will all get executed as different tasks, so only use many processes for works which is the largest
         max_processes = 1
