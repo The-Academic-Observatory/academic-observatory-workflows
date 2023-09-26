@@ -55,7 +55,7 @@ from observatory.platform.bigquery import (
     bq_snapshot,
 )
 from observatory.platform.config import AirflowConns
-from observatory.platform.files import list_files, save_jsonl_gz
+from observatory.platform.files import list_files, save_jsonl_gz, change_keys
 from observatory.platform.gcs import (
     gcs_upload_files,
     gcs_blob_uri,
@@ -437,8 +437,6 @@ class OrcidTelescope(Workflow):
                 if not orcid_batch.missing_records:
                     logging.info(f"All files present for {orcid_batch.batch_str}. Skipping download.")
                     continue
-                print(orcid_batch.batch_str)
-                print(orcid_batch._manifest_data)
 
                 logging.info(f"Downloading files for ORCID directory: {orcid_batch.batch_str}")
                 with open(orcid_batch.download_log_file, "w") as f:
@@ -738,24 +736,8 @@ def transform_orcid_record(record_path: str) -> Union[Dict, str]:
         )
 
     # Transform the keys of the dictionary so they are valid BigQuery fields
-    orcid_record = change_keys(orcid_record)
+    orcid_record = {k: v for k, v in orcid_record.items() if not k.startswith("@xmlns")}
+    convert_key = lambda k: k.split(":")[-1].lstrip("@#").replace("-", "_")
+    orcid_record = change_keys(orcid_record, convert_key)
 
     return orcid_record
-
-
-def change_keys(obj):
-    """Recursively goes through the dictionary obj and replaces keys with the convert function.
-
-    :param obj: The dictionary value, can be an object of any type
-    :return: The transformed object.
-    """
-    if isinstance(obj, (str, int, float)):
-        return obj
-
-    convert_key = lambda k: k.split(":")[-1].lstrip("@#").replace("-", "_")
-    if isinstance(obj, dict):
-        return {convert_key(k): change_keys(v) for k, v in obj.items() if not k.startswith("@xmlns")}
-    elif isinstance(obj, (list, set, tuple)):
-        return obj.__class__(change_keys(v) for v in obj)
-    else:
-        return obj

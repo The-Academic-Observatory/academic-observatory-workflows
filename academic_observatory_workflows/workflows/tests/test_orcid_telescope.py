@@ -283,7 +283,7 @@ class TestOrcidTelescope(ObservatoryTestCase):
                     "academic_observatory_workflows.workflows.orcid_telescope.S5Cmd.download_from_bucket"
                 ) as mock_download:
                     mock_download.return_value = [1]
-                    with self.assertRaises(RuntimeError):
+                    with self.assertRaisesRegex(RuntimeError, "returned non-zero exit code:"):
                         env.run_task(workflow.download.__name__)
                 dag.clear(task_ids=[workflow.download.__name__])
                 for _file in first_release.downloaded_records:  # Any downloaded file needs to be removed before rerun
@@ -456,6 +456,7 @@ class TestOrcidTelescope(ObservatoryTestCase):
                 ti = env.run_task(workflow.bq_create_main_table_snapshot.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
                 # Check that table load is as expected
+                self.assert_table_integrity(second_release.bq_snapshot_table_id, 4)
                 self.assert_table_integrity(first_release.bq_main_table_id, 4)
                 expected_content = load_and_parse_json(
                     OrcidTestRecords.first_run_main_table, timestamp_fields=OrcidTestRecords.timestamp_fields
