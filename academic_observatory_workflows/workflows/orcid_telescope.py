@@ -102,11 +102,6 @@ class OrcidBatch:
 
         os.makedirs(self.download_batch_dir, exist_ok=True)
 
-    @cached_property
-    def _manifest_data(self) -> List[Dict]:
-        with open(self.manifest_file, "r") as f:
-            return list(csv.DictReader(f))
-
     @property
     def existing_records(self) -> List[str]:
         """List of existing ORCID records on disk for this ORCID directory."""
@@ -120,12 +115,16 @@ class OrcidBatch:
     @cached_property
     def expected_records(self) -> List[str]:
         """List of expected ORCID records for this ORCID directory. Derived from the manifest file"""
-        return [os.path.basename(row["blob_name"]) for row in self._manifest_data]
+        with open(self.manifest_file, "r") as f:
+            reader = csv.DictReader(f)
+            return [os.path.basename(row["blob_name"]) for row in reader]
 
     @cached_property
     def blob_uris(self) -> List[str]:
         """List of blob URIs from the manifest this ORCID directory."""
-        return [gcs_blob_uri(bucket_name=row["bucket_name"], blob_name=row["blob_name"]) for row in self._manifest_data]
+        with open(self.manifest_file, "r") as f:
+            reader = csv.DictReader(f)
+            return [gcs_blob_uri(bucket_name=row["bucket_name"], blob_name=row["blob_name"]) for row in reader]
 
 
 class OrcidRelease(ChangefileRelease):
