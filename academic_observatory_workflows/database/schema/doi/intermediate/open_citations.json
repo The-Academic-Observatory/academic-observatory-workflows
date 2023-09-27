@@ -1,0 +1,97 @@
+[
+  {
+    "name": "doi",
+    "mode": "NULLABLE",
+    "type": "STRING"
+  },
+  {
+    "name": "citations_total",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "Count of total citations."
+  },
+  {
+    "name": "citations_before_publication",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "Count of Citations recorded before the stated publication date."
+  },
+  {
+    "name": "citations_one_year",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "Count of Citations recorded in the first year since publication."
+  },
+  {
+    "name": "citations_two_years",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "Count of Citations recorded in the first two years since publication."
+  },
+  {
+    "name": "citations_five_years",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "Count of Citations recorded in the first five years since publication."
+  },
+  {
+    "name": "journal_sc_total",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "For Journal Self Citations: Count of total citations."
+  },
+  {
+    "name": "journal_sc_before_publication",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "For Journal Self Citations: Count of Citations recorded before the stated publication date."
+  },
+  {
+    "name": "journal_sc_one_year",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "For Journal Self Citations: Count of Citations recorded in the first year since publication."
+  },
+  {
+    "name": "journal_sc_two_years",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "For Journal Self Citations: Count of Citations recorded in the first two years since publication."
+  },
+  {
+    "name": "journal_sc_five_years",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "For Journal Self Citations: Count of Citations recorded in the first five years since publication."
+  },
+  {
+    "name": "author_sc_total",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "For Author Self Citations: Count of total citations."
+  },
+  {
+    "name": "author_sc_before_publication",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "For Author Self Citations: Count of Citations recorded before the stated publication date."
+  },
+  {
+    "name": "author_sc_one_year",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "For Author Self Citations: Count of Citations recorded in the first year since publication."
+  },
+  {
+    "name": "author_sc_two_years",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "For Author Self Citations: Count of Citations recorded in the first two years since publication."
+  },
+  {
+    "name": "author_sc_five_years",
+    "mode": "NULLABLE",
+    "type": "INTEGER",
+    "description": "For Author Self Citations: Count of Citations recorded in the first five years since publication."
+  }
+]

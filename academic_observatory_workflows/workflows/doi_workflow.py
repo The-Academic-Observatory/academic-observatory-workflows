@@ -21,9 +21,9 @@ import json
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Dict, List, Set, Optional
+from typing import Any, Dict, List, Set, Optional
 
 import pendulum
 import requests
@@ -45,7 +45,7 @@ from observatory.platform.bigquery import (
     bq_select_latest_table,
     bq_load_from_memory,
     bq_update_table_description,
-    bq_find_schema as find_schema,
+    bq_find_schema,
 )
 from observatory.platform.config import AirflowConns
 from observatory.platform.observatory_config import CloudWorkspace
@@ -81,11 +81,27 @@ class Table:
 
 
 @dataclass
+class Schema:
+    table_name: str
+    path: str
+    to_use: List = None
+    to_add: List = None
+
+    @property
+    def data(self):
+        """Reads in the schema path and return the JSON object."""
+
+        with open(self.path, "r") as json_file:
+            return json.load(json_file)
+
+
+@dataclass
 class SQLQuery:
     name: str
     inputs: Dict = None
     output_table: Table = None
     output_clustering_fields: List = None
+    schema_path: str = None
 
 
 @dataclass
@@ -100,6 +116,40 @@ class Aggregation:
     relate_to_journals: bool = False
     relate_to_funders: bool = False
     relate_to_publishers: bool = False
+    schema_path: str = None
+
+
+def make_doi_schema(schema_list: List[Schema]) -> str:
+    """Construct a schema for the doi table using definitions tables that are joined into it.
+
+    :return: Path to the doi schema file."""
+
+    # Top level field for the table.
+    doi_schema = [{"name": "doi", "mode": "NULLABLE", "type": "STRING"}]
+    for schema in schema_list:
+        data = []
+
+        # Pull fields and their descriptions if any listed, else use the orginal schema for the source table.
+        if schema.to_use:
+            for to_use in schema.to_use:
+                for field in schema.data:
+                    if field["name"] == to_use:
+                        data.append(field)
+        else:
+            data = schema.data
+
+        # Add the new fields to the schema for the intermidate table.
+        if schema.to_add:
+            data.extend(schema.to_add)
+
+        doi_schema.append({"name": schema.table_name, "mode": "NULLABLE", "type": "RECORD", "fields": data})
+
+    # TODO: Move path to a temporary folder for the workflow.
+    schema_path = os.path.join(schema_folder(), "doi", "doi_schema.json")
+    with open(schema_path, mode="w") as f:
+        json.dump(doi_schema, f, separators=(",", ":"))
+
+    return schema_path
 
 
 def make_sql_queries(
@@ -238,6 +288,153 @@ def make_sql_queries(
                 },
                 output_table=Table(output_project_id, dataset_id_observatory, "doi"),
                 output_clustering_fields=["doi"],
+                # A list of schemas that are used to make the larger DOI table schema.
+                # Only as select few fields are brought into the DOI table from crossref metadata.
+                # Most tables use all of the original or require just the doi field to be added.
+                schema_path=make_doi_schema(
+                    [
+                        Schema(
+                            table_name="crossref",
+                            to_use=[
+                                "title",
+                                "abstract",
+                                "type",
+                                "ISSN",
+                                "ISBN",
+                                "issn_type",
+                                "publisher_location",
+                                "publisher",
+                                "member",
+                                "prefix",
+                                "container_title",
+                                "short_container_title",
+                                "group_title",
+                                "references_count",
+                                "is_referenced_by_count",
+                                "subject",
+                                "published_print",
+                                "license",
+                                "volume",
+                                "page",
+                                "author",
+                                "link",
+                                "clinical_trial_number",
+                                "alternative_id",
+                            ],
+                            to_add=[
+                                {"name": "doi", "mode": "NULLABLE", "type": "STRING"},
+                                {
+                                    "name": "published_year",
+                                    "type": "INTEGER",
+                                    "mode": "NULLABLE",
+                                    "description": "Published year in YYYY.",
+                                },
+                                {
+                                    "name": "published_month",
+                                    "type": "INTEGER",
+                                    "mode": "NULLABLE",
+                                    "description": "Published month MM.",
+                                },
+                                {
+                                    "name": "published_year_month",
+                                    "type": "STRING",
+                                    "mode": "NULLABLE",
+                                    "description": "Published year and month YYYY-MM.",
+                                },
+                                {
+                                    "name": "funder",
+                                    "type": "RECORD",
+                                    "mode": "REPEATED",
+                                    "description": "Funder related data from https://www.crossref.org/services/funder-registry/.",
+                                    "fields": [
+                                        {
+                                            "name": "DOI",
+                                            "type": "STRING",
+                                            "mode": "NULLABLE",
+                                            "description": "Optional Open Funder Registry DOI uniquely identifing the funding body (https://gitlab.com/crossref/open_funder_registry).",
+                                        },
+                                        {
+                                            "name": "award",
+                                            "type": "STRING",
+                                            "mode": "REPEATED",
+                                            "description": "Award number(s) for awards given by the funding body.",
+                                        },
+                                        {
+                                            "name": "doi_asserted_by",
+                                            "type": "STRING",
+                                            "mode": "NULLABLE",
+                                            "description": "Either crossref or publisher.",
+                                        },
+                                        {
+                                            "name": "name",
+                                            "type": "STRING",
+                                            "mode": "NULLABLE",
+                                            "description": "Funding body primary name.",
+                                        },
+                                    ],
+                                },
+                            ],
+                            path=bq_find_schema(
+                                path=os.path.join(schema_folder(), "crossref_metadata"),
+                                table_name="crossref_metadata",
+                                release_date=pendulum.datetime(year=2022, month=3, day=7),
+                            ),
+                        ),
+                        Schema(
+                            table_name="unpaywall",
+                            path=bq_find_schema(
+                                path=os.path.join(schema_folder(), "unpaywall"),
+                                table_name="unpaywall",
+                                release_date=None,
+                            ),
+                        ),
+                        Schema(
+                            table_name="openalex",
+                            path=bq_find_schema(
+                                path=os.path.join(schema_folder(), "openalex"), table_name="works", release_date=None
+                            ),
+                        ),
+                        Schema(
+                            table_name="open_citations",
+                            path=bq_find_schema(
+                                path=os.path.join(schema_folder(), "doi", "intermediate"),
+                                table_name="open_citations",
+                                release_date=None,
+                            ),
+                        ),
+                        Schema(
+                            table_name="events",
+                            path=bq_find_schema(
+                                path=os.path.join(schema_folder(), "doi", "intermediate"),
+                                table_name="events",
+                                release_date=None,
+                            ),
+                        ),
+                        Schema(
+                            table_name="pubmed",
+                            to_add=[{"name": "doi", "mode": "NULLABLE", "type": "STRING"}],
+                            path=bq_find_schema(
+                                path=os.path.join(schema_folder(), "pubmed"), table_name="pubmed", release_date=None
+                            ),
+                        ),
+                        Schema(
+                            table_name="coki",
+                            path=bq_find_schema(
+                                path=os.path.join(schema_folder(), "doi", "intermediate"),
+                                table_name="coki",
+                                release_date=None,
+                            ),
+                        ),
+                        Schema(
+                            table_name="affiliations",
+                            path=bq_find_schema(
+                                path=os.path.join(schema_folder(), "doi", "intermediate"),
+                                table_name="affiliations",
+                                release_date=None,
+                            ),
+                        ),
+                    ]
+                ),
             )
         ],
     ]
@@ -463,7 +660,6 @@ class DoiWorkflow(Workflow):
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 8, 30),
         schedule: Optional[str] = "@weekly",
         sensor_dag_ids: List[str] = None,
-        schema_folder: str = schema_folder(),
     ):
         """Create the DoiWorkflow.
         :param dag_id: the DAG ID.
@@ -505,7 +701,6 @@ class DoiWorkflow(Workflow):
         self.api_dataset_id = api_dataset_id
         self.max_fetch_threads = max_fetch_threads
         self.observatory_api_conn_id = observatory_api_conn_id
-        self.schema_folder = schema_folder
         self.input_table_id_tasks = []
 
         if sql_queries is None:
@@ -549,7 +744,7 @@ class DoiWorkflow(Workflow):
                     task_id = sql_query.name
                     self.add_task(
                         self.create_intermediate_table,
-                        op_kwargs={"sql_query": sql_query, "task_id": task_id, "schema_name": "doi"},
+                        op_kwargs={"sql_query": sql_query, "task_id": task_id},
                         task_id=task_id,
                     )
                     self.input_table_task_ids.append(task_id)
@@ -564,7 +759,9 @@ class DoiWorkflow(Workflow):
             for agg in self.AGGREGATIONS:
                 task_id = f"create_{agg.table_name}"
                 self.add_task(
-                    self.create_aggregate_table, op_kwargs={"aggregation": agg, "task_id": task_id}, task_id=task_id
+                    self.create_aggregate_table,
+                    op_kwargs={"aggregation": agg, "task_id": task_id},
+                    task_id=task_id,
                 )
 
         # Copy tables and create views
@@ -698,14 +895,12 @@ class DoiWorkflow(Workflow):
             sql_query.output_table.table_name,
             release.snapshot_date,
         )
-        schema = None
-        if kwargs.get("schema_name"):
-            schema = find_schema(self.schema_folder, kwargs["schema_name"], release.release_date)
+
         success = bq_create_table_from_query(
             sql=sql,
             table_id=table_id,
             clustering_fields=sql_query.output_clustering_fields,
-            schema_file_path=schema,
+            schema_file_path=sql_query.schema_path,
         )
 
         # Publish XComs with full table paths
@@ -738,12 +933,11 @@ class DoiWorkflow(Workflow):
         table_id = bq_sharded_table_id(
             self.output_project_id, self.bq_observatory_dataset_id, agg.table_name, release.snapshot_date
         )
-        schema = find_schema(self.schema_folder, "aggregate", release.release_date)
         success = bq_create_table_from_query(
             sql=sql,
             table_id=table_id,
             clustering_fields=["id"],
-            schema_file_path=schema,
+            schema_file_path=agg.schema_path,
         )
 
         set_task_state(success, kwargs["task_id"])
