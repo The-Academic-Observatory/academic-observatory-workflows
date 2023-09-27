@@ -21,12 +21,12 @@ import json
 import os
 import pathlib
 import tempfile
-from typing import Dict, List
+from typing import Dict
 from unittest.mock import patch
 
 import boto3
 import pendulum
-from airflow.models import TaskInstance, DagRun, Connection
+from airflow.models import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
 from google.cloud.exceptions import NotFound
@@ -61,6 +61,8 @@ from observatory.platform.observatory_environment import (
 from observatory.platform.observatory_environment import (
     find_free_port,
     load_and_parse_json,
+    make_taskgroup_tasks,
+    make_taskgroup_to_merge_task,
 )
 
 
@@ -550,26 +552,6 @@ def create_openalex_dataset(input_path: pathlib.Path, bucket_name: str) -> Dict:
         return manifest_index
 
 
-def get_task_instance(dag_run: DagRun, task_id: str) -> TaskInstance:
-    run_id = dag_run.run_id
-    task = dag_run.dag.get_task(task_id=task_id)
-    ti = TaskInstance(task, run_id=run_id)
-    ti.refresh_from_db()
-    return ti
-
-
-def make_taskgroup_tasks(namespace: str, entity_names: List[str]) -> List[str]:
-    return [f"{namespace}.{entity_name}" for entity_name in entity_names]
-
-
-def make_taskgroup_to_merge_task(
-    namespace: str,
-    entity_names: List[str],
-    merge_task_id: str,
-) -> dict:
-    return {f"{namespace}.{entity_name}": [merge_task_id] for entity_name in entity_names}
-
-
 class TestOpenAlexTelescope(ObservatoryTestCase):
     """Tests for the OpenAlex telescope"""
 
@@ -876,7 +858,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     task_ids += ["cleanup"]
                     for task_id in task_ids:
                         print(f"Checking that skipped: {task_id}")
-                        ti = get_task_instance(dag_run, task_id)
+                        ti = env.get_task_instance(task_id)
                         self.assertEqual(State.SKIPPED, ti.state)
 
                     # Check that tables all still have the same number of rows

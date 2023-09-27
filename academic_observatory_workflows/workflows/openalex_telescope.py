@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import copy
 import datetime
 import gzip
 import json
@@ -25,8 +24,7 @@ import os
 import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import timedelta
-from functools import partial
-from typing import List, Dict, Tuple, Optional, Callable
+from typing import List, Dict, Tuple, Optional
 
 import boto3
 import jsonlines
@@ -363,17 +361,6 @@ class OpenAlexTelescope(Workflow):
         self.aws_openalex_bucket = aws_openalex_bucket
         self.observatory_api_conn_id = observatory_api_conn_id
 
-    def make_python_operator(
-        self,
-        func: Callable,
-        task_id: str,
-        **kwargs,
-    ):
-        # TODO: move into Workflow class
-        kwargs_ = copy.copy(kwargs)
-        kwargs_["task_id"] = task_id
-        return PythonOperator(python_callable=partial(self.task_callable, func), **kwargs_)
-
     def make_dag(self) -> DAG:
         def create_taskgroup(func, group_id, merge: bool = True):
             tasks = []
@@ -409,7 +396,7 @@ class OpenAlexTelescope(Workflow):
             task_fetch_releases = ShortCircuitOperator(python_callable=self.fetch_releases, task_id="fetch_releases")
             task_create_datasets = PythonOperator(python_callable=self.create_datasets, task_id="create_datasets")
             tasks_snapshot, _ = create_taskgroup(self.bq_create_snapshots, "bq_create_snapshots", merge=False)
-            task_aws_to_gcs_transfer = PythonOperator(python_callable=partial(self.task_callable, self.aws_to_gcs_transfer), task_id="aws_to_gcs_transfer", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS) #self.make_python_operator(self.aws_to_gcs_transfer, "aws_to_gcs_transfer", )
+            task_aws_to_gcs_transfer = self.make_python_operator(self.aws_to_gcs_transfer, "aws_to_gcs_transfer", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS)
 
             # Download tasks
             tasks_download = []
