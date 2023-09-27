@@ -112,6 +112,12 @@
     "description": "OpenAlex IDs — See Publisher.lineage. This will only be included if the host_organization is a publisher (and not if the host_organization is an institution)."
   },
   {
+    "name": "host_organization_lineage_names",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "The names of the organisations in host_organization_lineage."
+  },
+  {
     "name": "host_organization_name",
     "type": "STRING",
     "mode": "NULLABLE",
