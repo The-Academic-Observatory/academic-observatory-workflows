@@ -819,6 +819,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     # Assert content
                     for entity_name in workflow.entity_names:
                         table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, entity_name)
+                        print(f"Assert content run 1 {entity_name}: {table_id}")
                         expected_data = load_and_parse_json(
                             test_fixtures_folder(self.dag_id, "2023-04-02", "expected", f"{entity_name}.json"),
                             date_fields={"created_date", "publication_date"},
@@ -1096,6 +1097,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     # Assert content
                     for entity_name in workflow.entity_names:
                         table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, entity_name)
+                        print(f"Assert content run 2 {entity_name}: {table_id}")
                         expected_data = load_and_parse_json(
                             test_fixtures_folder(self.dag_id, "2023-04-16", "expected", f"{entity_name}.json"),
                             date_fields={"created_date", "publication_date"},
