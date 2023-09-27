@@ -123,12 +123,12 @@
     "mode": "NULLABLE",
     "fields": [
       {
-        "name": "id",
+        "name": "display_name",
         "type": "STRING",
         "mode": "NULLABLE"
       },
       {
-        "name": "display_name",
+        "name": "id",
         "type": "STRING",
         "mode": "NULLABLE"
       }

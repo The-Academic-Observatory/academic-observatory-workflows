@@ -126,7 +126,7 @@
         "mode": "NULLABLE"
       }
     ],
-    "description": "Objects containing information about the APC (article processing charge) for this work. This value is the APC list price–the price as listed by the journal’s publisher. That’s not always the price actually paid, because publishers may offer various discounts to authors. Unfortunately we don’t always know this discounted price, but when we do you can find it in apc_paid. Currently our only source for this data is DOAJ, and so doaj is the only value for apc_list.provenance, but we’ll add other sources over time."
+    "description": "Objects containing information about the APC (article processing charge) for this work. This value is the APC list price\u2013the price as listed by the journal\u2019s publisher. That\u2019s not always the price actually paid, because publishers may offer various discounts to authors. Unfortunately we don\u2019t always know this discounted price, but when we do you can find it in apc_paid. Currently our only source for this data is DOAJ, and so doaj is the only value for apc_list.provenance, but we\u2019ll add other sources over time."
   },
   {
     "name": "apc_paid",
@@ -155,7 +155,7 @@
         "mode": "NULLABLE"
       }
     ],
-    "description": "Object: Information about the paid APC (article processing charge) for this work. You can find the listed APC price (when we know it) for a given work using apc_list. However, authors don’t always pay the listed price; often they get a discounted price from publishers. So it’s useful to know the APC actually paid by authors, as distinct from the list price. This is our effort to provide this. Our best source for the actually paid price is the OpenAPC project. Where available, we use that data, and so apc_paid.provenance is openapc. Where OpenAPC data is unavailable (and unfortunately this is common) we make our best guess by assuming the author paid the APC list price, and apc_paid.provenance will be set to wherever we got the list price from."
+    "description": "Object: Information about the paid APC (article processing charge) for this work. You can find the listed APC price (when we know it) for a given work using apc_list. However, authors don\u2019t always pay the listed price; often they get a discounted price from publishers. So it\u2019s useful to know the APC actually paid by authors, as distinct from the list price. This is our effort to provide this. Our best source for the actually paid price is the OpenAPC project. Where available, we use that data, and so apc_paid.provenance is openapc. Where OpenAPC data is unavailable (and unfortunately this is common) we make our best guess by assuming the author paid the APC list price, and apc_paid.provenance will be set to wherever we got the list price from."
   },
   {
     "name": "authorships",
@@ -307,7 +307,7 @@
             "name": "host_organization_lineage",
             "type": "STRING",
             "mode": "REPEATED",
-            "description": "OpenAlex IDs — See Publisher.lineage. This will only be included if the host_organization is a publisher (and not if the host_organization is an institution)."
+            "description": "OpenAlex IDs \u2014 See Publisher.lineage. This will only be included if the host_organization is a publisher (and not if the host_organization is an institution)."
           },
           {
             "name": "host_organization_lineage_names",
@@ -802,7 +802,7 @@
             "name": "host_organization_lineage",
             "type": "STRING",
             "mode": "REPEATED",
-            "description": "OpenAlex IDs — See Publisher.lineage. This will only be included if the host_organization is a publisher (and not if the host_organization is an institution)."
+            "description": "OpenAlex IDs \u2014 See Publisher.lineage. This will only be included if the host_organization is a publisher (and not if the host_organization is an institution)."
           },
           {
             "name": "host_organization_lineage_names",
@@ -989,7 +989,7 @@
             "name": "host_organization_lineage",
             "type": "STRING",
             "mode": "REPEATED",
-            "description": "OpenAlex IDs — See Publisher.lineage. This will only be included if the host_organization is a publisher (and not if the host_organization is an institution)."
+            "description": "OpenAlex IDs \u2014 See Publisher.lineage. This will only be included if the host_organization is a publisher (and not if the host_organization is an institution)."
           },
           {
             "name": "host_organization_lineage_names",
@@ -1081,30 +1081,6 @@
     "description": "OpenAlex IDs for works related to this work. "
   },
   {
-    "name": "sustainable_development_goals",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "description": "List of sustainable developement goal objects. The United Nations' 17 Sustainable Development Goals are a collection of goals at the heart of a global \"shared blueprint for peace and prosperity for people and the planet.\" We use a machine learning model to tag works with their relevance to these goals based on our OpenAlex SDG Classifier, an mBERT machine learning model developed by the Aurora Universities Network. The score represents the model's predicted probability of the work's relevance for a particular goal. ",
-    "fields": [
-      {
-        "name": "id",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "display_name",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "score",
-        "type": "FLOAT",
-        "mode": "NULLABLE",
-        "description": "All of the SDGs with a prediction score higher than 0.1."
-      }
-    ]
-  },
-  {
     "name": "summary_stats",
     "type": "RECORD",
     "mode": "NULLABLE",
@@ -1156,6 +1132,30 @@
         "type": "FLOAT",
         "mode": "NULLABLE",
         "description": ""
+      }
+    ]
+  },
+  {
+    "name": "sustainable_development_goals",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "List of sustainable developement goal objects. The United Nations' 17 Sustainable Development Goals are a collection of goals at the heart of a global \"shared blueprint for peace and prosperity for people and the planet.\" We use a machine learning model to tag works with their relevance to these goals based on our OpenAlex SDG Classifier, an mBERT machine learning model developed by the Aurora Universities Network. The score represents the model's predicted probability of the work's relevance for a particular goal. ",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "score",
+        "type": "FLOAT",
+        "mode": "NULLABLE",
+        "description": "All of the SDGs with a prediction score higher than 0.1."
       }
     ]
   },
