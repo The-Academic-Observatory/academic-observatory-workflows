@@ -20,86 +20,6 @@
     "description": "The abstract of the work, as an inverted index, which encodes information about the abstract's words and their positions within the text. Like Microsoft Academic Graph, OpenAlex doesn't include plaintext abstracts due to legal constraints."
   },
   {
-    "name": "alternate_host_venues",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "description": "DEPRECATED",
-    "fields": [
-      {
-        "name": "display_name",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "host_organization",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "host_organization_lineage",
-        "type": "STRING",
-        "mode": "REPEATED",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "host_organization_name",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "id",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "is_oa",
-        "type": "BOOLEAN",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "issn",
-        "type": "STRING",
-        "mode": "REPEATED",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "issn_l",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "license",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "publisher",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "publisher_id",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "type",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "url",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "version",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      }
-    ]
-  },
-  {
     "name": "apc_list",
     "type": "RECORD",
     "mode": "NULLABLE",
@@ -216,6 +136,12 @@
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The OpenAlex ID for this institution."
+          },
+          {
+            "name": "lineage",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "OpenAlex IDs of institutions. The list will include this institution's ID, as well as any parent institutions. If this institution has no parent institutions, this list will only contain its own ID."
           },
           {
             "name": "ror",
@@ -512,7 +438,7 @@
     "name": "doi",
     "type": "STRING",
     "mode": "NULLABLE",
-    "description": "The DOI for the work. Occasionally, a work has more than one DOI--for example, there might be one DOI for a preprint version hosted on bioRxiv, and another DOI for the published version. However, this field always has just one DOI, the DOI for the published work. If you want DOIs for other versions, you can find them in the Work.alternate_host_venues list."
+    "description": "The DOI for the work. This is the Canonical External ID for works.\nOccasionally, a work has more than one DOI--for example, there might be one DOI for a preprint version hosted on bioRxiv, and another DOI for the published version. However, this field always has just one DOI, the DOI for the published work."
   },
   {
     "name": "funders",
@@ -582,85 +508,6 @@
     "description": "List of grant objects, which include the Funder and the award ID, if available. Our grants data comes from Crossref, and is currently fairly limited."
   },
   {
-    "name": "host_venue",
-    "type": "RECORD",
-    "description": "DEPRECATED",
-    "fields": [
-      {
-        "name": "display_name",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "host_organization",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "host_organization_lineage",
-        "type": "STRING",
-        "mode": "REPEATED",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "host_organization_name",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "id",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "is_oa",
-        "type": "BOOLEAN",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "issn",
-        "type": "STRING",
-        "mode": "REPEATED",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "issn_l",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "license",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "publisher",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "publisher_id",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "type",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "url",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      },
-      {
-        "name": "version",
-        "type": "STRING",
-        "description": "DEPRECATED"
-      }
-    ]
-  },
-  {
     "name": "id",
     "type": "STRING",
     "mode": "NULLABLE",
@@ -720,7 +567,7 @@
     "name": "is_paratext",
     "type": "BOOLEAN",
     "mode": "NULLABLE",
-    "description": "True if we think this work is paratext. In our context, paratext is stuff that's in scholarly venue (like a journal) but is about the venue rather than a scholarly work properly speaking.  Some examples and nonexamples: -yep it's paratext: front cover, back cover, table of contents, editorial board listing, issue information,  masthead. -no,  not paratext: research paper, dataset, letters to the editor, figures. Turns out there is a lot of paratext in registries like Crossref. That's not a bad thing... but we've found that it's good to have a way to filter it out.\nWe determine is_paratext algorithmically using title heuristics. "
+    "description": "True if we think this work is paratext.\nIn our context, paratext is stuff that's in scholarly venue (like a journal) but is about the venue rather than a scholarly work properly speaking. Some examples and nonexamples:\nyep it's paratext: front cover, back cover, table of contents, editorial board listing, issue information, masthead.\nno, not paratext: research paper, dataset, letters to the editor, figures\nTurns out there is a lot of paratext in registries like Crossref. That's not a bad thing... but we've found that it's good to have a way to filter it out.\nWe determine is_paratext algorithmically using title heuristics."
   },
   {
     "name": "is_retracted",
@@ -922,7 +769,7 @@
         "name": "is_oa",
         "type": "BOOLEAN",
         "mode": "NULLABLE",
-        "description": "True if this work is Open Access (OA). There are many ways to define OA. OpenAlex uses a broad definition: having a URL where you can read the fulltext of this work without needing to pay money or log in. You can use the alternate_host_venues and oa_status fields to narrow your results further, accommodating any definition of OA you like."
+        "description": "True if this work is Open Access (OA).\nThere are many ways to define OA. OpenAlex uses a broad definition: having a URL where you can read the fulltext of this work without needing to pay money or log in. You can use the locations and oa_status fields to narrow your results further, accommodating any definition of OA you like."
       },
       {
         "name": "oa_status",
@@ -1060,7 +907,7 @@
     "name": "publication_date",
     "type": "DATE",
     "mode": "NULLABLE",
-    "description": "The day when this work was published, formatted as an ISO 8601 date.\nWhere different publication dates exist, we select the earliest available date of electronic publication. \nThis date applies to the version found at Work.url. The other versions, found in Work.alternate_host_venues, may have been published at different (earlier) dates."
+    "description": "The day when this work was published, formatted as an ISO 8601 date.\nWhere different publication dates exist, we select the earliest available date of electronic publication.\nThis date applies to the version found at Work.url. The other versions, found in Work.locations, may have been published at different (earlier) dates."
   },
   {
     "name": "publication_year",

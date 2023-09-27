@@ -295,7 +295,7 @@
         "name": "host_organization_name",
         "type": "STRING",
         "mode": "NULLABLE",
-        "description": "The host organisations name."
+        "description": "The display_name from the host_organization, shown for convenience."
       },
       {
         "name": "id",
