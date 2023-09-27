@@ -1042,7 +1042,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
                     for entity in expected_entities:
                         task_id = f"bq_load_deletes.{entity.entity_name}"
-                        ti = get_task_instance(dag_run, task_id)
+                        ti = env.get_task_instance(task_id)
                         if entity.has_merged_ids:
                             self.assertEqual(State.SUCCESS, ti.state)
                             self.assert_table_integrity(entity.bq_delete_table_id, 1)
@@ -1067,7 +1067,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     }
                     for entity in expected_entities:
                         task_id = f"bq_delete_records.{entity.entity_name}"
-                        ti = get_task_instance(dag_run, task_id)
+                        ti = env.get_task_instance(task_id)
                         if entity.has_merged_ids:
                             self.assertEqual(State.SUCCESS, ti.state)
                         else:
