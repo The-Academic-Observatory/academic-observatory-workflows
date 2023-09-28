@@ -24,6 +24,7 @@ import os
 import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import timedelta
+from functools import partial
 from typing import List, Dict, Tuple, Optional
 
 import boto3
@@ -34,6 +35,7 @@ from airflow.exceptions import AirflowSkipException
 from airflow.hooks.base import BaseHook
 from airflow.models.taskinstance import TaskInstance
 from airflow.operators.empty import EmptyOperator
+from airflow.operators.python import BranchPythonOperator
 from airflow.operators.python import ShortCircuitOperator, PythonOperator
 from airflow.utils.task_group import TaskGroup
 from airflow.utils.trigger_rule import TriggerRule
@@ -362,26 +364,6 @@ class OpenAlexTelescope(Workflow):
         self.observatory_api_conn_id = observatory_api_conn_id
 
     def make_dag(self) -> DAG:
-        def create_taskgroup(func, group_id, merge: bool = True):
-            tasks = []
-            with TaskGroup(group_id=group_id):
-                for entity_name_ in self.entity_names:
-                    task_id_ = entity_name_
-                    tasks.append(
-                        self.make_python_operator(
-                            func,
-                            task_id_,
-                            op_kwargs={"entity_name": entity_name_},
-                        )
-                    )
-
-            if merge:
-                return tasks, EmptyOperator(
-                    task_id=f"merge_{group_id}", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS
-                )
-
-            return tasks, None
-
         with self.dag:
             # fmt: off
             # Wait for the previous DAG run to finish to make sure that
@@ -393,60 +375,56 @@ class OpenAlexTelescope(Workflow):
                 execution_delta=timedelta(days=7),  # To match the @weekly schedule
             )
             task_check_dependencies = PythonOperator(python_callable=self.check_dependencies, task_id="check_dependencies")
-            task_fetch_releases = ShortCircuitOperator(python_callable=self.fetch_releases, task_id="fetch_releases")
+            task_fetch_releases = ShortCircuitOperator(python_callable=self.fetch_releases, task_id="fetch_releases") # If there are no changes then skip all below tasks
             task_create_datasets = PythonOperator(python_callable=self.create_datasets, task_id="create_datasets")
-            tasks_snapshot, _ = create_taskgroup(self.bq_create_snapshots, "bq_create_snapshots", merge=False)
-            task_aws_to_gcs_transfer = self.make_python_operator(self.aws_to_gcs_transfer, "aws_to_gcs_transfer", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS)
+            task_aws_to_gcs_transfer = self.make_python_operator(self.aws_to_gcs_transfer, "aws_to_gcs_transfer")
+            task_branch = BranchPythonOperator(
+                task_id='branch',
+                python_callable=partial(self.task_callable, self.determine_branches),
+            )
 
-            # Download tasks
-            tasks_download = []
-            with TaskGroup(group_id="download"):
-                for entity_name in self.entity_names:
-                    tasks_download.append(make_download_bash_op(self, entity_name))
-            task_merge_download = EmptyOperator(task_id="merge_download", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS)
+            task_groups = []
+            for entity_name in self.entity_names:
+                with TaskGroup(group_id=entity_name) as tg:
+                    task_snapshot = self.make_python_operator(self.bq_snapshot, "bq_snapshot", op_kwargs={"entity_name": entity_name})
+                    task_download = make_download_bash_op(self, entity_name, "download", trigger_rule=TriggerRule.NONE_FAILED)
+                    task_transform = self.make_python_operator(self.transform, "transform", op_kwargs={"entity_name": entity_name})
+                    task_upload = self.make_python_operator(self.upload_upsert_files, "upload", op_kwargs={"entity_name": entity_name})
+                    task_bq_load_upserts = self.make_python_operator(self.bq_load_upsert_tables, "bq_load_upserts", op_kwargs={"entity_name": entity_name})
+                    task_bq_upsert_records = self.make_python_operator(self.bq_upsert_records, "bq_upsert_records", op_kwargs={"entity_name": entity_name})
+                    task_bq_load_deletes = self.make_python_operator(self.bq_load_delete_tables, "bq_load_deletes", op_kwargs={"entity_name": entity_name})  # This task can skip
+                    task_bq_delete_records = self.make_python_operator(self.bq_delete_records, "bq_delete_records", op_kwargs={"entity_name": entity_name}, trigger_rule=TriggerRule.NONE_FAILED)  # This task can skip
+                    task_add_dataset_releases = self.make_python_operator(self.add_dataset_releases, "add_dataset_releases", op_kwargs={"entity_name": entity_name}, trigger_rule=TriggerRule.NONE_FAILED)
 
-            # Transform and upload
-            tasks_transform, _ = create_taskgroup(self.transform, "transform", merge=False)
-            task_upload = self.make_python_operator(self.upload_upsert_files, "upload_upsert_files", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS)
+                    (
+                        task_snapshot
+                        >> task_download
+                        >> task_transform
+                        >> task_upload
+                        >> task_bq_load_upserts
+                        >> task_bq_upsert_records
+                        >> task_bq_load_deletes
+                        >> task_bq_delete_records
+                        >> task_add_dataset_releases
+                    )
+                    task_groups.append(tg)
 
-            # Upsert records
-            tasks_bq_load_upserts, task_merge_bq_load_upserts = create_taskgroup(self.bq_load_upsert_tables, "bq_load_upserts")
-            tasks_bq_upsert_records, task_merge_bq_upsert_records = create_taskgroup(self.bq_upsert_records, "bq_upsert_records")
-
-            # Delete records
-            tasks_bq_load_deletes, task_merge_bq_load_deletes = create_taskgroup(self.bq_load_delete_tables, "bq_load_deletes")
-            tasks_bq_delete_records, task_merge_bq_delete_records = create_taskgroup(self.bq_delete_records, "bq_delete_records")
-
-            # Add release info to API and cleanup
-            tasks_add_dataset_releases, _ = create_taskgroup(self.add_dataset_releases, "add_dataset_releases", merge=False)
-            task_cleanup = self.make_python_operator(self.cleanup, "cleanup", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS)
+            task_cleanup = self.make_python_operator(self.cleanup, "cleanup", trigger_rule=TriggerRule.NONE_FAILED)
             task_wait = EmptyOperator(task_id=external_task_id)
-            # fmt: on
 
             # Link tasks together
             (
-                task_sensor
-                >> task_check_dependencies
-                >> task_fetch_releases
-                >> task_create_datasets
-                >> tasks_snapshot
-                >> task_aws_to_gcs_transfer
-                >> tasks_download
-                >> task_merge_download
-                >> tasks_transform
-                >> task_upload
-                >> tasks_bq_load_upserts
-                >> task_merge_bq_load_upserts
-                >> tasks_bq_upsert_records
-                >> task_merge_bq_upsert_records
-                >> tasks_bq_load_deletes
-                >> task_merge_bq_load_deletes
-                >> tasks_bq_delete_records
-                >> task_merge_bq_delete_records
-                >> tasks_add_dataset_releases
-                >> task_cleanup
-                >> task_wait
+                    task_sensor
+                    >> task_check_dependencies
+                    >> task_fetch_releases
+                    >> task_create_datasets
+                    >> task_aws_to_gcs_transfer
+                    >> task_branch
+                    >> task_groups
+                    >> task_cleanup
+                    >> task_wait
             )
+            # fmt: on
 
         return self.dag
 
@@ -574,29 +552,6 @@ class OpenAlexTelescope(Workflow):
             description=self.dataset_description,
         )
 
-    def bq_create_snapshots(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
-        """Create a snapshot of each main table. The purpose of this table is to be able to rollback the table
-        if something goes wrong. The snapshot expires after self.snapshot_expiry_days."""
-
-        task_id = get_task_id(**kwargs)
-        if release.is_first_run:
-            raise AirflowSkipException(make_first_run_message(task_id))
-
-        entity = release.get_entity(entity_name)
-        if entity is None:
-            raise AirflowSkipException(make_no_updated_data_msg(get_task_id(**kwargs), entity_name))
-
-        expiry_date = pendulum.now().add(days=self.snapshot_expiry_days)
-        logging.info(
-            f"{task_id}: creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
-        )
-        success = bq_snapshot(
-            src_table_id=entity.bq_main_table_id, dst_table_id=entity.bq_snapshot_table_id, expiry_date=expiry_date
-        )
-        assert (
-            success
-        ), f"{task_id}: error creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
-
     def aws_to_gcs_transfer(self, release: OpenAlexRelease, **kwargs):
         """Transfer files from AWS bucket to Google Cloud bucket"""
 
@@ -655,6 +610,38 @@ class OpenAlexTelescope(Workflow):
             logging.info(f"aws_to_gcs_transfer: manifests and merged_ids the same")
         set_task_state(success, self.aws_to_gcs_transfer.__name__, release)
 
+    def determine_branches(self, release: OpenAlexRelease, **kwargs):
+        """Determine which entity branches to follow"""
+
+        task_ids = []
+        for entity in release.entities:
+            task_ids.append(f"{entity.entity_name}.bq_snapshot")
+
+        return task_ids
+
+    def bq_snapshot(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
+        """Create a snapshot of each main table. The purpose of this table is to be able to rollback the table
+        if something goes wrong. The snapshot expires after self.snapshot_expiry_days."""
+
+        task_id = get_task_id(**kwargs)
+        if release.is_first_run:
+            raise AirflowSkipException(make_first_run_message(task_id))
+
+        entity = release.get_entity(entity_name)
+        if entity is None:
+            raise AirflowSkipException(make_no_updated_data_msg(get_task_id(**kwargs), entity_name))
+
+        expiry_date = pendulum.now().add(days=self.snapshot_expiry_days)
+        logging.info(
+            f"{task_id}: creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
+        )
+        success = bq_snapshot(
+            src_table_id=entity.bq_main_table_id, dst_table_id=entity.bq_snapshot_table_id, expiry_date=expiry_date
+        )
+        assert (
+            success
+        ), f"{task_id}: error creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
+
     def transform(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Transform all files for the Work, Concept and Institution entities. Transforms one file per process."""
 
@@ -684,16 +671,20 @@ class OpenAlexTelescope(Workflow):
             for future in as_completed(futures):
                 future.result()
 
-    def upload_upsert_files(self, release: OpenAlexRelease, **kwargs):
+    def upload_upsert_files(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Upload the transformed data to Cloud Storage.
         :raises AirflowException: Raised if the files to be uploaded are not found."""
 
+        task_id = get_task_id(**kwargs)
+        entity = release.get_entity(entity_name)
+        if entity is None:
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+
         # Make files to upload
         file_paths = []
-        for entity in release.entities:
-            for entry in entity.current_entries:
-                file_path = os.path.join(release.transform_folder, entry.object_key)
-                file_paths.append(file_path)
+        for entry in entity.current_entries:
+            file_path = os.path.join(release.transform_folder, entry.object_key)
+            file_paths.append(file_path)
 
         # Upload files
         success = gcs_upload_files(bucket_name=self.cloud_workspace.transform_bucket, file_paths=file_paths)
@@ -817,7 +808,7 @@ class OpenAlexTelescope(Workflow):
         cleanup(dag_id=self.dag_id, execution_date=kwargs["logical_date"], workflow_folder=release.workflow_folder)
 
 
-def make_download_bash_op(workflow: Workflow, entity_name: str) -> WorkflowBashOperator:
+def make_download_bash_op(workflow: Workflow, entity_name: str, task_id: str, **kwargs) -> WorkflowBashOperator:
     """Download files for an entity from the bucket.
 
     Gsutil is used instead of the standard Google Cloud Python library, because it is faster at downloading files
@@ -825,6 +816,7 @@ def make_download_bash_op(workflow: Workflow, entity_name: str) -> WorkflowBashO
 
     :param workflow: the workflow.
     :param entity_name: the name of the OpenAlex entity, e.g. authors, institutions etc.
+    :param task_id: the task id.
     :return: a WorkflowBashOperator instance.
     """
 
@@ -832,7 +824,7 @@ def make_download_bash_op(workflow: Workflow, entity_name: str) -> WorkflowBashO
     bucket_path = "{{ release.gcs_openalex_data_uri }}data/" + entity_name + "/*"
     return WorkflowBashOperator(
         workflow=workflow,
-        task_id=entity_name,
+        task_id=task_id,
         bash_command="mkdir -p "
         + output_folder
         + " && gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}"
@@ -840,6 +832,7 @@ def make_download_bash_op(workflow: Workflow, entity_name: str) -> WorkflowBashO
         + bucket_path
         + " "
         + output_folder,
+        **kwargs,
     )
 
 
