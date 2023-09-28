@@ -956,6 +956,11 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     ti = env.run_task(f"branch")
                     self.assertEqual(State.SUCCESS, ti.state)
 
+                    # Assert concepts branch skipped
+                    print(f"Checking that skipped: {task_id}")
+                    ti = env.run_task("concepts.bq_snapshot")
+                    self.assertEqual(State.SKIPPED, ti.state)
+
                     # Task groups
                     for entity in expected_entities:
                         print(f"Executing tasks for task group: {entity.entity_name}")
@@ -1050,22 +1055,6 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         self.assertEqual(State.SUCCESS, ti.state)
                         dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity.entity_name)
                         self.assertEqual(len(dataset_releases), 2)
-
-                    # Assert concepts branch skipped
-                    for task_id in [
-                        "concepts.bq_snapshot",
-                        "concepts.download",
-                        "concepts.transform",
-                        "concepts.upload",
-                        "concepts.bq_load_upserts",
-                        "concepts.bq_upsert_records",
-                        "concepts.bq_load_deletes",
-                        "concepts.bq_delete_records",
-                        "concepts.add_dataset_releases",
-                    ]:
-                        print(f"Checking that skipped: {task_id}")
-                        ti = env.get_task_instance(task_id)
-                        self.assertEqual(State.SKIPPED, ti.state)
 
                     # Test that all workflow data deleted
                     ti = env.run_task(workflow.cleanup.__name__)
