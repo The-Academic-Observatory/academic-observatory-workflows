@@ -1032,8 +1032,9 @@ def transform_file(download_path: str, transform_path: str):
     :return: None.
     """
 
-    if not os.path.isdir(os.path.dirname(transform_path)):
-        os.makedirs(os.path.dirname(transform_path))
+    # Make base folder, e.g. authors/updated_date=2023-09-17
+    base_folder = os.path.dirname(transform_path)
+    os.makedirs(base_folder, exist_ok=True)
 
     logging.info(f"Transforming {download_path}")
     with gzip.open(download_path, "rb") as f_in, gzip.open(transform_path, "wt", encoding="ascii") as f_out:
