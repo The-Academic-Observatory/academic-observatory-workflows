@@ -884,7 +884,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 data_interval_start = pendulum.datetime(2023, 4, 16)
                 is_first_run = False
                 expected_entities = []
-                for entity_name in ["authors", "funders", "institutions", "publishers", "sources", "works"]:
+                for entity_name in workflow.entity_names:
                     expected_entities.append(
                         OpenAlexEntity(
                             entity_name,
@@ -898,7 +898,6 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     )
 
                 # Third run: changefiles
-                # Concepts branch should skip
                 with env.create_dag_run(dag, data_interval_start) as dag_run:
                     # Mocked and expected data
                     release = OpenAlexRelease(
@@ -934,7 +933,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         include_prior_dates=False,
                     )
                     actual_entities = parse_release_msg(msg)
-                    self.assertEqual(6, len(actual_entities))
+                    self.assertEqual(7, len(actual_entities))
                     self.assertEqual(expected_entities, actual_entities)
 
                     ti = env.run_task(workflow.create_datasets.__name__)
@@ -955,11 +954,6 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     # Branch operator
                     ti = env.run_task(f"branch")
                     self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Assert concepts branch skipped
-                    print(f"Checking that skipped: {task_id}")
-                    ti = env.run_task("concepts.bq_snapshot")
-                    self.assertEqual(State.SKIPPED, ti.state)
 
                     # Task groups
                     for entity in expected_entities:
@@ -999,6 +993,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         self.assertEqual(State.SUCCESS, ti.state)
                         expected_row_index = {
                             "authors": 3,
+                            "concepts": 2,
                             "institutions": 3,
                             "publishers": 2,
                             "sources": 3,
@@ -1028,6 +1023,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             self.assertEqual(State.SKIPPED, ti.state)
                         expected_row_index = {
                             "authors": 4,
+                            "concepts": 5,
                             "institutions": 4,
                             "publishers": 5,
                             "sources": 4,
