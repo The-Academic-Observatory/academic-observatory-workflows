@@ -365,7 +365,6 @@ class OpenAlexTelescope(Workflow):
 
     def make_dag(self) -> DAG:
         with self.dag:
-            # fmt: off
             # Wait for the previous DAG run to finish to make sure that
             # changefiles are processed in the correct order
             external_task_id = "dag_run_complete"
@@ -374,14 +373,12 @@ class OpenAlexTelescope(Workflow):
                 external_task_id=external_task_id,
                 execution_delta=timedelta(days=7),  # To match the @weekly schedule
             )
+            # fmt: off
             task_check_dependencies = PythonOperator(python_callable=self.check_dependencies, task_id="check_dependencies")
             task_fetch_releases = ShortCircuitOperator(python_callable=self.fetch_releases, task_id="fetch_releases") # If there are no changes then skip all below tasks
             task_create_datasets = PythonOperator(python_callable=self.create_datasets, task_id="create_datasets")
             task_aws_to_gcs_transfer = self.make_python_operator(self.aws_to_gcs_transfer, "aws_to_gcs_transfer")
-            task_branch = BranchPythonOperator(
-                task_id='branch',
-                python_callable=partial(self.task_callable, self.determine_branches),
-            )
+            task_branch = BranchPythonOperator(task_id='branch', python_callable=partial(self.task_callable, self.determine_branches))
 
             task_groups = []
             for entity_name in self.entity_names:
@@ -395,6 +392,7 @@ class OpenAlexTelescope(Workflow):
                     task_bq_load_deletes = self.make_python_operator(self.bq_load_delete_tables, "bq_load_deletes", op_kwargs={"entity_name": entity_name})  # This task can skip
                     task_bq_delete_records = self.make_python_operator(self.bq_delete_records, "bq_delete_records", op_kwargs={"entity_name": entity_name}, trigger_rule=TriggerRule.NONE_FAILED)  # This task can skip
                     task_add_dataset_releases = self.make_python_operator(self.add_dataset_releases, "add_dataset_releases", op_kwargs={"entity_name": entity_name}, trigger_rule=TriggerRule.NONE_FAILED)
+                    # fmt: on
 
                     (
                         task_snapshot
@@ -414,17 +412,16 @@ class OpenAlexTelescope(Workflow):
 
             # Link tasks together
             (
-                    task_sensor
-                    >> task_check_dependencies
-                    >> task_fetch_releases
-                    >> task_create_datasets
-                    >> task_aws_to_gcs_transfer
-                    >> task_branch
-                    >> task_groups
-                    >> task_cleanup
-                    >> task_wait
+                task_sensor
+                >> task_check_dependencies
+                >> task_fetch_releases
+                >> task_create_datasets
+                >> task_aws_to_gcs_transfer
+                >> task_branch
+                >> task_groups
+                >> task_cleanup
+                >> task_wait
             )
-            # fmt: on
 
         return self.dag
 
