@@ -155,25 +155,6 @@
     "mode": "NULLABLE",
     "fields": [
       {
-        "name": "display_name",
-        "type": "RECORD",
-        "fields": [
-          {
-            "name": "keys",
-            "type": "STRING",
-            "mode": "REPEATED",
-            "description": "The language codes in wikidata language code format."
-          },
-          {
-            "name": "values",
-            "type": "STRING",
-            "mode": "REPEATED",
-            "description": "The translated display_names in each language."
-          }
-        ],
-        "description": "This concept's display name in many languages, derived from article titles on each language's wikipedia."
-      },
-      {
         "name": "description",
         "type": "RECORD",
         "fields": [
@@ -191,6 +172,25 @@
           }
         ],
         "description": "This concept's description in many languages, derived from article titles on each language's wikipedia."
+      },
+      {
+        "name": "display_name",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "keys",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "The language codes in wikidata language code format."
+          },
+          {
+            "name": "values",
+            "type": "STRING",
+            "mode": "REPEATED",
+            "description": "The translated display_names in each language."
+          }
+        ],
+        "description": "This concept's display name in many languages, derived from article titles on each language's wikipedia."
       }
     ],
     "description": "Translation of the display_name and description into multiple languages."

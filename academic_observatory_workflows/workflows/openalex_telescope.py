@@ -24,14 +24,21 @@ import os
 import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import timedelta
+from functools import partial
 from typing import List, Dict, Tuple, Optional
 
 import boto3
 import jsonlines
 import pendulum
+from airflow import DAG
+from airflow.exceptions import AirflowSkipException
 from airflow.hooks.base import BaseHook
 from airflow.models.taskinstance import TaskInstance
 from airflow.operators.empty import EmptyOperator
+from airflow.operators.python import BranchPythonOperator
+from airflow.operators.python import ShortCircuitOperator, PythonOperator
+from airflow.utils.task_group import TaskGroup
+from airflow.utils.trigger_rule import TriggerRule
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
 
@@ -74,7 +81,6 @@ class OpenAlexEntity:
     def __init__(
         self,
         entity_name: str,
-        transform: bool,
         start_date: pendulum.DateTime,
         end_date: pendulum.DateTime,
         manifest: Manifest,
@@ -86,8 +92,6 @@ class OpenAlexEntity:
         """This class represents the data and settings related to an OpenAlex entity or table.
 
         :param entity_name: the name of the entity, e.g. authors, institutions etc.
-        :param transform: whether the data for the entity needs to be downloaded and transformed locally, or whether
-        it can be loaded straight into BigQuery.
         :param start_date: the start date of the files covered by this release (inclusive).
         :param end_date: the end date of the files covered by this release (inclusive).
         :param manifest: the Redshift manifest provided by OpenAlex for this entity.
@@ -98,7 +102,6 @@ class OpenAlexEntity:
         """
 
         self.entity_name = entity_name
-        self.transform = transform
         self.start_date = start_date
         self.end_date = end_date
         self.manifest = manifest
@@ -111,7 +114,6 @@ class OpenAlexEntity:
         if isinstance(other, OpenAlexEntity):
             return (
                 self.entity_name == other.entity_name
-                and self.transform == other.transform
                 and self.start_date == other.start_date
                 and self.end_date == other.end_date
                 and self.manifest == other.manifest
@@ -131,16 +133,10 @@ class OpenAlexEntity:
 
     @property
     def upsert_uri(self):
-        if self.transform:
-            return gcs_blob_uri(
-                self.release.cloud_workspace.transform_bucket,
-                f"{gcs_blob_name_from_path(self.release.transform_folder)}/data/{self.entity_name}/*",
-            )
-        else:
-            return gcs_blob_uri(
-                self.release.cloud_workspace.download_bucket,
-                f"{gcs_blob_name_from_path(self.release.download_folder)}/data/{self.entity_name}/*",
-            )
+        return gcs_blob_uri(
+            self.release.cloud_workspace.transform_bucket,
+            f"{gcs_blob_name_from_path(self.release.transform_folder)}/data/{self.entity_name}/*",
+        )
 
     @property
     def merged_ids_uri(self):
@@ -202,21 +198,17 @@ class OpenAlexEntity:
     @staticmethod
     def from_dict(dict_: Dict) -> OpenAlexEntity:
         entity_name = dict_["entity_name"]
-        transform = dict_["transform"]
         start_date = pendulum.parse(dict_["start_date"])
         end_date = pendulum.parse(dict_["end_date"])
         manifest = Manifest.from_dict(dict_["manifest"])
         merged_ids = [MergedId.from_dict(merged_id) for merged_id in dict_["merged_ids"]]
         is_first_run = dict_["is_first_run"]
         prev_end_date = pendulum.parse(dict_["prev_end_date"])
-        return OpenAlexEntity(
-            entity_name, transform, start_date, end_date, manifest, merged_ids, is_first_run, prev_end_date
-        )
+        return OpenAlexEntity(entity_name, start_date, end_date, manifest, merged_ids, is_first_run, prev_end_date)
 
     def to_dict(self) -> Dict:
         return dict(
             entity_name=self.entity_name,
-            transform=self.transform,
             start_date=self.start_date.isoformat(),
             end_date=self.end_date.isoformat(),
             manifest=self.manifest.to_dict(),
@@ -275,6 +267,31 @@ class OpenAlexRelease(ChangefileRelease):
             f"gs://{cloud_workspace.download_bucket}/{gcs_blob_name_from_path(self.download_folder)}/"
         )
 
+    def get_entity(self, entity_name: str) -> OpenAlexEntity | None:
+        if entity_name in self.entity_index:
+            return self.entity_index[entity_name]
+        return None
+
+
+def get_task_id(**kwargs):
+    return kwargs["ti"].task_id
+
+
+def make_no_updated_data_msg(task_id: str, entity_name: str) -> str:
+    return (
+        f"{task_id}: skipping this task, as there is no updated data for OpenAlexEntity({entity_name}) in this release"
+    )
+
+
+def make_first_run_message(task_id: str):
+    return f"{task_id}: skipping this task, as it is not executed on the first run"
+
+
+def make_no_merged_ids_msg(task_id: str, entity_name: str) -> str:
+    return (
+        f"{task_id}: skipping this task, as there are no merged_ids for OpenAlexEntity({entity_name}) in this release"
+    )
+
 
 class OpenAlexTelescope(Workflow):
     """OpenAlex telescope"""
@@ -285,7 +302,7 @@ class OpenAlexTelescope(Workflow):
         dag_id: str,
         cloud_workspace: CloudWorkspace,
         bq_dataset_id: str = "openalex",
-        entities: List[Tuple[str, bool]] = None,
+        entity_names: List[str] = None,
         schema_folder: str = os.path.join(default_schema_folder(), "openalex"),
         dataset_description: str = "The OpenAlex dataset: https://docs.openalex.org/",
         snapshot_expiry_days: int = 31,
@@ -304,9 +321,7 @@ class OpenAlexTelescope(Workflow):
         :param dag_id: the id of the DAG.
         :param cloud_workspace: the cloud workspace settings.
         :param bq_dataset_id: the BigQuery dataset id.
-        :param entities: these are tuples of entity names and whether the given entity needs to be transformed or not,
-        which affects whether the entity data needs to be downloaded and transformed and what storage bucket the data
-        will be loaded into BigQuery from.
+        :param entity_names: the names of the OpenAlex entities to process.
         :param schema_folder: the SQL schema path.
         :param dataset_description: description for the BigQuery dataset.
         :param snapshot_expiry_days: the number of days that a snapshot of each entity's main table will take to expire,
@@ -323,16 +338,8 @@ class OpenAlexTelescope(Workflow):
         :param queue:
         """
 
-        if entities is None:
-            entities = [
-                ("concepts", True),
-                ("institutions", True),
-                ("works", True),
-                ("authors", True),
-                ("publishers", True),
-                ("sources", True),
-                ("funders", True),
-            ]
+        if entity_names is None:
+            entity_names = ["authors", "concepts", "funders", "institutions", "publishers", "sources", "works"]
 
         super().__init__(
             dag_id=dag_id,
@@ -345,7 +352,7 @@ class OpenAlexTelescope(Workflow):
         )
         self.cloud_workspace = cloud_workspace
         self.bq_dataset_id = bq_dataset_id
-        self.entities = entities
+        self.entity_names = entity_names
         self.schema_folder = schema_folder
         self.dataset_description = dataset_description
         self.snapshot_expiry_days = snapshot_expiry_days
@@ -356,53 +363,67 @@ class OpenAlexTelescope(Workflow):
         self.aws_openalex_bucket = aws_openalex_bucket
         self.observatory_api_conn_id = observatory_api_conn_id
 
-        # Wait for the previous DAG run to finish to make sure that
-        # changefiles are processed in the correct order
-        external_task_id = "dag_run_complete"
-        self.add_operator(
-            PreviousDagRunSensor(
+    def make_dag(self) -> DAG:
+        with self.dag:
+            # Wait for the previous DAG run to finish to make sure that
+            # changefiles are processed in the correct order
+            external_task_id = "dag_run_complete"
+            task_sensor = PreviousDagRunSensor(
                 dag_id=self.dag_id,
                 external_task_id=external_task_id,
                 execution_delta=timedelta(days=7),  # To match the @weekly schedule
             )
-        )
-        self.add_setup_task(self.check_dependencies)
-        self.add_setup_task(self.fetch_releases)
-        self.add_task(self.create_datasets)
+            # fmt: off
+            task_check_dependencies = PythonOperator(python_callable=self.check_dependencies, task_id="check_dependencies")
+            task_fetch_releases = ShortCircuitOperator(python_callable=self.fetch_releases, task_id="fetch_releases") # If there are no changes then skip all below tasks
+            task_create_datasets = PythonOperator(python_callable=self.create_datasets, task_id="create_datasets")
+            task_aws_to_gcs_transfer = self.make_python_operator(self.aws_to_gcs_transfer, "aws_to_gcs_transfer")
+            task_branch = BranchPythonOperator(task_id='branch', python_callable=partial(self.task_callable, self.determine_branches))
 
-        # Create snapshots of main tables in case we mess up
-        # This is done before updating the tables to make sure that the snapshots haven't expired before the tables
-        # are updated
-        self.add_task(self.bq_create_main_table_snapshots)
+            task_groups = []
+            for entity_name in self.entity_names:
+                with TaskGroup(group_id=entity_name) as tg:
+                    task_snapshot = self.make_python_operator(self.bq_snapshot, "bq_snapshot", op_kwargs={"entity_name": entity_name})
+                    task_download = make_download_bash_op(self, entity_name, "download", trigger_rule=TriggerRule.NONE_FAILED)
+                    task_transform = self.make_python_operator(self.transform, "transform", op_kwargs={"entity_name": entity_name})
+                    task_upload = self.make_python_operator(self.upload_upsert_files, "upload", op_kwargs={"entity_name": entity_name})
+                    task_bq_load_upserts = self.make_python_operator(self.bq_load_upsert_tables, "bq_load_upserts", op_kwargs={"entity_name": entity_name})
+                    task_bq_upsert_records = self.make_python_operator(self.bq_upsert_records, "bq_upsert_records", op_kwargs={"entity_name": entity_name})
+                    task_bq_load_deletes = self.make_python_operator(self.bq_load_delete_tables, "bq_load_deletes", op_kwargs={"entity_name": entity_name})  # This task can skip
+                    task_bq_delete_records = self.make_python_operator(self.bq_delete_records, "bq_delete_records", op_kwargs={"entity_name": entity_name}, trigger_rule=TriggerRule.NONE_FAILED)  # This task can skip
+                    task_add_dataset_releases = self.make_python_operator(self.add_dataset_releases, "add_dataset_releases", op_kwargs={"entity_name": entity_name}, trigger_rule=TriggerRule.NONE_FAILED)
+                    # fmt: on
 
-        # Transfer, download and transform data
-        self.add_task(self.aws_to_gcs_transfer)
+                    (
+                        task_snapshot
+                        >> task_download
+                        >> task_transform
+                        >> task_upload
+                        >> task_bq_load_upserts
+                        >> task_bq_upsert_records
+                        >> task_bq_load_deletes
+                        >> task_bq_delete_records
+                        >> task_add_dataset_releases
+                    )
+                    task_groups.append(tg)
 
-        # Download concepts, institutions and works which need to be pre-processed
-        for entity_name, transform in self.entities:
-            if transform:
-                self.add_operator(make_download_bash_op(self, entity_name))
-        self.add_task(self.transform)
+            task_cleanup = self.make_python_operator(self.cleanup, "cleanup", trigger_rule=TriggerRule.NONE_FAILED)
+            task_wait = EmptyOperator(task_id=external_task_id)
 
-        # Upsert records
-        self.add_task(self.upload_upsert_files)
-        self.add_task(self.bq_load_upsert_tables)
-        self.add_task(self.bq_upsert_records)
-
-        # Delete records
-        self.add_task(self.bq_load_delete_tables)
-        self.add_task(self.bq_delete_records)
-
-        # Add release info to API and cleanup
-        self.add_task(self.add_new_dataset_releases)
-        self.add_task(self.cleanup)
-
-        # The last task that the next DAG run's ExternalTaskSensor waits for.
-        self.add_operator(
-            EmptyOperator(
-                task_id=external_task_id,
+            # Link tasks together
+            (
+                task_sensor
+                >> task_check_dependencies
+                >> task_fetch_releases
+                >> task_create_datasets
+                >> task_aws_to_gcs_transfer
+                >> task_branch
+                >> task_groups
+                >> task_cleanup
+                >> task_wait
             )
-        )
+
+        return self.dag
 
     @property
     def aws_key(self) -> Tuple[str, str]:
@@ -425,12 +446,13 @@ class OpenAlexTelescope(Workflow):
 
         :return: True to continue, False to skip.
         """
+
         dag_run = kwargs["dag_run"]
         is_first_run = is_first_dag_run(dag_run)
 
         # Build up information about what files we will be downloading for this release
         entities = []
-        for entity_name, transform in self.entities:
+        for entity_name in self.entity_names:
             releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
             manifest = fetch_manifest(bucket=self.aws_openalex_bucket, aws_key=self.aws_key, entity_name=entity_name)
             merged_ids = fetch_merged_ids(
@@ -452,18 +474,16 @@ class OpenAlexTelescope(Workflow):
 
             # Don't add this entity because it has no updates
             if start_date is None or end_date is None:
-                logging.info(
-                    f"fetch_releases: skipping OpenAlexEntity(entity_name={entity_name}) as it has no updated data"
-                )
+                logging.info(f"fetch_releases: skipping OpenAlexEntity({entity_name}) as it has no updated data")
                 continue
 
             logging.info(
-                f"fetch_releases: adding OpenAlexEntity(entity_name={entity_name}, transform={transform}, start_date={start_date}, end_date={end_date})"
+                f"fetch_releases: adding OpenAlexEntity({entity_name}), start_date={start_date}, end_date={end_date})"
             )
 
             # Save metadata
             entity = OpenAlexEntity(
-                entity_name, transform, start_date, end_date, manifest, merged_ids, is_first_run, prev_end_date
+                entity_name, start_date, end_date, manifest, merged_ids, is_first_run, prev_end_date
             )
             entities.append(entity)
 
@@ -519,7 +539,7 @@ class OpenAlexTelescope(Workflow):
 
         return release
 
-    def create_datasets(self, release: OpenAlexRelease, **kwargs) -> None:
+    def create_datasets(self, **kwargs) -> None:
         """Create datasets."""
 
         bq_create_dataset(
@@ -528,26 +548,6 @@ class OpenAlexTelescope(Workflow):
             location=self.cloud_workspace.data_location,
             description=self.dataset_description,
         )
-
-    def bq_create_main_table_snapshots(self, release: OpenAlexRelease, **kwargs):
-        """Create a snapshot of each main table. The purpose of this table is to be able to rollback the table
-        if something goes wrong. The snapshot expires after self.snapshot_expiry_days."""
-
-        if release.is_first_run:
-            logging.info(f"bq_create_main_table_snapshots: skipping as snapshots are not created on the first run")
-            return
-
-        for entity in release.entities:
-            expiry_date = pendulum.now().add(days=self.snapshot_expiry_days)
-            logging.info(
-                f"bq_create_main_table_snapshots: creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
-            )
-            success = bq_snapshot(
-                src_table_id=entity.bq_main_table_id, dst_table_id=entity.bq_snapshot_table_id, expiry_date=expiry_date
-            )
-            assert (
-                success
-            ), f"bq_create_main_table_snapshots: error creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
 
     def aws_to_gcs_transfer(self, release: OpenAlexRelease, **kwargs):
         """Transfer files from AWS bucket to Google Cloud bucket"""
@@ -597,150 +597,207 @@ class OpenAlexTelescope(Workflow):
                 bucket=self.aws_openalex_bucket, aws_key=self.aws_key, entity_name=entity.entity_name
             )
             if entity.manifest != current_manifest:
-                logging.error(f"aws_to_gcs_transfer: entity {entity.entity_name} manifests have changed")
+                logging.error(f"aws_to_gcs_transfer: OpenAlexEntity({entity.entity_name}) manifests have changed")
                 success = False
             if entity.merged_ids != current_merged_ids:
-                logging.error(f"aws_to_gcs_transfer: entity {entity.entity_name} merged_ids have changed")
+                logging.error(f"aws_to_gcs_transfer: OpenAlexEntity({entity.entity_name}) merged_ids have changed")
                 success = False
 
         if success:
             logging.info(f"aws_to_gcs_transfer: manifests and merged_ids the same")
         set_task_state(success, self.aws_to_gcs_transfer.__name__, release)
 
-    def transform(self, release: OpenAlexRelease, **kwargs):
+    def determine_branches(self, release: OpenAlexRelease, **kwargs):
+        """Determine which entity branches to follow"""
+
+        task_ids = []
+        for entity in release.entities:
+            task_ids.append(f"{entity.entity_name}.bq_snapshot")
+
+        return task_ids
+
+    def bq_snapshot(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
+        """Create a snapshot of each main table. The purpose of this table is to be able to rollback the table
+        if something goes wrong. The snapshot expires after self.snapshot_expiry_days."""
+
+        task_id = get_task_id(**kwargs)
+        if release.is_first_run:
+            raise AirflowSkipException(make_first_run_message(task_id))
+
+        entity = release.get_entity(entity_name)
+        if entity is None:
+            raise AirflowSkipException(make_no_updated_data_msg(get_task_id(**kwargs), entity_name))
+
+        expiry_date = pendulum.now().add(days=self.snapshot_expiry_days)
+        logging.info(
+            f"{task_id}: creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
+        )
+        success = bq_snapshot(
+            src_table_id=entity.bq_main_table_id, dst_table_id=entity.bq_snapshot_table_id, expiry_date=expiry_date
+        )
+        assert (
+            success
+        ), f"{task_id}: error creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
+
+    def transform(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Transform all files for the Work, Concept and Institution entities. Transforms one file per process."""
-        logging.info(f"Transforming files, no. workers: {self.max_processes}")
 
-        clean_dir(release.transform_folder)
+        task_id = get_task_id(**kwargs)
+        entity = release.get_entity(entity_name)
+        if entity is None:
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
 
-        with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
+        # Cleanup in case we re-run task
+        output_folder = os.path.join(release.transform_folder, "data", entity_name)
+        logging.info(f"{task_id}: cleaning path: {output_folder}")
+        if os.path.exists(output_folder):
+            clean_dir(output_folder)
+
+        # These will all get executed as different tasks, so only use many processes for works which is the largest
+        max_processes = 1
+        if entity.entity_name == "works":
+            max_processes = self.max_processes
+        logging.info(f"{task_id}: transforming files for OpenAlexEntity({entity_name}), no. workers: {max_processes}")
+
+        with ProcessPoolExecutor(max_workers=max_processes) as executor:
             futures = []
-            for entity in release.entities:
-                if entity.transform:
-                    for entry in entity.current_entries:
-                        input_path = os.path.join(release.download_folder, entry.object_key)
-                        output_path = os.path.join(release.transform_folder, entry.object_key)
-                        futures.append(executor.submit(transform_file, input_path, output_path))
+            for entry in entity.current_entries:
+                input_path = os.path.join(release.download_folder, entry.object_key)
+                output_path = os.path.join(release.transform_folder, entry.object_key)
+                futures.append(executor.submit(transform_file, input_path, output_path))
             for future in as_completed(futures):
                 future.result()
 
-    def upload_upsert_files(self, release: OpenAlexRelease, **kwargs):
+    def upload_upsert_files(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Upload the transformed data to Cloud Storage.
         :raises AirflowException: Raised if the files to be uploaded are not found."""
 
+        task_id = get_task_id(**kwargs)
+        entity = release.get_entity(entity_name)
+        if entity is None:
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+
         # Make files to upload
         file_paths = []
-        for entity in release.entities:
-            if entity.transform:
-                for entry in entity.current_entries:
-                    file_path = os.path.join(release.transform_folder, entry.object_key)
-                    file_paths.append(file_path)
+        for entry in entity.current_entries:
+            file_path = os.path.join(release.transform_folder, entry.object_key)
+            file_paths.append(file_path)
 
         # Upload files
         success = gcs_upload_files(bucket_name=self.cloud_workspace.transform_bucket, file_paths=file_paths)
         set_task_state(success, self.upload_upsert_files.__name__, release)
 
-    def bq_load_upsert_tables(self, release: OpenAlexRelease, **kwargs):
+    def bq_load_upsert_tables(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Load the upsert table for each entity."""
 
-        for entity in release.entities:
-            logging.info(
-                f"bq_load_upsert_tables: loading {entity.entity_name} upsert table {entity.bq_upsert_table_id}"
-            )
-            success = bq_load_table(
-                uri=entity.upsert_uri,
-                table_id=entity.bq_upsert_table_id,
-                schema_file_path=entity.schema_file_path,
-                source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
-                write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-                ignore_unknown_values=True,
-            )
-            assert (
-                success
-            ), f"bq_load_upsert_tables: error loading {entity.entity_name} upsert table {entity.bq_upsert_table_id}"
+        task_id = get_task_id(**kwargs)
+        entity = release.get_entity(entity_name)
+        if entity is None:
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
 
-    def bq_upsert_records(self, release: OpenAlexRelease, **kwargs):
+        logging.info(f"{task_id}: loading OpenAlexEntity({entity_name}) upsert table {entity.bq_upsert_table_id}")
+        success = bq_load_table(
+            uri=entity.upsert_uri,
+            table_id=entity.bq_upsert_table_id,
+            schema_file_path=entity.schema_file_path,
+            source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+            ignore_unknown_values=True,
+        )
+        assert (
+            success
+        ), f"{task_id}: error loading OpenAlexEntity({entity_name}) upsert table {entity.bq_upsert_table_id}"
+
+    def bq_upsert_records(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Upsert the records from each upserts table into the main table."""
 
-        for entity in release.entities:
-            # Create main table if it doesn't exist
-            if not bq_table_exists(entity.bq_main_table_id):
-                logging.info(
-                    f"bq_upsert_records: creating empty {entity.entity_name} main table {entity.bq_main_table_id}"
-                )
-                bq_create_empty_table(table_id=entity.bq_main_table_id, schema_file_path=entity.schema_file_path)
-                bq_update_table_description(table_id=entity.bq_main_table_id, description=entity.table_description)
+        task_id = get_task_id(**kwargs)
+        entity = release.get_entity(entity_name)
+        if entity is None:
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
 
-            # Upsert records from upsert table to main table
+        # Create main table if it doesn't exist
+        if not bq_table_exists(entity.bq_main_table_id):
             logging.info(
-                f"bq_upsert_records: upserting {entity.entity_name} records from {entity.bq_upsert_table_id} to {entity.bq_main_table_id}"
+                f"{task_id}: creating empty OpenAlexEntity({entity_name}) main table {entity.bq_main_table_id}"
             )
-            bq_upsert_records(
-                main_table_id=entity.bq_main_table_id,
-                upsert_table_id=entity.bq_upsert_table_id,
-                primary_key=self.primary_key,
-            )
+            bq_create_empty_table(table_id=entity.bq_main_table_id, schema_file_path=entity.schema_file_path)
+            bq_update_table_description(table_id=entity.bq_main_table_id, description=entity.table_description)
 
-    def bq_load_delete_tables(self, release: OpenAlexRelease, **kwargs):
+        # Upsert records from upsert table to main table
+        logging.info(
+            f"{task_id}: upserting OpenAlexEntity({entity_name}) records from {entity.bq_upsert_table_id} to {entity.bq_main_table_id}"
+        )
+        bq_upsert_records(
+            main_table_id=entity.bq_main_table_id,
+            upsert_table_id=entity.bq_upsert_table_id,
+            primary_key=self.primary_key,
+        )
+
+    def bq_load_delete_tables(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Load the delete tables."""
 
-        for entity in release.entities:
-            if entity.has_merged_ids:
-                logging.info(
-                    f"bq_load_delete_tables: loading {entity.entity_name} delete table {entity.bq_delete_table_id}"
-                )
-                success = bq_load_table(
-                    uri=entity.merged_ids_uri,
-                    table_id=entity.bq_delete_table_id,
-                    schema_file_path=entity.merged_ids_schema_file_path,
-                    source_format=SourceFormat.CSV,
-                    csv_skip_leading_rows=1,
-                    write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-                    ignore_unknown_values=True,
-                )
-                assert (
-                    success
-                ), f"bq_load_delete_tables: error loading {entity.entity_name} delete table {entity.bq_delete_table_id}"
-            else:
-                logging.info(
-                    f"bq_load_delete_tables: skipping loading delete table for {entity.entity_name} as there are no merged_ids for this entity in this release"
-                )
+        task_id = get_task_id(**kwargs)
+        entity = release.get_entity(entity_name)
+        if entity is None:
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+        elif not entity.has_merged_ids:
+            raise AirflowSkipException(make_no_merged_ids_msg(task_id, entity_name))
 
-    def bq_delete_records(self, release: OpenAlexRelease, **kwargs):
+        logging.info(f"{task_id}: loading OpenAlexEntity({entity_name}) delete table {entity.bq_delete_table_id}")
+        success = bq_load_table(
+            uri=entity.merged_ids_uri,
+            table_id=entity.bq_delete_table_id,
+            schema_file_path=entity.merged_ids_schema_file_path,
+            source_format=SourceFormat.CSV,
+            csv_skip_leading_rows=1,
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+            ignore_unknown_values=True,
+        )
+        assert (
+            success
+        ), f"{task_id}: error loading OpenAlexEntity({entity_name}) delete table {entity.bq_delete_table_id}"
+
+    def bq_delete_records(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Delete records from main tables that are in delete tables."""
 
-        for entity in release.entities:
-            if entity.has_merged_ids:
-                logging.info(
-                    f"bq_delete_records: deleting {entity.entity_name} records in {entity.bq_main_table_id} from {entity.bq_delete_table_id}"
-                )
-                bq_delete_records(
-                    main_table_id=entity.bq_main_table_id,
-                    delete_table_id=entity.bq_delete_table_id,
-                    main_table_primary_key=self.primary_key,
-                    delete_table_primary_key=self.primary_key,
-                    delete_table_primary_key_prefix="https://openalex.org/",
-                )
-            else:
-                logging.info(
-                    f"bq_load_delete_tables: skipping delete records for {entity.entity_name} as there are no merged_ids for this entity in this release"
-                )
+        task_id = get_task_id(**kwargs)
+        entity = release.get_entity(entity_name)
+        if entity is None:
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+        elif not entity.has_merged_ids:
+            raise AirflowSkipException(make_no_merged_ids_msg(task_id, entity_name))
 
-    def add_new_dataset_releases(self, release: OpenAlexRelease, **kwargs) -> None:
+        logging.info(
+            f"{task_id}: deleting OpenAlexEntity({entity_name}) records in {entity.bq_main_table_id} from {entity.bq_delete_table_id}"
+        )
+        bq_delete_records(
+            main_table_id=entity.bq_main_table_id,
+            delete_table_id=entity.bq_delete_table_id,
+            main_table_primary_key=self.primary_key,
+            delete_table_primary_key=self.primary_key,
+            delete_table_primary_key_prefix="https://openalex.org/",
+        )
+
+    def add_dataset_releases(self, release: OpenAlexRelease, entity_name: str = None, **kwargs) -> None:
         """Adds release information to API."""
 
-        for entity in release.entities:
-            logging.info(f"add_new_dataset_releases: creating dataset release for {entity.entity_name}")
-            dataset_release = DatasetRelease(
-                dag_id=self.dag_id,
-                dataset_id=entity.entity_name,
-                dag_run_id=release.run_id,
-                changefile_start_date=entity.start_date,
-                changefile_end_date=entity.end_date,
-            )
-            logging.info(f"add_new_dataset_releases: dataset_release={dataset_release}")
-            api = make_observatory_api(observatory_api_conn_id=self.observatory_api_conn_id)
-            api.post_dataset_release(dataset_release)
+        task_id = get_task_id(**kwargs)
+        entity = release.get_entity(entity_name)
+        if entity is None:
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+
+        logging.info(f"{task_id}: creating dataset release for OpenAlexEntity({entity_name})")
+        dataset_release = DatasetRelease(
+            dag_id=self.dag_id,
+            dataset_id=entity.entity_name,
+            dag_run_id=release.run_id,
+            changefile_start_date=entity.start_date,
+            changefile_end_date=entity.end_date,
+        )
+        logging.info(f"{task_id}: dataset_release={dataset_release}")
+        api = make_observatory_api(observatory_api_conn_id=self.observatory_api_conn_id)
+        api.post_dataset_release(dataset_release)
 
     def cleanup(self, release: OpenAlexRelease, **kwargs) -> None:
         """Delete all files, folders and XComs associated with this release."""
@@ -748,7 +805,7 @@ class OpenAlexTelescope(Workflow):
         cleanup(dag_id=self.dag_id, execution_date=kwargs["logical_date"], workflow_folder=release.workflow_folder)
 
 
-def make_download_bash_op(workflow: Workflow, entity_name: str) -> WorkflowBashOperator:
+def make_download_bash_op(workflow: Workflow, entity_name: str, task_id: str, **kwargs) -> WorkflowBashOperator:
     """Download files for an entity from the bucket.
 
     Gsutil is used instead of the standard Google Cloud Python library, because it is faster at downloading files
@@ -756,6 +813,7 @@ def make_download_bash_op(workflow: Workflow, entity_name: str) -> WorkflowBashO
 
     :param workflow: the workflow.
     :param entity_name: the name of the OpenAlex entity, e.g. authors, institutions etc.
+    :param task_id: the task id.
     :return: a WorkflowBashOperator instance.
     """
 
@@ -763,7 +821,7 @@ def make_download_bash_op(workflow: Workflow, entity_name: str) -> WorkflowBashO
     bucket_path = "{{ release.gcs_openalex_data_uri }}data/" + entity_name + "/*"
     return WorkflowBashOperator(
         workflow=workflow,
-        task_id=f"download_{entity_name}",
+        task_id=task_id,
         bash_command="mkdir -p "
         + output_folder
         + " && gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}"
@@ -771,6 +829,7 @@ def make_download_bash_op(workflow: Workflow, entity_name: str) -> WorkflowBashO
         + bucket_path
         + " "
         + output_folder,
+        **kwargs,
     )
 
 
@@ -970,8 +1029,9 @@ def transform_file(download_path: str, transform_path: str):
     :return: None.
     """
 
-    if not os.path.isdir(os.path.dirname(transform_path)):
-        os.makedirs(os.path.dirname(transform_path))
+    # Make base folder, e.g. authors/updated_date=2023-09-17
+    base_folder = os.path.dirname(transform_path)
+    os.makedirs(base_folder, exist_ok=True)
 
     logging.info(f"Transforming {download_path}")
     with gzip.open(download_path, "rb") as f_in, gzip.open(transform_path, "wt", encoding="ascii") as f_out:
@@ -1011,22 +1071,14 @@ def transform_object(obj: dict):
             value = []
         obj[field] = [x for x in value if x is not None]
 
-    # TODO: when re-ingesting entire dataset: change schema to new version
     field = "abstract_inverted_index"
     if field in obj:
-        if isinstance(obj.get(field), (str, dict)):
-            load_field = json.loads(obj[field]) if isinstance(obj[field], str) else obj[field]
-            data = load_field.get("InvertedIndex", load_field)
-
-            # Clear object to only have required fields.
-            obj[field] = {}
-            obj[field]["InvertedIndex"] = {
-                "keys": list(data.keys()),
-                "values": [str(value)[1:-1] for value in data.values()],
-            }
-            obj[field]["IndexLength"] = load_field.get("IndexLength", None)
-        else:
+        if not isinstance(obj.get(field), dict):
             return
+        keys = list(obj[field].keys())
+        values = [str(value)[1:-1] for value in obj[field].values()]
+
+        obj[field] = {"keys": keys, "values": values}
 
     field = "international"
     if field in obj:
@@ -1039,7 +1091,6 @@ def transform_object(obj: dict):
             obj[field][nested_field] = {"keys": keys, "values": values}
 
     # Transform updated_date from a date into a datetime
-    # TODO: when re-ingesting entire dataset: change to date
     field = "updated_date"
     if field in obj:
         obj[field] = pendulum.parse(obj[field]).to_iso8601_string()

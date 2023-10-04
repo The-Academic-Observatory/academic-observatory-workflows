@@ -17,16 +17,16 @@
     "mode": "REPEATED",
     "fields": [
       {
-        "name": "price",
-        "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": "Price."
-      },
-      {
         "name": "currency",
         "type": "STRING",
         "mode": "NULLABLE",
         "description": "Currency."
+      },
+      {
+        "name": "price",
+        "type": "INTEGER",
+        "mode": "NULLABLE",
+        "description": "Price."
       }
     ],
     "description": "List of objects, each with price (Integer) and currency (String). Article processing charge information, taken directly from DOAJ."
@@ -109,7 +109,13 @@
     "name": "host_organization_lineage",
     "type": "STRING",
     "mode": "REPEATED",
-    "description": "OpenAlex IDs — See Publisher.lineage. This will only be included if the host_organization is a publisher (and not if the host_organization is an institution)."
+    "description": "OpenAlex IDs \u2014 See Publisher.lineage. This will only be included if the host_organization is a publisher (and not if the host_organization is an institution)."
+  },
+  {
+    "name": "host_organization_lineage_names",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "The names of the organisations in host_organization_lineage."
   },
   {
     "name": "host_organization_name",

@@ -111,28 +111,6 @@
     "description": "Other names people may use for this institution.  "
   },
   {
-    "name": "roles",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "role",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "id",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "works_count",
-        "type": "INTEGER",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
     "name": "geo",
     "type": "RECORD",
     "mode": "NULLABLE",
@@ -290,31 +268,10 @@
     "description": "Repositories (Sources with type: repository) that have this institution as their host_organization",
     "fields": [
       {
-        "name": "id",
-        "type": "STRING",
-        "mode": "NULLABLE",
-        "description": "The OpenAlex ID of the repository."
-      },
-      {
-        "name": "issn_l",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "issn",
-        "type": "STRING",
-        "mode": "REPEATED"
-      },
-      {
         "name": "display_name",
         "type": "STRING",
         "mode": "NULLABLE",
         "description": "The repositories display name."
-      },
-      {
-        "name": "publisher",
-        "type": "STRING",
-        "mode": "NULLABLE"
       },
       {
         "name": "host_organization",
@@ -323,16 +280,43 @@
         "description": "The OpenAlex ID of the host organisation."
       },
       {
-        "name": "host_organization_name",
-        "type": "STRING",
-        "mode": "NULLABLE",
-        "description": "The host organisations name."
-      },
-      {
         "name": "host_organization_lineage",
         "type": "STRING",
         "mode": "REPEATED",
-        "description": "The host organisations lineage."
+        "description": "OpenAlex IDs \u2014 See Publisher.lineage. This will only be included if the host_organization is a publisher (and not if the host_organization is an institution)."
+      },
+      {
+        "name": "host_organization_lineage_names",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "The names of the organisations in host_organization_lineage."
+      },
+      {
+        "name": "host_organization_name",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The display_name from the host_organization, shown for convenience."
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "The OpenAlex ID of the repository."
+      },
+      {
+        "name": "issn",
+        "type": "STRING",
+        "mode": "REPEATED"
+      },
+      {
+        "name": "issn_l",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "publisher",
+        "type": "STRING",
+        "mode": "NULLABLE"
       },
       {
         "name": "publisher_id",
@@ -342,6 +326,28 @@
       {
         "name": "type",
         "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ]
+  },
+  {
+    "name": "roles",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "role",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "works_count",
+        "type": "INTEGER",
         "mode": "NULLABLE"
       }
     ]

@@ -129,6 +129,12 @@
         "description": "The OpenAlex ID for this institution."
       },
       {
+        "name": "lineage",
+        "type": "STRING",
+        "mode": "REPEATED",
+        "description": "OpenAlex IDs of institutions. The list will include this institution's ID, as well as any parent institutions. If this institution has no parent institutions, this list will only contain its own ID."
+      },
+      {
         "name": "ror",
         "type": "STRING",
         "mode": "NULLABLE",

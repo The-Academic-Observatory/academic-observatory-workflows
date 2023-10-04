@@ -35,7 +35,6 @@ from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.openalex_telescope import (
     OpenAlexRelease,
     OpenAlexTelescope,
-    transform_file,
     ManifestEntry,
     Manifest,
     Meta,
@@ -45,6 +44,8 @@ from academic_observatory_workflows.workflows.openalex_telescope import (
     OpenAlexEntity,
     fetch_manifest,
     fetch_merged_ids,
+)
+from academic_observatory_workflows.workflows.openalex_telescope import (
     parse_release_msg,
 )
 from observatory.platform.api import get_dataset_releases
@@ -56,6 +57,8 @@ from observatory.platform.observatory_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
     aws_bucket_test_env,
+)
+from observatory.platform.observatory_environment import (
     find_free_port,
     load_and_parse_json,
 )
@@ -279,7 +282,6 @@ class TestOpenAlexUtils(ObservatoryTestCase):
             is_first_run = True
             entity = OpenAlexEntity(
                 "authors",
-                False,
                 pendulum.datetime(2023, 1, 1),
                 pendulum.datetime(2023, 1, 31),
                 Manifest(
@@ -440,7 +442,7 @@ class TestOpenAlexUtils(ObservatoryTestCase):
         transform_object(obj2)
         self.assertDictEqual({"international": {"display_name": None}}, obj2)
 
-        # Test object with nested "abstract_inverted_index" fields, without InvertedIndex key in obj
+        # Test object with nested "abstract_inverted_index" fields
         obj3 = {
             "abstract_inverted_index": {
                 "Malignant": [0],
@@ -455,96 +457,17 @@ class TestOpenAlexUtils(ObservatoryTestCase):
         self.assertDictEqual(
             {
                 "abstract_inverted_index": {
-                    "IndexLength": None,
-                    "InvertedIndex": {
-                        "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
-                        "values": ["0", "1", "2", "3", "4, 6", "5"],
-                    },
+                    "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
+                    "values": ["0", "1", "2", "3", "4, 6", "5"],
                 }
             },
             obj3,
         )
 
-        # Test object when "abstract_inverted_index" is a json object
-        obj4 = {
-            "abstract_inverted_index": {
-                "IndexLength": 7,
-                "InvertedIndex": {
-                    "Malignant": [0],
-                    "hyperthermia": [1],
-                    "susceptibility": [2],
-                    "(MHS)": [3],
-                    "is": [4, 6],
-                    "primarily": [5],
-                },
-            }
-        }
-
-        transform_object(obj4)
-        self.assertDictEqual(
-            {
-                "abstract_inverted_index": {
-                    "IndexLength": 7,
-                    "InvertedIndex": {
-                        "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
-                        "values": ["0", "1", "2", "3", "4, 6", "5"],
-                    },
-                }
-            },
-            obj4,
-        )
-
-        # Test object when "abstract_inverted_index" is a json object and IndexLength is None
-        obj5 = {
-            "abstract_inverted_index": {
-                "IndexLength": None,
-                "InvertedIndex": {
-                    "Malignant": [0],
-                    "hyperthermia": [1],
-                    "susceptibility": [2],
-                    "(MHS)": [3],
-                    "is": [4, 6],
-                    "primarily": [5],
-                },
-            }
-        }
-
-        transform_object(obj5)
-        self.assertDictEqual(
-            {
-                "abstract_inverted_index": {
-                    "IndexLength": None,
-                    "InvertedIndex": {
-                        "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
-                        "values": ["0", "1", "2", "3", "4, 6", "5"],
-                    },
-                }
-            },
-            obj5,
-        )
-
-        # Test object when "abstract_inverted_index" is a json string dump
-        obj6 = {
-            "abstract_inverted_index": '{"IndexLength": 7, "InvertedIndex": { "Malignant": [0], "hyperthermia": [1], "susceptibility": [2],"(MHS)": [3], "is": [4, 6], "primarily": [5]}}'
-        }
-        transform_object(obj6)
-        self.assertDictEqual(
-            {
-                "abstract_inverted_index": {
-                    "IndexLength": 7,
-                    "InvertedIndex": {
-                        "keys": ["Malignant", "hyperthermia", "susceptibility", "(MHS)", "is", "primarily"],
-                        "values": ["0", "1", "2", "3", "4, 6", "5"],
-                    },
-                }
-            },
-            obj6,
-        )
-
         # Test object with nested "abstract_inverted_index" none
-        obj7 = {"abstract_inverted_index": None}
-        transform_object(obj7)
-        self.assertDictEqual({"abstract_inverted_index": None}, obj7)
+        obj4 = {"abstract_inverted_index": None}
+        transform_object(obj4)
+        self.assertDictEqual({"abstract_inverted_index": None}, obj4)
 
 
 def upload_folder_to_s3(bucket_name: str, folder_path: str, s3_prefix=None):
@@ -642,35 +565,53 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
     def test_dag_structure(self):
         """Test that the DAG has the correct structure."""
 
-        dag = OpenAlexTelescope(
+        workflow = OpenAlexTelescope(
             dag_id=self.dag_id,
             cloud_workspace=self.fake_cloud_workspace,
-        ).make_dag()
+        )
+        dag = workflow.make_dag()
+        dag_structure = {}
+        for task_id, task in dag.task_dict.items():
+            dag_structure[task_id] = list(task.downstream_task_ids)
+        structure = {
+            "wait_for_prev_dag_run": ["check_dependencies"],
+            "check_dependencies": ["fetch_releases"],
+            "fetch_releases": ["create_datasets"],
+            "create_datasets": ["aws_to_gcs_transfer"],
+            "aws_to_gcs_transfer": ["branch"],
+            "branch": [
+                "works.bq_snapshot",
+                "sources.bq_snapshot",
+                "authors.bq_snapshot",
+                "funders.bq_snapshot",
+                "institutions.bq_snapshot",
+                "publishers.bq_snapshot",
+                "concepts.bq_snapshot",
+            ],
+        }
+        task_ids = [
+            "bq_snapshot",
+            "download",
+            "transform",
+            "upload",
+            "bq_load_upserts",
+            "bq_upsert_records",
+            "bq_load_deletes",
+            "bq_delete_records",
+            "add_dataset_releases",
+        ]
+        for entity_name in workflow.entity_names:
+            for i, task_id_start in enumerate(task_ids):
+                if i < len(task_ids) - 1:
+                    task_id_end = task_ids[i + 1]
+                    structure[f"{entity_name}.{task_id_start}"] = [f"{entity_name}.{task_id_end}"]
+            structure[f"{entity_name}.add_dataset_releases"] = ["cleanup"]
+
+        structure["cleanup"] = ["dag_run_complete"]
+        structure["dag_run_complete"] = []
+
         self.assert_dag_structure(
-            {
-                "wait_for_prev_dag_run": ["check_dependencies"],
-                "check_dependencies": ["fetch_releases"],
-                "fetch_releases": ["create_datasets"],
-                "create_datasets": ["bq_create_main_table_snapshots"],
-                "bq_create_main_table_snapshots": ["aws_to_gcs_transfer"],
-                "aws_to_gcs_transfer": ["download_concepts"],
-                "download_concepts": ["download_institutions"],
-                "download_institutions": ["download_works"],
-                "download_works": ["download_authors"],
-                "download_authors": ["download_publishers"],
-                "download_publishers": ["download_sources"],
-                "download_sources": ["download_funders"],
-                "download_funders": ["transform"],
-                "transform": ["upload_upsert_files"],
-                "upload_upsert_files": ["bq_load_upsert_tables"],
-                "bq_load_upsert_tables": ["bq_upsert_records"],
-                "bq_upsert_records": ["bq_load_delete_tables"],
-                "bq_load_delete_tables": ["bq_delete_records"],
-                "bq_delete_records": ["add_new_dataset_releases"],
-                "add_new_dataset_releases": ["cleanup"],
-                "cleanup": ["dag_run_complete"],
-                "dag_run_complete": [],
-            },
+            structure,
             dag,
         )
 
@@ -734,11 +675,10 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 data_interval_start = pendulum.datetime(2023, 4, 2)
                 is_first_run = True
                 expected_entities = []
-                for entity_name, transform in workflow.entities:
+                for entity_name in workflow.entity_names:
                     expected_entities.append(
                         OpenAlexEntity(
                             entity_name,
-                            transform,
                             data_interval_start,
                             data_interval_start,
                             manifest_index[entity_name],
@@ -790,9 +730,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     ti = env.run_task(workflow.create_datasets.__name__)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    ti = env.run_task(workflow.bq_create_main_table_snapshots.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
-
+                    # Transfer from AWS to GCP
                     ti = env.run_task(workflow.aws_to_gcs_transfer.__name__)
                     self.assertEqual(State.SUCCESS, ti.state)
                     base_folder = gcs_blob_name_from_path(release.download_folder)
@@ -804,71 +742,68 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             actual_path = os.path.join(base_folder, merged_id.object_key)
                             self.assert_blob_exists(env.download_bucket, actual_path)
 
-                    # Download entities that we need to transform
-                    for i, (entity_name, transform) in enumerate(workflow.entities):
-                        if transform:
-                            ti = env.run_task(f"download_{entity_name}")
-                            self.assertEqual(State.SUCCESS, ti.state)
-                            for entry in expected_entities[i].current_entries:
-                                file_path = os.path.join(release.download_folder, entry.object_key)
-                                self.assertTrue(os.path.isfile(file_path))
-
-                    ti = env.run_task(workflow.transform.__name__)
+                    # Branch operator
+                    ti = env.run_task(f"branch")
                     self.assertEqual(State.SUCCESS, ti.state)
-                    for entity in expected_entities:
-                        if entity.transform:
-                            for entry in entity.current_entries:
-                                file_path = os.path.join(release.transform_folder, entry.object_key)
-                                self.assertTrue(os.path.isfile(file_path))
 
-                    ti = env.run_task(workflow.upload_upsert_files.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
+                    # Task groups
                     for entity in expected_entities:
-                        if entity.transform:
-                            for entry in entity.current_entries:
-                                file_path = os.path.join(release.transform_folder, entry.object_key)
-                                self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
+                        ti = env.run_task(f"{entity.entity_name}.bq_snapshot")
+                        self.assertEqual(State.SKIPPED, ti.state)
 
-                    ti = env.run_task(workflow.bq_load_upsert_tables.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
-                    for entity in expected_entities:
+                        ti = env.run_task(f"{entity.entity_name}.download")
+                        self.assertEqual(State.SUCCESS, ti.state)
+                        for entry in entity.current_entries:
+                            file_path = os.path.join(release.download_folder, entry.object_key)
+                            self.assertTrue(os.path.isfile(file_path))
+
+                        ti = env.run_task(f"{entity.entity_name}.transform")
+                        self.assertEqual(State.SUCCESS, ti.state)
+                        for entry in entity.current_entries:
+                            file_path = os.path.join(release.transform_folder, entry.object_key)
+                            self.assertTrue(os.path.isfile(file_path))
+
+                        ti = env.run_task(f"{entity.entity_name}.upload")
+                        self.assertEqual(State.SUCCESS, ti.state)
+                        for entry in entity.current_entries:
+                            file_path = os.path.join(release.transform_folder, entry.object_key)
+                            self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
+
+                        ti = env.run_task(f"{entity.entity_name}.bq_load_upserts")
+                        self.assertEqual(State.SUCCESS, ti.state)
                         self.assert_table_integrity(entity.bq_upsert_table_id, 4)
 
-                    ti = env.run_task(workflow.bq_upsert_records.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
-                    for entity in expected_entities:
+                        ti = env.run_task(f"{entity.entity_name}.bq_upsert_records")
+                        self.assertEqual(State.SUCCESS, ti.state)
                         self.assert_table_integrity(entity.bq_main_table_id, 4)
 
-                    # These two don't do anything on the first run
-                    ti = env.run_task(workflow.bq_load_delete_tables.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
-                    for entity in expected_entities:
+                        # These two don't do anything on the first run
+                        ti = env.run_task(f"{entity.entity_name}.bq_load_deletes")
+                        self.assertEqual(State.SKIPPED, ti.state)
                         with self.assertRaises(NotFound):
                             self.bigquery_client.get_table(entity.bq_delete_table_id)
 
-                    ti = env.run_task(workflow.bq_delete_records.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
-                    for entity in expected_entities:
+                        ti = env.run_task(f"{entity.entity_name}.bq_delete_records")
+                        self.assertEqual(State.SKIPPED, ti.state)
                         self.assert_table_integrity(entity.bq_main_table_id, 4)
 
-                    # Assert content
-                    for entity_name, _ in workflow.entities:
-                        table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, entity_name)
+                        # Assert content
+                        table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, entity.entity_name)
+                        print(f"Assert content run 1 {entity.entity_name}: {table_id}")
                         expected_data = load_and_parse_json(
-                            test_fixtures_folder(self.dag_id, "2023-04-02", "expected", f"{entity_name}.json"),
+                            test_fixtures_folder(self.dag_id, "2023-04-02", "expected", f"{entity.entity_name}.json"),
                             date_fields={"created_date", "publication_date"},
                             timestamp_fields={"updated_date"},
                         )
                         self.assert_table_content(table_id, expected_data, "id")
 
-                    # Check that there is one dataset release per entity after add_new_dataset_releases
-                    for entity_name, _ in workflow.entities:
-                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
+                        # Check that there is zero dataset release per entity before add_dataset_releases and 1 after
+                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity.entity_name)
                         self.assertEqual(len(dataset_releases), 0)
-                    ti = env.run_task(workflow.add_new_dataset_releases.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
-                    for entity_name, _ in workflow.entities:
-                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
+
+                        ti = env.run_task(f"{entity.entity_name}.add_dataset_releases")
+                        self.assertEqual(State.SUCCESS, ti.state)
+                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity.entity_name)
                         self.assertEqual(len(dataset_releases), 1)
 
                     # Test that all workflow data deleted
@@ -881,28 +816,33 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
                 # Second run: no updates
                 data_interval_start = pendulum.datetime(2023, 4, 9)
-                with env.create_dag_run(dag, data_interval_start):
+                with env.create_dag_run(dag, data_interval_start) as dag_run:
                     # Check that first three tasks are successful
                     task_ids = ["wait_for_prev_dag_run", "check_dependencies", "fetch_releases"]
                     for task_id in task_ids:
+                        print(f"Running task: {task_id}")
                         ti = env.run_task(task_id)
                         self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Check that all subsequent tasks are skipped
-                    task_ids = ["create_datasets", "bq_create_main_table_snapshots", "aws_to_gcs_transfer"]
-                    task_ids += [f"download_{entity_name}" for entity_name, transform in workflow.entities if transform]
-                    task_ids += [
-                        "transform",
-                        "upload_upsert_files",
-                        "bq_load_upsert_tables",
-                        "bq_upsert_records",
-                        "bq_load_delete_tables",
-                        "bq_delete_records",
-                        "add_new_dataset_releases",
-                        "cleanup",
-                    ]
+                    task_ids = ["create_datasets", "aws_to_gcs_transfer", "branch"]
+                    for entity_name in workflow.entity_names:
+                        for task_id in [
+                            "bq_snapshot",
+                            "download",
+                            "transform",
+                            "upload",
+                            "bq_load_upserts",
+                            "bq_upsert_records",
+                            "bq_load_deletes",
+                            "bq_delete_records",
+                            "add_dataset_releases",
+                        ]:
+                            task_ids.append(f"{entity_name}.{task_id}")
+                    task_ids.append("cleanup")
+                    task_ids.append("dag_run_complete")
                     for task_id in task_ids:
-                        ti = env.run_task(task_id)
+                        print(f"Checking that skipped: {task_id}")
+                        ti = env.get_task_instance(task_id)
                         self.assertEqual(State.SKIPPED, ti.state)
 
                     # Check that tables all still have the same number of rows
@@ -910,7 +850,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         self.assert_table_integrity(entity.bq_main_table_id, 4)
 
                     # Check that only 1 dataset release exists for each entity
-                    for entity_name, _ in workflow.entities:
+                    for entity_name in workflow.entity_names:
                         dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
                         self.assertEqual(len(dataset_releases), 1)
 
@@ -944,11 +884,10 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 data_interval_start = pendulum.datetime(2023, 4, 16)
                 is_first_run = False
                 expected_entities = []
-                for entity_name, transform in workflow.entities:
+                for entity_name in workflow.entity_names:
                     expected_entities.append(
                         OpenAlexEntity(
                             entity_name,
-                            transform,
                             data_interval_start,
                             data_interval_start,
                             manifest_index[entity_name],
@@ -1000,17 +939,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     ti = env.run_task(workflow.create_datasets.__name__)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    ti = env.run_task(workflow.bq_create_main_table_snapshots.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
-                    for entity in expected_entities:
-                        self.assertEqual(
-                            bq_sharded_table_id(
-                                self.project_id, workflow.bq_dataset_id, f"{entity.entity_name}_snapshot", prev_end_date
-                            ),
-                            entity.bq_snapshot_table_id,
-                        )
-                        self.assert_table_integrity(entity.bq_snapshot_table_id, 4)
-
+                    # Transfer from AWS to GCP
                     ti = env.run_task(workflow.aws_to_gcs_transfer.__name__)
                     self.assertEqual(State.SUCCESS, ti.state)
                     base_folder = gcs_blob_name_from_path(release.download_folder)
@@ -1022,92 +951,105 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             actual_path = os.path.join(base_folder, merged_id.object_key)
                             self.assert_blob_exists(env.download_bucket, actual_path)
 
-                    for i, (entity_name, transform) in enumerate(workflow.entities):
-                        if transform:
-                            ti = env.run_task(f"download_{entity_name}")
-                            self.assertEqual(State.SUCCESS, ti.state)
-                            for entry in expected_entities[i].current_entries:
-                                file_path = os.path.join(release.download_folder, entry.object_key)
-                                self.assertTrue(os.path.isfile(file_path))
-
-                    ti = env.run_task(workflow.transform.__name__)
+                    # Branch operator
+                    ti = env.run_task(f"branch")
                     self.assertEqual(State.SUCCESS, ti.state)
-                    for entity in expected_entities:
-                        if entity.transform:
-                            for entry in entity.current_entries:
-                                file_path = os.path.join(release.transform_folder, entry.object_key)
-                                self.assertTrue(os.path.isfile(file_path))
 
-                    ti = env.run_task(workflow.upload_upsert_files.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
+                    # Task groups
                     for entity in expected_entities:
-                        if entity.transform:
-                            for entry in entity.current_entries:
-                                file_path = os.path.join(release.transform_folder, entry.object_key)
-                                self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
+                        print(f"Executing tasks for task group: {entity.entity_name}")
+                        ti = env.run_task(f"{entity.entity_name}.bq_snapshot")
+                        self.assertEqual(State.SUCCESS, ti.state)
+                        self.assertEqual(
+                            bq_sharded_table_id(
+                                self.project_id,
+                                workflow.bq_dataset_id,
+                                f"{entity.entity_name}_snapshot",
+                                prev_end_date,
+                            ),
+                            entity.bq_snapshot_table_id,
+                        )
+                        self.assert_table_integrity(entity.bq_snapshot_table_id, 4)
 
-                    ti = env.run_task(workflow.bq_load_upsert_tables.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
-                    expected_row_index = {
-                        "authors": 3,
-                        "concepts": 2,
-                        "institutions": 3,
-                        "publishers": 2,
-                        "sources": 3,
-                        "works": 3,
-                        "funders": 2,
-                    }
-                    for entity in expected_entities:
+                        ti = env.run_task(f"{entity.entity_name}.download")
+                        self.assertEqual(State.SUCCESS, ti.state)
+                        for entry in entity.current_entries:
+                            file_path = os.path.join(release.download_folder, entry.object_key)
+                            self.assertTrue(os.path.isfile(file_path))
+
+                        ti = env.run_task(f"{entity.entity_name}.transform")
+                        self.assertEqual(State.SUCCESS, ti.state)
+                        for entry in entity.current_entries:
+                            file_path = os.path.join(release.transform_folder, entry.object_key)
+                            self.assertTrue(os.path.isfile(file_path))
+
+                        ti = env.run_task(f"{entity.entity_name}.upload")
+                        self.assertEqual(State.SUCCESS, ti.state)
+                        for entry in entity.current_entries:
+                            file_path = os.path.join(release.transform_folder, entry.object_key)
+                            self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
+
+                        ti = env.run_task(f"{entity.entity_name}.bq_load_upserts")
+                        self.assertEqual(State.SUCCESS, ti.state)
+                        expected_row_index = {
+                            "authors": 3,
+                            "concepts": 2,
+                            "institutions": 3,
+                            "publishers": 2,
+                            "sources": 3,
+                            "works": 3,
+                            "funders": 2,
+                        }
                         expected_rows = expected_row_index[entity.entity_name]
                         self.assert_table_integrity(entity.bq_upsert_table_id, expected_rows)
 
-                    ti = env.run_task(workflow.bq_upsert_records.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
-                    for entity in expected_entities:
+                        ti = env.run_task(f"{entity.entity_name}.bq_upsert_records")
+                        self.assertEqual(State.SUCCESS, ti.state)
                         self.assert_table_integrity(entity.bq_main_table_id, 5)
 
-                    ti = env.run_task(workflow.bq_load_delete_tables.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
-                    for entity in expected_entities:
+                        ti = env.run_task(f"{entity.entity_name}.bq_load_deletes")
                         if entity.has_merged_ids:
+                            self.assertEqual(State.SUCCESS, ti.state)
                             self.assert_table_integrity(entity.bq_delete_table_id, 1)
                         else:
+                            self.assertEqual(State.SKIPPED, ti.state)
                             with self.assertRaises(NotFound):
                                 self.bigquery_client.get_table(entity.bq_delete_table_id)
 
-                    ti = env.run_task(workflow.bq_delete_records.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
-                    expected_row_index = {
-                        "authors": 4,
-                        "concepts": 5,
-                        "institutions": 4,
-                        "publishers": 5,
-                        "sources": 4,
-                        "works": 4,
-                        "funders": 5,
-                    }
-                    for entity in expected_entities:
+                        ti = env.run_task(f"{entity.entity_name}.bq_delete_records")
+                        if entity.has_merged_ids:
+                            self.assertEqual(State.SUCCESS, ti.state)
+                        else:
+                            self.assertEqual(State.SKIPPED, ti.state)
+                        expected_row_index = {
+                            "authors": 4,
+                            "concepts": 5,
+                            "institutions": 4,
+                            "publishers": 5,
+                            "sources": 4,
+                            "works": 4,
+                            "funders": 5,
+                        }
                         expected_rows = expected_row_index[entity.entity_name]
                         self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
 
-                    # Assert content
-                    for entity_name, _ in workflow.entities:
-                        table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, entity_name)
+                        # Assert content
+                        table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, entity.entity_name)
+                        print(f"Assert content run 2 {entity.entity_name}: {table_id}")
                         expected_data = load_and_parse_json(
-                            test_fixtures_folder(self.dag_id, "2023-04-16", "expected", f"{entity_name}.json"),
+                            test_fixtures_folder(self.dag_id, "2023-04-16", "expected", f"{entity.entity_name}.json"),
                             date_fields={"created_date", "publication_date"},
                             timestamp_fields={"updated_date"},
                         )
                         self.assert_table_content(table_id, expected_data, "id")
 
-                    # Check that there is one dataset release per entity after add_new_dataset_releases
-                    for entity_name, _ in workflow.entities:
-                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
+                        # Check that there is zero dataset release per entity before add_dataset_releases and 1 after
+                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity.entity_name)
                         self.assertEqual(len(dataset_releases), 1)
-                    ti = env.run_task(workflow.add_new_dataset_releases.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
-                    for entity_name, _ in workflow.entities:
-                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
+
+                        ti = env.run_task(f"{entity.entity_name}.add_dataset_releases")
+                        self.assertEqual(State.SUCCESS, ti.state)
+                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity.entity_name)
                         self.assertEqual(len(dataset_releases), 2)
 
                     # Test that all workflow data deleted
