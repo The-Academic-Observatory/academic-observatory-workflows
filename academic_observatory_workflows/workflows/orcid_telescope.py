@@ -230,14 +230,13 @@ class OrcidTelescope(Workflow):
         schema_file_path: str = os.path.join(default_schema_folder(), "orcid", "orcid.json"),
         delete_schema_file_path: str = os.path.join(default_schema_folder(), "orcid", "orcid_delete.json"),
         transfer_attempts: int = 5,
-        batch_size: int = 25000,
         max_workers: int = os.cpu_count() * 2,
         api_dataset_id: str = "orcid",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         aws_orcid_conn_id: str = "aws_orcid",
         start_date: pendulum.DateTime = pendulum.datetime(2023, 6, 1),
         schedule: str = "0 0 * * 0",  # Midnight UTC every Sunday
-        queue: str = "remote",
+        queue: str = "remote_queue",
     ):
         """Construct an ORCID telescope instance"""
 
@@ -262,7 +261,6 @@ class OrcidTelescope(Workflow):
         self.schema_file_path = schema_file_path
         self.delete_schema_file_path = delete_schema_file_path
         self.transfer_attempts = transfer_attempts
-        self.batch_size = batch_size
         self.dataset_description = dataset_description
         self.table_description = table_description
         self.snapshot_expiry_days = snapshot_expiry_days
