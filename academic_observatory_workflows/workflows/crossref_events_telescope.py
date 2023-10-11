@@ -33,7 +33,7 @@ from airflow.models.taskinstance import TaskInstance
 from airflow.operators.dummy import DummyOperator
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
-from importlib_metadata import metadata
+from importlib.metadata import metadata
 from limits import RateLimitItemPerSecond
 from limits.storage import storage_from_string
 from limits.strategies import FixedWindowElasticExpiryRateLimiter
