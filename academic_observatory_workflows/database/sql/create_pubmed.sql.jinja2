@@ -16,20 +16,13 @@
 
 --- This is to make an intermediate table of all records that have the highest version number from Pubmed which will be joined onto the DOI table. 
 
-WITH doi_count AS (
-  SELECT
-    UPPER(TRIM(pm.value)) AS doi,
-    COUNT(*) AS cnt
+WITH unique_dois AS (
+  SELECT UPPER(TRIM(pm.value)) AS doi,
   FROM `{{ pubmed.project_id }}.{{ pubmed.dataset_id }}.{{ pubmed.table_id }}`
   LEFT JOIN UNNEST(PubmedData.ArticleIdList) AS pm
   WHERE pm.IdType = 'doi' AND TRIM(pm.value) IS NOT NULL
-  GROUP BY UPPER(TRIM(pm.value))
-),
-unique_dois AS (
-  SELECT
-    doi
-  FROM doi_count
-  WHERE cnt = 1
+  GROUP BY doi
+  HAVING COUNT(1) = 1
 ),
 recent AS (
   SELECT
@@ -47,9 +40,7 @@ recent AS (
   )
   GROUP BY pmid
 )
-SELECT
-  UPPER(TRIM(recent.doi)) as doi,
-  pubmed.*
+SELECT recent.doi, pubmed.*
 FROM recent AS recent
 INNER JOIN unique_dois ON recent.doi = unique_dois.doi
 INNER JOIN `{{ pubmed.project_id }}.{{ pubmed.dataset_id }}.{{ pubmed.table_id }}` AS pubmed
