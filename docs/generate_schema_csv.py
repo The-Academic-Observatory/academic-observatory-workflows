@@ -107,7 +107,6 @@ def generate_latest_files():
     # Build a database of schema files
     table_schemas = {}
     for file in table_files:
-        print(file)
         filename = os.path.basename(file)
         date_str = r.search(filename)
         date_str_start = date_str.span()[0]
