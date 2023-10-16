@@ -28,7 +28,7 @@ WITH doi_count AS (
 unique_dois AS (
   SELECT
     doi
-  FROM DOI_Counts
+  FROM doi_count
   WHERE cnt = 1
 ),
 recent AS (
