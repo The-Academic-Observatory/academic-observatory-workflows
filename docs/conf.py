@@ -44,6 +44,7 @@ extensions = [
 # Auto API settings: https://github.com/readthedocs/sphinx-autoapi
 autoapi_type = "python"
 autoapi_dirs = ["../academic_observatory_workflows"]
+autoapi_ignore = ["../academic_observatory_workflows/fixtures/*"]
 autoapi_add_toctree_entry = True
 autoapi_python_use_implicit_namespaces = True
 
@@ -53,7 +54,7 @@ templates_path = ["templates"]
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "*ror_subset.py"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 # -- Options for HTML output -------------------------------------------------
 
