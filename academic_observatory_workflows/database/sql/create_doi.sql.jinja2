@@ -45,7 +45,7 @@ SELECT
     (SELECT as STRUCT * from `{{ openalex.project_id }}.{{ openalex.dataset_id }}.{{ openalex.table_id }}` as openalex WHERE openalex.doi = ref.doi) as openalex,
     (SELECT as STRUCT * from `{{ open_citations.project_id }}.{{ open_citations.dataset_id }}.{{ open_citations.table_id }}` as oa WHERE oa.doi = ref.doi) as open_citations,
     (SELECT as STRUCT * from `{{ crossref_events.project_id }}.{{ crossref_events.dataset_id }}.{{ crossref_events.table_id }}` as events WHERE events.doi = ref.doi) as events,
-{#    (SELECT as STRUCT * from `{{ pubmed.project_id }}.{{ pubmed.dataset_id }}.{{ pubmed.table_id }}` as pubmed WHERE pubmed.doi = ref.doi) as pubmed,#}
+    (SELECT as STRUCT * from `{{ pubmed.project_id }}.{{ pubmed.dataset_id }}.{{ pubmed.table_id }}` as pubmed WHERE pubmed.doi = ref.doi) as pubmed,
     (SELECT as STRUCT * from coki_affiliations_temp as coki_affiliations WHERE coki_affiliations.doi = ref.doi) as coki_affiliations,
   FROM `{{ crossref_metadata.project_id }}.{{ crossref_metadata.dataset_id }}.{{ crossref_metadata.table_id }}` as ref)
 ),
