@@ -8,8 +8,8 @@ jobs:
     strategy:
       max-parallel: 4
       matrix:
-        python-version: [ 3.8 ]
-        os: [ ubuntu-20.04 ]
+        python-version: [ "3.10" ]
+        os: [ ubuntu-latest ]
 
     steps:
       - name: Checkout ${{ matrix.python-version }}
