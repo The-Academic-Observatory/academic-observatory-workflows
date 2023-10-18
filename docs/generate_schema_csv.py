@@ -101,7 +101,7 @@ def generate_latest_files():
     telescopes are ported to the new template framework anyway.
     """
 
-    table_files = glob(os.path.join("schemas", "*.csv"))
+    table_files = glob(os.path.join("schemas", "*", "*.csv"))
     r = re.compile(r"\d{4}-\d{2}-\d{2}")
 
     # Build a database of schema files
@@ -109,8 +109,11 @@ def generate_latest_files():
     for file in table_files:
         filename = os.path.basename(file)
         date_str = r.search(filename)
-        date_str_start = date_str.span()[0]
-        table_name = filename[: date_str_start - 1]  # -1 accounts for _
+        if date_str:
+            date_str_start = date_str.span()[0]
+            table_name = filename[: date_str_start - 1]  # -1 accounts for _
+        else:  # Note a dated table
+            table_name = os.path.splitext(filename)[0]
         table_schemas[table_name] = table_schemas.get(table_name, list())
         table_schemas[table_name].append(file)
 
