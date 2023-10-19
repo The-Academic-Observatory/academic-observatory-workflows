@@ -6,7 +6,7 @@ United Nations Statistics Division M49 subregion name, Wikidata QID and Wikipedi
 ## Latest schema
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/country_latest.csv
+   :file: ../schemas/doi/country_latest.csv
    :width: 100%
    :header-rows: 1
 ```
