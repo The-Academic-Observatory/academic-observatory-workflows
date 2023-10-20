@@ -140,7 +140,7 @@ openalex: aws://<access_key_id>:<secret_access_key>@
 ### Author
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/openalex/Author_latest.csv
+   :file: ../schemas/openalex/authors_latest.csv
    :width: 100%
    :header-rows: 1
 ```
@@ -148,7 +148,7 @@ openalex: aws://<access_key_id>:<secret_access_key>@
 ### Concept
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/openalex/Concept_latest.csv
+   :file: ../schemas/openalex/concepts_latest.csv
    :width: 100%
    :header-rows: 1
 ```
@@ -156,15 +156,39 @@ openalex: aws://<access_key_id>:<secret_access_key>@
 ### Institution
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/openalex/Institution_latest.csv
+   :file: ../schemas/openalex/institutions_latest.csv
    :width: 100%
    :header-rows: 1
 ```
 
-### Venue
+### Funders
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/openalex/Venue_latest.csv
+   :file: ../schemas/openalex/funders_latest.csv
+   :width: 100%
+   :header-rows: 1
+```
+
+### Institutions
+``` eval_rst
+.. csv-table::
+   :file: ../schemas/openalex/institutions_latest.csv
+   :width: 100%
+   :header-rows: 1
+```
+
+### Publishers
+``` eval_rst
+.. csv-table::
+   :file: ../schemas/openalex/publishers_latest.csv
+   :width: 100%
+   :header-rows: 1
+```
+
+### Sources
+``` eval_rst
+.. csv-table::
+   :file: ../schemas/openalex/sources_latest.csv
    :width: 100%
    :header-rows: 1
 ```
@@ -172,7 +196,7 @@ openalex: aws://<access_key_id>:<secret_access_key>@
 ### Work
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/openalex/Work_latest.csv
+   :file: ../schemas/openalex/works_latest.csv
    :width: 100%
    :header-rows: 1
 ```

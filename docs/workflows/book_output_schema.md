@@ -4,7 +4,7 @@ This is the schema for the Book table output. It is captured on this separate pa
 
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/book_latest.csv
+   :file: ../schemas/doi/book_latest.csv
    :width: 100%
    :header-rows: 1
 ```
