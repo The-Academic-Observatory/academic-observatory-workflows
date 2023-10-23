@@ -1,0 +1,8 @@
+[
+    {
+        "mode": "REQUIRED",
+        "name": "id",
+        "type": "STRING",
+        "description": "The ORCID ID to delete."
+    }
+]

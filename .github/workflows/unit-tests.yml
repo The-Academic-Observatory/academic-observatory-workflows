@@ -8,8 +8,8 @@ jobs:
     strategy:
       max-parallel: 4
       matrix:
-        python-version: [ 3.8 ]
-        os: [ ubuntu-20.04 ]
+        python-version: [ "3.10" ]
+        os: [ ubuntu-latest ]
 
     steps:
       - name: Checkout ${{ matrix.python-version }}
@@ -37,6 +37,10 @@ jobs:
 
           cd academic-observatory-workflows
           pip install -e .[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.6.3/constraints-no-providers-${{ matrix.python-version }}.txt
+
+          cd ..
+          curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_linux_amd64.deb
+          sudo dpkg -i s5cmd_2.1.0_linux_amd64.deb
 
       - name: Check licenses
         run: |

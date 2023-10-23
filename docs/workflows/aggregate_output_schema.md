@@ -15,7 +15,7 @@ This schema applies to the following tables:
 
 ``` eval_rst
 .. csv-table::
-   :file: ../schemas/aggregate_latest.csv
+   :file: ../schemas/doi/aggregate_latest.csv
    :width: 100%
    :header-rows: 1
 ```
