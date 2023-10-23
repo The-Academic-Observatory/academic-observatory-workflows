@@ -331,10 +331,11 @@ def list_ror_records(
     logging.info(f"Getting info on available records from Zenodo")
 
     records: List[dict] = []
-    fetch = True
     q = urllib.parse.quote_plus(f"conceptrecid:{conceptrecid}")
-    url = f"https://zenodo.org/api/records/?q={q}&all_versions=1&sort=mostrecent&size={page_size}&page=1"
+    page = 1
+    fetch = True
     while fetch:
+        url = f"https://zenodo.org/api/records/?q={q}&all_versions=1&sort=mostrecent&size={page_size}&page={page}"
         response = retry_get_url(url, timeout=timeout, headers={"Accept-encoding": "gzip"})
         response = json.loads(response.text)
 
@@ -353,7 +354,8 @@ def list_ror_records(
                 # Get file metadata also checking that the file type is zip
                 link = file["links"]["self"]
                 checksum = file["checksum"]
-                file_type = file["type"]
+                filename = file["key"]
+                file_type = os.path.splitext(filename)[1][1:]
                 if file_type != "zip":
                     raise AirflowException(f"list_zenodo_records: file is not .zip: hit={hit}")
 
@@ -367,9 +369,11 @@ def list_ror_records(
                 break
 
         # Get the URL for the next page
-        url = response.get("links", {}).get("next", None)
-        if url is None:
+        if len(hits) == 0:
             fetch = False
+
+        # Go to next page
+        page += 1
 
     return records
 
