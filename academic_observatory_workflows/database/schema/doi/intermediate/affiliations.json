@@ -1,0 +1,735 @@
+[
+  {
+    "name": "doi",
+    "mode": "NULLABLE",
+    "type": "STRING"
+  },
+  {
+    "name": "institutions",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "description": "Institutional details sourced from https://ror.org/ and mapped to Countries and Regions by COKI.",
+    "fields": [
+      {
+        "name": "identifier",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Unique ROR ID for the organization."
+      },
+      {
+        "name": "types",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Organization type. Allowed types: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, Other."
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The primary name of the organization."
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Country where organization is located (The country's name as displayed on it's Wikipedia page)."
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's ISO 3166 three letter alpha3 code."
+      },
+      {
+        "name": "country_code_2",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's ISO 3166 two letter alpha2 code."
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's United Nations Statistics Division M49 region name."
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's United Nations Statistics Division M49 subregion name."
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization's location by latitude and longitude."
+      },
+      {
+        "name": "members",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Membership group manually derived by COKI."
+      }
+    ]
+  },
+  {
+    "name": "countries",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "description": "Geographical information mapped from the institutional details sourced from https://ror.org/.",
+    "fields": [
+      {
+        "name": "identifier",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's ISO 3166 three letter alpha3 code."
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Country where organization is located (The country's name as displayed on it's Wikipedia page)."
+      },
+      {
+        "name": "types",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to 'Country'."
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Country where organization is located (The country's name as displayed on it's Wikipedia page)."
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's ISO 3166 three letter alpha3 code."
+      },
+      {
+        "name": "country_code_2",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's ISO 3166 two letter alpha2 code."
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's United Nations Statistics Division M49 region name."
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's United Nations Statistics Division M49 subregion name."
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "count",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Number of unique organisations per country."
+      },
+      {
+        "name": "members",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Unique ROR ID for the organization/s in the country."
+      }
+    ]
+  },
+  {
+    "name": "subregions",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "description": "Geographical information mapped from the institutional details sourced from https://ror.org/.",
+    "fields": [
+      {
+        "name": "identifier",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's United Nations Statistics Division M49 subregion name."
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's United Nations Statistics Division M49 subregion name."
+      },
+      {
+        "name": "types",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country_code_2",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's United Nations Statistics Division M49 region name."
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "count",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Number of unique organisations per subregion."
+      },
+      {
+        "name": "members",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "The unique ISO 3166 three letter alpha3 code for the country/s in the subregion."
+      }
+    ]
+  },
+  {
+    "name": "regions",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "description": "Geographical information mapped from the institutional details sourced from https://ror.org/.",
+    "fields": [
+      {
+        "name": "identifier",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's United Nations Statistics Division M49 region name."
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's United Nations Statistics Division M49 region name."
+      },
+      {
+        "name": "types",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to 'Region'."
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country_code_2",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's United Nations Statistics Division M49 region name."
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to 'Subregion'."
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "count",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Number of unique organisations per region."
+      },
+      {
+        "name": "members",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "The unique United Nations Statistics Division M49 subregion name for the subregions in the region."
+      }
+    ]
+  },
+  {
+    "name": "groupings",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "description": "Groups manually derived by COKI.",
+    "fields": [
+      {
+        "name": "identifier",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Membership group manually derived by COKI."
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Membership group manually derived by COKI."
+      },
+      {
+        "name": "types",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to 'Grouping'."
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's ISO 3166 two letter alpha2 code."
+      },
+      {
+        "name": "country_code_2",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The organization country's ISO 3166 two letter alpha2 code."
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "members",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Unique ROR ID for the organization/s in the membership group."
+      }
+    ]
+  },
+  {
+    "name": "funders",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "description": "Funder data is sourced from crossref fundref https://www.crossref.org/services/funder-registry/.",
+    "fields": [
+      {
+        "name": "identifier",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Funding body identifier"
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Funding body primary name"
+      },
+      {
+        "name": "doi",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "DOI for the funder"
+      },
+      {
+        "name": "types",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to 'Funder'"
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Country name from crossref fundref."
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Country code from crossref fundref."
+      },
+      {
+        "name": "country_code_2",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Region from crossref fundref."
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "funding_body_type",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Type of funding body from crossref fundref."
+      },
+      {
+        "name": "funding_body_subtype",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Government (gov) or private (pri) from crossref fundref."
+      },
+      {
+        "name": "members",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to null."
+      }
+    ]
+  },
+  {
+    "name": "disciplines",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "description": "Values are sourced from Open Alex level 0 concepts https://docs.openalex.org/api-entities/concepts.",
+    "fields": [
+      {
+        "name": "identifier",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The English-language label of the concept (level 0)."
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The English-language label of the concept (level 0)."
+      },
+      {
+        "name": "types",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to 'Discipline'"
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country_code_2",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "members",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to null."
+      }
+    ]
+  },
+  {
+    "name": "authors",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "description": "Values are sourced from ORCID, https://orcid.org/",
+    "fields": [
+      {
+        "name": "identifier",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The ORCID ID for an author (in URL-form)."
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The name of the author."
+      },
+      {
+        "name": "given_names",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The given name of the author."
+      },
+      {
+        "name": "family_name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The family name of the author."
+      },
+      {
+        "name": "types",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to 'Author'."
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country_code_2",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "members",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to null."
+      }
+    ]
+  },
+  {
+    "name": "journals",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "description": "Values sourced from Unpaywall, https://unpaywall.org/.",
+    "fields": [
+      {
+        "name": "identifier",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "A single ISSN for the journal publishing this resource. An ISSN-L can be used as a primary key for a journal when more than one ISSN is assigned to it. Resources' journal_issns are mapped to ISSN-Ls using the issn.org table, with some manual corrections."
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Journal name normalised by COKI. The most common occurance of the journal name for each ISSN-L."
+      },
+      {
+        "name": "types",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to 'Journal'"
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country_code_2",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "members",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to null."
+      }
+    ]
+  },
+  {
+    "name": "publishers",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "description": "Values sourced from crossref, https://www.crossref.org/.",
+    "fields": [
+      {
+        "name": "identifier",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Name of work's publisher."
+      },
+      {
+        "name": "name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Name of work's publisher."
+      },
+      {
+        "name": "types",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to 'Publisher'."
+      },
+      {
+        "name": "country",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country_code",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "country_code_2",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "region",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "subregion",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "coordinates",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Set to null."
+      },
+      {
+        "name": "members",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Set to null."
+      }
+    ]
+  }
+]

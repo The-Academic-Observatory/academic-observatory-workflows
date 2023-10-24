@@ -1,0 +1,79 @@
+[
+  {
+    "name": "doi",
+    "mode": "NULLABLE",
+    "type": "STRING"
+  },
+  {
+    "name": "events",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "description": "Data sourced from Crossref Events https://www.crossref.org/services/event-data/.",
+    "fields": [
+      {
+        "name": "source",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "A name for the source (see available sources https://www.eventdata.crossref.org/guide/data/about-the-data/#Sources%20and%20Agents)."
+      },
+      {
+        "name": "count",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Count of the number of Events for the corresponding source."
+      }
+    ]
+  },
+  {
+    "name": "months",
+    "mode": "REPEATED",
+    "type": "RECORD",
+
+    "fields": [
+      {
+        "name": "month",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Year and month the Event is reported to have occurred."
+      },
+      {
+        "name": "source",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "A name for the source (see available sources https://www.eventdata.crossref.org/guide/data/about-the-data/#Sources%20and%20Agents)."
+      },
+      {
+        "name": "count",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Count of the number of Events for the corresponding source."
+      }
+    ]
+  },
+  {
+    "name": "years",
+    "mode": "REPEATED",
+    "type": "RECORD",
+
+    "fields": [
+      {
+        "name": "year",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Year the Event is reported to have occurred."
+      },
+      {
+        "name": "source",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "A name for the source (see available sources https://www.eventdata.crossref.org/guide/data/about-the-data/#Sources%20and%20Agents)."
+      },
+      {
+        "name": "count",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Count of the number of Events for the corresponding source."
+      }
+    ]
+  }
+]

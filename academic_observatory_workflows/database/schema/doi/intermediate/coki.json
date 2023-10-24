@@ -1,0 +1,303 @@
+[
+  {
+    "name": "oa",
+    "mode": "NULLABLE",
+    "type": "RECORD",
+    "description": "Open Access details.",
+    "fields": [
+      {
+        "name": "color",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "description": "OA colour categories determined by COKI from Unpaywall data.",
+        "fields": [
+          {
+            "name": "oa",
+            "type": "BOOLEAN",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "gold",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Gold OA is defined as either the journal being in DOAJ or the best_oa_location being a publisher and a license being detected. This works because Unpaywall will set the publisher as the best oa location if it identifies an accessible publisher copy."
+          },
+          {
+            "name": "gold_just_doaj",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Gold Open Access in DOAJ Journal is determined directly from the Unpaywall statement that the journal is in DOAJ. No further checking is done on this, so articles that Unpaywall does not capture as being accessible that are in DOAJ journals will be characterised as gold_just_doaj."
+          },
+          {
+            "name": "hybrid",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Hybrid Open Access is defined as being available at a publisher with a discovered license, where the journal of publication is not in DOAJ. This means that some publisher hybrid is not detected because Unpaywall does not detect a license. The use of DOAJ as defining a 'fully oa journal' is also narrow and future developments will expand this considering, among other parameters, the Unpaywall tag 'journal-is-oa'."
+          },
+          {
+            "name": "bronze",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Bronze Open Access is defined as being available at the publisher website but without a license being detected by Unpaywall. This is intended to capture cases where content is unilaterally made readable by the publisher (eg via a moving paywall) as in these cases a more open license is not generally applied. However, this is a heuristic and there are significant issues distinguishing between different modes by which publishers make content readable."
+          },
+          {
+            "name": "green",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Green Open Access is defined as any case where Unpaywall identifies a copy of an output in a repository. This includes preprint repositories (eg arxiv) both submitted, accepted and VoR versions of outputs. In a small number of cases preprint repositories register content as being journal articles (SSRN is the most common case). Green as defined here also explicitly includes those outputs that are also available via the publisher. For the set of content which is only freely available via a repository see \"green_only\"."
+          },
+          {
+            "name": "green_only",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Green Open Access where the outputs is not available Gold (DOAJ or Hybrid) or Bronze: green_only is the subset of outputs available from repositories that are not also available free to read from the publisher. This category enables analyses of gold, bronze and green as mutually exclusive categories, e.g. in the generation of stacked bar charts that include gold_doaj, green, hybrid and bronze. This corresponds to general usage of the term 'green' in some other literature."
+          },
+          {
+            "name": "green_only_ignoring_bronze",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Green Open Access where the output is not available Gold (DOAJ or Hybrid) but may be Bronze: green_only_ignoring_bronze provides the set of articles that are green and not gold. That is it includes articles that are green and bronze, but not gold. This category enables analyses of gold and green as mutually exclusive categories, e.g. in the generation of stacked bar charts that include gold_doaj, green and hybrid."
+          },
+          {
+            "name": "black",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN"
+          }
+        ]
+      },
+      {
+        "name": "license",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "description": "OA licence information determined by COKI from Unpaywall data.",
+        "fields": [
+          {
+            "name": "has_license",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Convenience category for analysing articles that have a license for the best OA location."
+          },
+          {
+            "name": "is_cclicensed",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Convenience category for analysing articles that have a Creative Commons license for the best OA location."
+          }
+        ]
+      },
+      {
+        "name": "coki",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "description": "Custom fields created by COKI to determine COKI OA categories.",
+        "fields": [
+          {
+            "name": "open",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Work is designated as open access by Unpaywall."
+          },
+          {
+            "name": "closed",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Work is not designated as open access by Unpaywall."
+          },
+          {
+            "name": "publisher",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Work is designated as Publisher Open. An article published in an Open Access Journal or made accessible in a Subscription Journal. Where the Unpaywall journal_is_in_doaj field is True or where the Unpaywall best_oa_location location_type field is \"publisher\""
+          },
+          {
+            "name": "other_platform",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Work is designated as Other Platform Open. The publication was shared online; on a preprint server, a university library repository, domain repository or an academic staff page. Any article where any oa_location element in the Unpaywall data has the location_type \"repository\""
+          },
+          {
+            "name": "publisher_only",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Work is designated as only Publisher Open (and not Other Platform Open or Closed)."
+          },
+          {
+            "name": "both",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Work is designated as both Publisher Open and Other Platform Open."
+          },
+          {
+            "name": "other_platform_only",
+            "mode": "NULLABLE",
+            "type": "BOOLEAN",
+            "description": "Work is designated only as Other Platform Open (and not Publisher Open or Closed)."
+          },
+          {
+            "name": "publisher_categories",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "oa_journal",
+                "mode": "NULLABLE",
+                "type": "BOOLEAN",
+                "description": "OA Journal. Work is published in an Open Access Journal. We use the journal_is_in_doaj tag from Unpaywall to define this category which requires that there be some licensing information provided."
+              },
+              {
+                "name": "hybrid",
+                "mode": "NULLABLE",
+                "type": "BOOLEAN",
+                "description": "Hybrid. Work is published in a Subscription Journal with an open license. We check that the license field for the best_oa_location is not null and journal_is_in_doaj is False. This includes the value of \"implied_oa\" which covers cases where publishers have a general assertion of a license but it is not clear from the page."
+              },
+              {
+                "name": "no_guarantees",
+                "mode": "NULLABLE",
+                "type": "BOOLEAN",
+                "description": "No Guarantees. Work is published in a Subscription Publisher with no reuse rights. All cases where the best_oa_location is \"publisher\", the license field is null, and journal_is_in_doaj is False."
+              }
+            ]
+          },
+          {
+            "name": "other_platform_categories",
+            "mode": "NULLABLE",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "preprint",
+                "mode": "NULLABLE",
+                "type": "BOOLEAN",
+                "description": "Preprint. Work is deposited on servers that do not make claims about formal peer review. Generally non-peer reviewed manuscripts, including working papers on platforms such as arXiv, bioRxiv, SSRN, RePec etc. Where we have manually classified a repository as a preprint server."
+              },
+              {
+                "name": "domain",
+                "mode": "NULLABLE",
+                "type": "BOOLEAN",
+                "description": "Domain. Work is placed in a domain repository, also known as disciplinary or subject repositories. A domain repository contains publications from a specific subject area. Examples include PubMed Central, Europe PMC and Econstor. Where we have manually classified a repository as a domain repository."
+              },
+              {
+                "name": "institution",
+                "mode": "NULLABLE",
+                "type": "BOOLEAN",
+                "description": "Institution. Work is placed in an institutional repository, which are archives for storing and distributing an institution's research outputs. Includes repositories shared amongst multiple institutions. Where we have manually matched a repository to an institution, or where oa_locations.repository_institution matches a ROR id with the ROR affiliation matcher, or where the domain from the pmh_id field matches a link from a ROR record."
+              },
+              {
+                "name": "public",
+                "mode": "NULLABLE",
+                "type": "BOOLEAN",
+                "description": "Public. Work is from a repository that can be used by researchers from any domain and to deposit any form of output, including pre-prints, published manuscripts and datasets. Semantic Scholar, Figshare and Zenodo are a few examples. Where we have manually classified a repository as a public repository."
+              },
+              {
+                "name": "aggregator",
+                "mode": "NULLABLE",
+                "type": "BOOLEAN",
+                "description": "Aggregator. Work is found on an aggregator. Where we have manually classified a repository as an aggregator."
+              },
+              {
+                "name": "other_internet",
+                "mode": "NULLABLE",
+                "type": "BOOLEAN",
+                "description": "Other Internet. Work is found on sites we have not classified. In practice these are copies identified by CiteSeer X which is in turn indexed by Unpaywall. It may include publications on academic staff pages, blogs and social networks. We do not directly track outputs on platforms such as academia.edu and researchgate.net. Outputs found on CiteSeer X, which often point to academic staff pages and blogs. We do not currently track outputs from academic social networks. Also includes outputs from repositories that we have not yet classified."
+              },
+              {
+                "name": "unknown",
+                "mode": "NULLABLE",
+                "type": "BOOLEAN",
+                "description": "Unknown."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "repositories",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "description": "Repository data sourced from Unpaywall and ROR with some fields generated by COKI.",
+    "fields": [
+      {
+        "name": "coki_repository_name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Repository name generated by COKI."
+      },
+      {
+        "name": "endpoint_id",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "oa_location.endpoint_id from Unpaywall."
+      },
+      {
+        "name": "repository_institution",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "oa_location.repository_institution from Unpaywall."
+      },
+      {
+        "name": "pmh_domain",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "A list of unique OAI PMH hostnames oa_location.pmh_id from Unpaywall."
+      },
+      {
+        "name": "pmh_id",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "OAI-PMH endpoint where we found this location. This is primarily for internal debugging. It's null for locations that weren't found using OAI-PMH. oa_location.pmh_id from Unpaywall."
+      },
+      {
+        "name": "url",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The url_for_pdf if there is one; otherwise landing page URL. When we can't find a url_for_pdf (or there isn't one), this field uses the url_for_landing_page, which is a useful fallback for some use cases. best_oa_location.url from Unpaywall."
+      },
+      {
+        "name": "category",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Type of repository, generated by COKI."
+      },
+      {
+        "name": "rors",
+        "mode": "REPEATED",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "id",
+            "mode": "NULLABLE",
+            "type": "STRING",
+            "description": "Unique ROR ID for the repository's organization."
+          },
+          {
+            "name": "name",
+            "mode": "NULLABLE",
+            "type": "STRING",
+            "description": "The primary name of the repository's organization."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "affiliation",
+    "mode": "NULLABLE",
+    "type": "RECORD",
+    "description": "DOI to ROR affiliations.",
+    "fields": [
+      {
+        "name": "author_institutions",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Direct (author_rors) and indirect affiliations through the ROR parent relationships (hierarchy_rors)."
+      },
+      {
+        "name": "genealogical_institutions",
+        "mode": "REPEATED",
+        "type": "STRING",
+        "description": "Direct (author_rors) and indirect affiliations through the ROR parent relationships (hierarchy_rors)."
+      }
+    ]
+  }
+]

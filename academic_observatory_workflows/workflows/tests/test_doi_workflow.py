@@ -15,6 +15,7 @@
 # Author: James Diprose
 
 from __future__ import annotations
+import json
 
 import os
 from datetime import timedelta
@@ -24,7 +25,7 @@ import pendulum
 import vcr
 from airflow.utils.state import State
 
-from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import test_fixtures_folder, schema_folder
 from academic_observatory_workflows.model import (
     Institution,
     bq_load_observatory_dataset,
@@ -36,12 +37,14 @@ from academic_observatory_workflows.model import (
 )
 from academic_observatory_workflows.workflows.doi_workflow import (
     DoiWorkflow,
+    make_doi_schema,
     make_sql_queries,
     fetch_ror_affiliations,
     ror_to_ror_hierarchy_index,
+    Schema,
 )
 from observatory.platform.api import get_dataset_releases
-from observatory.platform.bigquery import bq_run_query, bq_sharded_table_id, bq_table_id
+from observatory.platform.bigquery import bq_run_query, bq_sharded_table_id, bq_table_id, bq_find_schema
 from observatory.platform.files import load_jsonl
 from observatory.platform.observatory_config import Workflow
 from observatory.platform.observatory_environment import (
@@ -294,10 +297,36 @@ class TestDoiWorkflow(ObservatoryTestCase):
         # International Centre for Radio Astronomy Research
         self.assertEqual({"https://ror.org/02n415q13", "https://ror.org/047272k79"}, index["https://ror.org/05sd1pp77"])
 
+    def test_make_doi_schema(self):
+        # print(os.path.join(test_fixtures_folder("doi", "schema"), "table.json"))
+        schema_list = [
+            Schema(
+                table_name="crossref",
+                to_use="doi",
+                to_add=[{"name": "testing", "type": "STRING", "mode": "NULLABLE"}],
+                path=bq_find_schema(
+                    path=os.path.join(schema_folder(), "crossref_metadata"),
+                    table_name="crossref_metadata",
+                    release_date=pendulum.datetime(year=2022, month=3, day=7),
+                ),
+            ),
+            Schema(
+                table_name="table",
+                path=os.path.join(test_fixtures_folder("doi", "schema", "table.json")),
+            ),
+        ]
+        result_path = make_doi_schema(schema_list)
+        expected_path = test_fixtures_folder(self.doi_fixtures, "schema", "expected.json")
+        with open(result_path, "r") as f_result, open(expected_path, "r") as f_expected:
+            result = json.load(f_result)
+            expected = json.load(f_expected)
+
+        self.assertEqual(result, expected)
+
     def test_telescope(self):
         """Test the DOI telescope end to end."""
 
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port(), age_to_delete=0.01)
 
         # Create datasets
         fake_dataset_id = env.add_dataset(prefix="fake")
@@ -403,6 +432,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 table_id = bq_sharded_table_id(
                     self.project_id, bq_intermediate_dataset_id, "repository_institution_to_ror", snapshot_date
                 )
+                print("ror table id: ", table_id)
                 rors = [
                     {"rors": [], "repository_institution": "Academia.edu"},
                     {"rors": [], "repository_institution": "Australian National University DSpace Repository"},
