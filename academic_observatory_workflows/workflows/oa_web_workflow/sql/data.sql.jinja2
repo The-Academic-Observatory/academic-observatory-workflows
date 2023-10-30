@@ -1,0 +1,158 @@
+DECLARE START_YEAR NUMERIC DEFAULT {{ start_year }};
+DECLARE END_YEAR NUMERIC DEFAULT {{ end_year }};
+
+CREATE TEMP FUNCTION calcPercent(numerator NUMERIC, denominator NUMERIC)
+RETURNS NUMERIC
+AS (
+  IF(denominator = 0, NULL, numerator / denominator * 100.0)
+);
+
+CREATE TEMP FUNCTION removeRorPrefix(str STRING)
+RETURNS STRING
+AS (
+  REGEXP_REPLACE(str, r'^https?://ror\.org/', '')
+);
+
+WITH years as (
+  SELECT
+    agg.id as id,
+    agg.time_period as year,
+    DATE(agg.time_period, 12, 31) as date,
+    STRUCT(
+      agg.citations.openalex.total_citations as n_citations,
+      agg.total_outputs as n_outputs,
+
+      -- N Outputs
+      agg.coki.oa.coki.open.total AS n_outputs_open,
+      agg.coki.oa.coki.publisher.total AS n_outputs_publisher_open,
+      agg.coki.oa.coki.publisher_only.total AS n_outputs_publisher_open_only,
+      agg.coki.oa.coki.both.total AS n_outputs_both,
+      agg.coki.oa.coki.other_platform.total AS n_outputs_other_platform_open,
+      agg.coki.oa.coki.other_platform_only.total AS n_outputs_other_platform_open_only,
+      agg.coki.oa.coki.closed.total AS n_outputs_closed,
+
+      agg.coki.oa.coki.publisher_categories.oa_journal.total AS n_outputs_oa_journal,
+      agg.coki.oa.coki.publisher_categories.hybrid.total AS n_outputs_hybrid,
+      agg.coki.oa.coki.publisher_categories.no_guarantees.total AS n_outputs_no_guarantees,
+
+      agg.coki.oa.coki.other_platform_categories.preprint.total AS n_outputs_preprint,
+      agg.coki.oa.coki.other_platform_categories.domain.total AS n_outputs_domain,
+      agg.coki.oa.coki.other_platform_categories.institution.total AS n_outputs_institution,
+      agg.coki.oa.coki.other_platform_categories.public.total AS n_outputs_public,
+      agg.coki.oa.coki.other_platform_categories.aggregator.total + agg.coki.oa.coki.other_platform_categories.other_internet.total + agg.coki.oa.coki.other_platform_categories.unknown.total AS n_outputs_other_internet,
+
+      agg.coki.oa.color.black.total_outputs as n_outputs_black,
+
+      -- Percentages
+      agg.coki.oa.coki.open.percent AS p_outputs_open,
+      agg.coki.oa.coki.publisher.percent AS p_outputs_publisher_open,
+      agg.coki.oa.coki.publisher_only.percent AS p_outputs_publisher_open_only,
+      agg.coki.oa.coki.both.percent AS p_outputs_both,
+      agg.coki.oa.coki.other_platform.percent AS p_outputs_other_platform_open,
+      agg.coki.oa.coki.other_platform_only.percent AS p_outputs_other_platform_open_only,
+      agg.coki.oa.coki.closed.percent AS p_outputs_closed,
+
+      agg.coki.oa.coki.publisher_categories.oa_journal.percent AS p_outputs_oa_journal,
+      agg.coki.oa.coki.publisher_categories.hybrid.percent AS p_outputs_hybrid,
+      agg.coki.oa.coki.publisher_categories.no_guarantees.percent AS p_outputs_no_guarantees,
+
+      agg.coki.oa.coki.other_platform_categories.preprint.percent AS p_outputs_preprint,
+      agg.coki.oa.coki.other_platform_categories.domain.percent AS p_outputs_domain,
+      agg.coki.oa.coki.other_platform_categories.institution.percent AS p_outputs_institution,
+      agg.coki.oa.coki.other_platform_categories.public.percent AS p_outputs_public,
+      calcPercent(agg.coki.oa.coki.other_platform_categories.aggregator.total + agg.coki.oa.coki.other_platform_categories.other_internet.total + agg.coki.oa.coki.other_platform_categories.unknown.total, agg.coki.oa.coki.other_platform.total) AS p_outputs_other_internet,
+
+      agg.coki.oa.color.black.percent as p_outputs_black
+  ) as stats
+  FROM `{{ agg_table_id }}` as agg
+  WHERE agg.time_period >= START_YEAR AND agg.time_period <= END_YEAR
+  ORDER BY year DESC
+),
+
+aggregate_data as (
+  SELECT
+    id,
+    STRUCT(
+      -- output counts
+      SUM(stats.n_citations) as n_citations,
+      SUM(stats.n_outputs) as n_outputs,
+      SUM(stats.n_outputs_open) as n_outputs_open,
+      SUM(stats.n_outputs_publisher_open) as n_outputs_publisher_open,
+      SUM(stats.n_outputs_publisher_open_only) as n_outputs_publisher_open_only,
+      SUM(stats.n_outputs_both) as n_outputs_both,
+      SUM(stats.n_outputs_other_platform_open) as n_outputs_other_platform_open,
+      SUM(stats.n_outputs_other_platform_open_only) as n_outputs_other_platform_open_only,
+      SUM(stats.n_outputs_closed) as n_outputs_closed,
+      SUM(stats.n_outputs_oa_journal) as n_outputs_oa_journal,
+      SUM(stats.n_outputs_hybrid) as n_outputs_hybrid,
+      SUM(stats.n_outputs_no_guarantees) as n_outputs_no_guarantees,
+      SUM(stats.n_outputs_preprint) as n_outputs_preprint,
+      SUM(stats.n_outputs_domain) as n_outputs_domain,
+      SUM(stats.n_outputs_institution) as n_outputs_institution,
+      SUM(stats.n_outputs_public) as n_outputs_public,
+      SUM(stats.n_outputs_other_internet) as n_outputs_other_internet,
+      SUM(stats.n_outputs_black) as n_outputs_black,
+
+      -- percentages
+      calcPercent(SUM(stats.n_outputs_open), SUM(stats.n_outputs)) as p_outputs_open,
+      calcPercent(SUM(stats.n_outputs_publisher_open), SUM(stats.n_outputs)) as p_outputs_publisher_open,
+      calcPercent(SUM(stats.n_outputs_publisher_open_only), SUM(stats.n_outputs)) as p_outputs_publisher_open_only,
+      calcPercent(SUM(stats.n_outputs_both), SUM(stats.n_outputs)) as p_outputs_both,
+      calcPercent(SUM(stats.n_outputs_other_platform_open), SUM(stats.n_outputs)) as p_outputs_other_platform_open,
+      calcPercent(SUM(stats.n_outputs_other_platform_open_only), SUM(stats.n_outputs)) as p_outputs_other_platform_open_only,
+      calcPercent(SUM(stats.n_outputs_closed), SUM(stats.n_outputs)) as p_outputs_closed,
+      calcPercent(SUM(stats.n_outputs_oa_journal), SUM(stats.n_outputs_publisher_open)) as p_outputs_oa_journal,
+      calcPercent(SUM(stats.n_outputs_hybrid), SUM(stats.n_outputs_publisher_open)) as p_outputs_hybrid,
+      calcPercent(SUM(stats.n_outputs_no_guarantees), SUM(stats.n_outputs_publisher_open)) as p_outputs_no_guarantees,
+      calcPercent(SUM(stats.n_outputs_preprint), SUM(stats.n_outputs_other_platform_open)) as p_outputs_preprint,
+      calcPercent(SUM(stats.n_outputs_domain), SUM(stats.n_outputs_other_platform_open)) as p_outputs_domain,
+      calcPercent(SUM(stats.n_outputs_institution), SUM(stats.n_outputs_other_platform_open)) as p_outputs_institution,
+      calcPercent(SUM(stats.n_outputs_public), SUM(stats.n_outputs_other_platform_open)) as p_outputs_public,
+      calcPercent(SUM(stats.n_outputs_other_internet), SUM(stats.n_outputs_other_platform_open)) as p_outputs_other_internet,
+      calcPercent(SUM(stats.n_outputs_black), SUM(stats.n_outputs)) as p_outputs_black
+    ) as stats
+  FROM years
+  GROUP BY id
+),
+
+years_agg as (
+  SELECT
+    id,
+    ARRAY_AGG(STRUCT(year, date, stats)) as years
+  FROM years
+  GROUP BY id
+),
+
+agg_repos AS (
+  SELECT
+    agg.id as agg_id,
+    repo.id,
+    SUM(repo.total_outputs) as total_outputs,
+    ARRAY_AGG(
+        CASE
+            WHEN repo.category IN ('Aggregator', 'Unknown') THEN 'Other Internet'
+            ELSE repo.category
+        END
+        LIMIT 1
+    )[OFFSET(0)] as category,
+    ARRAY_AGG(repo.home_repo LIMIT 1)[OFFSET(0)] as home_repo
+  FROM `{{ agg_table_id }}` AS agg, UNNEST(agg.coki.repositories) AS repo
+  WHERE agg.time_period >= START_YEAR AND agg.time_period <= END_YEAR
+  GROUP BY agg.id, repo.id
+),
+
+repositories AS (
+  SELECT
+    agg_id as id,
+    ARRAY_AGG(
+      STRUCT(
+        id,
+        total_outputs,
+        category,
+        home_repo
+      )
+      ORDER BY total_outputs DESC, id ASC
+    ) AS repositories
+  FROM agg_repos
+  GROUP BY agg_id
+)

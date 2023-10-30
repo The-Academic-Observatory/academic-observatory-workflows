@@ -1,0 +1,25 @@
+
+{% include 'data.sql.jinja2' with context %}
+
+SELECT
+  removeRorPrefix(ror.id) as id,
+  ror.name,
+  'institution' as entity_type,
+  (SELECT * from ror.links LIMIT 1) AS url,
+  ror.wikipedia_url,
+  country.alpha3 as country_code,
+  country.wikipedia_name as country_name,
+  country.subregion as subregion,
+  country.region as region,
+  (SELECT * from ror.types LIMIT 1) AS institution_type,
+  ror.acronyms,
+  aggregate_data.stats as stats,
+  years_agg.years,
+  repositories.repositories
+FROM `{{ ror_table_id }}` as ror
+LEFT OUTER JOIN `{{ country_table_id }}` as country ON ror.country.country_code = country.alpha2
+LEFT JOIN aggregate_data ON aggregate_data.id = ror.id
+LEFT JOIN years_agg ON years_agg.id = ror.id
+LEFT JOIN repositories ON repositories.id = ror.id
+WHERE ARRAY_LENGTH(years) > 0
+ORDER BY stats.p_outputs_open DESC
