@@ -23,6 +23,7 @@ class Tag:
     """DAG tag."""
 
     academic_observatory = "academic-observatory"
+    data_quality_check = "data-quality-check"
 
 
 def test_fixtures_folder(*subdirs) -> str:

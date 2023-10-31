@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Alex Massen-HSane
+# Author: Alex Massen-Hane
 
 
 from __future__ import annotations
-import hashlib
+
 
 import os
-import re
 import logging
+import hashlib
 import pendulum
 from datetime import timedelta
 from google.cloud import bigquery
@@ -28,392 +28,86 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 from google.cloud.bigquery import Table as BQTable
 
+from airflow import DAG
+from airflow.utils.task_group import TaskGroup
+from airflow.operators.python import PythonOperator
+
 from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
 
 from observatory.platform.observatory_config import CloudWorkspace
 from observatory.platform.utils.dag_run_sensor import DagRunSensor
 from observatory.platform.workflows.workflow import Workflow, set_task_state, Release
 from observatory.platform.bigquery import (
+    bq_table_id_parts,
     bq_load_from_memory,
     bq_create_dataset,
     bq_run_query,
     bq_table_exists,
     bq_select_columns,
+    bq_get_table,
+    bq_select_table_shard_dates,
 )
 
 
 @dataclass
 class Table:
-    def __init__(
-        self,
-        *,
-        project_id: str,
-        dataset_id: str,
-        name: str,
-        sharded: bool,
-        fields: Union[List[str], str],
-    ):
-        """Create a metadata class for tables to be processed by the DQC Workflow.
+    project_id: str
+    dataset_id: str
+    table_id: str
+    is_sharded: bool
+    fields: List[str]
 
-        :param project_id: The Google project_id of where the tables are located.
-        :param dataset_id: The dataset that the table is under.
-        :param name: The name of the table (not the full qualifed table name).
-        :param source_dataset: Where the table is from.
-        :param sharded: True if the table is shared or not.
-        :param fields: Location of where the primary key is located in the table e.g. doi, could be multiple different identifiers.
+    """Create a metadata class for tables to be processed by the DQC Workflow.
 
-        """
-        self.project_id = project_id
-        self.dataset_id = dataset_id
-        self.name = name
-        self.sharded = sharded
-        self.fields = [fields] if isinstance(fields, str) else fields
+    :param project_id: The Google project_id of where the tables are located.
+    :param dataset_id: The dataset that the table is under.
+    :param table_id: The name of the table (not the full qualifed table name).
+    :param is_sharded: True if the table is shared or not.
+    :param fields: Location of where the primary key is located in the table e.g. doi, could be multiple different identifiers.
+    """
 
     @property
     def full_table_id(self):
-        return f"{self.project_id}.{self.dataset_id}.{self.name}"
+        return f"{self.project_id}.{self.dataset_id}.{self.table_id}"
 
 
-def make_datasets(project_id: str) -> Dict[str, List[Table]]:
-    """Create a list of datasets for the DQC Workflow to process.
+def make_tables(project_id: str, dataset_id: str, tables: Dict) -> List[Table]:
+    """Create a list table objects for the DQC Workflow to process.
 
-    This list can be easily updated, and can be modified for tables outside the given project_id if required.
+    :param project_id: The Google project ID that the tables are stored in.
+    :param dataset_id: Dataset of where the tables are stored.
+    :param tables: Dictionary of metadata of the given tables, including if the tables are sharded and the primary fields.
+    :return: A list of table objects for the workflow to process.
+    """
 
-    :param project_id: Name of the Google project that the tables are stored in.
-    :return: A dictionary of key: dataset_id and the list of tables in that dataset."""
-
-    datasets = {
-        "crossref_events": [
-            Table(
-                project_id=project_id,
-                dataset_id="crossref_fundref",
-                name="crossref_events",
-                sharded=False,
-                fields="id",
-            ),
-        ],
-        "crossref_fundref": [
-            Table(
-                project_id=project_id,
-                dataset_id="crossref_fundref",
-                name="crossref_fundref",
-                sharded=True,
-                fields="funder",
-            ),
-        ],
-        "crossref_metadata": [
-            Table(
-                project_id=project_id,
-                dataset_id="crossref_metadata",
-                name="crossref_metadata",
-                sharded=True,
-                fields="doi",
-            ),
-        ],
-        "geonames": [
-            Table(
-                project_id=project_id,
-                dataset_id="geonames",
-                name="geonames",
-                sharded=True,
-                fields="oci",
-            ),
-        ],
-        "grid": [
-            Table(
-                project_id=project_id,
-                dataset_id="grid",
-                name="grid",
-                sharded=True,
-                fields="oci",
-            ),
-        ],
-        "observatory": [
-            Table(
-                project_id=project_id,
-                dataset_id="observatory",
-                name="author",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="observatory",
-                name="book",
-                sharded=True,
-                fields="isbn",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="observatory",
-                name="country",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="observatory",
-                name="doi",
-                sharded=True,
-                fields="doi",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="observatory",
-                name="funder",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="observatory",
-                name="group",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="observatory",
-                name="institution",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="observatory",
-                name="journal",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="observatory",
-                name="publisher",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="observatory",
-                name="region",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="observatory",
-                name="subregion",
-                sharded=True,
-                fields="id",
-            ),
-        ],
-        "open_citations": [
-            Table(
-                project_id=project_id,
-                dataset_id="open_citations",
-                name="open_citations",
-                sharded=True,
-                fields="oci",
-            ),
-        ],
-        "openaire": [
-            Table(
-                project_id=project_id,
-                dataset_id="openaire",
-                name="community_infrastructure",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="openaire",
-                name="dataset",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="openaire",
-                name="datasource",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="openaire",
-                name="organization",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="openaire",
-                name="otherresearchproduct",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="openaire",
-                name="publication",
-                sharded=True,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="openaire",
-                name="relation",
-                sharded=True,
-                fields=["source", "target"],
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="openaire",
-                name="software",
-                sharded=True,
-                fields="id",
-            ),
-        ],
-        "openalex": [
-            Table(
-                project_id=project_id,
-                dataset_id="openalex",
-                name="authors",
-                sharded=False,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="openalex",
-                name="concepts",
-                sharded=False,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="openalex",
-                name="funders",
-                sharded=False,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="openalex",
-                name="institutions",
-                sharded=False,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="openalex",
-                name="publishers",
-                sharded=False,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="openalex",
-                name="sources",
-                sharded=False,
-                fields="id",
-            ),
-            Table(
-                project_id=project_id,
-                dataset_id="openalex",
-                name="works",
-                sharded=False,
-                fields="id",
-            ),
-        ],
-        "orcid": [
-            Table(
-                project_id=project_id,
-                dataset_id="orcid",
-                name="orcid",
-                sharded=False,
-                fields="orcid_identifier.uri",
-            ),
-        ],
-        "pubmed": [
-            Table(
-                project_id=project_id,
-                dataset_id="pubmed",
-                name="pubmed",
-                sharded=False,
-                fields=["MedlineCitation.PMID.value", "MedlineCitation.PMID.Version"],
-            ),
-        ],
-        "ror": [
-            Table(
-                project_id=project_id,
-                dataset_id="observatory",
-                name="ror",
-                sharded=True,
-                fields="id",
-            ),
-        ],
-        "scihub": [
-            Table(
-                project_id=project_id,
-                dataset_id="scihub",
-                name="scihub",
-                sharded=True,
-                fields="doi",
-            ),
-        ],
-        "unpaywall": [
-            Table(
-                project_id=project_id,
-                dataset_id="unpaywall",
-                name="unpaywall",
-                sharded=False,
-                fields="doi",
-            )
-        ],
-        "unpaywall_snapshot": [
-            Table(
-                project_id=project_id,
-                dataset_id="unpaywall_snapshot",
-                name="unpaywall_snapshot",
-                sharded=True,
-                fields="doi",
-            ),
-        ],
-    }
-
-    return datasets
+    return [
+        Table(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            table_id=table["table_id"],
+            is_sharded=table["is_sharded"],
+            fields=table["fields"],
+        )
+        for table in tables
+    ]
 
 
 class DQCWorkflow(Workflow):
-    # This workflow will wait until all of the below dags have finished before running.
-    SENSOR_DAG_IDS = [
-        "crossref_events",
-        "crossref_fundref",
-        "crossref_metadata",
-        "doi_workflow",
-        "geonames",
-        "grid",
-        "open_citations",
-        "openalex",
-        "orcid",
-        "pubmed",
-        "ror",
-        "unpaywall",
-    ]
-
     def __init__(
         self,
         *,
         dag_id: str,
         cloud_workspace: CloudWorkspace,
+        datasets: Dict,
+        sensor_dag_ids: Optional[List[str]] = [],
         bq_dataset_id: str = "data_quality_checks",
         bq_dataset_description: str = "This dataset holds metadata about the tables that the Academic Observatory Worflows produce. If there are multiple shards tables, it will go back on the table and check if it hasn't done that table previously.",
+        bq_table_id: str = "data_quality",
+        bq_table_description: str = "Data quality check for all tables produced by the Academic Observatory workflows.",
         schema_path: str = os.path.join(default_schema_folder(), "dqc", "dqc.json"),
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 1, 1),
-        schedule: Optional[str] = "@weekly",
+        schedule: str = "@weekly",
         queue: str = "default",
-        sensor_dag_ids: List[str] = None,
-        datasets: Dict[str, List[Table]] = None,
     ):
         """Create the DataQualityCheck Workflow.
 
@@ -424,62 +118,104 @@ class DQCWorkflow(Workflow):
 
         :param dag_id: the DAG ID.
         :param cloud_workspace: the cloud workspace settings.
+        :param datasets: A dictionary of datasets holding tables that will processed by this workflow.
+        :param sensor_dag_ids: List of dags that this workflow will wait to finish before running.
         :param bq_dataset_id: The dataset_id of where the dqc records will be stored.
-        :param bq_dataset_description: Description of the data quality check dataset
+        :param bq_dataset_description: Description of the data quality check dataset.
+        :param bq_table_id: The name of the table in Bigquery.
+        :param bq_table_description: The description of the table in Biguqery.
+        :param schema_path: The path to the schema file for the records produced by this workflow.
         :param start_date: The start date of the workflow.
         :param schedule: Schedule of how often the workflow runs.
         :param queue: Which queue this workflow will run.
-        :param sensor_dag_ids: List of dags that this workflow will wait to finish before running.
-        :param datasets: A dictionary tables from datasets that will be processed by this workflow.
         """
 
         super().__init__(
             dag_id=dag_id,
             start_date=start_date,
             schedule=schedule,
-            tags=[Tag.academic_observatory],
+            tags=[Tag.data_quality_check],
             queue=queue,
         )
 
         self.cloud_workspace = cloud_workspace
         self.project_id = cloud_workspace.project_id
         self.bq_dataset_id = bq_dataset_id
+        self.bq_table_id = bq_table_id
         self.bq_dataset_description = bq_dataset_description
+        self.bq_table_description = bq_table_description
         self.data_location = cloud_workspace.data_location
         self.schema_path = schema_path
-
-        self.sensor_dag_ids = sensor_dag_ids
-        if sensor_dag_ids is None:
-            self.sensor_dag_ids = DQCWorkflow.SENSOR_DAG_IDS
-
         self.datasets = datasets
-        if datasets is None:
-            self.datasets = make_datasets(self.project_id)
 
-        # Add sensors
-        with self.parallel_tasks():
-            for ext_dag_id in self.sensor_dag_ids:
-                sensor = DagRunSensor(
-                    task_id=f"{ext_dag_id}_sensor",
-                    external_dag_id=ext_dag_id,
-                    mode="reschedule",
-                    duration=timedelta(days=7),  # Look back up to 7 days from execution date
-                    poke_interval=int(timedelta(hours=1).total_seconds()),  # Check at this interval if dag run is ready
-                    timeout=int(timedelta(days=3).total_seconds()),  # Sensor will fail after 3 days of waiting
-                )
-                self.add_operator(sensor)
+        # Full table id for the DQC records.
+        self.dqc_full_table_id = f"{self.project_id}.{self.bq_dataset_id}.{bq_table_id}"
 
-        self.add_setup_task(self.check_dependencies)
-        self.add_task(self.create_dataset)
+        # If no sensor workflow is given, then it will run on a regular scheduled basis.
+        self.sensor_dag_ids = sensor_dag_ids
 
-        # Create parallel task for checking the workflows define above.
-        with self.parallel_tasks():
-            for task_id, tables in self.datasets.items():
-                self.add_task(
-                    self.perform_data_quality_check,
-                    op_kwargs={"task_id": task_id, "tables": tables},
-                    task_id=task_id,
-                )
+        assert datasets, "No dataset or tables given for this DQC Workflow! Please revise the config file."
+
+    def make_dag(self) -> DAG:
+        """Create a DAG object for the workflow explicitly defining the tasks and task groups.
+
+        :return: The DAG object for the workflow."""
+
+        with self.dag:
+            # Create a group of sensors for the workflow.
+            task_sensor_group = []
+            if self.sensor_dag_ids:
+                with TaskGroup(group_id="dag_sensors") as tg_sensors:
+                    task_sensors = []
+
+                    for ext_dag_id in self.sensor_dag_ids:
+                        sensor = DagRunSensor(
+                            task_id=f"{ext_dag_id}_sensor",
+                            external_dag_id=ext_dag_id,
+                            mode="reschedule",
+                            duration=timedelta(days=7),
+                            poke_interval=int(timedelta(hours=1).total_seconds()),
+                            timeout=int(timedelta(days=3).total_seconds()),
+                        )
+                        print(sensor)
+                        self.add_operator(sensor)
+                        task_sensors.append(sensor)
+
+                    # Add all of the sesnors to tg_sensors with this line.
+                    (task_sensors)
+
+                    task_sensor_group = tg_sensors
+
+            # Add the standard tasks for the workflow
+            # fmt: off
+            task_check_dependencies = PythonOperator(python_callable=self.check_dependencies, task_id="check_dependencies")
+            task_create_dataset = self.make_python_operator(self.create_dataset, "create_dataset")
+            # fmt: on
+
+            # Add each dataset as a task group and perform the checks on the tables in parallel.
+            task_datasets_group = []
+            for dataset_id in list(self.datasets.keys()):
+                with TaskGroup(group_id=dataset_id) as tg_dataset:
+                    tables: List[Table] = make_tables(self.project_id, dataset_id, self.datasets[dataset_id]["tables"])
+
+                    table_tasks = []
+                    for table in tables:
+                        task = self.make_python_operator(
+                            self.perform_data_quality_check,
+                            task_id=f"{table.table_id}",
+                            op_kwargs={f"task_id": f"{table.table_id}", "table": table},
+                        )
+                        table_tasks.append(task)
+
+                    # Add the list of table_tasks to tg_dataset by this line
+                    (table_tasks)
+
+                    task_datasets_group.append(tg_dataset)
+
+            # Link all tasks and task groups together.
+            (task_sensor_group >> task_check_dependencies >> task_create_dataset >> task_datasets_group)
+
+        return self.dag
 
     def make_release(self, **kwargs) -> Release:
         """Make a release instance.
@@ -509,63 +245,67 @@ class DQCWorkflow(Workflow):
         Please refer to the output of the create_dqc_record function for all the metadata included in this workflow."""
 
         task_id = kwargs["task_id"]
-        tables: List[Table] = kwargs["tables"]
+        table_to_check: Table = kwargs["table"]
 
-        # Full table ID for this instance
-        dqc_full_table_id = f"{self.project_id}.{self.bq_dataset_id}.{task_id}"
+        if table_to_check.is_sharded:
+            dates = bq_select_table_shard_dates(
+                table_id=table_to_check.full_table_id, end_date=pendulum.now(tz="UTC"), limit=1000
+            )
+            tables = []
+            for shard_date in dates:
+                table_id = f'{table_to_check.full_table_id}{shard_date.strftime("%Y%m%d")}'
+                assert bq_table_exists(table_id), f"Sharded table {table_id} does not exist!"
+                table = bq_get_table(table_id)
+                tables.append(table)
+        else:
+            tables = [bq_get_table(table_to_check.full_table_id)]
 
-        # Loop through each of the tables that are produced under this
-        for table_to_check in tables:
-            if table_to_check.sharded:
-                sub_tables: List[BQTable] = bq_list_tables_shards(
-                    dataset_id=table_to_check.dataset_id, base_name=table_to_check.name
-                )
-            else:
-                sub_tables: List[BQTable] = [bq_get_table(table_to_check.full_table_id)]
+        assert (
+            len(tables) > 0 and tables[0] is not None
+        ), f"No table or sharded tables found in Bigquery for: {table_to_check.dataset_id}.{table_to_check.table_id}"
 
-            assert (
-                len(sub_tables) > 0 and sub_tables[0] is not None
-            ), f"No table or sharded tables found in Bigquery for: {table_to_check.dataset_id}.{table_to_check.name}"
+        records = []
+        table: BQTable
+        for table in tables:
+            full_table_id = str(table.reference)
 
-            records = []
-            table: BQTable
-            for table in sub_tables:
-                full_table_id = table.full_table_id.replace(":", ".")
+            hash_id = create_table_hash_id(
+                full_table_id=full_table_id,
+                num_bytes=table.num_bytes,
+                nrows=table.num_rows,
+                ncols=len(bq_select_columns(table_id=full_table_id)),
+            )
 
-                hash_id = create_table_hash_id(
+            if not is_in_dqc_table(hash_id, self.dqc_full_table_id):
+                logging.info(f"Performing check on table {full_table_id} with hash {hash_id}")
+                dqc_check = create_dqc_record(
+                    hash_id=hash_id,
                     full_table_id=full_table_id,
-                    num_bytes=table.num_bytes,
-                    nrows=table.num_rows,
-                    ncols=len(bq_select_columns(table_id=full_table_id)),
+                    fields=table_to_check.fields,
+                    is_sharded=table_to_check.is_sharded,
+                    table_in_bq=table,
+                )
+                records.append(dqc_check)
+                print("dqc_check:", dqc_check)
+            else:
+                logging.info(
+                    f"Table {table_to_check.full_table_id} with hash {hash_id} has already been checked before. Not performing check again."
                 )
 
-                if not is_in_dqc_table(hash_id, dqc_full_table_id):
-                    logging.info(f"Performing check on table {full_table_id} with hash {hash_id}")
-                    dqc_check = create_dqc_record(
-                        hash_id=hash_id,
-                        full_table_id=full_table_id,
-                        fields=table_to_check.fields,
-                        is_sharded=table_to_check.sharded,
-                        table_in_bq=table,
-                    )
-                    records.append(dqc_check)
-                else:
-                    logging.info(
-                        f"Table {table_to_check.full_table_id} with hash {hash_id} has already been checked before. Not performing check again."
-                    )
-
-            logging.info(f"Creating DQC table for dataset: {task_id}: {dqc_full_table_id}")
+        if records:
+            logging.info(f"Uploading DQC records for table: {task_id}: {self.dqc_full_table_id}")
             success = bq_load_from_memory(
-                table_id=dqc_full_table_id,
+                table_id=self.dqc_full_table_id,
                 records=records,
                 schema_file_path=self.schema_path,
                 write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-                table_description=f"Data quality check for tables in dataset/workflow: {task_id}",
             )
 
             assert success, f"Error uploading data quality check to Bigquery."
+        else:
+            success = True
 
-            set_task_state(success, task_id, release)
+        set_task_state(success, task_id, release)
 
 
 def create_dqc_record(
@@ -586,26 +326,16 @@ def create_dqc_record(
     :return: Dictionary of values from the data quality check.
     """
 
-    sharded = bool(re.search(r"\d{8}$", full_table_id))
-    assert (
-        sharded == is_sharded
-    ), f"Workflow parameters for table {full_table_id} is/is not sharded is not the same. From Biguqery {sharded} vs from workflow {is_sharded}"
-
-    if sharded:
-        shard_id = re.findall(r"\d{8}$", full_table_id)[-1]
-        date_shard = pendulum.from_format(shard_id, "YYYYMMDD").format("YYYY-MM-DD")
-        table_name = full_table_id.split(".")[-1][:-8]
-    else:
-        date_shard = None
-        table_name = full_table_id.split(".")[-1]
+    project_id, dataset_id, table_id, shard_date = bq_table_id_parts(full_table_id)
+    assert is_sharded == (shard_date is not None), f"Workflow config  of table {full_table_id} do not match."
 
     # Retrieve metadata on the table.
-    date_created = table_in_bq.created.strftime("%Y-%m-%d %H:%M:%S")
-    date_checked = pendulum.now().format("YYYY-MM-DD HH:mm:ss")
-    date_last_modified = table_in_bq.modified.strftime("%Y-%m-%d %H:%M:%S")
+    date_created = table_in_bq.created.isoformat()
+    date_checked = pendulum.now(tz="UTC").isoformat()
+    date_last_modified = table_in_bq.modified.isoformat()
 
     expires = bool(table_in_bq.expires)
-    date_expires = table_in_bq.expires.strftime("%Y-%m-%d %H:%M:%S") if expires else None
+    date_expires = table_in_bq.expires.isoformat() if expires else None
 
     num_distinct_records = bq_count_distinct_records(full_table_id, fields=fields)
     num_null_records = bq_count_nulls(full_table_id, fields=fields)
@@ -614,11 +344,13 @@ def create_dqc_record(
     num_all_fields = len(bq_select_columns(table_id=full_table_id))
 
     return dict(
-        table_name=table_name,
+        table_id=table_id,
+        dataset_id=dataset_id,
+        project_id=project_id,
         full_table_id=full_table_id,
         hash_id=hash_id,
-        sharded=sharded,
-        date_shard=date_shard,
+        is_sharded=is_sharded,
+        shard_date=shard_date.strftime("%Y-%m-%d") if shard_date is not None else shard_date,
         date_created=date_created,
         expires=expires,
         date_expires=date_expires,
@@ -634,6 +366,39 @@ def create_dqc_record(
     )
 
 
+def create_table_hash_id(full_table_id: str, num_bytes: int, nrows: int, ncols: int) -> str:
+    """Create a unique table identifier based off of the the input parameters for a table in Biguqery.
+
+    :param full_table_id: The fully qualified table name.
+    :param num_bytes: Number of bytes stored in the table.
+    :param num_rows: Number of rows/records in the table.
+    :param num_cols: Number of columns/fields in the table.
+    :return: A md5 hash based off of the given input parameters."""
+
+    return hashlib.md5(f"{full_table_id}{num_bytes}{nrows}{ncols}".encode("utf-8")).hexdigest()
+
+
+def is_in_dqc_table(hash_to_check: str, dqc_full_table_id: str) -> bool:
+    """Checks if a table has already been processed before checking if the table's hash_id is in the main DQC table.
+
+    :param hash_to_check: The hash of the table to check if the data quality checks have been performed before.
+    :param dqc_full_table_id: The fully qualified name of the table that holds all of the DQC records in Bigquery.
+    :return: True if the check has been done before, otherwise false.
+    """
+
+    if bq_table_exists(dqc_full_table_id):
+        sql = f"""
+        SELECT True
+        FROM {dqc_full_table_id}
+        WHERE hash_id = "{hash_to_check}"
+        """
+        return bool([dict(row) for row in bq_run_query(sql)])
+
+    else:
+        logging.info(f"DQC record table: {dqc_full_table_id} does not exist!")
+        return False
+
+
 def bq_count_distinct_records(full_table_id: str, fields: Union[str, List[str]]) -> int:
     """
     Finds the distinct number of records that have these matching fields.
@@ -647,8 +412,7 @@ def bq_count_distinct_records(full_table_id: str, fields: Union[str, List[str]])
     SELECT COUNT(*) as count
     FROM ( SELECT distinct {fields_to_check} FROM {full_table_id} ) 
     """
-    print(sql)
-    return [dict(row) for row in bq_run_query(sql)][0]["count"]
+    return int([dict(row) for row in bq_run_query(sql)][0]["count"])
 
 
 def bq_count_nulls(full_table_id: str, fields: Union[str, List[str]]) -> int:
@@ -664,38 +428,10 @@ def bq_count_nulls(full_table_id: str, fields: Union[str, List[str]]) -> int:
     SELECT COUNTIF( {fields_to_check} IS NULL) AS nullCount
     FROM `{full_table_id}`
     """
-    print(sql)
-    return [dict(row) for row in bq_run_query(sql)][0]["nullCount"]
+    return int([dict(row) for row in bq_run_query(sql)][0]["nullCount"])
 
 
-def bq_get_table(full_table_id: str) -> BQTable:
-    """Get a single Bigqury table object from the Google Bigquery API.
-
-    :param full_table_id: Fully qualified table id.
-    :return: The table obecjt from the Bigqury API."""
-
-    bq_client = bigquery.Client()
-    try:
-        table = bq_client.get_table(full_table_id)
-        return table
-    except:
-        print(f"Table is not found! {full_table_id}")
-        return None
-
-
-def bq_list_tables_shards(dataset_id: str, base_name: str) -> List[BQTable]:
-    """Get a list of tables that are shards and share the same basename.
-
-    :param dataset_id: The name of the dataset.
-    :param table_name: Name of the sharded table.
-    :return: List of table objects that share the same name."""
-
-    bq_client = bigquery.Client()
-    tables = bq_client.list_tables(dataset_id)
-    return [bq_client.get_table(table) for table in tables if re.search(rf"{base_name}\d{{8}}$", table.table_id)]
-
-
-def bq_count_duplicate_records(full_table_id: str, fields: Union[str, List[str]]) -> dict:
+def bq_count_duplicate_records(full_table_id: str, fields: Union[str, List[str]]) -> int:
     """Query a table in Bigquery and return a dictionary of values holding the field/s
     and the number of duplicates for said key/s.
 
@@ -714,44 +450,7 @@ def bq_count_duplicate_records(full_table_id: str, fields: Union[str, List[str]]
         HAVING COUNT(*) > 1
     )
     """
-    print(sql)
     result = [dict(row) for row in bq_run_query(sql)][0]["total_duplicate_sum"]
-    num_duplicates = 0 if result is None else result
+    num_duplicates = 0 if result is None else int(result)
 
     return num_duplicates
-
-
-def create_table_hash_id(full_table_id: str, num_bytes: int, nrows: int, ncols: int):
-    """Create a unique table identifier based off of the the input parameters for a table in Biguqery.
-
-    :param full_table_id: The fully qualified table name.
-    :param num_bytes: Number of bytes stored in the table.
-    :param num_rows: Number of rows/records in the table.
-    :param num_cols: Number of columns/fields in the table.
-    :return: A md5 hash based off of the given input parameters."""
-
-    return hashlib.md5(f"{full_table_id}{num_bytes}{nrows}{ncols}".encode("utf-8")).hexdigest()
-
-
-def is_in_dqc_table(
-    hash_to_check: str,
-    dqc_full_table_id: str,
-):
-    """
-    :param dqc_full_table_id:
-    :param hash_to_check: The md5 hash of the table to check if the data quality checks have been performed before.
-    :return: True if the check has been done before, otherwise false.
-    """
-
-    if bq_table_exists(dqc_full_table_id):
-        sql = f"""
-        SELECT hash_id, date_created
-        FROM {dqc_full_table_id}
-        ORDER BY date_created ASC;
-        """
-        dqc_table = [dict(row) for row in bq_run_query(sql)]
-        hashes = [row["hash_id"] for row in dqc_table]
-        return hash_to_check in hashes
-    else:
-        logging.info(f"DQC record table: {dqc_full_table_id} does not exist!")
-        return False

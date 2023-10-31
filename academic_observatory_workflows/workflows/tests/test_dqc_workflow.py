@@ -31,7 +31,6 @@ from academic_observatory_workflows.workflows.dqc_workflow import (
     bq_count_distinct_records,
     bq_count_nulls,
     bq_get_table,
-    bq_list_tables_shards,
     bq_count_duplicate_records,
     create_table_hash_id,
     is_in_dqc_table,
@@ -45,6 +44,7 @@ from observatory.platform.observatory_environment import (
     make_dummy_dag,
     find_free_port,
     random_id,
+    bq_dataset_test_env,
 )
 from observatory.platform.bigquery import (
     bq_table_id,
@@ -77,6 +77,12 @@ class TestDQCWorkflow(ObservatoryTestCase):
                     name="Data Quality Check Workflow",
                     class_name="academic_observatory_workflows.workflows.dqc_workflow.DQCWorkflow",
                     cloud_workspace=self.fake_cloud_workspace,
+                    kwargs=dict(
+                        sensor_dag_ids=["doi"],
+                        datasets={
+                            "observatory": {"tables": [{"table_id": "doi", "is_sharded": True, "fields": ["doi"]}]}
+                        },
+                    ),
                 )
             ]
         )
@@ -90,55 +96,29 @@ class TestDQCWorkflow(ObservatoryTestCase):
         workflow = DQCWorkflow(
             dag_id=self.dag_id,
             cloud_workspace=self.fake_cloud_workspace,
+            sensor_dag_ids=["dummy1", "dummy2"],
+            datasets={
+                "observatory": {"tables": [{"table_id": "doi", "is_sharded": True, "fields": ["doi"]}]},
+                "pubmed": {
+                    "tables": [
+                        {
+                            "table_id": "pubmed",
+                            "is_sharded": False,
+                            "fields": ["MedlineCitation.PMID.value", "MedlineCitation.PMID.Version"],
+                        }
+                    ]
+                },
+            },
         )
         dag = workflow.make_dag()
         self.assert_dag_structure(
             {
-                "crossref_events_sensor": ["check_dependencies"],
-                "crossref_fundref_sensor": ["check_dependencies"],
-                "crossref_metadata_sensor": ["check_dependencies"],
-                "doi_workflow_sensor": ["check_dependencies"],
-                "geonames_sensor": ["check_dependencies"],
-                "grid_sensor": ["check_dependencies"],
-                "open_citations_sensor": ["check_dependencies"],
-                "openalex_sensor": ["check_dependencies"],
-                "orcid_sensor": ["check_dependencies"],
-                "pubmed_sensor": ["check_dependencies"],
-                "ror_sensor": ["check_dependencies"],
-                "unpaywall_sensor": ["check_dependencies"],
+                "dag_sensors.dummy1_sensor": ["check_dependencies"],
+                "dag_sensors.dummy2_sensor": ["check_dependencies"],
                 "check_dependencies": ["create_dataset"],
-                "create_dataset": [
-                    "crossref_events",
-                    "crossref_fundref",
-                    "crossref_metadata",
-                    "geonames",
-                    "grid",
-                    "observatory",
-                    "open_citations",
-                    "openaire",
-                    "openalex",
-                    "orcid",
-                    "pubmed",
-                    "ror",
-                    "scihub",
-                    "unpaywall",
-                    "unpaywall_snapshot",
-                ],
-                "crossref_events": [],
-                "crossref_fundref": [],
-                "crossref_metadata": [],
-                "geonames": [],
-                "grid": [],
-                "observatory": [],
-                "open_citations": [],
-                "openaire": [],
-                "openalex": [],
-                "orcid": [],
-                "pubmed": [],
-                "ror": [],
-                "scihub": [],
-                "unpaywall": [],
-                "unpaywall_snapshot": [],
+                "create_dataset": ["observatory.doi", "pubmed.pubmed"],
+                "observatory.doi": [],
+                "pubmed.pubmed": [],
             },
             dag,
         )
@@ -167,109 +147,49 @@ class TestDQCWorkflow(ObservatoryTestCase):
                 cloud_workspace=env.cloud_workspace,
                 bq_dataset_id=dqc_dataset_id,
                 start_date=start_date,
+                sensor_dag_ids=["doi", "pubmed"],
                 datasets={
-                    "crossref_events": [
-                        Table(
-                            project_id=self.project_id,
-                            dataset_id=fake_dataset_id,
-                            name="crossref_events",
-                            sharded=False,
-                            fields="id",
-                        ),
-                    ],
-                    "crossref_fundref": [
-                        Table(
-                            project_id=self.project_id,
-                            dataset_id=fake_dataset_id,
-                            name="crossref_fundref",
-                            sharded=True,
-                            fields="funder",
-                        ),
-                    ],
-                    "crossref_metadata": [
-                        Table(
-                            project_id=self.project_id,
-                            dataset_id=fake_dataset_id,
-                            name="crossref_metadata",
-                            sharded=True,
-                            fields="doi",
-                        ),
-                    ],
-                    "openalex": [
-                        Table(
-                            project_id=self.project_id,
-                            dataset_id=fake_dataset_id,
-                            name="works",
-                            sharded=False,
-                            fields="id",
-                        ),
-                    ],
-                    "open_citations": [
-                        Table(
-                            project_id=self.project_id,
-                            dataset_id=fake_dataset_id,
-                            name="open_citations",
-                            sharded=True,
-                            fields="oci",
-                        ),
-                    ],
-                    "pubmed": [
-                        Table(
-                            project_id=self.project_id,
-                            dataset_id=fake_dataset_id,
-                            name="pubmed",
-                            sharded=False,
-                            fields=["MedlineCitation.PMID.value", "MedlineCitation.PMID.Version"],
-                        ),
-                    ],
-                    "ror": [
-                        Table(
-                            project_id=self.project_id,
-                            dataset_id=fake_dataset_id,
-                            name="ror",
-                            sharded=True,
-                            fields="id",
-                        ),
-                    ],
-                    "scihub": [
-                        Table(
-                            project_id=self.project_id,
-                            dataset_id=fake_dataset_id,
-                            name="scihub",
-                            sharded=True,
-                            fields="doi",
-                        ),
-                    ],
-                    "unpaywall": [
-                        Table(
-                            project_id=self.project_id,
-                            dataset_id=fake_dataset_id,
-                            name="unpaywall",
-                            sharded=False,
-                            fields="doi",
-                        )
-                    ],
+                    fake_dataset_id: {
+                        "tables": [
+                            {"table_id": "crossref_events", "is_sharded": False, "fields": ["id"]},
+                            {"table_id": "crossref_fundref", "is_sharded": True, "fields": ["funder"]},
+                            {"table_id": "crossref_metadata", "is_sharded": True, "fields": ["doi"]},
+                            {"table_id": "open_citations", "is_sharded": True, "fields": ["oci"]},
+                            {
+                                "table_id": "pubmed",
+                                "is_sharded": False,
+                                "fields": [
+                                    "MedlineCitation.PMID.value",
+                                    "MedlineCitation.PMID.Version",
+                                ],
+                            },
+                            {"table_id": "ror", "is_sharded": True, "fields": ["id"]},
+                            {"table_id": "scihub", "is_sharded": True, "fields": ["doi"]},
+                            {"table_id": "unpaywall", "is_sharded": False, "fields": ["doi"]},
+                            {"table_id": "works", "is_sharded": False, "fields": ["id"]},
+                        ]
+                    }
                 },
             )
 
+            dqc_dag = workflow.make_dag()
+
             # Disable dag check on dag run sensor
-            for sensor in workflow.operators[0]:
+            for sensor in workflow.operators:
                 sensor.check_exists = False
                 sensor.grace_period = timedelta(seconds=1)
-
-            dqc_dag = workflow.make_dag()
 
             # If there is no dag run for the DAG being monitored, the sensor will pass.  This is so we can
             # skip waiting on weeks when the DAG being waited on is not scheduled to run.
             with env.create_dag_run(dqc_dag, start_date):
-                for task_id in DQCWorkflow.SENSOR_DAG_IDS:
-                    ti = env.run_task(f"{task_id}_sensor")
+                for task_id in workflow.sensor_dag_ids:
+                    ti = env.run_task(f"dag_sensors.{task_id}_sensor")
                     self.assertEqual("success", ti.state)
 
             # Run Dummy Dags
             execution_date = pendulum.datetime(year=2023, month=1, day=1)
             snapshot_date = pendulum.datetime(year=2023, month=1, day=8)
-            for dag_id in DQCWorkflow.SENSOR_DAG_IDS:
+            for dag_id in workflow.sensor_dag_ids:
                 dag = make_dummy_dag(dag_id, execution_date)
                 with env.create_dag_run(dag, execution_date):
                     # Running all of a DAGs tasks sets the DAG to finished
@@ -284,8 +204,8 @@ class TestDQCWorkflow(ObservatoryTestCase):
             # Run end to end tests for DQC DAG
             with env.create_dag_run(dqc_dag, execution_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
-                for task_id in DQCWorkflow.SENSOR_DAG_IDS:
-                    ti = env.run_task(f"{task_id}_sensor")
+                for task_id in workflow.sensor_dag_ids:
+                    ti = env.run_task(f"dag_sensors.{task_id}_sensor")
                     self.assertEqual("success", ti.state)
 
                 # Check dependencies
@@ -314,14 +234,15 @@ class TestDQCWorkflow(ObservatoryTestCase):
                 self.assert_table_integrity(table_id, expected_rows=expected_rows)
 
                 # Perform data quality check
-                for task_id, _ in workflow.datasets.items():
-                    ti = env.run_task(task_id)
-                    self.assertEqual("success", ti.state)
+                for dataset_id, tables in workflow.datasets.items():
+                    for table in tables["tables"]:
+                        task_id = f"{dataset_id}.{table['table_id']}"
+                        ti = env.run_task(task_id)
+                        self.assertEqual("success", ti.state)
 
-                # Check that DQC tables have been created.
-                for dataset, _ in workflow.datasets.items():
-                    table_id = bq_table_id(self.project_id, dqc_dataset_id, dataset)
-                    self.assert_table_integrity(table_id, expected_rows=1)
+                # Check that DQC table has been created.
+                table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, workflow.bq_table_id)
+                self.assert_table_integrity(table_id, expected_rows=9)  # stop and look at table on BQ
 
             ### SECOND RUN ###
 
@@ -331,7 +252,7 @@ class TestDQCWorkflow(ObservatoryTestCase):
             # Run Dummy Dags
             execution_date = pendulum.datetime(year=2023, month=2, day=1)
             snapshot_date = pendulum.datetime(year=2023, month=2, day=8)
-            for dag_id in DQCWorkflow.SENSOR_DAG_IDS:
+            for dag_id in workflow.sensor_dag_ids:
                 dag = make_dummy_dag(dag_id, execution_date)
                 with env.create_dag_run(dag, execution_date):
                     # Running all of a DAGs tasks sets the DAG to finished
@@ -341,8 +262,8 @@ class TestDQCWorkflow(ObservatoryTestCase):
             # Run end to end tests for DQC DAG
             with env.create_dag_run(dqc_dag, execution_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
-                for task_id in DQCWorkflow.SENSOR_DAG_IDS:
-                    ti = env.run_task(f"{task_id}_sensor")
+                for task_id in workflow.sensor_dag_ids:
+                    ti = env.run_task(f"dag_sensors.{task_id}_sensor")
                     self.assertEqual("success", ti.state)
 
                 # Check dependencies
@@ -377,15 +298,15 @@ class TestDQCWorkflow(ObservatoryTestCase):
                 self.assert_table_integrity(table_id, expected_rows=expected_rows)
 
                 # Perform data quality check
-                for task_id, _ in workflow.datasets.items():
-                    ti = env.run_task(task_id)
-                    self.assertEqual("success", ti.state)
+                for dataset_id, tables in workflow.datasets.items():
+                    for table in tables["tables"]:
+                        task_id = f"{dataset_id}.{table['table_id']}"
+                        ti = env.run_task(task_id)
+                        self.assertEqual("success", ti.state)
 
-                # Check that DQC tables have been created.
-                for dataset, _ in workflow.datasets.items():
-                    table_id = bq_table_id(self.project_id, dqc_dataset_id, dataset)
-                    print(f"Checking integrity of table: {table_id}")
-                    self.assert_table_integrity(table_id, expected_rows=2)
+                # Check that DQC table has been created.
+                table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, workflow.bq_table_id)
+                self.assert_table_integrity(table_id, expected_rows=18)
 
             ### THIRD RUN ###
 
@@ -395,7 +316,7 @@ class TestDQCWorkflow(ObservatoryTestCase):
             # Run Dummy Dags
             execution_date = pendulum.datetime(year=2023, month=3, day=1)
             snapshot_date = pendulum.datetime(year=2023, month=3, day=8)
-            for dag_id in DQCWorkflow.SENSOR_DAG_IDS:
+            for dag_id in workflow.sensor_dag_ids:
                 dag = make_dummy_dag(dag_id, execution_date)
                 with env.create_dag_run(dag, execution_date):
                     # Running all of a DAGs tasks sets the DAG to finished
@@ -405,8 +326,8 @@ class TestDQCWorkflow(ObservatoryTestCase):
             # Run end to end tests for DQC DAG
             with env.create_dag_run(dqc_dag, execution_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
-                for task_id in DQCWorkflow.SENSOR_DAG_IDS:
-                    ti = env.run_task(f"{task_id}_sensor")
+                for task_id in workflow.sensor_dag_ids:
+                    ti = env.run_task(f"dag_sensors.{task_id}_sensor")
                     self.assertEqual("success", ti.state)
 
                 # Check dependencies
@@ -418,14 +339,16 @@ class TestDQCWorkflow(ObservatoryTestCase):
                 self.assertEqual("success", ti.state)
 
                 # Perform data quality check
-                for task_id, _ in workflow.datasets.items():
-                    ti = env.run_task(task_id)
-                    self.assertEqual("success", ti.state)
+                for dataset_id, tables in workflow.datasets.items():
+                    for table in tables["tables"]:
+                        task_id = f"{dataset_id}.{table['table_id']}"
+                        ti = env.run_task(task_id)
+                        self.assertEqual("success", ti.state)
 
-                # Check that the DQC tables have no new records added for this third run.
-                for dataset, _ in workflow.datasets.items():
-                    table_id = bq_table_id(self.project_id, dqc_dataset_id, dataset)
-                    self.assert_table_integrity(table_id, expected_rows=2)
+                # Check that the DQC table has no new records added for this third run.
+                # Check that DQC table has been created.
+                table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, workflow.bq_table_id)
+                self.assert_table_integrity(table_id, expected_rows=18)
 
 
 class TestDataQualityCheckUtils(ObservatoryTestCase):
@@ -447,16 +370,12 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
             dict(id="somethingelse", count="4", abstract_text="Science"),
             dict(id=None, count="5", abstract_text="Maths"),
         ]
-        self.test_table2 = [
-            dict(id="something", count="1", abstract_text="Hello"),
-            dict(id="other", count="2", abstract_text="World"),
-            dict(id=None, count="3", abstract_text="History"),
-        ]
 
         self.expected_dqc_record = dict(
-            table_name="create_dqc_record",
-            sharded=False,
-            date_shard=None,
+            table_id="create_dqc_record",
+            project_id=self.project_id,
+            is_sharded=False,
+            shard_date=None,
             expires=False,
             date_expires=None,
             size_gb=1.2200325727462769e-07,
@@ -479,19 +398,19 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
         """Test if a dqc record can be reliably created."""
 
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
-        bq_dataset_id = env.add_dataset()
-        bq_table_id = "create_dqc_record"
+        dataset_id = env.add_dataset()
+        table_id = "create_dqc_record"
 
         table_to_check = Table(
             project_id=self.project_id,
-            dataset_id=bq_dataset_id,
-            name=bq_table_id,
-            sharded=False,
-            fields="id",
+            dataset_id=dataset_id,
+            table_id=table_id,
+            is_sharded=False,
+            fields=["id"],
         )
 
         with env.create(task_logging=True):
-            full_table_id = f"{self.project_id}.{bq_dataset_id}.{bq_table_id}"
+            full_table_id = bq_table_id(self.project_id, dataset_id, table_id)
 
             # Load the test table from memory to Bigquery.
             success = bq_load_from_memory(table_id=full_table_id, records=self.test_table)
@@ -512,7 +431,7 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
                 hash_id=hash_id,
                 full_table_id=full_table_id,
                 fields=table_to_check.fields,
-                is_sharded=table_to_check.sharded,
+                is_sharded=table_to_check.is_sharded,
                 table_in_bq=table,
             )
 
@@ -526,21 +445,21 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
 
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
         dqc_dataset_id = env.add_dataset(prefix="data_quality_check")
-        bq_dataset_id = env.add_dataset()
-        bq_table_id = "is_in_dqc_table"
+        dataset_id = env.add_dataset()
+        table_id = "is_in_dqc_table"
         dag_id = "test_dag"
 
         table_to_check = Table(
             project_id=self.project_id,
-            dataset_id=bq_dataset_id,
-            name=bq_table_id,
-            sharded=False,
-            fields="id",
+            dataset_id=dataset_id,
+            table_id=table_id,
+            is_sharded=False,
+            fields=["id"],
         )
 
         with env.create(task_logging=True):
-            full_table_id = f"{self.project_id}.{bq_dataset_id}.{bq_table_id}"
-            dqc_full_table_id = f"{self.project_id}.{dqc_dataset_id}.{dag_id}"
+            full_table_id = bq_table_id(self.project_id, dataset_id, table_id)
+            dqc_full_table_id = bq_table_id(self.project_id, dqc_dataset_id, dag_id)
 
             # Load the test table from memory to Bigquery.
             success = bq_load_from_memory(table_id=full_table_id, records=self.test_table)
@@ -562,7 +481,7 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
                     hash_id=hash_id,
                     full_table_id=full_table_id,
                     fields=table_to_check.fields,
-                    is_sharded=table_to_check.sharded,
+                    is_sharded=table_to_check.is_sharded,
                     table_in_bq=table,
                 )
             ]
@@ -584,54 +503,8 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
             result = is_in_dqc_table(hash_to_check=random_hash, dqc_full_table_id=dqc_full_table_id)
             self.assertFalse(result)
 
-    def test_bq_get_table(self):
-        """Test if a table can be reliably grabbed from the Bogquery API."""
-
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
-        bq_dataset_id = env.add_dataset()
-        bq_table_id = "get_table"
-
-        with env.create(task_logging=True):
-            full_table_id = f"{self.project_id}.{bq_dataset_id}.{bq_table_id}"
-
-            # Load the test table from memory to Bigquery.
-            success = bq_load_from_memory(table_id=full_table_id, records=self.test_table)
-            self.assertTrue(success)
-
-            # Get table object from Bigquery API
-            table: BQTable = bq_get_table(full_table_id)
-
-            # Make sure that metadata for the table is correct.
-            self.assertTrue(table)
-            self.assertEqual(table.num_rows, 5)
-            self.assertEqual(table.table_id, bq_table_id)
-            self.assertEqual(table.num_bytes, 131)
-
-    def test_bq_list_tables_shards(self):
-        """Test if a list of table shards can be reliably grabbed using the Bigquery API"""
-
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
-        bq_dataset_id = env.add_dataset()
-        base_name = "list_table_shards"
-        bq_table_ids = ["list_table_shards20200101", "list_table_shards20200102"]
-
-        with env.create(task_logging=True):
-            # Load the test table from memory to Bigquery.
-            for table_id, data in zip(bq_table_ids, [self.test_table, self.test_table2]):
-                full_table_id = f"{self.project_id}.{bq_dataset_id}.{table_id}"
-                success = bq_load_from_memory(table_id=full_table_id, records=data)
-                self.assertTrue(success)
-
-            # Get table object from Bigquery API
-            tables: List[BQTable] = bq_list_tables_shards(dataset_id=bq_dataset_id, base_name=base_name)
-
-            # Check metadata objects
-            for table, data, bq_table_id in zip(tables, [self.test_table, self.test_table2], bq_table_ids):
-                self.assertEqual(table.num_rows, len(data))
-                self.assertEqual(table.table_id, bq_table_id)
-
     def test_bq_count_duplicate_records(self):
-        """Test if a table can reliably check if duplucates exist in a table."""
+        """Test if duplicate records can be reliably found in a table."""
 
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
         bq_dataset_id = env.add_dataset()
