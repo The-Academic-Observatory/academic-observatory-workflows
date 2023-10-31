@@ -1,4 +1,3 @@
-
 {% include 'data.sql.jinja2' with context %}
 
 SELECT
@@ -8,7 +7,13 @@ SELECT
   FORMAT("logos/country/sm/%s.svg", country.alpha3) as logo_sm,
   FORMAT("logos/country/md/%s.svg", country.alpha3) as logo_md,
   FORMAT("logos/country/md/%s.svg", country.alpha3) as logo_lg,
+  CAST(NULL AS STRING) as url,
   country.wikipedia_url,
+  STRUCT(
+    CAST(NULL AS STRING) as text,
+    CAST(NULL AS STRING) as license,
+    CAST(NULL AS STRING) as url
+  ) as description,
   country.subregion as subregion,
   country.region as region,
   country.alpha2 as alpha2, -- used for country flags
@@ -24,4 +29,5 @@ LEFT JOIN aggregate_data ON aggregate_data.id = country.alpha3
 LEFT JOIN years_agg ON years_agg.id = country.alpha3
 LEFT JOIN repositories ON repositories.id = country.alpha3
 WHERE ARRAY_LENGTH(years) > 0
+AND stats.n_outputs >= {{ inclusion_threshold }}
 ORDER BY stats.p_outputs_open DESC

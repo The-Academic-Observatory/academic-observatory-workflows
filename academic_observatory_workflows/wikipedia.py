@@ -16,15 +16,59 @@
 
 from __future__ import annotations
 
+import logging
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple
 
 import nltk
 import requests
 from airflow.exceptions import AirflowException
 
+WIKI_MAX_TITLES = 20  # Set the number of titles for which wiki descriptions are retrieved at once, the API can return max 20 extracts.
 
-def fetch_wiki_descriptions(wikipedia_urls: List) -> List[Tuple[str, str]]:
+
+def fetch_wikipedia_descriptions(wikipedia_urls: List[str]) -> List[Tuple[str, str]]:
+    """Get the wikipedia descriptions for each entity (institution or country).
+
+    :param wikipedia_urls: a list of Wikipedia URLs.
+    :return: None.
+    """
+
+    # Download 'punkt' resource, required when shortening wiki descriptions
+    nltk.download("punkt")
+    total = len(wikipedia_urls)
+
+    # Create list with dictionaries of max 20 ids + titles (this is wiki api max)
+    chunks = [wikipedia_urls[i : i + WIKI_MAX_TITLES] for i in range(0, len(wikipedia_urls), WIKI_MAX_TITLES)]
+    logging.info(f"Downloading {total} wikipedia descriptions in {len(chunks)} chunks.")
+
+    # Process each dictionary in separate thread to get wiki descriptions
+    futures, results = [], []
+    with ThreadPoolExecutor() as executor:
+        # Queue tasks
+        for chunk in chunks:
+            futures.append(executor.submit(fetch_wikipedia_descriptions_batch, chunk))
+
+        # Wait for results
+        for completed in as_completed(futures):
+            results += completed.result()
+
+            # Print progress
+            n_progress = len(results)
+            p_progress = n_progress / total * 100
+            if n_progress % 100 == 0:
+                logging.info(f"Downloading descriptions {n_progress}/{total}: {p_progress:.2f}%")
+
+    logging.info(f"Finished downloading wikipedia descriptions")
+    logging.info(f"Expected results: {total}, actual num descriptions returned: {len(wikipedia_urls)}")
+    if total != len(results):
+        raise Exception(f"Number of Wikipedia descriptions returned does not match the number of Wikipedia URLs sent")
+
+    return results
+
+
+def fetch_wikipedia_descriptions_batch(wikipedia_urls: List) -> List[Tuple[str, str]]:
     """Fetch the wikipedia descriptions for a set of Wikipedia URLs
 
     :param wikipedia_urls: a list of Wikipedia URLs.

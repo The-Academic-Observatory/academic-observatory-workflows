@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import functools
 import glob
 import json
 import logging
@@ -28,32 +29,34 @@ import shutil
 import statistics
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import field
-from typing import Tuple, Union, Optional, List, Dict
+from typing import Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 from zipfile import ZipFile
 
 import google.cloud.bigquery as bigquery
 import jsonlines
-import nltk
 import numpy as np
 import pandas as pd
 import pendulum
 from airflow.exceptions import AirflowException
 from airflow.sensors.external_task import ExternalTaskSensor
 from jinja2 import Template
-from pandas.api.types import is_string_dtype
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
 from academic_observatory_workflows.config import Tag
 from academic_observatory_workflows.github import trigger_repository_dispatch
-from academic_observatory_workflows.institutions import INSTITUTION_IDS
-from academic_observatory_workflows.wikipedia import fetch_wiki_descriptions
+from academic_observatory_workflows.wikipedia import fetch_wikipedia_descriptions
+from academic_observatory_workflows.workflows.oa_web_workflow.institution_ids import INSTITUTION_IDS
 from academic_observatory_workflows.zenodo import Zenodo, make_draft_version, publish_new_version
 from observatory.platform.airflow import get_airflow_connection_password
 from observatory.platform.bigquery import (
     bq_sharded_table_id,
-    bq_select_table_shard_dates,
+    bq_create_dataset,
+    bq_run_query,
     bq_table_id,
+    bq_select_latest_table,
+    bq_load_from_memory,
+    bq_create_table_from_query,
 )
 from observatory.platform.files import load_jsonl, save_jsonl_gz
 from observatory.platform.gcs import (
@@ -61,109 +64,19 @@ from observatory.platform.gcs import (
     gcs_download_blobs,
     gcs_upload_file,
     gcs_download_blob,
-    gcs_blob_uri,
 )
 from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.workflows.workflow import Workflow, SnapshotRelease, cleanup, make_snapshot_date
+from observatory.platform.utils.jinja2_utils import (
+    render_template,
+)
+from observatory.platform.workflows.workflow import Workflow, make_snapshot_date, set_task_state, SnapshotRelease
+from observatory.platform.workflows.workflow import cleanup
 
-# The minimum number of outputs before including an entity in the analysis
-PERCENTAGE_FIELD_KEYS = [
-    ("outputs_open", "n_outputs"),
-    ("outputs_both", "n_outputs"),
-    ("outputs_closed", "n_outputs"),
-    ("outputs_publisher_open", "n_outputs"),
-    ("outputs_publisher_open_only", "n_outputs"),
-    ("outputs_other_platform_open", "n_outputs"),
-    ("outputs_other_platform_open_only", "n_outputs"),
-    ("outputs_black", "n_outputs"),
-    ("outputs_oa_journal", "n_outputs_publisher_open"),
-    ("outputs_hybrid", "n_outputs_publisher_open"),
-    ("outputs_no_guarantees", "n_outputs_publisher_open"),
-    ("outputs_preprint", "n_outputs_other_platform_open"),
-    ("outputs_domain", "n_outputs_other_platform_open"),
-    ("outputs_institution", "n_outputs_other_platform_open"),
-    ("outputs_public", "n_outputs_other_platform_open"),
-    ("outputs_other_internet", "n_outputs_other_platform_open"),
-]
 INCLUSION_THRESHOLD = {"country": 15, "institution": 1000}
 MAX_REPOSITORIES = 200
 START_YEAR = 2000
 END_YEAR = pendulum.now().year - 1
-WIKI_MAX_TITLES = 20  # Set the number of titles for which wiki descriptions are retrieved at once, the API can return max 20 extracts.
 
-# Queries that pull data
-INSTITUTION_INDEX_QUERY = """
-SELECT
-  ror.id,
-  ror.name,
-  (SELECT * from ror.links LIMIT 1) AS url,
-  ror.wikipedia_url,
-  country.alpha3 as country_code,
-  country.wikipedia_name as country_name,
-  country.subregion as subregion,
-  country.region as region,
-  (SELECT * from ror.types LIMIT 1) AS institution_type,
-  ror.acronyms
-FROM
-  `{ror_table_id}` as ror
-  LEFT OUTER JOIN `{country_table_id}` as country ON ror.country.country_code = country.alpha2
-ORDER BY name ASC
-"""
-
-COUNTRY_INDEX_QUERY = """
-SELECT
-  country.alpha3 as id,
-  country.wikipedia_name as name,
-  country.wikipedia_url,
-  country.subregion as subregion,
-  country.region as region,
-  country.alpha2 as alpha2, -- used for country flags
-  CASE 
-      WHEN country.alpha3 = 'GBR' THEN ARRAY<STRING>[country.alpha3, country.alpha2, 'UK']
-      ELSE ARRAY<STRING>[country.alpha3, country.alpha2]
-  END as acronyms
-FROM
-  `{country_table_id}` as country
-ORDER BY name ASC
-"""
-
-DATA_QUERY = """
-SELECT
-  agg.id,
-  agg.time_period as year,
-  agg.citations.openalex.total_citations as n_citations,  
-  agg.total_outputs as n_outputs,
-
-  -- COKI OA Categories
-  agg.coki.oa.coki.open.total AS n_outputs_open,
-  agg.coki.oa.coki.publisher.total AS n_outputs_publisher_open,
-  agg.coki.oa.coki.publisher_only.total AS n_outputs_publisher_open_only,
-  agg.coki.oa.coki.both.total AS n_outputs_both,
-  agg.coki.oa.coki.other_platform.total AS n_outputs_other_platform_open,
-  agg.coki.oa.coki.other_platform_only.total AS n_outputs_other_platform_open_only,
-  agg.coki.oa.coki.closed.total AS n_outputs_closed,
-
-  -- Publisher Open Categories
-  agg.coki.oa.coki.publisher_categories.oa_journal.total AS n_outputs_oa_journal,
-  agg.coki.oa.coki.publisher_categories.hybrid.total AS n_outputs_hybrid,
-  agg.coki.oa.coki.publisher_categories.no_guarantees.total AS n_outputs_no_guarantees,
-
-  -- Other Platform Open Categories
-  agg.coki.oa.coki.other_platform_categories.preprint.total AS n_outputs_preprint,
-  agg.coki.oa.coki.other_platform_categories.domain.total AS n_outputs_domain,
-  agg.coki.oa.coki.other_platform_categories.institution.total AS n_outputs_institution,
-  agg.coki.oa.coki.other_platform_categories.public.total AS n_outputs_public,
-  agg.coki.oa.coki.other_platform_categories.aggregator.total + agg.coki.oa.coki.other_platform_categories.other_internet.total + agg.coki.oa.coki.other_platform_categories.unknown.total AS n_outputs_other_internet, 
-
-  -- Black
-  agg.coki.oa.color.black.total_outputs as n_outputs_black,
-
-  agg.coki.repositories
-FROM
-  `{agg_table_id}` as agg
-WHERE agg.time_period >= {start_year} AND agg.time_period <= {end_year}
-ORDER BY year DESC
-"""
 
 README = """# COKI Open Access Dataset
 The COKI Open Access Dataset measures open access performance for {{ n_countries }} countries and {{ n_institutions }} institutions
@@ -198,7 +111,19 @@ The COKI Open Access Dataset contains information from:
 
 
 class OaWebRelease(SnapshotRelease):
-    def __init__(self, *, dag_id: str, run_id: str, snapshot_date: pendulum.DateTime):
+    def __init__(
+        self,
+        *,
+        dag_id: str,
+        run_id: str,
+        snapshot_date: pendulum.DateTime,
+        input_project_id: str,
+        output_project_id: str,
+        bq_ror_dataset_id: str,
+        bq_settings_dataset_id: str,
+        bq_agg_dataset_id: str,
+        bq_oa_dashboard_dataset_id: str,
+    ):
         """Create an OaWebRelease instance.
 
         :param dag_id: the dag id.
@@ -208,6 +133,12 @@ class OaWebRelease(SnapshotRelease):
         """
 
         super().__init__(dag_id=dag_id, run_id=run_id, snapshot_date=snapshot_date)
+        self.input_project_id = input_project_id
+        self.output_project_id = output_project_id
+        self.bq_ror_dataset_id = bq_ror_dataset_id
+        self.bq_settings_dataset_id = bq_settings_dataset_id
+        self.bq_agg_dataset_id = bq_agg_dataset_id
+        self.bq_oa_dashboard_dataset_id = bq_oa_dashboard_dataset_id
 
     @property
     def build_path(self):
@@ -227,12 +158,61 @@ class OaWebRelease(SnapshotRelease):
         os.makedirs(path, exist_ok=True)
         return path
 
+    @functools.cached_property
+    def ror_table_id(self):
+        return bq_select_latest_table(
+            table_id=bq_table_id(self.input_project_id, self.bq_ror_dataset_id, "ror"),
+            end_date=self.snapshot_date,
+            sharded=True,
+        )
+
+    @functools.cached_property
+    def country_table_id(self):
+        return bq_table_id(self.input_project_id, self.bq_settings_dataset_id, "country")
+
+    def observatory_agg_table_id(self, table_name: str):
+        return bq_select_latest_table(
+            table_id=bq_table_id(self.input_project_id, self.bq_agg_dataset_id, table_name),
+            end_date=self.snapshot_date,
+            sharded=True,
+        )
+
+    @functools.cached_property
+    def institution_ids_table_id(self):
+        return bq_sharded_table_id(
+            self.output_project_id, self.bq_oa_dashboard_dataset_id, "institution_ids", self.snapshot_date
+        )
+
+    def oa_dashboard_table_id(self, table_name: str):
+        return bq_sharded_table_id(
+            self.output_project_id, self.bq_oa_dashboard_dataset_id, table_name, self.snapshot_date
+        )
+
+    def descriptions_table_id(self, table_name: str):
+        return bq_sharded_table_id(
+            self.output_project_id, self.bq_oa_dashboard_dataset_id, f"{table_name}_descriptions", self.snapshot_date
+        )
+
+    def logos_table_id(self, table_name: str):
+        return bq_sharded_table_id(
+            self.output_project_id, self.bq_oa_dashboard_dataset_id, f"{table_name}_logos", self.snapshot_date
+        )
+
+
+def sql_folder():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql")
+
+
+def schema_folder() -> str:
+    """Return the path to the database schema template folder.
+
+    :return: the path.
+    """
+
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema")
+
 
 class OaWebWorkflow(Workflow):
-    ROR_FILE = "ror.jsonl.gz"
-    COUNTRY_INDEX_FILE = "country-index.jsonl.gz"
-    INSTITUTION_INDEX_FILE = "institution-index.jsonl.gz"
-
     """The OaWebWorkflow generates data files for the COKI Open Access Dashboard.
 
     The figure below illustrates the generated data and notes about what each file is used for.
@@ -292,6 +272,8 @@ class OaWebWorkflow(Workflow):
         bq_agg_dataset_id: str = "observatory",
         bq_ror_dataset_id: str = "ror",
         bq_settings_dataset_id: str = "settings",
+        bq_oa_dashboard_dataset_id: str = "oa_dashboard",
+        data_location: str = "us",
         version: str = "v10",
         zenodo_host: str = "https://zenodo.org",
         github_conn_id="oa_web_github_token",
@@ -339,6 +321,8 @@ class OaWebWorkflow(Workflow):
         self.bq_agg_dataset_id = bq_agg_dataset_id
         self.bq_ror_dataset_id = bq_ror_dataset_id
         self.bq_settings_dataset_id = bq_settings_dataset_id
+        self.bq_oa_dashboard_dataset_id = bq_oa_dashboard_dataset_id
+        self.data_location = data_location
         self.table_names = table_names
         self.version = version
         self.conceptrecid = conceptrecid
@@ -352,19 +336,41 @@ class OaWebWorkflow(Workflow):
             ExternalTaskSensor(task_id=f"{doi_dag_id}_sensor", external_dag_id=doi_dag_id, mode="reschedule")
         )
         self.add_setup_task(self.check_dependencies)
-        self.add_task(self.query)
-        self.add_task(self.download)
-        self.add_task(self.make_draft_zenodo_version)
+        self.add_task(self.make_datasets)
+
+        # Create data for website
+        self.add_task(self.upload_institution_ids)
+        self.add_task(self.create_entity_tables)
+        self.add_task(
+            self.add_wiki_descriptions,
+            op_kwargs={"entity_type": "country"},
+            task_id="add_wiki_descriptions_country",
+        )
+        self.add_task(
+            self.add_wiki_descriptions,
+            op_kwargs={"entity_type": "institution"},
+            task_id="add_wiki_descriptions_institution",
+        )
         self.add_task(self.download_assets)
-        self.add_task(self.preprocess_data)
-        self.add_task(self.build_indexes)
-        self.add_task(self.download_logos)
-        self.add_task(self.download_wiki_descriptions)
-        self.add_task(self.build_datasets)
-        self.add_task(self.publish_zenodo_version)
-        self.add_task(self.upload_dataset)
-        self.add_task(self.repository_dispatch)
-        self.add_task(self.cleanup)
+        self.add_task(self.download_institution_logos)
+
+        # Download data and create archives for website and Zenodo
+        # self.add_task(self.make_draft_zenodo_version)
+
+        # self.add_task(self.download)
+        #
+        #
+        # self.add_task(self.preprocess_data)
+        #
+        # self.add_task(self.download_wiki_descriptions)
+        # self.add_task(self.download_wiki_descriptions)
+        # # self.add_task(self.build_indexes)
+        #
+        # self.add_task(self.build_datasets)
+        # self.add_task(self.publish_zenodo_version)
+        # self.add_task(self.upload_dataset)
+        # self.add_task(self.repository_dispatch)
+        # self.add_task(self.cleanup)
 
     ######################################
     # Airflow tasks
@@ -389,122 +395,100 @@ class OaWebWorkflow(Workflow):
             dag_id=self.dag_id,
             run_id=kwargs["run_id"],
             snapshot_date=snapshot_date,
+            input_project_id=self.input_project_id,
+            output_project_id=self.output_project_id,
+            bq_ror_dataset_id=self.bq_ror_dataset_id,
+            bq_settings_dataset_id=self.bq_settings_dataset_id,
+            bq_agg_dataset_id=self.bq_agg_dataset_id,
+            bq_oa_dashboard_dataset_id=self.bq_oa_dashboard_dataset_id,
         )
 
-    def query(self, release: OaWebRelease, **kwargs):
-        """Fetch the data for each table.
+    def make_datasets(self, release: OaWebRelease, **kwargs):
+        """Fetch the data for each table."""
 
-        :param release: the release instance.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
+        bq_create_dataset(
+            project_id=self.output_project_id,
+            dataset_id=self.bq_oa_dashboard_dataset_id,
+            location=self.data_location,
+            description="The COKI Open Access Dashboard dataset",
+        )
+
+    def upload_institution_ids(self, release: OaWebRelease, **kwargs):
+        """Upload the institution IDs to BigQuery"""
+
+        # Load the institution ID table
+
+        data = [{"ror_id": ror_id} for ror_id in INSTITUTION_IDS]
+        success = bq_load_from_memory(
+            release.institution_ids_table_id,
+            data,
+            schema_file_path=os.path.join(schema_folder(), "institution_ids.json"),
+        )
+        set_task_state(success, self.upload_institution_ids.__name__, release)
+
+    def create_entity_tables(self, release: OaWebRelease, **kwargs):
+        """Create the country and institution tables"""
 
         results = []
         queries = []
-        blob_prefix = gcs_blob_name_from_path(release.download_folder)
 
         # Query the country and institution aggregations
         for table_name in self.table_names:
-            # Aggregate release dates
-            table_id = bq_table_id(self.input_project_id, self.bq_agg_dataset_id, table_name)
-            agg_snapshot_date = bq_select_table_shard_dates(
-                table_id=table_id,
-                end_date=release.snapshot_date,
-            )[0]
-            agg_table_id = bq_sharded_table_id(
-                self.input_project_id, self.bq_agg_dataset_id, table_name, agg_snapshot_date
+            template_path = os.path.join(sql_folder(), f"{table_name}.sql.jinja2")
+            sql = render_template(
+                template_path,
+                agg_table_id=release.observatory_agg_table_id(table_name),
+                start_year=START_YEAR,
+                end_year=END_YEAR,
+                ror_table_id=release.ror_table_id,
+                country_table_id=release.country_table_id,
+                institution_ids_table_id=release.institution_ids_table_id,
+                inclusion_threshold=INCLUSION_THRESHOLD[table_name],
             )
+            dst_table_id = release.oa_dashboard_table_id(table_name)
+            queries.append((sql, dst_table_id))
 
-            # Fetch data
-            destination_uri = f"gs://{self.cloud_workspace.download_bucket}/{blob_prefix}/{table_name}-data-*.jsonl.gz"
-            query = (
-                DATA_QUERY.format(
-                    agg_table_id=agg_table_id,
-                    start_year=START_YEAR,
-                    end_year=END_YEAR,
-                ),
-            )
-            queries.append((query, destination_uri))
-
-        # Query ROR table
-        ror_table_id = bq_table_id(self.input_project_id, self.bq_ror_dataset_id, "ror")
-        ror_snapshot_date = bq_select_table_shard_dates(
-            table_id=ror_table_id,
-            end_date=release.snapshot_date,
-        )[0]
-        ror_table_id = bq_sharded_table_id(self.input_project_id, self.bq_ror_dataset_id, "ror", ror_snapshot_date)
-        country_table_id = bq_table_id(self.input_project_id, self.bq_settings_dataset_id, "country")
-
-        # Query institution index table
-        destination_uri = gcs_blob_uri(
-            self.cloud_workspace.download_bucket, f"{blob_prefix}/{self.INSTITUTION_INDEX_FILE}"
-        )
-        queries.append(
-            (
-                INSTITUTION_INDEX_QUERY.format(
-                    ror_table_id=ror_table_id,
-                    country_table_id=country_table_id,
-                ),
-                destination_uri,
-            )
-        )
-
-        # Query the country index table
-        destination_uri = gcs_blob_uri(self.cloud_workspace.download_bucket, f"{blob_prefix}/{self.COUNTRY_INDEX_FILE}")
-        queries.append(
-            (
-                COUNTRY_INDEX_QUERY.format(
-                    country_table_id=country_table_id,
-                ),
-                destination_uri,
-            )
-        )
-
-        # Run queries, saving results to Google Cloud Storage
-        for (query, destination_uri) in queries:
-            success = bq_query_to_gcs(
-                query=query,
-                project_id=self.output_project_id,
-                destination_uri=destination_uri,
-            )
+        # Run queries, saving to BigQuery
+        for (sql, dst_table_id) in queries:
+            success = bq_create_table_from_query(sql=sql, table_id=dst_table_id)
             results.append(success)
 
         state = all(results)
         if not state:
             raise AirflowException("OaWebWorkflow.query failed")
 
-    def download(self, release: OaWebRelease, **kwargs):
-        """Download the queried data.
+    def add_wiki_descriptions(self, release: OaWebRelease, entity_type: str, **kwargs):
+        """Download wiki descriptions and update indexes."""
 
-        :param release: the release instance.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
+        logging.info(f"add_wiki_descriptions: {entity_type}")
 
-        blob_prefix = gcs_blob_name_from_path(release.download_folder)
-        state = gcs_download_blobs(
-            bucket_name=self.cloud_workspace.download_bucket,
-            prefix=blob_prefix,
-            destination_path=release.download_folder,
+        # Get entities to fetch descriptions for
+        results = bq_run_query(
+            f"SELECT DISTINCT wikipedia_url FROM {release.oa_dashboard_table_id(entity_type)} WHERE wikipedia_url IS NOT NULL"
         )
-        if not state:
-            raise AirflowException("OaWebWorkflow.download failed")
+        wikipedia_urls = [result["wikipedia_url"] for result in results]
 
-    def make_draft_zenodo_version(self, release: OaWebRelease, **kwargs):
-        """Make a draft Zenodo version of the dataset.
+        # Fetch Wikipedia descriptions
+        results = fetch_wikipedia_descriptions(wikipedia_urls)
 
-        :param release: the release instance.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
+        # Upload to BigQuery
+        data = [{"text": text, "url": url} for url, text in results]
+        desc_table_id = release.descriptions_table_id(entity_type)
+        success = bq_load_from_memory(
+            desc_table_id,
+            data,
+            schema_file_path=os.path.join(schema_folder(), "descriptions.json"),
+        )
+        assert success, f"Uploading data to {desc_table_id} table failed"
 
-        make_draft_version(self.zenodo, self.conceptrecid)
+        # Update with entity table
+        template_path = os.path.join(sql_folder(), "update_descriptions.sql.jinja2")
+        sql = render_template(
+            template_path,
+            entity_table_id=release.oa_dashboard_table_id(entity_type),
+            descriptions_table_id=desc_table_id,
+        )
+        bq_run_query(sql)
 
     def download_assets(self, release: OaWebRelease, **kwargs):
         """Download assets.
@@ -529,6 +513,44 @@ class OaWebWorkflow(Workflow):
             with ZipFile(file_path) as zip_file:
                 zip_file.extractall(unzip_folder_path)  # Overwrites by default
 
+    def download_institution_logos(self, release: OaWebRelease, **kwargs):
+        """Download logos and update indexes.
+
+        :param release: the release.
+        :param kwargs: the context passed from the PythonOperator. See
+        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+        passed to this argument.
+        :return: None.
+        """
+
+        logging.info(f"download_logos: institution")
+
+        # Get entities to fetch descriptions for
+        entity_type = "institution"
+        results = bq_run_query(f"SELECT id, url FROM {release.oa_dashboard_table_id(entity_type)}")
+        entities = [(result["id"], result["url"]) for result in results]
+
+        # Update logos
+        data = fetch_institution_logos(release.build_path, entities)
+
+        # Upload to BigQuery
+        logos_table_id = release.logos_table_id(entity_type)
+        success = bq_load_from_memory(
+            logos_table_id,
+            data,
+            schema_file_path=os.path.join(schema_folder(), "logos.json"),
+        )
+        assert success, f"Uploading data to {logos_table_id} table failed"
+
+        # Update with entity table
+        template_path = os.path.join(sql_folder(), "update_logos.sql.jinja2")
+        sql = render_template(
+            template_path,
+            entity_table_id=release.oa_dashboard_table_id(entity_type),
+            logos_table_id=logos_table_id,
+        )
+        bq_run_query(sql)
+
     def preprocess_data(self, release: OaWebRelease, **kwargs):
         """Preprocess data.
 
@@ -542,6 +564,9 @@ class OaWebWorkflow(Workflow):
         #################
         # Country
         #################
+
+        # TODO: convert strings to numbers?
+        # TODO: apply threshold for inclusion
 
         for category in self.table_names:
             logging.info(f"preprocess_data: {category}")
@@ -557,8 +582,8 @@ class OaWebWorkflow(Workflow):
             records = df_data.to_dict("records")
             save_jsonl_gz(data_path, records)
 
-    def build_indexes(self, release: OaWebRelease, **kwargs):
-        """Build unique country and institution indexes.
+    def download(self, release: OaWebRelease, **kwargs):
+        """Download the queried data.
 
         :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
@@ -567,55 +592,50 @@ class OaWebWorkflow(Workflow):
         :return: None.
         """
 
-        for category in self.table_names:
-            logging.info(f"build_indexes: {category}")
+        blob_prefix = gcs_blob_name_from_path(release.download_folder)
+        state = gcs_download_blobs(
+            bucket_name=self.cloud_workspace.download_bucket,
+            prefix=blob_prefix,
+            destination_path=release.download_folder,
+        )
+        if not state:
+            raise AirflowException("OaWebWorkflow.download failed")
 
-            # Load downloaded index
-            index_name = f"{category}-index.jsonl.gz"
-            index_path = os.path.join(release.download_folder, index_name)
-            df_index = load_data(index_path)
-            preprocess_index_df(category, df_index)
+    # def build_indexes(self, release: OaWebRelease, **kwargs):
+    #     """Build unique country and institution indexes.
+    #
+    #     :param release: the release instance.
+    #     :param kwargs: the context passed from the PythonOperator. See
+    #     https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
+    #     passed to this argument.
+    #     :return: None.
+    #     """
+    #
+    #     for category in self.table_names:
+    #         logging.info(f"build_indexes: {category}")
+    #
+    #         # Load downloaded index
+    #         index_name = f"{category}-index.jsonl.gz"
+    #         index_path = os.path.join(release.download_folder, index_name)
+    #         df_index = load_data(index_path)
+    #         preprocess_index_df(category, df_index) # DONE
+    #
+    #         # Load data file
+    #         data_path = os.path.join(release.intermediate_path, f"{category}-data.jsonl.gz")
+    #         df_data = load_data(data_path)
+    #
+    #         # Aggregate data file
+    #         df_index = make_index_df(category, df_index, df_data)
+    #
+    #         logging.info(f"Total {category} entities: {len(df_index)}")
+    #
+    #         # Save index to intermediate
+    #         index_path = os.path.join(release.intermediate_path, index_name)
+    #         rows: List[Dict] = df_index.to_dict("records")
+    #         save_jsonl_gz(index_path, rows)
 
-            # Load data file
-            data_path = os.path.join(release.intermediate_path, f"{category}-data.jsonl.gz")
-            df_data = load_data(data_path)
-
-            # Aggregate data file
-            df_index = make_index_df(category, df_index, df_data)
-
-            logging.info(f"Total {category} entities: {len(df_index)}")
-
-            # Save index to intermediate
-            index_path = os.path.join(release.intermediate_path, index_name)
-            rows: List[Dict] = df_index.to_dict("records")
-            save_jsonl_gz(index_path, rows)
-
-    def download_logos(self, release: OaWebRelease, **kwargs):
-        """Download logos and update indexes.
-
-        :param release: the release.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
-
-        for category in self.table_names:
-            logging.info(f"download_logos: {category}")
-
-            # Load index
-            index_path = os.path.join(release.intermediate_path, f"{category}-index.jsonl.gz")
-            df_index = load_data(index_path)
-
-            # Update logos
-            df_index = update_index_with_logos(release.build_path, category, df_index)
-
-            # Save updated index
-            rows: List[Dict] = df_index.to_dict("records")
-            save_jsonl_gz(index_path, rows)
-
-    def download_wiki_descriptions(self, release: OaWebRelease, **kwargs):
-        """Download wiki descriptions and update indexes.
+    def make_draft_zenodo_version(self, release: OaWebRelease, **kwargs):
+        """Make a draft Zenodo version of the dataset.
 
         :param release: the release instance.
         :param kwargs: the context passed from the PythonOperator. See
@@ -624,19 +644,7 @@ class OaWebWorkflow(Workflow):
         :return: None.
         """
 
-        for category in self.table_names:
-            logging.info(f"download_wiki_descriptions: {category}")
-
-            # Load index
-            index_path = os.path.join(release.intermediate_path, f"{category}-index.jsonl.gz")
-            df_index = load_data(index_path)
-
-            # Update logos
-            df_index = update_index_with_wiki_descriptions(df_index)
-
-            # Save updated index
-            rows: List[Dict] = df_index.to_dict("records")
-            save_jsonl_gz(index_path, rows)
+        make_draft_version(self.zenodo, self.conceptrecid)
 
     def build_datasets(self, release: OaWebRelease, **kwargs):
         """Transform the queried data into the final format for the open access website.
@@ -1246,28 +1254,6 @@ def save_as_jsonl(output_path: str, iterable: List[Dict]):
             writer.write_all(iterable)
 
 
-def clean_ror_id(ror_id: str):
-    """Remove the https://ror.org/ prefix from a ROR id.
-
-    :param ror_id: original ROR id.
-    :return: cleaned ROR id.
-    """
-
-    return ror_id.replace("https://ror.org/", "")
-
-
-def repositories_sort_key(col):
-    if is_string_dtype(col.dtype):
-        return col.str.lower()
-    return col
-
-
-def repositories_merge_category(cat):
-    if cat in {"Aggregator", "Unknown"}:
-        return "Other Internet"
-    return cat
-
-
 ######################
 # Transform data
 ######################
@@ -1300,110 +1286,6 @@ def load_data(file_path: str) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 
-def preprocess_data_df(entity_type: str, df: pd.DataFrame):
-    """Pre-process the data frame.
-
-    :param entity_type: the entity_type.
-    :param df: the dataframe.
-    :return: the Pandas Dataframe.
-    """
-
-    # Convert data types
-    df["year"] = pd.to_numeric(df["year"])
-    df["date"] = df["year"].apply(lambda year: f"{year}-12-31")
-    df.fillna("", inplace=True)
-    for column in df.columns:
-        if column.startswith("n_"):
-            df[column] = pd.to_numeric(df[column])
-
-    # entity_type specific processing
-    if entity_type == "institution":
-        # Clean RoR ids
-        df["id"] = df["id"].apply(lambda i: clean_ror_id(i))
-
-
-def preprocess_index_df(entity_type: str, df: pd.DataFrame):
-    """Pre-process the index data frame.
-
-    :param entity_type: the entity_type.
-    :param df: the dataframe.
-    :return: the Pandas Dataframe.
-    """
-
-    # Convert data types
-    df.fillna("", inplace=True)
-
-    # Clean RoR ids
-    if entity_type == "institution":
-        # Remove columns not used for institutions
-        df.drop(columns=["alpha2"], inplace=True, errors="ignore")
-
-        # Clean RoR ids
-        df["id"] = df["id"].apply(lambda i: clean_ror_id(i))
-
-
-def make_index_df(entity_type: str, df_index: pd.DataFrame, df_data: pd.DataFrame):
-    """Make the data for the index tables.
-
-    :param entity_type: the entity_type, i.e. country or institution.
-    :param df_index: index dataframe.
-    :param df_data: data dataframe.
-    :return:
-    """
-
-    # Create aggregate
-    agg = {}
-    for column in df_data.columns:
-        if column.startswith("n_"):
-            agg[column] = "sum"
-        else:
-            agg[column] = "first"
-
-    # Create aggregate
-    df_agg = df_data.groupby(["id"]).agg(
-        agg,
-        index=False,
-    )
-
-    # Include entities that meet a criteria
-    mask = df_agg.apply(lambda row: include_entity(entity_type, row["n_outputs"], row["id"]), axis=1)
-    df_agg = df_agg[mask]
-
-    # Add percentages to dataframe
-    update_df_with_percentages(df_agg, PERCENTAGE_FIELD_KEYS)
-
-    # Sort from highest oa percentage to lowest
-    df_agg.sort_values(by=["n_outputs_open"], ascending=False, inplace=True)
-
-    # Add entity_type
-    df_agg["entity_type"] = entity_type
-
-    # Remove date and repositories
-    df_agg.drop(columns=["year", "date", "repositories"], inplace=True)
-    df_agg.reset_index(drop=True, inplace=True)
-
-    # Merge
-    df_merged = pd.merge(df_index, df_agg, how="inner", on="id")
-
-    return df_merged
-
-
-def update_df_with_percentages(df: pd.DataFrame, keys: List[Tuple[str, str]]):
-    """Calculate percentages for fields in a Pandas dataframe.
-
-    :param df: the Pandas dataframe.
-    :param keys: they keys to calculate percentages for.
-    :return: None.
-    """
-
-    for numerator_key, denominator_key in keys:
-        p_key = f"p_{numerator_key}"
-        df[p_key] = df[f"n_{numerator_key}"] / df[denominator_key] * 100
-
-        # Fill in NaN caused by denominator of zero
-        df[p_key] = df[p_key].fillna(0)
-
-
 def select_subset(original: Dict, include_keys: Dict):
     """Select a subset of a dictionary.
 
@@ -1422,56 +1304,6 @@ def select_subset(original: Dict, include_keys: Dict):
     return output
 
 
-def make_index(entity_type: str, entities: List[Entity]):
-    """Make an index file.
-
-    :param entity_type: the entity entity_type.
-    :param entities: a list of entities.
-    :return: None.
-    """
-
-    # Convert entities to dictionaries and select a subset of fields
-    subset = {
-        "id": None,
-        "name": None,
-        "logo_sm": None,
-        "entity_type": None,
-        "country_code": None,
-        "country_name": None,
-        "subregion": None,
-        "region": None,
-        "institution_type": None,
-        "acronyms": None,
-        "stats": {
-            "n_outputs": None,
-            "n_outputs_open": None,
-            "n_outputs_black": None,
-            "p_outputs_open": None,
-            "p_outputs_publisher_open_only": None,
-            "p_outputs_both": None,
-            "p_outputs_other_platform_open_only": None,
-            "p_outputs_closed": None,
-            "p_outputs_black": None,
-        },
-    }
-    data = []
-    for entity in entities:
-        # Select subset
-        item = select_subset(entity.to_dict(), subset)
-
-        # If country delete unused fields
-        if entity_type == "country":
-            for key in ["country_code", "country_name", "institution_type"]:
-                try:
-                    del item[key]
-                except KeyError:
-                    pass
-
-        data.append(item)
-
-    return data
-
-
 def include_entity(entity_type: str, n_outputs: int, entity_id: str = None) -> bool:
     """Whether to include an entity or not
 
@@ -1486,97 +1318,6 @@ def include_entity(entity_type: str, n_outputs: int, entity_id: str = None) -> b
     elif entity_type == "institution":
         return entity_id in INSTITUTION_IDS or n_outputs >= INCLUSION_THRESHOLD[entity_type]
     return False
-
-
-def make_entities(entity_type: str, df_index: pd.DataFrame, df_data: pd.DataFrame) -> List[Entity]:
-    """Make entities.
-
-    :param entity_type: the entity entity_type.
-    :param df_index: the index dataframe.
-    :param df_data: the data dataframe.
-    :return: the Entity objects.
-    """
-
-    entities = []
-    key_id = "id"
-    key_year = "year"
-    key_date = "date"
-    key_records = "records"
-    total = len(df_index)
-
-    logging.info(f"Making entities: {entity_type}")
-    ts_groups = df_data.groupby(key_id)
-
-    for entity_id, df_group in ts_groups:
-        # Exclude countries and institutions with small num outputs
-        total_outputs = df_group["n_outputs"].sum()
-        if include_entity(entity_type, total_outputs, entity_id):
-            update_df_with_percentages(df_group, PERCENTAGE_FIELD_KEYS)
-            df_group = df_group.sort_values(by=[key_year])
-            df_group = df_group.loc[:, ~df_group.columns.str.contains("^Unnamed")]
-
-            # Create entity
-            entity_dict: Dict = df_index.loc[df_index[key_id] == entity_id].to_dict(key_records)[0]
-            entity = Entity.from_dict(entity_dict)
-            entity.stats = PublicationStats.from_dict(entity_dict)
-
-            # Make timeseries data
-            years = []
-            rows: List[Dict] = df_group.to_dict(key_records)
-            for row in rows:
-                year = int(row.get(key_year))
-                date = pendulum.parse(row.get(key_date))
-                stats = PublicationStats.from_dict(row)
-                years.append(Year(year=year, date=date, stats=stats))
-            entity.years = years
-
-            # Make repositories
-            repositories = []
-            for row in rows:
-                repositories += row["repositories"]
-            df_repos = pd.DataFrame(repositories, columns=["id", "total_outputs", "category", "home_repo"])
-            df_repos["total_outputs"] = pd.to_numeric(df_repos["total_outputs"])
-            df_repos["category"] = df_repos["category"].apply(repositories_merge_category)
-            df_repos = (
-                df_repos.groupby(["id"], as_index=False)
-                .agg(
-                    {
-                        "id": "first",
-                        "total_outputs": "sum",
-                        "category": "first",
-                        "home_repo": "first",
-                    }
-                )
-                .sort_values(
-                    by=["total_outputs", "id"], ascending=[False, True], inplace=False, key=repositories_sort_key
-                )
-            )
-            repositories = df_repos.to_dict(key_records)
-            repositories = [Repository.from_dict(repo) for repo in repositories]
-
-            # Select a maximum number of repositories, however, make sure that all repositories that belong
-            # to the given institution are always present
-            entity.repositories = []
-            for repo in repositories:
-                if len(entity.repositories) <= MAX_REPOSITORIES or repo.home_repo:
-                    entity.repositories.append(repo)
-
-            # Set min and max years for data
-            entity.start_year = years[0].year
-            entity.end_year = years[-1].year
-
-            entities.append(entity)
-
-            # Print progress
-            n_progress = len(entities)
-            p_progress = n_progress / total * 100
-            if n_progress % 100 == 0:
-                logging.info(f"Making entities {n_progress}/{total}: {p_progress:.2f}%")
-
-    # Ensure that entities are sorted based on p_outputs_open
-    entities = sorted(entities, key=lambda e: e.stats.p_outputs_open, reverse=True)
-
-    return entities
 
 
 def make_entity_stats(entities: List[Entity]) -> EntityStats:
@@ -1678,128 +1419,54 @@ def clean_url(url: str) -> str:
     return f"{p.scheme}://{p.netloc}/"
 
 
-def update_index_with_logos(build_path: str, entity_type: str, df_index: pd.DataFrame) -> pd.DataFrame:
+def fetch_institution_logos(build_path: str, entities: List[Tuple[str, str]]) -> List[Dict]:
     """Update the index with logos, downloading logos if they don't exist.
 
     :param build_path: the path to the build folder.
-    :param entity_type: the entity_type, i.e. country or institution.
-    :param df_index: the index table Pandas dataframe.
+    :param entities: the entities to process consisting of their id and url.
     :return: None.
     """
 
-    # Make logos
-    sizes = ["sm", "md", "lg"]
-    if entity_type == "country":
-        logging.info("Adding country logos to index")
+    # Get the institution logo and the path to the logo image
+    logging.info("Downloading logos using Clearbit")
+    total = len(entities)
 
-        # Add logo urls to index
-        for size in sizes:
-            # For lg size point to md svg
-            make_logo_url_size = size
-            if size == "lg":
-                make_logo_url_size = "md"
-            df_index[f"logo_{size}"] = df_index["id"].apply(
-                lambda country_code: make_logo_url(
-                    entity_type=entity_type, entity_id=country_code, size=make_logo_url_size, fmt="svg"
-                )
-            )
+    results = {
+        entity_id: {"id": entity_id, "logo_sm": "unknown.svg", "logo_md": "unknown.svg", "logo_lg": "unknown.svg"}
+        for entity_id, url in entities
+    }
+    for size, width, fmt in [("sm", 32, "jpg"), ("md", 128, "jpg"), ("lg", 532, "png")]:
+        logging.info(f"Downloading logos: size={size}, width={width}, fmt={fmt}")
 
-    elif entity_type == "institution":
-        # Get the institution logo and the path to the logo image
-        logging.info("Downloading logos using Clearbit")
-        institution_sizes = [("sm", 32, "jpg"), ("md", 128, "jpg"), ("lg", 532, "png")]
-        total = len(df_index)
+        # Create jobs
+        futures = []
+        with ThreadPoolExecutor() as executor:
+            for entity_id, url in entities:
+                if url:
+                    url = clean_url(url)
+                    futures.append(
+                        executor.submit(fetch_institution_logo, entity_id, url, size, width, fmt, build_path)
+                    )
 
-        for size, width, fmt in institution_sizes:
-            logging.info(f"Downloading logos: size={size}, width={width}, fmt={fmt}")
+            # Wait for results
+            for completed in as_completed(futures):
+                entity_id, logo_path = completed.result()
+                results[entity_id][f"logo_{size}"] = logo_path
 
-            with ThreadPoolExecutor() as executor:
-                # Create jobs
-                futures, results = [], []
-                for ror_id, url in zip(df_index["id"], df_index["url"]):
-                    if url:
-                        url = clean_url(url)
-                        futures.append(
-                            executor.submit(fetch_institution_logo, ror_id, url, size, width, fmt, build_path)
-                        )
-                    else:
-                        results.append((ror_id, "unknown.svg"))
+                # Print progress
+                n_progress = len(results)
+                p_progress = n_progress / total * 100
+                if n_progress % 100 == 0:
+                    logging.info(f"Downloading logos {n_progress}/{total}: {p_progress:.2f}%")
 
-                # Wait for results
-                for completed in as_completed(futures):
-                    result = completed.result()
-                    results.append(result)
+        logging.info("Finished downloading logos")
 
-                    # Print progress
-                    n_progress = len(results)
-                    p_progress = n_progress / total * 100
-                    if n_progress % 100 == 0:
-                        logging.info(f"Downloading logos {n_progress}/{total}: {p_progress:.2f}%")
-
-            logging.info("Finished downloading logos")
-
-            # Merge results
-            col_name = f"logo_{size}"
-            df_logos = pd.DataFrame(results, columns=["id", col_name])
-            df_index = pd.merge(df_index.drop(columns=[col_name], errors="ignore"), df_logos, how="left", on="id")
-
-    return df_index
+    return list(results.values())
 
 
 #########################
 # Wikipedia descriptions
 #########################
-
-
-def update_index_with_wiki_descriptions(df_index: pd.DataFrame) -> pd.DataFrame:
-    """Get the wikipedia descriptions for each entity (institution or country) and add them to the index table.
-
-    :param df_index: the index table Pandas dataframe.
-    :return: None.
-    """
-
-    # Download 'punkt' resource, required when shortening wiki descriptions
-    nltk.download("punkt")
-
-    # Get all unique Wikipedia URLs as entities can share Wikipedia URLs
-    wikipedia_url_key = "wikipedia_url"
-    wikipedia_urls = list(set(df_index[wikipedia_url_key]))
-    total = len(wikipedia_urls)
-
-    # Create list with dictionaries of max 20 ids + titles (this is wiki api max)
-    chunks = [wikipedia_urls[i : i + WIKI_MAX_TITLES] for i in range(0, len(wikipedia_urls), WIKI_MAX_TITLES)]
-    logging.info(f"Downloading {total} wikipedia descriptions in {len(chunks)} chunks.")
-
-    # Process each dictionary in separate thread to get wiki descriptions
-    with ThreadPoolExecutor() as executor:
-        # Queue tasks
-        futures, results = [], []
-        for chunk in chunks:
-            futures.append(executor.submit(fetch_wiki_descriptions, chunk))
-
-        # Wait for results
-        for completed in as_completed(futures):
-            results += completed.result()
-
-            # Print progress
-            n_progress = len(results)
-            p_progress = n_progress / total * 100
-            if n_progress % 100 == 0:
-                logging.info(f"Downloading descriptions {n_progress}/{total}: {p_progress:.2f}%")
-
-    logging.info(f"Finished downloading wikipedia descriptions")
-    logging.info(f"Expected results: {total}, actual num descriptions returned: {len(wikipedia_urls)}")
-    if total != len(results):
-        raise Exception(f"Number of Wikipedia descriptions returned does not match the number of Wikipedia URLs sent")
-
-    # Apply descriptions to index, where Wikipedia URL matches
-    # as Wikipedia URLs can be shared with multiple institutions
-    description_key = "description"
-    df_index[description_key] = ""
-    for wikipedia_url, description in results:
-        df_index.loc[df_index[wikipedia_url_key] == wikipedia_url, description_key] = description
-
-    return df_index
 
 
 #############

@@ -1,0 +1,8 @@
+MERGE {{ entity_table_id }} entity
+USING {{ logos_table_id }} logos
+ON entity.id = logos.id
+WHEN MATCHED THEN
+    UPDATE SET
+        entity.logo_sm = logos.logo_sm,
+        entity.logo_md = logos.logo_md,
+        entity.logo_lg = logos.logo_lg

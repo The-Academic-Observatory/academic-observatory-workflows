@@ -1,6 +1,3 @@
-DECLARE START_YEAR NUMERIC DEFAULT {{ start_year }};
-DECLARE END_YEAR NUMERIC DEFAULT {{ end_year }};
-
 CREATE TEMP FUNCTION calcPercent(numerator NUMERIC, denominator NUMERIC)
 RETURNS NUMERIC
 AS (
@@ -65,7 +62,7 @@ WITH years as (
       agg.coki.oa.color.black.percent as p_outputs_black
   ) as stats
   FROM `{{ agg_table_id }}` as agg
-  WHERE agg.time_period >= START_YEAR AND agg.time_period <= END_YEAR
+  WHERE agg.time_period >= {{ start_year }} AND agg.time_period <= {{ end_year }}
   ORDER BY year DESC
 ),
 
@@ -137,7 +134,7 @@ agg_repos AS (
     )[OFFSET(0)] as category,
     ARRAY_AGG(repo.home_repo LIMIT 1)[OFFSET(0)] as home_repo
   FROM `{{ agg_table_id }}` AS agg, UNNEST(agg.coki.repositories) AS repo
-  WHERE agg.time_period >= START_YEAR AND agg.time_period <= END_YEAR
+  WHERE agg.time_period >= {{ start_year }} AND agg.time_period <= {{ end_year }}
   GROUP BY agg.id, repo.id
 ),
 
