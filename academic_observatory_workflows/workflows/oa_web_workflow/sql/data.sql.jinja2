@@ -10,6 +10,13 @@ AS (
   REGEXP_REPLACE(str, r'^https?://ror\.org/', '')
 );
 
+CREATE TEMP FUNCTION
+  REMOVE_DIACRITICS(input STRING)
+  RETURNS STRING
+  LANGUAGE js AS """
+    return input.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+""";
+
 -- All numbers are FLOAT64 otherwise BigQuery won't export them as numbers in JSON
 WITH years as (
   SELECT
@@ -51,14 +58,14 @@ WITH years as (
       calcPercent(agg.coki.oa.coki.other_platform_only.total, agg.total_outputs) AS p_outputs_other_platform_open_only,
       calcPercent(agg.coki.oa.coki.closed.total, agg.total_outputs) AS p_outputs_closed,
 
-      calcPercent(agg.coki.oa.coki.publisher_categories.oa_journal.percent, agg.coki.oa.coki.publisher.total) AS p_outputs_oa_journal,
-      calcPercent(agg.coki.oa.coki.publisher_categories.hybrid.percent, agg.coki.oa.coki.publisher.total) AS p_outputs_hybrid,
-      calcPercent(agg.coki.oa.coki.publisher_categories.no_guarantees.percent, agg.coki.oa.coki.publisher.total) AS p_outputs_no_guarantees,
+      calcPercent(agg.coki.oa.coki.publisher_categories.oa_journal.total, agg.coki.oa.coki.publisher.total) AS p_outputs_oa_journal,
+      calcPercent(agg.coki.oa.coki.publisher_categories.hybrid.total, agg.coki.oa.coki.publisher.total) AS p_outputs_hybrid,
+      calcPercent(agg.coki.oa.coki.publisher_categories.no_guarantees.total, agg.coki.oa.coki.publisher.total) AS p_outputs_no_guarantees,
 
-      calcPercent(agg.coki.oa.coki.other_platform_categories.preprint.percent, agg.coki.oa.coki.other_platform.total) AS p_outputs_preprint,
-      calcPercent(agg.coki.oa.coki.other_platform_categories.domain.percent, agg.coki.oa.coki.other_platform.total) AS p_outputs_domain,
-      calcPercent(agg.coki.oa.coki.other_platform_categories.institution.percent, agg.coki.oa.coki.other_platform.total) AS p_outputs_institution,
-      calcPercent(agg.coki.oa.coki.other_platform_categories.public.percent, agg.coki.oa.coki.other_platform.total) AS p_outputs_public,
+      calcPercent(agg.coki.oa.coki.other_platform_categories.preprint.total, agg.coki.oa.coki.other_platform.total) AS p_outputs_preprint,
+      calcPercent(agg.coki.oa.coki.other_platform_categories.domain.total, agg.coki.oa.coki.other_platform.total) AS p_outputs_domain,
+      calcPercent(agg.coki.oa.coki.other_platform_categories.institution.total, agg.coki.oa.coki.other_platform.total) AS p_outputs_institution,
+      calcPercent(agg.coki.oa.coki.other_platform_categories.public.total, agg.coki.oa.coki.other_platform.total) AS p_outputs_public,
       calcPercent(agg.coki.oa.coki.other_platform_categories.aggregator.total + agg.coki.oa.coki.other_platform_categories.other_internet.total + agg.coki.oa.coki.other_platform_categories.unknown.total, agg.coki.oa.coki.other_platform.total) AS p_outputs_other_internet,
 
       calcPercent(agg.coki.oa.color.black.total_outputs, agg.total_outputs) AS p_outputs_black
@@ -127,17 +134,18 @@ agg_repos AS (
     agg.id as agg_id,
     repo.id,
     SUM(repo.total_outputs) as total_outputs,
-    ARRAY_AGG(
-        CASE
-            WHEN repo.category IN ('Aggregator', 'Unknown') THEN 'Other Internet'
-            ELSE repo.category
-        END
-        LIMIT 1
-    )[OFFSET(0)] as category,
-    ARRAY_AGG(repo.home_repo LIMIT 1)[OFFSET(0)] as home_repo
+    repo.category,
+    repo.home_repo
   FROM `{{ agg_table_id }}` AS agg, UNNEST(agg.coki.repositories) AS repo
   WHERE agg.time_period >= {{ start_year }} AND agg.time_period <= {{ end_year }}
-  GROUP BY agg.id, repo.id
+  GROUP BY agg.id, repo.id, repo.category, repo.home_repo
+),
+
+ranked_repos AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY agg_id ORDER BY home_repo DESC, total_outputs DESC, LOWER(REMOVE_DIACRITICS(id)) ASC) AS repo_rank
+  FROM agg_repos
 ),
 
 repositories AS (
@@ -147,11 +155,15 @@ repositories AS (
       STRUCT(
         id,
         CAST(total_outputs AS FLOAT64) as total_outputs,
-        category,
+        CASE
+          WHEN category IN ('Aggregator', 'Unknown') THEN 'Other Internet'
+          ELSE category
+        END AS category,
         home_repo
       )
-      ORDER BY total_outputs DESC, id ASC
+      ORDER BY total_outputs DESC, LOWER(REMOVE_DIACRITICS(id)) ASC
     ) AS repositories
-  FROM agg_repos
+  FROM ranked_repos
+  WHERE repo_rank <= 200 OR home_repo
   GROUP BY agg_id
 )

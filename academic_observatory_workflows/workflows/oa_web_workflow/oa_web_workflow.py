@@ -31,6 +31,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 from zipfile import ZipFile
 
+import google.cloud.bigquery as bigquery
 import jsonlines
 import numpy as np
 import pendulum
@@ -46,7 +47,6 @@ from academic_observatory_workflows.wikipedia import fetch_wikipedia_description
 from academic_observatory_workflows.workflows.oa_web_workflow.institution_ids import INSTITUTION_IDS
 from academic_observatory_workflows.zenodo import Zenodo, make_draft_version, publish_new_version
 from observatory.platform.airflow import get_airflow_connection_password
-from observatory.platform.bigquery import bq_export_table
 from observatory.platform.bigquery import (
     bq_sharded_table_id,
     bq_create_dataset,
@@ -71,14 +71,15 @@ from observatory.platform.workflows.workflow import Workflow, make_snapshot_date
 from observatory.platform.workflows.workflow import cleanup
 
 
-# TODO: sort out something more general?
-
+# TODO: sort out something more general for these two functions
 
 def sql_folder():
+
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql")
 
 
 def schema_folder() -> str:
+
     """Return the path to the database schema template folder.
 
     :return: the path.
@@ -536,9 +537,10 @@ class OaWebWorkflow(Workflow):
         results = []
         for entity_type in self.entity_types:
             destination_uri = f"gs://{self.cloud_workspace.download_bucket}/{blob_prefix}/{entity_type}-data-*.jsonl.gz"
-            success = bq_export_table(
-                table_id=release.oa_dashboard_table_id(entity_type),
-                file_type="jsonl.gz",
+            table_id = release.oa_dashboard_table_id(entity_type)
+            success = bq_query_to_gcs(
+                query=f"SELECT * FROM {table_id} ORDER BY stats.p_outputs_open DESC",  # Uses a query to export data to make sure it is in the correct order
+                project_id=self.output_project_id,
                 destination_uri=destination_uri,
             )
             results.append(success)
@@ -635,6 +637,35 @@ class OaWebWorkflow(Workflow):
         """Delete all files and folders associated with this release."""
 
         cleanup(dag_id=self.dag_id, execution_date=kwargs["execution_date"], workflow_folder=release.workflow_folder)
+
+
+def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, location: str = "us") -> bool:
+    """Run a BigQuery query and save the results on Google Cloud Storage.
+
+    :param query: the query string.
+    :param project_id: the Google Cloud project id.
+    :param destination_uri: the Google Cloud Storage destination uri.
+    :param location: the BigQuery dataset location.
+    :return: the status of the job.
+    """
+
+    client = bigquery.Client()
+
+    # Run query
+    query_job: bigquery.QueryJob = client.query(query, location=location)
+    query_job.result()
+
+    # Create and run extraction job
+    source_table_id = f"{project_id}.{query_job.destination.dataset_id}.{query_job.destination.table_id}"
+    config = bigquery.ExtractJobConfig()
+    config.destination_format = bigquery.DestinationFormat.NEWLINE_DELIMITED_JSON
+    config.compression = bigquery.Compression.GZIP
+    extract_job: bigquery.ExtractJob = client.extract_table(
+        source_table_id, destination_uri, job_config=config, location=location
+    )
+    extract_job.result()
+
+    return query_job.state == "DONE" and extract_job.state == "DONE"
 
 
 def save_oa_dashboard_dataset(

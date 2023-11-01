@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+import json
+import logging
 import os
 from typing import List
 from unittest import TestCase
@@ -21,10 +23,10 @@ import pendulum
 from airflow.models.connection import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
-from observatory.platform.observatory_environment import compare_lists_of_dicts
+from deepdiff import DeepDiff
 
 import academic_observatory_workflows.workflows.oa_web_workflow
-from academic_observatory_workflows.config import schema_folder, module_file_path, test_fixtures_folder
+from academic_observatory_workflows.config import schema_folder, test_fixtures_folder
 from academic_observatory_workflows.tests.test_zenodo import MockZenodo
 from academic_observatory_workflows.workflows.oa_web_workflow.oa_web_workflow import (
     OaWebWorkflow,
@@ -40,6 +42,7 @@ from academic_observatory_workflows.workflows.oa_web_workflow.oa_web_workflow im
     data_file_pattern,
 )
 from observatory.platform.bigquery import bq_find_schema
+from observatory.platform.config import module_file_path
 from observatory.platform.files import load_jsonl
 from observatory.platform.files import save_jsonl_gz
 from observatory.platform.gcs import gcs_upload_file
@@ -55,6 +58,8 @@ from observatory.platform.observatory_environment import (
 # Author: James Diprose, Aniek Roelofs
 
 academic_observatory_workflows.workflows.oa_web_workflow.INCLUSION_THRESHOLD = {"country": 0, "institution": 0}
+
+# TODO: make something more general for this
 
 
 def oa_web_test_fixtures_folder(*subdirs) -> str:
@@ -453,9 +458,28 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     with open(file_path, "r") as f:
                         expected_data = json.load(f)
                     actual_data = list(yield_data_glob(data_file_pattern(release.download_folder, entity_type)))
-
-                    results = compare_lists_of_dicts(expected_data, actual_data, "id")
-                    assert results, "Rows in actual content do not match expected content"
+                    diff = DeepDiff(expected_data, actual_data, ignore_order=False, significant_digits=4)
+                    all_matched = True
+                    for diff_type, changes in diff.items():
+                        # TODO: put this into function in platform
+                        all_matched = False
+                        if diff_type == "values_changed":
+                            for key_path, change in changes.items():
+                                logging.error(
+                                    f"(expected) != (actual) {key_path}: {change['old_value']} (expected) != (actual) {change['new_value']}"
+                                )
+                        elif diff_type == "dictionary_item_added":
+                            for change in changes:
+                                logging.error(f"dictionary_item_added: {change}")
+                        elif diff_type == "dictionary_item_removed":
+                            for change in changes:
+                                logging.error(f"dictionary_item_removed: {change}")
+                        elif diff_type == "type_changes":
+                            for key_path, change in changes.items():
+                                logging.error(
+                                    f"(expected) != (actual) {key_path}: {change['old_type']} (expected) != (actual) {change['new_type']}"
+                                )
+                    assert all_matched, "Rows in actual content do not match expected content"
 
                 # Make draft Zenodo version
                 ti = env.run_task(workflow.make_draft_zenodo_version.__name__)
