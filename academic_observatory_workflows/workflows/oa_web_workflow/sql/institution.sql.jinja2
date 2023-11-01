@@ -3,25 +3,27 @@
 SELECT
   removeRorPrefix(ror.id) as id,
   ror.name,
+  STRUCT(
+    CAST(NULL AS STRING) as text,
+    CAST(NULL AS STRING) as license,
+    CAST(NULL AS STRING) as url
+  ) as description,
   'institution' as entity_type,
   CAST(NULL AS STRING) as logo_sm,
   CAST(NULL AS STRING) as logo_md,
   CAST(NULL AS STRING) as logo_lg,
   (SELECT * from ror.links LIMIT 1) AS url,
   ror.wikipedia_url,
-  STRUCT(
-    CAST(NULL AS STRING) as text,
-    CAST(NULL AS STRING) as license,
-    CAST(NULL AS STRING) as url
-  ) as description,
+  country.region as region,
+  country.subregion as subregion,
   country.alpha3 as country_code,
   country.wikipedia_name as country_name,
-  country.subregion as subregion,
-  country.region as region,
   (SELECT * from ror.types LIMIT 1) AS institution_type,
-  ror.acronyms,
+  (SELECT MAX(year_struct.year) FROM UNNEST(years_agg.years) as year_struct) as end_year,
+  (SELECT MIN(year_struct.year) FROM UNNEST(years_agg.years) as year_struct) as start_year,
   aggregate_data.stats as stats,
   years_agg.years,
+  ror.acronyms,
   repositories.repositories
 FROM `{{ ror_table_id }}` as ror
 LEFT OUTER JOIN `{{ country_table_id }}` as country ON ror.country.country_code = country.alpha2

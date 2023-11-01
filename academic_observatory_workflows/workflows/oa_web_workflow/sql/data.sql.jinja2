@@ -1,7 +1,7 @@
-CREATE TEMP FUNCTION calcPercent(numerator NUMERIC, denominator NUMERIC)
-RETURNS NUMERIC
+CREATE TEMP FUNCTION calcPercent(numerator FLOAT64, denominator FLOAT64)
+RETURNS FLOAT64
 AS (
-  IF(denominator = 0, NULL, numerator / denominator * 100.0)
+  SAFE_DIVIDE(numerator * 100 , denominator)
 );
 
 CREATE TEMP FUNCTION removeRorPrefix(str STRING)
@@ -10,56 +10,58 @@ AS (
   REGEXP_REPLACE(str, r'^https?://ror\.org/', '')
 );
 
+-- All numbers are FLOAT64 otherwise BigQuery won't export them as numbers in JSON
 WITH years as (
   SELECT
     agg.id as id,
-    agg.time_period as year,
-    DATE(agg.time_period, 12, 31) as date,
+    CAST(agg.time_period AS FLOAT64) AS year,
+    DATE(agg.time_period, 12, 31) AS date,
     STRUCT(
-      agg.citations.openalex.total_citations as n_citations,
-      agg.total_outputs as n_outputs,
+      CAST(agg.citations.openalex.total_citations AS FLOAT64) AS n_citations,
+      CAST(agg.total_outputs AS FLOAT64) AS n_outputs,
 
       -- N Outputs
-      agg.coki.oa.coki.open.total AS n_outputs_open,
-      agg.coki.oa.coki.publisher.total AS n_outputs_publisher_open,
-      agg.coki.oa.coki.publisher_only.total AS n_outputs_publisher_open_only,
-      agg.coki.oa.coki.both.total AS n_outputs_both,
-      agg.coki.oa.coki.other_platform.total AS n_outputs_other_platform_open,
-      agg.coki.oa.coki.other_platform_only.total AS n_outputs_other_platform_open_only,
-      agg.coki.oa.coki.closed.total AS n_outputs_closed,
+      CAST(agg.coki.oa.coki.open.total AS FLOAT64) AS n_outputs_open,
+      CAST(agg.coki.oa.coki.publisher.total AS FLOAT64) AS n_outputs_publisher_open,
+      CAST(agg.coki.oa.coki.publisher_only.total AS FLOAT64) AS n_outputs_publisher_open_only,
+      CAST(agg.coki.oa.coki.both.total AS FLOAT64) AS n_outputs_both,
+      CAST(agg.coki.oa.coki.other_platform.total AS FLOAT64) AS n_outputs_other_platform_open,
+      CAST(agg.coki.oa.coki.other_platform_only.total AS FLOAT64) AS n_outputs_other_platform_open_only,
+      CAST(agg.coki.oa.coki.closed.total AS FLOAT64) AS n_outputs_closed,
 
-      agg.coki.oa.coki.publisher_categories.oa_journal.total AS n_outputs_oa_journal,
-      agg.coki.oa.coki.publisher_categories.hybrid.total AS n_outputs_hybrid,
-      agg.coki.oa.coki.publisher_categories.no_guarantees.total AS n_outputs_no_guarantees,
+      CAST(agg.coki.oa.coki.publisher_categories.oa_journal.total AS FLOAT64) AS n_outputs_oa_journal,
+      CAST(agg.coki.oa.coki.publisher_categories.hybrid.total AS FLOAT64) AS n_outputs_hybrid,
+      CAST(agg.coki.oa.coki.publisher_categories.no_guarantees.total AS FLOAT64) AS n_outputs_no_guarantees,
 
-      agg.coki.oa.coki.other_platform_categories.preprint.total AS n_outputs_preprint,
-      agg.coki.oa.coki.other_platform_categories.domain.total AS n_outputs_domain,
-      agg.coki.oa.coki.other_platform_categories.institution.total AS n_outputs_institution,
-      agg.coki.oa.coki.other_platform_categories.public.total AS n_outputs_public,
-      agg.coki.oa.coki.other_platform_categories.aggregator.total + agg.coki.oa.coki.other_platform_categories.other_internet.total + agg.coki.oa.coki.other_platform_categories.unknown.total AS n_outputs_other_internet,
+      CAST(agg.coki.oa.coki.other_platform_categories.preprint.total AS FLOAT64) AS n_outputs_preprint,
+      CAST(agg.coki.oa.coki.other_platform_categories.domain.total AS FLOAT64) AS n_outputs_domain,
+      CAST(agg.coki.oa.coki.other_platform_categories.institution.total AS FLOAT64) AS n_outputs_institution,
+      CAST(agg.coki.oa.coki.other_platform_categories.public.total AS FLOAT64) AS n_outputs_public,
+      CAST(agg.coki.oa.coki.other_platform_categories.aggregator.total + agg.coki.oa.coki.other_platform_categories.other_internet.total + agg.coki.oa.coki.other_platform_categories.unknown.total AS FLOAT64) AS n_outputs_other_internet,
 
-      agg.coki.oa.color.black.total_outputs as n_outputs_black,
+      CAST(agg.coki.oa.color.black.total_outputs AS FLOAT64) as n_outputs_black,
 
       -- Percentages
-      agg.coki.oa.coki.open.percent AS p_outputs_open,
-      agg.coki.oa.coki.publisher.percent AS p_outputs_publisher_open,
-      agg.coki.oa.coki.publisher_only.percent AS p_outputs_publisher_open_only,
-      agg.coki.oa.coki.both.percent AS p_outputs_both,
-      agg.coki.oa.coki.other_platform.percent AS p_outputs_other_platform_open,
-      agg.coki.oa.coki.other_platform_only.percent AS p_outputs_other_platform_open_only,
-      agg.coki.oa.coki.closed.percent AS p_outputs_closed,
+      -- Percentages from aggregate table are rounded so not usable
+      calcPercent(agg.coki.oa.coki.open.total, agg.total_outputs) AS p_outputs_open,
+      calcPercent(agg.coki.oa.coki.publisher.total, agg.total_outputs) AS p_outputs_publisher_open,
+      calcPercent(agg.coki.oa.coki.publisher_only.total, agg.total_outputs) AS p_outputs_publisher_open_only,
+      calcPercent(agg.coki.oa.coki.both.total, agg.total_outputs) AS p_outputs_both,
+      calcPercent(agg.coki.oa.coki.other_platform.total, agg.total_outputs) AS p_outputs_other_platform_open,
+      calcPercent(agg.coki.oa.coki.other_platform_only.total, agg.total_outputs) AS p_outputs_other_platform_open_only,
+      calcPercent(agg.coki.oa.coki.closed.total, agg.total_outputs) AS p_outputs_closed,
 
-      agg.coki.oa.coki.publisher_categories.oa_journal.percent AS p_outputs_oa_journal,
-      agg.coki.oa.coki.publisher_categories.hybrid.percent AS p_outputs_hybrid,
-      agg.coki.oa.coki.publisher_categories.no_guarantees.percent AS p_outputs_no_guarantees,
+      calcPercent(agg.coki.oa.coki.publisher_categories.oa_journal.percent, agg.coki.oa.coki.publisher.total) AS p_outputs_oa_journal,
+      calcPercent(agg.coki.oa.coki.publisher_categories.hybrid.percent, agg.coki.oa.coki.publisher.total) AS p_outputs_hybrid,
+      calcPercent(agg.coki.oa.coki.publisher_categories.no_guarantees.percent, agg.coki.oa.coki.publisher.total) AS p_outputs_no_guarantees,
 
-      agg.coki.oa.coki.other_platform_categories.preprint.percent AS p_outputs_preprint,
-      agg.coki.oa.coki.other_platform_categories.domain.percent AS p_outputs_domain,
-      agg.coki.oa.coki.other_platform_categories.institution.percent AS p_outputs_institution,
-      agg.coki.oa.coki.other_platform_categories.public.percent AS p_outputs_public,
+      calcPercent(agg.coki.oa.coki.other_platform_categories.preprint.percent, agg.coki.oa.coki.other_platform.total) AS p_outputs_preprint,
+      calcPercent(agg.coki.oa.coki.other_platform_categories.domain.percent, agg.coki.oa.coki.other_platform.total) AS p_outputs_domain,
+      calcPercent(agg.coki.oa.coki.other_platform_categories.institution.percent, agg.coki.oa.coki.other_platform.total) AS p_outputs_institution,
+      calcPercent(agg.coki.oa.coki.other_platform_categories.public.percent, agg.coki.oa.coki.other_platform.total) AS p_outputs_public,
       calcPercent(agg.coki.oa.coki.other_platform_categories.aggregator.total + agg.coki.oa.coki.other_platform_categories.other_internet.total + agg.coki.oa.coki.other_platform_categories.unknown.total, agg.coki.oa.coki.other_platform.total) AS p_outputs_other_internet,
 
-      agg.coki.oa.color.black.percent as p_outputs_black
+      calcPercent(agg.coki.oa.color.black.total_outputs, agg.total_outputs) AS p_outputs_black
   ) as stats
   FROM `{{ agg_table_id }}` as agg
   WHERE agg.time_period >= {{ start_year }} AND agg.time_period <= {{ end_year }}
@@ -144,7 +146,7 @@ repositories AS (
     ARRAY_AGG(
       STRUCT(
         id,
-        total_outputs,
+        CAST(total_outputs AS FLOAT64) as total_outputs,
         category,
         home_repo
       )
