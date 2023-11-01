@@ -15,8 +15,8 @@ SELECT
   country.wikipedia_url,
   country.region as region,
   country.subregion as subregion,
-  (SELECT MAX(year_struct.year) FROM UNNEST(years_agg.years) as year_struct) as end_year,
   (SELECT MIN(year_struct.year) FROM UNNEST(years_agg.years) as year_struct) as start_year,
+  (SELECT MAX(year_struct.year) FROM UNNEST(years_agg.years) as year_struct) as end_year,
   aggregate_data.stats as stats,
   years_agg.years,
   CASE

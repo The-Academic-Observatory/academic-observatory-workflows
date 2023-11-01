@@ -117,7 +117,7 @@ aggregate_data as (
 years_agg as (
   SELECT
     id,
-    ARRAY_AGG(STRUCT(year, date, stats)) as years
+    ARRAY_AGG(STRUCT(year, date, stats) ORDER BY year ASC) as years
   FROM years
   GROUP BY id
 ),

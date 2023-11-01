@@ -11,9 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-# Author: James Diprose, Aniek Roelofs
-
+import json
 import os
 from typing import List
 from unittest import TestCase
@@ -23,9 +21,10 @@ import pendulum
 from airflow.models.connection import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
+from observatory.platform.observatory_environment import compare_lists_of_dicts
 
 import academic_observatory_workflows.workflows.oa_web_workflow
-from academic_observatory_workflows.config import schema_folder, test_fixtures_folder
+from academic_observatory_workflows.config import schema_folder, module_file_path, test_fixtures_folder
 from academic_observatory_workflows.tests.test_zenodo import MockZenodo
 from academic_observatory_workflows.workflows.oa_web_workflow.oa_web_workflow import (
     OaWebWorkflow,
@@ -38,6 +37,7 @@ from academic_observatory_workflows.workflows.oa_web_workflow.oa_web_workflow im
     EntityHistograms,
     Histogram,
     yield_data_glob,
+    data_file_pattern,
 )
 from observatory.platform.bigquery import bq_find_schema
 from observatory.platform.files import load_jsonl
@@ -52,7 +52,19 @@ from observatory.platform.observatory_environment import (
     make_dummy_dag,
 )
 
+# Author: James Diprose, Aniek Roelofs
+
 academic_observatory_workflows.workflows.oa_web_workflow.INCLUSION_THRESHOLD = {"country": 0, "institution": 0}
+
+
+def oa_web_test_fixtures_folder(*subdirs) -> str:
+    """Get the path to the Academic Observatory Workflows test data directory.
+
+    :return: the test data directory.
+    """
+
+    base_path = module_file_path("academic_observatory_workflows.workflows.oa_web_workflow.tests.fixtures")
+    return os.path.join(base_path, *subdirs)
 
 
 class TestFunctions(TestCase):
@@ -272,11 +284,11 @@ class TestOaWebWorkflow(ObservatoryTestCase):
         self, dataset_id_all: str, dataset_id_settings: str, bucket_name: str, snapshot_date: pendulum.DateTime
     ):
         ror = load_jsonl(test_fixtures_folder("doi", "ror.jsonl"))
-        country = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "country.jsonl.gz"))
-        institution = load_jsonl(test_fixtures_folder(self.oa_web_fixtures, "institution.jsonl.gz"))
+        country = load_jsonl(oa_web_test_fixtures_folder("country.jsonl.gz"))
+        institution = load_jsonl(oa_web_test_fixtures_folder("institution.jsonl.gz"))
         settings_country = load_jsonl(test_fixtures_folder("doi", "country.jsonl"))
 
-        oa_web_schema_path = test_fixtures_folder(self.oa_web_fixtures, "schema")
+        oa_web_schema_path = oa_web_test_fixtures_folder("schema")
         with CliRunner().isolated_filesystem() as t:
             tables = [
                 Table(
@@ -353,7 +365,7 @@ class TestOaWebWorkflow(ObservatoryTestCase):
 
             # Upload fake cached zip files file to bucket
             for file_name in ["images-base.zip", "images.zip"]:
-                file_path = test_fixtures_folder("oa_web_workflow", file_name)
+                file_path = oa_web_test_fixtures_folder(file_name)
                 gcs_upload_file(bucket_name=data_bucket, blob_name=file_name, file_path=file_path)
 
             # Setup workflow and connections
@@ -435,7 +447,15 @@ class TestOaWebWorkflow(ObservatoryTestCase):
                     path = os.path.join(release.download_folder, file_name)
                     self.assertTrue(os.path.isfile(path))
 
-                # TODO: check that the data is as expected
+                # Check that the data is as expected
+                for entity_type in workflow.entity_types:
+                    file_path = oa_web_test_fixtures_folder("expected", f"{entity_type}.json")
+                    with open(file_path, "r") as f:
+                        expected_data = json.load(f)
+                    actual_data = list(yield_data_glob(data_file_pattern(release.download_folder, entity_type)))
+
+                    results = compare_lists_of_dicts(expected_data, actual_data, "id")
+                    assert results, "Rows in actual content do not match expected content"
 
                 # Make draft Zenodo version
                 ti = env.run_task(workflow.make_draft_zenodo_version.__name__)

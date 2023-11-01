@@ -459,7 +459,7 @@ class OaWebWorkflow(Workflow):
         results = fetch_wikipedia_descriptions(wikipedia_urls)
 
         # Upload to BigQuery
-        data = [{"text": text, "url": url} for url, text in results]
+        data = [{"url": wikipedia_url, "text": description} for wikipedia_url, description in results]
         desc_table_id = release.descriptions_table_id(entity_type)
         success = bq_load_from_memory(
             desc_table_id,
