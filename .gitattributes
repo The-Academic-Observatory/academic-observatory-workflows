@@ -1,3 +1,2 @@
-academic_observatory_workflows/fixtures/** filter=lfs diff=lfs merge=lfs -text
-academic_observatory_workflows/workflows/data/** filter=lfs diff=lfs merge=lfs -text
+**/fixtures/** filter=lfs diff=lfs merge=lfs -text
 docs/* linguist-documentation

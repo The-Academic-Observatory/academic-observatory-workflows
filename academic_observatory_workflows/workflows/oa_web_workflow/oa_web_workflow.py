@@ -70,6 +70,23 @@ from observatory.platform.utils.jinja2_utils import (
 from observatory.platform.workflows.workflow import Workflow, make_snapshot_date, set_task_state, SnapshotRelease
 from observatory.platform.workflows.workflow import cleanup
 
+
+# TODO: sort out something more general?
+
+
+def sql_folder():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql")
+
+
+def schema_folder() -> str:
+    """Return the path to the database schema template folder.
+
+    :return: the path.
+    """
+
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema")
+
+
 INCLUSION_THRESHOLD = {"country": 15, "institution": 1000}
 MAX_REPOSITORIES = 200
 START_YEAR = 2000
@@ -197,19 +214,6 @@ class OaWebRelease(SnapshotRelease):
         )
 
 
-def sql_folder():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql")
-
-
-def schema_folder() -> str:
-    """Return the path to the database schema template folder.
-
-    :return: the path.
-    """
-
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema")
-
-
 class OaWebWorkflow(Workflow):
     """The OaWebWorkflow generates data files for the COKI Open Access Dashboard.
 
@@ -334,9 +338,7 @@ class OaWebWorkflow(Workflow):
             ExternalTaskSensor(task_id=f"{doi_dag_id}_sensor", external_dag_id=doi_dag_id, mode="reschedule")
         )
         self.add_setup_task(self.check_dependencies)
-        self.add_task(self.make_datasets)
-
-        # Create data for website
+        self.add_task(self.make_bq_datasets)
         self.add_task(self.upload_institution_ids)
         self.add_task(self.create_entity_tables)
         self.add_task(
@@ -353,25 +355,12 @@ class OaWebWorkflow(Workflow):
         self.add_task(self.download_institution_logos)
         self.add_task(self.export_tables)
         self.add_task(self.download_data)
-
-        # Download data and create archives for website and Zenodo
         self.add_task(self.make_draft_zenodo_version)
         self.add_task(self.build_datasets)
-
-        # self.add_task(self.download)
-        #
-        #
-        # self.add_task(self.preprocess_data)
-        #
-        # self.add_task(self.download_wiki_descriptions)
-        # self.add_task(self.download_wiki_descriptions)
-        # # self.add_task(self.build_indexes)
-        #
-        #
-        # self.add_task(self.publish_zenodo_version)
-        # self.add_task(self.upload_dataset)
-        # self.add_task(self.repository_dispatch)
-        # self.add_task(self.cleanup)
+        self.add_task(self.publish_zenodo_version)
+        self.add_task(self.upload_dataset)
+        self.add_task(self.repository_dispatch)
+        self.add_task(self.cleanup)
 
     ######################################
     # Airflow tasks
@@ -404,8 +393,8 @@ class OaWebWorkflow(Workflow):
             bq_oa_dashboard_dataset_id=self.bq_oa_dashboard_dataset_id,
         )
 
-    def make_datasets(self, release: OaWebRelease, **kwargs):
-        """Fetch the data for each table."""
+    def make_bq_datasets(self, release: OaWebRelease, **kwargs):
+        """Make BigQuery datasets."""
 
         bq_create_dataset(
             project_id=self.output_project_id,
@@ -416,8 +405,6 @@ class OaWebWorkflow(Workflow):
 
     def upload_institution_ids(self, release: OaWebRelease, **kwargs):
         """Upload the institution IDs to BigQuery"""
-
-        # Load the institution ID table
 
         data = [{"ror_id": ror_id} for ror_id in INSTITUTION_IDS]
         success = bq_load_from_memory(
@@ -430,8 +417,7 @@ class OaWebWorkflow(Workflow):
     def create_entity_tables(self, release: OaWebRelease, **kwargs):
         """Create the country and institution tables"""
 
-        results = []
-        queries = []
+        results, queries = [], []
 
         # Query the country and institution aggregations
         for entity_type in self.entity_types:
@@ -482,7 +468,7 @@ class OaWebWorkflow(Workflow):
         )
         assert success, f"Uploading data to {desc_table_id} table failed"
 
-        # Update with entity table
+        # Update entity table
         template_path = os.path.join(sql_folder(), "update_descriptions.sql.jinja2")
         sql = render_template(
             template_path,
@@ -673,6 +659,10 @@ def save_oa_dashboard_dataset(
             subset = oa_dashboard_subset(entity)
             entities.append(subset)
 
+        # Save index for entity type
+        path = os.path.join(build_data_path, f"{entity_type}.json")
+        save_json(path, index)
+
         stats_index[entity_type] = make_entity_stats(entities)
         index += entities
 
@@ -685,7 +675,8 @@ def save_oa_dashboard_dataset(
     country_stats = stats_index["country"]
     institution_stats = stats_index["institution"]
     stats = Stats(START_YEAR, END_YEAR, last_updated, zenodo_versions, country_stats, institution_stats)
-    save_stats(build_data_path, stats) # TODO: remove function
+    output_path = os.path.join(build_data_path, "stats.json")
+    save_json(output_path, stats.to_dict())
     logging.info(f"Saved stats data")
 
 
@@ -861,11 +852,6 @@ def save_json(path: str, data: Union[Dict, List]):
         json.dump(data, f, separators=(",", ":"))
 
 
-######################
-# Transform data
-######################
-
-
 def data_file_pattern(download_folder: str, entity_type: str):
     return os.path.join(download_folder, f"{entity_type}-data-*.jsonl.gz")
 
@@ -1026,23 +1012,3 @@ def fetch_institution_logos(build_path: str, entities: List[Tuple[str, str]]) ->
         logging.info("Finished downloading logos")
 
     return list(results.values())
-
-
-#############
-# Save data
-#############
-
-
-def save_stats(path: str, stats: Stats):
-    """Save overall stats.
-
-    :param path: the directory where the stats.json file should be saved.
-    :param stats: stats object.
-    :return: None.
-    """
-
-    os.makedirs(path, exist_ok=True)
-
-    # Save as JSON
-    output_path = os.path.join(path, "stats.json")
-    save_json(output_path, stats.to_dict())

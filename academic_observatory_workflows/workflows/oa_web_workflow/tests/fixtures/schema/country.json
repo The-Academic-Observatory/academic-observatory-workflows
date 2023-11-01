@@ -1,0 +1,1427 @@
+[
+  {
+    "mode": "NULLABLE",
+    "name": "id",
+    "type": "STRING"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "time_period",
+    "type": "INTEGER"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "name",
+    "type": "STRING"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "country",
+    "type": "STRING"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "country_code",
+    "type": "STRING"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "country_code_2",
+    "type": "STRING"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "region",
+    "type": "STRING"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "subregion",
+    "type": "STRING"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "coordinates",
+    "type": "STRING"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "total_outputs",
+    "type": "INTEGER"
+  },
+  {
+    "fields": [
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "total_citations",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "citations_per_output",
+            "type": "FLOAT"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "outputs_with_citations",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "outputs_without_citations",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "citations_per_cited_output",
+            "type": "FLOAT"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "openalex",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "total_citations",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "citations_per_output",
+            "type": "FLOAT"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "outputs_with_citations",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "outputs_without_citations",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "citations_per_cited_output",
+            "type": "FLOAT"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "crossref",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "total_citations",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "citations_per_output",
+            "type": "FLOAT"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "outputs_with_citations",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "outputs_without_citations",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "citations_per_cited_output",
+            "type": "FLOAT"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "open_citations",
+        "type": "RECORD"
+      }
+    ],
+    "mode": "NULLABLE",
+    "name": "citations",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "output_type",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "total_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_oa_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_green_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_gold_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_gold_just_doaj_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_hybrid_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_bronze_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_green_only_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_black_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "total_openalex_citations",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "total_open_citations_citations",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "total_crossref_citations",
+            "type": "INTEGER"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "citations",
+        "type": "RECORD"
+      }
+    ],
+    "mode": "REPEATED",
+    "name": "output_types",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "id",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "total_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "percentage_of_all_outputs",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "percentage_of_all_oa",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "name",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "country",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "country_code",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "region",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "subregion",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "coordinates",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_oa_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_green_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_gold_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_gold_just_doaj_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_hybrid_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_bronze_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_green_only_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_green_only_ignoring_bronze_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_black",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_has_license",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_is_cclicensed",
+        "type": "INTEGER"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "openalex",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "crosssref",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "open_citations",
+            "type": "INTEGER"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "citations",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "field",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "total_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "num_oa_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "sum_of_scores",
+            "type": "FLOAT"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "disciplines",
+        "type": "RECORD"
+      }
+    ],
+    "mode": "REPEATED",
+    "name": "funders",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "id",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "total_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "percentage_of_all_outputs",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "percentage_of_all_oa",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "name",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "country",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "country_code",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "region",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "subregion",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "coordinates",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_oa_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_green_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_gold_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_gold_just_doaj_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_hybrid_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_bronze_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_green_only_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_green_only_ignoring_bronze_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_black",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_has_license",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_is_cclicensed",
+        "type": "INTEGER"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "openalex",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "crosssref",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "open_citations",
+            "type": "INTEGER"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "citations",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "field",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "total_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "num_oa_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "sum_of_scores",
+            "type": "FLOAT"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "disciplines",
+        "type": "RECORD"
+      }
+    ],
+    "mode": "REPEATED",
+    "name": "publishers",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "id",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "total_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "percentage_of_all_outputs",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "percentage_of_all_oa",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "name",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "country",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "country_code",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "region",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "subregion",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "coordinates",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_oa_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_green_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_gold_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_gold_just_doaj_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_hybrid_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_bronze_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_green_only_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_green_only_ignoring_bronze_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_black",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_has_license",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_is_cclicensed",
+        "type": "INTEGER"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "openalex",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "crosssref",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "open_citations",
+            "type": "INTEGER"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "citations",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "field",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "total_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "num_oa_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "sum_of_scores",
+            "type": "FLOAT"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "disciplines",
+        "type": "RECORD"
+      }
+    ],
+    "mode": "REPEATED",
+    "name": "journals",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "source",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "total_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_oa_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_green_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_gold_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_gold_just_doaj_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_hybrid_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_bronze_outputs",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "num_green_only_outputs",
+        "type": "INTEGER"
+      }
+    ],
+    "mode": "REPEATED",
+    "name": "events",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "fields": [
+          {
+            "fields": [
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total_outputs",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "oa",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total_outputs",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "green",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total_outputs",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "gold",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total_outputs",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "gold_doaj",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total_outputs",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "hybrid",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total_outputs",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "bronze",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total_outputs",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "green_only",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total_outputs",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "black",
+                "type": "RECORD"
+              }
+            ],
+            "mode": "NULLABLE",
+            "name": "color",
+            "type": "RECORD"
+          },
+          {
+            "fields": [
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "open",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "closed",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "publisher",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "other_platform",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "publisher_only",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "both",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total",
+                    "type": "INTEGER"
+                  },
+                  {
+                    "mode": "NULLABLE",
+                    "name": "percent",
+                    "type": "FLOAT"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "other_platform_only",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "fields": [
+                      {
+                        "mode": "NULLABLE",
+                        "name": "total",
+                        "type": "INTEGER"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "percent",
+                        "type": "FLOAT"
+                      }
+                    ],
+                    "mode": "NULLABLE",
+                    "name": "oa_journal",
+                    "type": "RECORD"
+                  },
+                  {
+                    "fields": [
+                      {
+                        "mode": "NULLABLE",
+                        "name": "total",
+                        "type": "INTEGER"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "percent",
+                        "type": "FLOAT"
+                      }
+                    ],
+                    "mode": "NULLABLE",
+                    "name": "hybrid",
+                    "type": "RECORD"
+                  },
+                  {
+                    "fields": [
+                      {
+                        "mode": "NULLABLE",
+                        "name": "total",
+                        "type": "INTEGER"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "percent",
+                        "type": "FLOAT"
+                      }
+                    ],
+                    "mode": "NULLABLE",
+                    "name": "no_guarantees",
+                    "type": "RECORD"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "publisher_categories",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "fields": [
+                      {
+                        "mode": "NULLABLE",
+                        "name": "total",
+                        "type": "INTEGER"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "percent",
+                        "type": "FLOAT"
+                      }
+                    ],
+                    "mode": "NULLABLE",
+                    "name": "preprint",
+                    "type": "RECORD"
+                  },
+                  {
+                    "fields": [
+                      {
+                        "mode": "NULLABLE",
+                        "name": "total",
+                        "type": "INTEGER"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "percent",
+                        "type": "FLOAT"
+                      }
+                    ],
+                    "mode": "NULLABLE",
+                    "name": "domain",
+                    "type": "RECORD"
+                  },
+                  {
+                    "fields": [
+                      {
+                        "mode": "NULLABLE",
+                        "name": "total",
+                        "type": "INTEGER"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "percent",
+                        "type": "FLOAT"
+                      }
+                    ],
+                    "mode": "NULLABLE",
+                    "name": "institution",
+                    "type": "RECORD"
+                  },
+                  {
+                    "fields": [
+                      {
+                        "mode": "NULLABLE",
+                        "name": "total",
+                        "type": "INTEGER"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "percent",
+                        "type": "FLOAT"
+                      }
+                    ],
+                    "mode": "NULLABLE",
+                    "name": "public",
+                    "type": "RECORD"
+                  },
+                  {
+                    "fields": [
+                      {
+                        "mode": "NULLABLE",
+                        "name": "total",
+                        "type": "INTEGER"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "percent",
+                        "type": "FLOAT"
+                      }
+                    ],
+                    "mode": "NULLABLE",
+                    "name": "aggregator",
+                    "type": "RECORD"
+                  },
+                  {
+                    "fields": [
+                      {
+                        "mode": "NULLABLE",
+                        "name": "total",
+                        "type": "INTEGER"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "percent",
+                        "type": "FLOAT"
+                      }
+                    ],
+                    "mode": "NULLABLE",
+                    "name": "other_internet",
+                    "type": "RECORD"
+                  },
+                  {
+                    "fields": [
+                      {
+                        "mode": "NULLABLE",
+                        "name": "total",
+                        "type": "INTEGER"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "percent",
+                        "type": "FLOAT"
+                      }
+                    ],
+                    "mode": "NULLABLE",
+                    "name": "unknown",
+                    "type": "RECORD"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "other_platform_categories",
+                "type": "RECORD"
+              }
+            ],
+            "mode": "NULLABLE",
+            "name": "coki",
+            "type": "RECORD"
+          }
+        ],
+        "mode": "NULLABLE",
+        "name": "oa",
+        "type": "RECORD"
+      },
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "id",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "total_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "category",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "home_repo",
+            "type": "BOOLEAN"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "repositories",
+        "type": "RECORD"
+      }
+    ],
+    "mode": "NULLABLE",
+    "name": "coki",
+    "type": "RECORD"
+  },
+  {
+    "fields": [
+      {
+        "fields": [
+          {
+            "mode": "NULLABLE",
+            "name": "field",
+            "type": "STRING"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "total_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "sum_of_scores",
+            "type": "FLOAT"
+          },
+          {
+            "fields": [
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total_citations",
+                    "type": "INTEGER"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "openalex",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total_citations",
+                    "type": "INTEGER"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "open_citations",
+                "type": "RECORD"
+              },
+              {
+                "fields": [
+                  {
+                    "mode": "NULLABLE",
+                    "name": "total_citations",
+                    "type": "INTEGER"
+                  }
+                ],
+                "mode": "NULLABLE",
+                "name": "crossref",
+                "type": "RECORD"
+              }
+            ],
+            "mode": "NULLABLE",
+            "name": "citations",
+            "type": "RECORD"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "num_oa_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "num_green_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "num_gold_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "num_gold_just_doaj_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "num_hybrid_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "num_bronze_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "num_green_only_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "num_black_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "fields": [
+              {
+                "mode": "NULLABLE",
+                "name": "total_funded_outputs",
+                "type": "INTEGER"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "num_international_outputs",
+                "type": "INTEGER"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "num_domestic_outputs",
+                "type": "INTEGER"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "num_international_and_domestic_outputs",
+                "type": "INTEGER"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "num_government_outputs",
+                "type": "INTEGER"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "num_private_outputs",
+                "type": "INTEGER"
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "num_government_and_private_outputs",
+                "type": "INTEGER"
+              }
+            ],
+            "mode": "NULLABLE",
+            "name": "funding",
+            "type": "RECORD"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "num_international_collaboration_outputs",
+            "type": "INTEGER"
+          },
+          {
+            "mode": "NULLABLE",
+            "name": "international_collaboration_with_funding_outputs",
+            "type": "INTEGER"
+          }
+        ],
+        "mode": "REPEATED",
+        "name": "level0",
+        "type": "RECORD"
+      }
+    ],
+    "mode": "NULLABLE",
+    "name": "disciplines",
+    "type": "RECORD"
+  }
+]
