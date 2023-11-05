@@ -15,7 +15,6 @@
 # Author: James Diprose, Aniek Roelofs
 
 import json
-import logging
 import os
 from typing import List
 from unittest import TestCase
@@ -28,7 +27,7 @@ from click.testing import CliRunner
 from deepdiff import DeepDiff
 
 import academic_observatory_workflows.workflows.oa_dashboard_workflow
-from academic_observatory_workflows.config import schema_folder, test_fixtures_folder, workflow_test_fixtures_folder
+from academic_observatory_workflows.config import schema_folder, test_fixtures_folder, workflow_test_fixtures_path
 from academic_observatory_workflows.tests.test_zenodo import MockZenodo
 from academic_observatory_workflows.workflows.oa_dashboard_workflow.oa_dashboard_workflow import (
     OaDashboardWorkflow,
@@ -56,6 +55,7 @@ from observatory.platform.observatory_environment import (
     bq_load_tables,
     make_dummy_dag,
 )
+from observatory.platform.observatory_environment import log_diff
 
 academic_observatory_workflows.workflows.oa_dashboard_workflow.INCLUSION_THRESHOLD = {"country": 0, "institution": 0}
 
@@ -275,11 +275,12 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
         self, dataset_id_all: str, dataset_id_settings: str, bucket_name: str, snapshot_date: pendulum.DateTime
     ):
         ror = load_jsonl(test_fixtures_folder("doi", "ror.jsonl"))
-        country = load_jsonl(workflow_test_fixtures_folder(WORKFLOW_MODULE, "country.jsonl.gz"))
-        institution = load_jsonl(workflow_test_fixtures_folder(WORKFLOW_MODULE, "institution.jsonl.gz"))
+        country = load_jsonl(workflow_test_fixtures_path(WORKFLOW_MODULE, "country.jsonl.gz"))
+        institution = load_jsonl(workflow_test_fixtures_path(WORKFLOW_MODULE, "institution.jsonl.gz"))
         settings_country = load_jsonl(test_fixtures_folder("doi", "country.jsonl"))
 
-        oa_web_schema_path = workflow_test_fixtures_folder(WORKFLOW_MODULE, "schema")
+        global_schema_path = schema_folder()
+        tests_schema_path = workflow_test_fixtures_path(WORKFLOW_MODULE, "schema")
         with CliRunner().isolated_filesystem() as t:
             tables = [
                 Table(
@@ -288,7 +289,9 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                     dataset_id_all,
                     ror,
                     bq_find_schema(
-                        path=os.path.join(schema_folder(), "ror"), table_name="ror", release_date=snapshot_date
+                        path=os.path.join(global_schema_path, "ror"),
+                        table_name="ror",
+                        release_date=snapshot_date,
                     ),
                 ),
                 Table(
@@ -296,21 +299,21 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                     True,
                     dataset_id_all,
                     country,
-                    bq_find_schema(path=oa_web_schema_path, table_name="country"),
+                    bq_find_schema(path=tests_schema_path, table_name="country"),
                 ),
                 Table(
                     "institution",
                     True,
                     dataset_id_all,
                     institution,
-                    bq_find_schema(path=oa_web_schema_path, table_name="institution"),
+                    bq_find_schema(path=tests_schema_path, table_name="institution"),
                 ),
                 Table(
                     "country",
                     False,
                     dataset_id_settings,
                     settings_country,
-                    bq_find_schema(path=os.path.join(schema_folder(), "doi"), table_name="country"),
+                    bq_find_schema(path=os.path.join(global_schema_path, "doi"), table_name="country"),
                 ),
             ]
 
@@ -358,7 +361,7 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
 
             # Upload fake cached zip files file to bucket
             for file_name in ["images-base.zip", "images.zip"]:
-                file_path = workflow_test_fixtures_folder(WORKFLOW_MODULE, file_name)
+                file_path = workflow_test_fixtures_path(WORKFLOW_MODULE, file_name)
                 gcs_upload_file(bucket_name=data_bucket, blob_name=file_name, file_path=file_path)
 
             # Setup workflow and connections
@@ -442,31 +445,14 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
 
                 # Check that the data is as expected
                 for entity_type in workflow.entity_types:
-                    file_path = workflow_test_fixtures_folder(WORKFLOW_MODULE, "expected", f"{entity_type}.json")
+                    file_path = workflow_test_fixtures_path(WORKFLOW_MODULE, "expected", f"{entity_type}.json")
                     with open(file_path, "r") as f:
                         expected_data = json.load(f)
                     actual_data = list(yield_data_glob(data_file_pattern(release.download_folder, entity_type)))
                     diff = DeepDiff(expected_data, actual_data, ignore_order=False, significant_digits=4)
                     all_matched = True
                     for diff_type, changes in diff.items():
-                        # TODO: put this into function in platform
-                        all_matched = False
-                        if diff_type == "values_changed":
-                            for key_path, change in changes.items():
-                                logging.error(
-                                    f"(expected) != (actual) {key_path}: {change['old_value']} (expected) != (actual) {change['new_value']}"
-                                )
-                        elif diff_type == "dictionary_item_added":
-                            for change in changes:
-                                logging.error(f"dictionary_item_added: {change}")
-                        elif diff_type == "dictionary_item_removed":
-                            for change in changes:
-                                logging.error(f"dictionary_item_removed: {change}")
-                        elif diff_type == "type_changes":
-                            for key_path, change in changes.items():
-                                logging.error(
-                                    f"(expected) != (actual) {key_path}: {change['old_type']} (expected) != (actual) {change['new_type']}"
-                                )
+                        log_diff(diff_type, changes)
                     assert all_matched, "Rows in actual content do not match expected content"
 
                 # Make draft Zenodo version
