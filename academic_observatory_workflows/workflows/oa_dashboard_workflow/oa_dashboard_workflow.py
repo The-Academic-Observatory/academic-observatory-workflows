@@ -41,10 +41,10 @@ from glom import glom, Coalesce, SKIP
 from jinja2 import Template
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
-from academic_observatory_workflows.config import Tag
+from academic_observatory_workflows.config import Tag, sql_folder, schema_folder
 from academic_observatory_workflows.github import trigger_repository_dispatch
 from academic_observatory_workflows.wikipedia import fetch_wikipedia_descriptions
-from academic_observatory_workflows.workflows.oa_web_workflow.institution_ids import INSTITUTION_IDS
+from academic_observatory_workflows.workflows.oa_dashboard_workflow.institution_ids import INSTITUTION_IDS
 from academic_observatory_workflows.zenodo import Zenodo, make_draft_version, publish_new_version
 from observatory.platform.airflow import get_airflow_connection_password
 from observatory.platform.bigquery import (
@@ -70,24 +70,7 @@ from observatory.platform.utils.jinja2_utils import (
 from observatory.platform.workflows.workflow import Workflow, make_snapshot_date, set_task_state, SnapshotRelease
 from observatory.platform.workflows.workflow import cleanup
 
-
-# TODO: sort out something more general for these two functions
-
-def sql_folder():
-
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql")
-
-
-def schema_folder() -> str:
-
-    """Return the path to the database schema template folder.
-
-    :return: the path.
-    """
-
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema")
-
-
+WORKFLOW_MODULE = "oa_dashboard_workflow"
 INCLUSION_THRESHOLD = {"country": 15, "institution": 1000}
 MAX_REPOSITORIES = 200
 START_YEAR = 2000
@@ -126,7 +109,7 @@ The COKI Open Access Dataset contains information from:
 ###################
 
 
-class OaWebRelease(SnapshotRelease):
+class OaDashboardRelease(SnapshotRelease):
     def __init__(
         self,
         *,
@@ -135,17 +118,22 @@ class OaWebRelease(SnapshotRelease):
         snapshot_date: pendulum.DateTime,
         input_project_id: str,
         output_project_id: str,
+        bq_agg_dataset_id: str,
         bq_ror_dataset_id: str,
         bq_settings_dataset_id: str,
-        bq_agg_dataset_id: str,
         bq_oa_dashboard_dataset_id: str,
     ):
-        """Create an OaWebRelease instance.
+        """Create an OaDashboardRelease instance.
 
         :param dag_id: the dag id.
         :param run_id: the DAG run id.
         :param snapshot_date: the release date.
-        :param zenodo: the zenodo instance.
+        :param input_project_id: the ID of the Google Cloud project where data will be pulled from.
+        :param output_project_id: the ID of the Google Cloud project where data will be written to.
+        :param bq_agg_dataset_id: the id of the BigQuery dataset where the Academic Observatory aggregated data lives.
+        :param bq_ror_dataset_id: the id of the BigQuery dataset containing the ROR table.
+        :param bq_settings_dataset_id: the id of the BigQuery settings dataset, which contains the country table.
+        :param bq_oa_dashboard_dataset_id: the id of the BigQuery dataset where the tables produced by this workflow will be created.
         """
 
         super().__init__(dag_id=dag_id, run_id=run_id, snapshot_date=snapshot_date)
@@ -215,8 +203,8 @@ class OaWebRelease(SnapshotRelease):
         )
 
 
-class OaWebWorkflow(Workflow):
-    """The OaWebWorkflow generates data files for the COKI Open Access Dashboard.
+class OaDashboardWorkflow(Workflow):
+    """The OaDashboardWorkflow generates data files for the COKI Open Access Dashboard.
 
     The figure below illustrates the generated data and notes about what each file is used for.
     .
@@ -279,12 +267,12 @@ class OaWebWorkflow(Workflow):
         data_location: str = "us",
         version: str = "v10",
         zenodo_host: str = "https://zenodo.org",
-        github_conn_id="oa_web_github_token",
-        zenodo_conn_id="oa_web_zenodo_token",
+        github_conn_id="oa_dashboard_github_token",
+        zenodo_conn_id="oa_dashboard_zenodo_token",
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2021, 5, 2),
         schedule: Optional[str] = "@weekly",
     ):
-        """Create the OaWebWorkflow.
+        """Create the OaDashboardWorkflow.
 
         :param dag_id: the DAG id.
         :param cloud_workspace: The CloudWorkspace.
@@ -293,9 +281,10 @@ class OaWebWorkflow(Workflow):
         the last set of numbers from the Concept DOI.
         :param doi_dag_id: the DAG id to wait for.
         :param entity_types: the table names.
-        :param bq_agg_dataset_id: the id of the dataset where the Academic Observatory aggregated data lives.
-        :param bq_ror_dataset_id: the id of the dataset containing the ROR table.
-        :param bq_settings_dataset_id: the id of the settings dataset, which contains the country table.
+        :param bq_agg_dataset_id: the id of the BigQuery dataset where the Academic Observatory aggregated data lives.
+        :param bq_ror_dataset_id: the id of the BigQuery dataset containing the ROR table.
+        :param bq_settings_dataset_id: the id of the BigQuery settings dataset, which contains the country table.
+        :param bq_oa_dashboard_dataset_id: the id of the BigQuery dataset where the tables produced by this workflow will be created.
         :param version: the dataset version published by this workflow. The Github Action pulls from a specific dataset
         version: https://github.com/The-Academic-Observatory/coki-oa-web/blob/develop/.github/workflows/build-on-data-update.yml#L68-L74.
         This is so that when breaking changes are made to the schema, the web application won't break.
@@ -367,14 +356,14 @@ class OaWebWorkflow(Workflow):
     # Airflow tasks
     ######################################
 
-    def make_release(self, **kwargs) -> OaWebRelease:
+    def make_release(self, **kwargs) -> OaDashboardRelease:
         """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is
         called in 'task_callable'.
 
         :param kwargs: the context passed from the PythonOperator. See
         https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
         passed to this argument.
-        :return: A list of OaWebRelease instances
+        :return: A list of OaDashboardRelease instances
         """
 
         # Make Zenodo instance
@@ -382,7 +371,7 @@ class OaWebWorkflow(Workflow):
         self.zenodo = Zenodo(host=self.zenodo_host, access_token=zenodo_token)
 
         snapshot_date = make_snapshot_date(**kwargs)
-        return OaWebRelease(
+        return OaDashboardRelease(
             dag_id=self.dag_id,
             run_id=kwargs["run_id"],
             snapshot_date=snapshot_date,
@@ -394,7 +383,7 @@ class OaWebWorkflow(Workflow):
             bq_oa_dashboard_dataset_id=self.bq_oa_dashboard_dataset_id,
         )
 
-    def make_bq_datasets(self, release: OaWebRelease, **kwargs):
+    def make_bq_datasets(self, release: OaDashboardRelease, **kwargs):
         """Make BigQuery datasets."""
 
         bq_create_dataset(
@@ -404,25 +393,25 @@ class OaWebWorkflow(Workflow):
             description="The COKI Open Access Dashboard dataset",
         )
 
-    def upload_institution_ids(self, release: OaWebRelease, **kwargs):
+    def upload_institution_ids(self, release: OaDashboardRelease, **kwargs):
         """Upload the institution IDs to BigQuery"""
 
         data = [{"ror_id": ror_id} for ror_id in INSTITUTION_IDS]
         success = bq_load_from_memory(
             release.institution_ids_table_id,
             data,
-            schema_file_path=os.path.join(schema_folder(), "institution_ids.json"),
+            schema_file_path=os.path.join(schema_folder(WORKFLOW_MODULE), "institution_ids.json"),
         )
         set_task_state(success, self.upload_institution_ids.__name__, release)
 
-    def create_entity_tables(self, release: OaWebRelease, **kwargs):
+    def create_entity_tables(self, release: OaDashboardRelease, **kwargs):
         """Create the country and institution tables"""
 
         results, queries = [], []
 
         # Query the country and institution aggregations
         for entity_type in self.entity_types:
-            template_path = os.path.join(sql_folder(), f"{entity_type}.sql.jinja2")
+            template_path = os.path.join(sql_folder(WORKFLOW_MODULE), f"{entity_type}.sql.jinja2")
             sql = render_template(
                 template_path,
                 agg_table_id=release.observatory_agg_table_id(entity_type),
@@ -443,9 +432,9 @@ class OaWebWorkflow(Workflow):
 
         state = all(results)
         if not state:
-            raise AirflowException("OaWebWorkflow.query failed")
+            raise AirflowException("OaDashboardWorkflow.query failed")
 
-    def add_wiki_descriptions(self, release: OaWebRelease, entity_type: str, **kwargs):
+    def add_wiki_descriptions(self, release: OaDashboardRelease, entity_type: str, **kwargs):
         """Download wiki descriptions and update indexes."""
 
         logging.info(f"add_wiki_descriptions: {entity_type}")
@@ -465,12 +454,13 @@ class OaWebWorkflow(Workflow):
         success = bq_load_from_memory(
             desc_table_id,
             data,
-            schema_file_path=os.path.join(schema_folder(), "descriptions.json"),
+            schema_file_path=os.path.join(schema_folder(WORKFLOW_MODULE), "descriptions.json"),
         )
-        assert success, f"Uploading data to {desc_table_id} table failed"
+        if not success:
+            raise AirflowException(f"Uploading data to {desc_table_id} table failed")
 
         # Update entity table
-        template_path = os.path.join(sql_folder(), "update_descriptions.sql.jinja2")
+        template_path = os.path.join(sql_folder(WORKFLOW_MODULE), "update_descriptions.sql.jinja2")
         sql = render_template(
             template_path,
             entity_table_id=release.oa_dashboard_table_id(entity_type),
@@ -478,7 +468,7 @@ class OaWebWorkflow(Workflow):
         )
         bq_run_query(sql)
 
-    def download_assets(self, release: OaWebRelease, **kwargs):
+    def download_assets(self, release: OaDashboardRelease, **kwargs):
         """Download assets"""
 
         # Download assets
@@ -494,7 +484,7 @@ class OaWebWorkflow(Workflow):
             with ZipFile(file_path) as zip_file:
                 zip_file.extractall(unzip_folder_path)  # Overwrites by default
 
-    def download_institution_logos(self, release: OaWebRelease, **kwargs):
+    def download_institution_logos(self, release: OaDashboardRelease, **kwargs):
         """Download logos and update indexes."""
 
         logging.info(f"download_logos: institution")
@@ -512,12 +502,13 @@ class OaWebWorkflow(Workflow):
         success = bq_load_from_memory(
             logos_table_id,
             data,
-            schema_file_path=os.path.join(schema_folder(), "logos.json"),
+            schema_file_path=os.path.join(schema_folder(WORKFLOW_MODULE), "logos.json"),
         )
-        assert success, f"Uploading data to {logos_table_id} table failed"
+        if not success:
+            raise AirflowException(f"Uploading data to {logos_table_id} table failed")
 
         # Update with entity table
-        template_path = os.path.join(sql_folder(), "update_logos.sql.jinja2")
+        template_path = os.path.join(sql_folder(WORKFLOW_MODULE), "update_logos.sql.jinja2")
         sql = render_template(
             template_path,
             entity_table_id=release.oa_dashboard_table_id(entity_type),
@@ -528,7 +519,7 @@ class OaWebWorkflow(Workflow):
         # Zip dataset
         shutil.make_archive(os.path.join(release.out_path, "images"), "zip", os.path.join(release.build_path, "images"))
 
-    def export_tables(self, release: OaWebRelease, **kwargs):
+    def export_tables(self, release: OaDashboardRelease, **kwargs):
         """Export and download the queried data"""
 
         # Fetch data
@@ -546,9 +537,9 @@ class OaWebWorkflow(Workflow):
             results.append(success)
 
         if not all(results):
-            raise AirflowException("OaWebWorkflow.download failed")
+            raise AirflowException("OaDashboardWorkflow.download failed")
 
-    def download_data(self, release: OaWebRelease, **kwargs):
+    def download_data(self, release: OaDashboardRelease, **kwargs):
         """Download the queried data."""
 
         blob_prefix = gcs_blob_name_from_path(release.download_folder)
@@ -558,9 +549,9 @@ class OaWebWorkflow(Workflow):
             destination_path=release.download_folder,
         )
         if not state:
-            raise AirflowException("OaWebWorkflow.download failed")
+            raise AirflowException("OaDashboardWorkflow.download failed")
 
-    def make_draft_zenodo_version(self, release: OaWebRelease, **kwargs):
+    def make_draft_zenodo_version(self, release: OaDashboardRelease, **kwargs):
         """Make a draft Zenodo version of the dataset.
 
         :param release: the release instance.
@@ -572,7 +563,7 @@ class OaWebWorkflow(Workflow):
 
         make_draft_version(self.zenodo, self.conceptrecid)
 
-    def build_datasets(self, release: OaWebRelease, **kwargs):
+    def build_datasets(self, release: OaDashboardRelease, **kwargs):
         """Transform the queried data into the final format for the open access website."""
 
         # Get versions
@@ -597,7 +588,7 @@ class OaWebWorkflow(Workflow):
         save_zenodo_dataset(release.download_folder, coki_dataset_path, self.entity_types)
         shutil.make_archive(os.path.join(release.out_path, "coki-oa-dataset"), "zip", coki_dataset_path)
 
-    def publish_zenodo_version(self, release: OaWebRelease, **kwargs):
+    def publish_zenodo_version(self, release: OaDashboardRelease, **kwargs):
         """Publish the new Zenodo version of the dataset."""
 
         res = self.zenodo.get_versions(self.conceptrecid, all_versions=0)
@@ -611,7 +602,7 @@ class OaWebWorkflow(Workflow):
         file_path = os.path.join(release.out_path, "coki-oa-dataset.zip")
         publish_new_version(self.zenodo, draft_id, file_path)
 
-    def upload_dataset(self, release: OaWebRelease, **kwargs):
+    def upload_dataset(self, release: OaDashboardRelease, **kwargs):
         """Publish the dataset produced by this workflow."""
 
         # gcs_upload_file should always rewrite a new version of latest.zip if it exists
@@ -623,7 +614,7 @@ class OaWebWorkflow(Workflow):
                 bucket_name=self.data_bucket, blob_name=blob_name, file_path=file_path, check_blob_hash=False
             )
 
-    def repository_dispatch(self, release: OaWebRelease, **kwargs):
+    def repository_dispatch(self, release: OaDashboardRelease, **kwargs):
         """Trigger a Github repository_dispatch to trigger new website builds."""
 
         token = get_airflow_connection_password(self.github_conn_id)
@@ -633,7 +624,7 @@ class OaWebWorkflow(Workflow):
                 org="The-Academic-Observatory", repo_name="coki-oa-web", token=token, event_type=event_type
             )
 
-    def cleanup(self, release: OaWebRelease, **kwargs):
+    def cleanup(self, release: OaDashboardRelease, **kwargs):
         """Delete all files and folders associated with this release."""
 
         cleanup(dag_id=self.dag_id, execution_date=kwargs["execution_date"], workflow_folder=release.workflow_folder)
