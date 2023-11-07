@@ -26,7 +26,7 @@ class Tag:
     academic_observatory = "academic-observatory"
 
 
-def test_fixtures_folder(*subdirs, workflow_module: str = None) -> str:
+def test_fixtures_folder(*subdirs: str, workflow_module: Optional[str] = None) -> str:
     """Get the path to the Academic Observatory Workflows test data directory.
 
     :param *subdirs: any subdirectories.
