@@ -83,7 +83,7 @@ def sql_folder(workflow_module: Optional[str] = None) -> str:
     return construct_module_path("academic_observatory_workflows", "database", "sql")
 
 
-def construct_module_path(*parts) -> str:
+def construct_module_path(*parts: str) -> str:
     """Constructs the full module path given parts of a path."""
 
     module_path = ".".join(list(parts))
