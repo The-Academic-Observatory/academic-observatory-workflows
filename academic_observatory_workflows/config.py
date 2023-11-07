@@ -26,24 +26,18 @@ class Tag:
     academic_observatory = "academic-observatory"
 
 
-def test_fixtures_folder(*subdirs) -> str:
+def test_fixtures_folder(*subdirs, workflow_module: str = None) -> str:
     """Get the path to the Academic Observatory Workflows test data directory.
 
-    :return: the test data directory.
-    """
-
-    base_path = module_file_path("academic_observatory_workflows.fixtures")
-    return os.path.join(base_path, *subdirs)
-
-
-def workflow_test_fixtures_path(workflow_module: str, *subdirs: str) -> str:
-    """Get the path to the Academic Observatory Workflows test data directory.
-
+    :param *subdirs: any subdirectories.
     :param workflow_module: Optional, name of the workflow. Only to be included if the schema for the workflow is in
     the directory academic_observatory_workflows.workflows.{workflow_name}.schema
-    :param *subdirs: any subdirectories.
     :return: the test data directory.
     """
+
+    if workflow_module is None:
+        base_path = module_file_path("academic_observatory_workflows.fixtures")
+        return os.path.join(base_path, *subdirs)
 
     base_path = construct_module_path(
         "academic_observatory_workflows", "workflows", workflow_module, "tests", "fixtures"

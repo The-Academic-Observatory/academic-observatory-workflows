@@ -27,7 +27,7 @@ from click.testing import CliRunner
 from deepdiff import DeepDiff
 
 import academic_observatory_workflows.workflows.oa_dashboard_workflow
-from academic_observatory_workflows.config import schema_folder, test_fixtures_folder, workflow_test_fixtures_path
+from academic_observatory_workflows.config import schema_folder, test_fixtures_folder
 from academic_observatory_workflows.tests.test_zenodo import MockZenodo
 from academic_observatory_workflows.workflows.oa_dashboard_workflow.oa_dashboard_workflow import (
     OaDashboardWorkflow,
@@ -275,12 +275,12 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
         self, dataset_id_all: str, dataset_id_settings: str, bucket_name: str, snapshot_date: pendulum.DateTime
     ):
         ror = load_jsonl(test_fixtures_folder("doi", "ror.jsonl"))
-        country = load_jsonl(workflow_test_fixtures_path(WORKFLOW_MODULE, "country.jsonl.gz"))
-        institution = load_jsonl(workflow_test_fixtures_path(WORKFLOW_MODULE, "institution.jsonl.gz"))
+        country = load_jsonl(test_fixtures_folder("country.jsonl.gz", workflow_module=WORKFLOW_MODULE))
+        institution = load_jsonl(test_fixtures_folder("institution.jsonl.gz", workflow_module=WORKFLOW_MODULE))
         settings_country = load_jsonl(test_fixtures_folder("doi", "country.jsonl"))
 
         global_schema_path = schema_folder()
-        tests_schema_path = workflow_test_fixtures_path(WORKFLOW_MODULE, "schema")
+        tests_schema_path = test_fixtures_folder("schema", workflow_module=WORKFLOW_MODULE)
         with CliRunner().isolated_filesystem() as t:
             tables = [
                 Table(
@@ -361,7 +361,7 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
 
             # Upload fake cached zip files file to bucket
             for file_name in ["images-base.zip", "images.zip"]:
-                file_path = workflow_test_fixtures_path(WORKFLOW_MODULE, file_name)
+                file_path = test_fixtures_folder(file_name, workflow_module=WORKFLOW_MODULE)
                 gcs_upload_file(bucket_name=data_bucket, blob_name=file_name, file_path=file_path)
 
             # Setup workflow and connections
@@ -445,7 +445,7 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
 
                 # Check that the data is as expected
                 for entity_type in workflow.entity_types:
-                    file_path = workflow_test_fixtures_path(WORKFLOW_MODULE, "expected", f"{entity_type}.json")
+                    file_path = test_fixtures_folder("expected", f"{entity_type}.json", workflow_module=WORKFLOW_MODULE)
                     with open(file_path, "r") as f:
                         expected_data = json.load(f)
                     actual_data = list(yield_data_glob(data_file_pattern(release.download_folder, entity_type)))
