@@ -36,7 +36,7 @@ def test_fixtures_folder(*subdirs) -> str:
     return os.path.join(base_path, *subdirs)
 
 
-def workflow_test_fixtures_path(workflow_module: str, *subdirs) -> str:
+def workflow_test_fixtures_path(workflow_module: str, *subdirs: str) -> str:
     """Get the path to the Academic Observatory Workflows test data directory.
 
     :param workflow_module: Optional, name of the workflow. Only to be included if the schema for the workflow is in
