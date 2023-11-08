@@ -1,0 +1,15 @@
+MERGE
+  {{ entity_table_id }} entity
+USING
+  {{ descriptions_table_id }} descriptions
+ON
+  entity.wikipedia_url = descriptions.url
+  WHEN MATCHED
+  THEN
+UPDATE
+SET
+  entity.description = STRUCT(
+    descriptions.text AS text,
+    "https://en.wikipedia.org/wiki/Wikipedia:Text_of_Creative_Commons_Attribution-ShareAlike_3.0_Unported_License" AS license,
+    descriptions.url AS url
+  )

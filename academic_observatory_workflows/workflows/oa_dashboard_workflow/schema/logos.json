@@ -1,0 +1,26 @@
+[
+  {
+    "name": "id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "The entity ID"
+  },
+  {
+    "name": "logo_sm",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Small logo path"
+  },
+  {
+    "name": "logo_md",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Medium logo path"
+  },
+  {
+    "name": "logo_lg",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Large logo path"
+  }
+]

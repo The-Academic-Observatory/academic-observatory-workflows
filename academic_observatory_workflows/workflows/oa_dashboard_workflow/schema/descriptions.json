@@ -1,0 +1,14 @@
+[
+  {
+    "name": "text",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "The description text"
+  },
+  {
+    "name": "url",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "The description URL"
+  }
+]

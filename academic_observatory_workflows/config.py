@@ -15,6 +15,7 @@
 # Author: James Diprose
 
 import os
+from typing import Optional
 
 from observatory.platform.config import module_file_path
 
@@ -25,29 +26,63 @@ class Tag:
     academic_observatory = "academic-observatory"
 
 
-def test_fixtures_folder(*subdirs) -> str:
+def test_fixtures_folder(*subdirs: str, workflow_module: Optional[str] = None) -> str:
     """Get the path to the Academic Observatory Workflows test data directory.
 
+    :param *subdirs: any subdirectories.
+    :param workflow_module: Optional, name of the workflow. Only to be included if the schema for the workflow is in
+    the directory academic_observatory_workflows.workflows.{workflow_name}.schema
     :return: the test data directory.
     """
 
-    base_path = module_file_path("academic_observatory_workflows.fixtures")
+    if workflow_module is None:
+        base_path = module_file_path("academic_observatory_workflows.fixtures")
+        return os.path.join(base_path, *subdirs)
+
+    base_path = construct_module_path(
+        "academic_observatory_workflows", "workflows", workflow_module, "tests", "fixtures"
+    )
     return os.path.join(base_path, *subdirs)
 
 
-def schema_folder() -> str:
+def schema_folder(workflow_module: Optional[str] = None) -> str:
     """Return the path to the database schema template folder.
 
+    :param workflow_module: Optional, name of the workflow. Only to be included if the schema for the workflow is in
+    the directory academic_observatory_workflows.workflows.{workflow_module}.schema
     :return: the path.
     """
 
-    return module_file_path("academic_observatory_workflows.database.schema")
+    # New directory structure
+    if workflow_module is not None:
+        return construct_module_path("academic_observatory_workflows", "workflows", workflow_module, "schema")
+
+    # Old directory structure
+    return construct_module_path("academic_observatory_workflows", "database", "schema")
 
 
-def sql_folder() -> str:
+def sql_folder(workflow_module: Optional[str] = None) -> str:
     """Return the path to the workflow SQL template folder.
 
+    :param workflow_module: Optional, name of the workflow. Only to be included if the sql for the workflow is in
+    the directory academic_observatory_workflows.workflows.{workflow_module}.schema
     :return: the path.
     """
 
-    return module_file_path("academic_observatory_workflows.database.sql")
+    # New directory structure
+    if workflow_module is not None:
+        return construct_module_path("academic_observatory_workflows", "workflows", workflow_module, "sql")
+
+    # Old directory structure
+    return construct_module_path("academic_observatory_workflows", "database", "sql")
+
+
+def construct_module_path(*parts: str) -> str:
+    """Constructs the full module path given parts of a path."""
+
+    module_path = ".".join(list(parts))
+    file_path = module_file_path(module_path)
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"construct_module_path: directory {file_path} does not exist!")
+
+    return file_path

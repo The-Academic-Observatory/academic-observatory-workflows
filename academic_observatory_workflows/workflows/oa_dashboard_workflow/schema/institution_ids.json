@@ -1,0 +1,8 @@
+[
+  {
+    "name": "ror_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "The institution's ROR ID"
+  }
+]
