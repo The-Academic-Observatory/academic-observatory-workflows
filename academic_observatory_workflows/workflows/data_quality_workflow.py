@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-
 import os
 import logging
 import hashlib
@@ -31,11 +30,11 @@ from google.cloud.bigquery import Table as BQTable
 from airflow import DAG
 from airflow.utils.task_group import TaskGroup
 from airflow.operators.python import PythonOperator
+from airflow.sensors.external_task import ExternalTaskSensor
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
 
 from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.utils.dag_run_sensor import DagRunSensor
 from observatory.platform.workflows.workflow import Workflow, set_task_state, Release
 from observatory.platform.bigquery import (
     bq_table_id_parts,
@@ -46,6 +45,7 @@ from observatory.platform.bigquery import (
     bq_select_columns,
     bq_get_table,
     bq_select_table_shard_dates,
+    bq_table_id as make_bq_table_id,
 )
 
 
@@ -92,19 +92,19 @@ def make_tables(project_id: str, dataset_id: str, tables: Dict) -> List[Table]:
     ]
 
 
-class DQCWorkflow(Workflow):
+class DataQualityWorkflow(Workflow):
     def __init__(
         self,
         *,
         dag_id: str,
         cloud_workspace: CloudWorkspace,
         datasets: Dict,
-        sensor_dag_ids: Optional[List[str]] = [],
+        sensor_dag_ids: Optional[List[str]] = None,
         bq_dataset_id: str = "data_quality_checks",
         bq_dataset_description: str = "This dataset holds metadata about the tables that the Academic Observatory Worflows produce. If there are multiple shards tables, it will go back on the table and check if it hasn't done that table previously.",
         bq_table_id: str = "data_quality",
         bq_table_description: str = "Data quality check for all tables produced by the Academic Observatory workflows.",
-        schema_path: str = os.path.join(default_schema_folder(), "dqc", "dqc.json"),
+        schema_path: str = os.path.join(default_schema_folder(), "data_quality", "data_quality.json"),
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 1, 1),
         schedule: str = "@weekly",
         queue: str = "default",
@@ -120,7 +120,7 @@ class DQCWorkflow(Workflow):
         :param cloud_workspace: the cloud workspace settings.
         :param datasets: A dictionary of datasets holding tables that will processed by this workflow.
         :param sensor_dag_ids: List of dags that this workflow will wait to finish before running.
-        :param bq_dataset_id: The dataset_id of where the dqc records will be stored.
+        :param bq_dataset_id: The dataset_id of where the data quality records will be stored.
         :param bq_dataset_description: Description of the data quality check dataset.
         :param bq_table_id: The name of the table in Bigquery.
         :param bq_table_description: The description of the table in Biguqery.
@@ -134,7 +134,7 @@ class DQCWorkflow(Workflow):
             dag_id=dag_id,
             start_date=start_date,
             schedule=schedule,
-            tags=[Tag.data_quality_check],
+            tags=[Tag.data_quality],
             queue=queue,
         )
 
@@ -148,11 +148,11 @@ class DQCWorkflow(Workflow):
         self.schema_path = schema_path
         self.datasets = datasets
 
-        # Full table id for the DQC records.
-        self.dqc_full_table_id = f"{self.project_id}.{self.bq_dataset_id}.{bq_table_id}"
+        # Full table id for the data quality records.
+        self.dqc_full_table_id = make_bq_table_id(self.project_id, self.bq_dataset_id, bq_table_id)
 
         # If no sensor workflow is given, then it will run on a regular scheduled basis.
-        self.sensor_dag_ids = sensor_dag_ids
+        self.sensor_dag_ids = sensor_dag_ids if sensor_dag_ids is not None else []
 
         assert datasets, "No dataset or tables given for this DQC Workflow! Please revise the config file."
 
@@ -166,23 +166,12 @@ class DQCWorkflow(Workflow):
             task_sensor_group = []
             if self.sensor_dag_ids:
                 with TaskGroup(group_id="dag_sensors") as tg_sensors:
-                    task_sensors = []
-
                     for ext_dag_id in self.sensor_dag_ids:
-                        sensor = DagRunSensor(
+                        ExternalTaskSensor(
                             task_id=f"{ext_dag_id}_sensor",
                             external_dag_id=ext_dag_id,
                             mode="reschedule",
-                            duration=timedelta(days=7),
-                            poke_interval=int(timedelta(hours=1).total_seconds()),
-                            timeout=int(timedelta(days=3).total_seconds()),
                         )
-                        print(sensor)
-                        self.add_operator(sensor)
-                        task_sensors.append(sensor)
-
-                    # Add all of the sesnors to tg_sensors with this line.
-                    (task_sensors)
 
                     task_sensor_group = tg_sensors
 
@@ -198,17 +187,12 @@ class DQCWorkflow(Workflow):
                 with TaskGroup(group_id=dataset_id) as tg_dataset:
                     tables: List[Table] = make_tables(self.project_id, dataset_id, self.datasets[dataset_id]["tables"])
 
-                    table_tasks = []
                     for table in tables:
-                        task = self.make_python_operator(
+                        self.make_python_operator(
                             self.perform_data_quality_check,
                             task_id=f"{table.table_id}",
                             op_kwargs={f"task_id": f"{table.table_id}", "table": table},
                         )
-                        table_tasks.append(task)
-
-                    # Add the list of table_tasks to tg_dataset by this line
-                    (table_tasks)
 
                     task_datasets_group.append(tg_dataset)
 
@@ -230,19 +214,18 @@ class DQCWorkflow(Workflow):
     def create_dataset(self, release: Release, **kwargs):
         """Create a dataset for all of the DQC tables for the workflows."""
 
-        success = bq_create_dataset(
+        bq_create_dataset(
             project_id=self.project_id,
             dataset_id=self.bq_dataset_id,
             location=self.data_location,
             description=self.bq_dataset_description,
         )
 
-        set_task_state(success, self.create_dataset.__name__, release)
-
     def perform_data_quality_check(self, release: Release, **kwargs):
         """
         For each dataset, create a table that holds metadata about each table in that dataset.
-        Please refer to the output of the create_dqc_record function for all the metadata included in this workflow."""
+        Please refer to the output of the create_data_quality_record function for all the metadata included in this workflow.
+        """
 
         task_id = kwargs["task_id"]
         table_to_check: Table = kwargs["table"]
@@ -278,7 +261,7 @@ class DQCWorkflow(Workflow):
 
             if not is_in_dqc_table(hash_id, self.dqc_full_table_id):
                 logging.info(f"Performing check on table {full_table_id} with hash {hash_id}")
-                dqc_check = create_dqc_record(
+                dqc_check = create_data_quality_record(
                     hash_id=hash_id,
                     full_table_id=full_table_id,
                     fields=table_to_check.fields,
@@ -308,7 +291,7 @@ class DQCWorkflow(Workflow):
         set_task_state(success, task_id, release)
 
 
-def create_dqc_record(
+def create_data_quality_record(
     hash_id: str,
     full_table_id: str,
     fields: Union[str, List[str]],
@@ -350,7 +333,7 @@ def create_dqc_record(
         full_table_id=full_table_id,
         hash_id=hash_id,
         is_sharded=is_sharded,
-        shard_date=shard_date.strftime("%Y-%m-%d") if shard_date is not None else shard_date,
+        shard_date=shard_date.to_date_string() if shard_date is not None else shard_date,
         date_created=date_created,
         expires=expires,
         date_expires=date_expires,

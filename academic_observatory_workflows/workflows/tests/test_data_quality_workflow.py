@@ -16,18 +16,16 @@
 
 import os
 import pendulum
-from typing import List
-from datetime import timedelta
 from google.cloud import bigquery
 from google.cloud.bigquery import Table as BQTable
 
 from academic_observatory_workflows.workflows.tests.test_doi_workflow import TestDoiWorkflow
 from academic_observatory_workflows.model import bq_load_observatory_dataset, make_observatory_dataset
 from academic_observatory_workflows.config import test_fixtures_folder, schema_folder as default_schema_folder
-from academic_observatory_workflows.workflows.dqc_workflow import (
-    DQCWorkflow,
+from academic_observatory_workflows.workflows.data_quality_workflow import (
+    DataQualityWorkflow,
     Table,
-    create_dqc_record,
+    create_data_quality_record,
     bq_count_distinct_records,
     bq_count_nulls,
     bq_get_table,
@@ -44,7 +42,6 @@ from observatory.platform.observatory_environment import (
     make_dummy_dag,
     find_free_port,
     random_id,
-    bq_dataset_test_env,
 )
 from observatory.platform.bigquery import (
     bq_table_id,
@@ -55,17 +52,15 @@ from observatory.platform.bigquery import (
 )
 
 
-class TestDQCWorkflow(ObservatoryTestCase):
+class TestDataQualityWorkflow(ObservatoryTestCase):
     """Tests for the Data Quality Check Workflow"""
 
     def __init__(self, *args, **kwargs):
-        self.dag_id = "dqc_workflow"
+        self.dag_id = "data_quality_workflow"
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
 
-        self.doi_fixtures = "doi"
-
-        super(TestDQCWorkflow, self).__init__(*args, **kwargs)
+        super(TestDataQualityWorkflow, self).__init__(*args, **kwargs)
 
     def test_dag_load(self):
         """Test that the DataQualityCheck DAG can be loaded from a DAG bag."""
@@ -75,7 +70,7 @@ class TestDQCWorkflow(ObservatoryTestCase):
                 Workflow(
                     dag_id=self.dag_id,
                     name="Data Quality Check Workflow",
-                    class_name="academic_observatory_workflows.workflows.dqc_workflow.DQCWorkflow",
+                    class_name="academic_observatory_workflows.workflows.data_quality_workflow.DataQualityWorkflow",
                     cloud_workspace=self.fake_cloud_workspace,
                     kwargs=dict(
                         sensor_dag_ids=["doi"],
@@ -93,7 +88,7 @@ class TestDQCWorkflow(ObservatoryTestCase):
     def test_dag_structure(self):
         """Test that the DAG has the correct structure."""
 
-        workflow = DQCWorkflow(
+        workflow = DataQualityWorkflow(
             dag_id=self.dag_id,
             cloud_workspace=self.fake_cloud_workspace,
             sensor_dag_ids=["dummy1", "dummy2"],
@@ -135,14 +130,14 @@ class TestDQCWorkflow(ObservatoryTestCase):
         fake_dataset_id = env.add_dataset()
         settings_dataset_id = env.add_dataset(prefix="settings")
 
-        # Required to make the fake data for tests
+        # Borrowing from the DOI Workflow to create fake data for these tests
         repositories = TestDoiWorkflow().repositories
         institutions = TestDoiWorkflow().institutions
-        repository = load_jsonl(test_fixtures_folder(self.doi_fixtures, "repository.jsonl"))
+        repository = load_jsonl(test_fixtures_folder("doi", "repository.jsonl"))
 
         with env.create(task_logging=True):
             start_date = pendulum.datetime(year=2021, month=10, day=10)
-            workflow = DQCWorkflow(
+            workflow = DataQualityWorkflow(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
                 bq_dataset_id=dqc_dataset_id,
@@ -172,21 +167,9 @@ class TestDQCWorkflow(ObservatoryTestCase):
                 },
             )
 
-            dqc_dag = workflow.make_dag()
+            data_quality_dag = workflow.make_dag()
 
-            # Disable dag check on dag run sensor
-            for sensor in workflow.operators:
-                sensor.check_exists = False
-                sensor.grace_period = timedelta(seconds=1)
-
-            # If there is no dag run for the DAG being monitored, the sensor will pass.  This is so we can
-            # skip waiting on weeks when the DAG being waited on is not scheduled to run.
-            with env.create_dag_run(dqc_dag, start_date):
-                for task_id in workflow.sensor_dag_ids:
-                    ti = env.run_task(f"dag_sensors.{task_id}_sensor")
-                    self.assertEqual("success", ti.state)
-
-            # Run Dummy Dags
+            # Run fake version of the dags that the workflow sensors are waiting for.
             execution_date = pendulum.datetime(year=2023, month=1, day=1)
             snapshot_date = pendulum.datetime(year=2023, month=1, day=8)
             for dag_id in workflow.sensor_dag_ids:
@@ -202,7 +185,7 @@ class TestDQCWorkflow(ObservatoryTestCase):
             # should only be one record in the DQC table for each dataset
 
             # Run end to end tests for DQC DAG
-            with env.create_dag_run(dqc_dag, execution_date):
+            with env.create_dag_run(data_quality_dag, execution_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
                 for task_id in workflow.sensor_dag_ids:
                     ti = env.run_task(f"dag_sensors.{task_id}_sensor")
@@ -260,7 +243,7 @@ class TestDQCWorkflow(ObservatoryTestCase):
                     self.assertEqual("success", ti.state)
 
             # Run end to end tests for DQC DAG
-            with env.create_dag_run(dqc_dag, execution_date):
+            with env.create_dag_run(data_quality_dag, execution_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
                 for task_id in workflow.sensor_dag_ids:
                     ti = env.run_task(f"dag_sensors.{task_id}_sensor")
@@ -311,7 +294,7 @@ class TestDQCWorkflow(ObservatoryTestCase):
             ### THIRD RUN ###
 
             # Using the same observatory_dataset object which will have the same faked table data.
-            # No new records should be added to the DQC tables.
+            # No new records should be added to the Data Quality table.
 
             # Run Dummy Dags
             execution_date = pendulum.datetime(year=2023, month=3, day=1)
@@ -323,8 +306,8 @@ class TestDQCWorkflow(ObservatoryTestCase):
                     ti = env.run_task("dummy_task")
                     self.assertEqual("success", ti.state)
 
-            # Run end to end tests for DQC DAG
-            with env.create_dag_run(dqc_dag, execution_date):
+            # Run end to end tests for Data Quality DAG
+            with env.create_dag_run(data_quality_dag, execution_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
                 for task_id in workflow.sensor_dag_ids:
                     ti = env.run_task(f"dag_sensors.{task_id}_sensor")
@@ -351,15 +334,15 @@ class TestDQCWorkflow(ObservatoryTestCase):
                 self.assert_table_integrity(table_id, expected_rows=18)
 
 
-class TestDataQualityCheckUtils(ObservatoryTestCase):
+class TestDataQualityUtils(ObservatoryTestCase):
     def __init__(self, *args, **kwargs):
-        super(TestDataQualityCheckUtils, self).__init__(*args, **kwargs)
+        super(TestDataQualityUtils, self).__init__(*args, **kwargs)
 
         self.dag_id = "data_quality_checks"
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
 
-        self.schema_path = os.path.join(default_schema_folder(), "dqc", "dqc.json")
+        self.schema_path = os.path.join(default_schema_folder(), "data_quality", "data_quality.json")
 
         # Can't use faker here because the number of bytes in a table is needed to be the same for each test run.
         self.test_table_hash = "771c9176e77c1b03f64b1b5fa4a39cdb"
@@ -394,8 +377,8 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
         result = create_table_hash_id(full_table_id=bq_table_id, num_bytes=131, nrows=5, ncols=3)
         self.assertEqual(result, self.test_table_hash)
 
-    def test_create_dqc_record(self):
-        """Test if a dqc record can be reliably created."""
+    def test_create_dq_record(self):
+        """Test if a data quality record can be reliably created."""
 
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
         dataset_id = env.add_dataset()
@@ -427,7 +410,7 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
                 ncols=len(bq_select_columns(table_id=full_table_id)),
             )
 
-            dqc_record = create_dqc_record(
+            dqc_record = create_data_quality_record(
                 hash_id=hash_id,
                 full_table_id=full_table_id,
                 fields=table_to_check.fields,
@@ -477,7 +460,7 @@ class TestDataQualityCheckUtils(ObservatoryTestCase):
             )
 
             dqc_record = [
-                create_dqc_record(
+                create_data_quality_record(
                     hash_id=hash_id,
                     full_table_id=full_table_id,
                     fields=table_to_check.fields,
