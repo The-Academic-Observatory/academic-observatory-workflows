@@ -23,12 +23,12 @@ import random
 import shutil
 import tarfile
 import xml.etree.ElementTree as ET
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Dict, Tuple, Optional
 
 import pendulum
-from airflow import AirflowSkipException
 from airflow.api.common.experimental.pool import create_pool
-from airflow.decorators import dag, task
+from airflow.decorators import dag, task, task_group
+from airflow.exceptions import AirflowSkipException
 from google.cloud.bigquery import SourceFormat
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
@@ -73,10 +73,6 @@ def check_dependencies(airflow_vars: Optional[List[str]] = None, airflow_conns: 
 
     if not vars_valid or not conns_valid:
         raise AirflowSkipException("Required variables or connections are missing")
-
-
-def make_task_id(prefix: str, snapshot_date: pendulum.DateTime):
-    return f"{prefix}{snapshot_date.format('YYYYMMDD')}"
 
 
 class CrossrefFundrefRelease(SnapshotRelease):
@@ -155,6 +151,7 @@ def create_dag(
     create_pool(gitlab_pool_name, gitlab_pool_slots, gitlab_pool_description)
 
     @dag(
+        dag_id=dag_id,
         schedule=schedule,
         start_date=start_date,
         catchup=catchup,
@@ -162,16 +159,16 @@ def create_dag(
     )
     def crossref_fundref():
         @task(pool=gitlab_pool_name)
-        def fetch_releases(context: Dict[str, Any]):
+        def fetch_releases(**kwargs):
             """Based on a list of all releases, checks which ones were released between the prev and this execution date
             of the DAG. If the release falls within the time period mentioned above, checks if a bigquery table doesn't
             exist yet for the release. A list of releases that passed both checks is passed to the next tasks. If the
             list is empty the workflow will stop."""
 
             # List releases between a start date and an end date [ )
-            run_id = context["run_id"]
-            start_date = pendulum.instance(context["data_interval_start"])
-            end_date = pendulum.instance(context["data_interval_end"])
+            run_id = kwargs["run_id"]
+            start_date = pendulum.instance(kwargs["data_interval_start"])
+            end_date = pendulum.instance(kwargs["data_interval_end"])
             all_releases = list_releases(start_date, end_date)
             all_releases = [
                 CrossrefFundrefRelease.from_dict(dict(dag_id=dag_id, run_id=run_id, **release))
@@ -201,140 +198,149 @@ def create_dag(
             else:
                 raise AirflowSkipException("No new releases found, skipping")
 
-        @task(task_id=lambda release: make_task_id("bq_load", release))
-        def download(release: CrossrefFundrefRelease):
-            """Downloads release tar.gz file from url."""
+        @task_group(group_id="process_release")
+        def process_release(data):
+            @task
+            def download(release: Dict):
+                """Downloads release tar.gz file from url."""
 
-            logging.info(f"Downloading file: {release.download_file_path}, url: {release.url}")
-            clean_dir(release.download_folder)
+                release = CrossrefFundrefRelease.from_dict(release)
+                logging.info(f"Downloading file: {release.download_file_path}, url: {release.url}")
+                clean_dir(release.download_folder)
 
-            # A selection of headers to prevent 403/forbidden error.
-            headers_list = [
-                {
-                    "authority": "gitlab.com",
-                    "upgrade-insecure-requests": "1",
-                    "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/83.0.4103.116 Safari/537.36",
-                    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,"
-                    "*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
-                    "sec-fetch-site": "none",
-                    "sec-fetch-mode": "navigate",
-                    "sec-fetch-dest": "document",
-                    "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
-                },
-                {
-                    "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0",
-                    "Accept": "*/*",
-                    "Accept-Language": "en-US,en;q=0.5",
-                    "Referer": "https://gitlab.com/",
-                },
-            ]
+                # A selection of headers to prevent 403/forbidden error.
+                headers_list = [
+                    {
+                        "authority": "gitlab.com",
+                        "upgrade-insecure-requests": "1",
+                        "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/83.0.4103.116 Safari/537.36",
+                        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,"
+                        "*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+                        "sec-fetch-site": "none",
+                        "sec-fetch-mode": "navigate",
+                        "sec-fetch-dest": "document",
+                        "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
+                    },
+                    {
+                        "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0",
+                        "Accept": "*/*",
+                        "Accept-Language": "en-US,en;q=0.5",
+                        "Referer": "https://gitlab.com/",
+                    },
+                ]
 
-            # Download release
-            with retry_get_url(release.url, headers=random.choice(headers_list), stream=True) as response:
-                with open(release.download_file_path, "wb") as file:
-                    shutil.copyfileobj(response.raw, file)
+                # Download release
+                with retry_get_url(release.url, headers=random.choice(headers_list), stream=True) as response:
+                    with open(release.download_file_path, "wb") as file:
+                        shutil.copyfileobj(response.raw, file)
 
-            # Upload to Cloud Storage
-            success = gcs_upload_files(
-                bucket_name=cloud_workspace.download_bucket, file_paths=[release.download_file_path]
-            )
-            set_task_state(success, download.__name__, release)
+                # Upload to Cloud Storage
+                success = gcs_upload_files(
+                    bucket_name=cloud_workspace.download_bucket, file_paths=[release.download_file_path]
+                )
+                set_task_state(success, download.__name__, release)
 
-        @task(task_id=lambda release: make_task_id("bq_load", release))
-        def transform(release: CrossrefFundrefRelease):
-            """Transforms release by storing file content in gzipped json format. Relationships between funders are added."""
+            @task
+            def transform(release: Dict):
+                """Transforms release by storing file content in gzipped json format. Relationships between funders are added."""
 
-            clean_dir(release.transform_folder)
+                release = CrossrefFundrefRelease.from_dict(release)
+                clean_dir(release.transform_folder)
 
-            logging.info(f"Extracting file: {release.download_file_path}")
-            clean_dir(release.extract_folder)
+                logging.info(f"Extracting file: {release.download_file_path}")
+                clean_dir(release.extract_folder)
 
-            with tarfile.open(release.download_file_path, "r:gz") as tar:
-                for member in tar.getmembers():
-                    if member.isfile() and member.name.endswith(".rdf"):
-                        # Extract RDF file to memory
-                        rdf_file = tar.extractfile(member)
+                with tarfile.open(release.download_file_path, "r:gz") as tar:
+                    for member in tar.getmembers():
+                        if member.isfile() and member.name.endswith(".rdf"):
+                            # Extract RDF file to memory
+                            rdf_file = tar.extractfile(member)
 
-                        # Save file to desired path
-                        with open(release.extract_file_path, "wb") as output_file:
-                            output_file.write(rdf_file.read())
+                            # Save file to desired path
+                            with open(release.extract_file_path, "wb") as output_file:
+                                output_file.write(rdf_file.read())
 
-            logging.info(f"File extracted to: {release.extract_file_path}")
+                logging.info(f"File extracted to: {release.extract_file_path}")
 
-            # Parse RDF funders data
-            funders, funders_by_key = parse_fundref_registry_rdf(release.extract_file_path)
-            funders = add_funders_relationships(funders, funders_by_key)
+                # Parse RDF funders data
+                funders, funders_by_key = parse_fundref_registry_rdf(release.extract_file_path)
+                funders = add_funders_relationships(funders, funders_by_key)
 
-            # Save
-            save_jsonl_gz(release.transform_file_path, funders)
-            logging.info(f"Success transforming release: {release.url}")
+                # Save
+                save_jsonl_gz(release.transform_file_path, funders)
+                logging.info(f"Success transforming release: {release.url}")
 
-            success = gcs_upload_files(
-                bucket_name=cloud_workspace.transform_bucket, file_paths=[release.transform_file_path]
-            )
-            set_task_state(success, transform.__name__, release)
+                success = gcs_upload_files(
+                    bucket_name=cloud_workspace.transform_bucket, file_paths=[release.transform_file_path]
+                )
+                set_task_state(success, transform.__name__, release)
 
-        @task(task_id=lambda release: make_task_id("bq_load", release))
-        def bq_load(release: CrossrefFundrefRelease):
-            """Load the data into BigQuery."""
+            @task
+            def bq_load(release: Dict):
+                """Load the data into BigQuery."""
 
-            bq_create_dataset(
-                project_id=cloud_workspace.output_project_id,
-                dataset_id=bq_dataset_id,
-                location=cloud_workspace.data_location,
-                description=dataset_description,
-            )
-            uri = gcs_blob_uri(cloud_workspace.transform_bucket, gcs_blob_name_from_path(release.transform_file_path))
-            schema_file_path = bq_find_schema(
-                path=schema_folder, table_name=bq_table_name, release_date=release.snapshot_date
-            )
-            table_id = bq_sharded_table_id(
-                cloud_workspace.output_project_id,
-                bq_dataset_id,
-                bq_table_name,
-                release.snapshot_date,
-            )
-            success = bq_load_table(
-                uri=uri,
-                table_id=table_id,
-                schema_file_path=schema_file_path,
-                source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
-                table_description=table_description,
-                ignore_unknown_values=True,
-            )
-            set_task_state(success, bq_load.__name__, release)
+                release = CrossrefFundrefRelease.from_dict(release)
+                bq_create_dataset(
+                    project_id=cloud_workspace.output_project_id,
+                    dataset_id=bq_dataset_id,
+                    location=cloud_workspace.data_location,
+                    description=dataset_description,
+                )
+                uri = gcs_blob_uri(
+                    cloud_workspace.transform_bucket, gcs_blob_name_from_path(release.transform_file_path)
+                )
+                schema_file_path = bq_find_schema(
+                    path=schema_folder, table_name=bq_table_name, release_date=release.snapshot_date
+                )
+                table_id = bq_sharded_table_id(
+                    cloud_workspace.output_project_id,
+                    bq_dataset_id,
+                    bq_table_name,
+                    release.snapshot_date,
+                )
+                success = bq_load_table(
+                    uri=uri,
+                    table_id=table_id,
+                    schema_file_path=schema_file_path,
+                    source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
+                    table_description=table_description,
+                    ignore_unknown_values=True,
+                )
+                set_task_state(success, bq_load.__name__, release)
 
-        @task(task_id=lambda release: make_task_id("bq_load", release))
-        def add_new_dataset_releases(release: CrossrefFundrefRelease, context: Dict[str, Any]):
-            """Adds release information to API."""
+            @task
+            def add_new_dataset_releases(release: Dict, **kwargs):
+                """Adds release information to API."""
 
-            dataset_release = DatasetRelease(
-                dag_id=dag_id,
-                dataset_id=api_dataset_id,
-                dag_run_id=release.run_id,
-                snapshot_date=release.snapshot_date,
-                data_interval_start=context["data_interval_start"],
-                data_interval_end=context["data_interval_end"],
-            )
-            api = make_observatory_api(observatory_api_conn_id=observatory_api_conn_id)
-            api.post_dataset_release(dataset_release)
+                release = CrossrefFundrefRelease.from_dict(release)
+                dataset_release = DatasetRelease(
+                    dag_id=dag_id,
+                    dataset_id=api_dataset_id,
+                    dag_run_id=release.run_id,
+                    snapshot_date=release.snapshot_date,
+                    data_interval_start=kwargs["data_interval_start"],
+                    data_interval_end=kwargs["data_interval_end"],
+                )
+                api = make_observatory_api(observatory_api_conn_id=observatory_api_conn_id)
+                api.post_dataset_release(dataset_release)
 
-        @task(task_id=lambda release: make_task_id("bq_load", release))
-        def cleanup(release: CrossrefFundrefRelease, context: Dict[str, Any]):
-            """Delete all files, folders and XComs associated with this release."""
+            @task
+            def cleanup(release: Dict, **kwargs):
+                """Delete all files, folders and XComs associated with this release."""
 
-            cleanup(dag_id=dag_id, execution_date=context["execution_date"], workflow_folder=release.workflow_folder)
+                release = CrossrefFundrefRelease.from_dict(release)
+                cleanup(dag_id=dag_id, execution_date=kwargs["execution_date"], workflow_folder=release.workflow_folder)
 
-        check_dependencies(airflow_conns=[observatory_api_conn_id])
-        releases = fetch_releases()
-        for data in releases:
-            release = CrossrefFundrefRelease.from_dict(data)
-            download(release)
-            transform(release)
-            bq_load(release)
-            add_new_dataset_releases(release)
-            cleanup(release)
+            download(data) >> transform(data) >> bq_load(data) >> add_new_dataset_releases(data) >> cleanup(data)
+
+        check_task = check_dependencies(airflow_conns=[observatory_api_conn_id])
+        fetch_releases_task = fetch_releases()
+        process_release_tg = process_release.expand(data=fetch_releases_task)
+
+        (check_task >> fetch_releases_task >> process_release_tg)
+
+    return crossref_fundref()
 
 
 def list_releases(start_date: pendulum.DateTime, end_date: pendulum.DateTime) -> List[dict]:
