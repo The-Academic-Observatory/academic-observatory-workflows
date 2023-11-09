@@ -1,4 +1,4 @@
-# Copyright 2020 Curtin University
+# Copyright 2020-2023 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,15 +23,17 @@ import random
 import shutil
 import tarfile
 import xml.etree.ElementTree as ET
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional, Any
 
 import pendulum
+from airflow import AirflowSkipException
 from airflow.api.common.experimental.pool import create_pool
-from airflow.models.taskinstance import TaskInstance
+from airflow.decorators import dag, task
 from google.cloud.bigquery import SourceFormat
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
 from observatory.api.client.model.dataset_release import DatasetRelease
+from observatory.platform.airflow import check_variables, check_connections
 from observatory.platform.api import make_observatory_api
 from observatory.platform.bigquery import (
     bq_find_schema,
@@ -45,9 +47,36 @@ from observatory.platform.files import save_jsonl_gz, clean_dir
 from observatory.platform.gcs import gcs_blob_name_from_path, gcs_upload_files, gcs_blob_uri
 from observatory.platform.observatory_config import CloudWorkspace
 from observatory.platform.utils.url_utils import retry_get_url
-from observatory.platform.workflows.workflow import Workflow, SnapshotRelease, cleanup, set_task_state
+from observatory.platform.workflows.workflow import SnapshotRelease, set_task_state
 
 RELEASES_URL = "https://gitlab.com/api/v4/projects/crossref%2Fopen_funder_registry/releases"
+
+
+# TODO: move to common folder
+
+
+@task
+def check_dependencies(airflow_vars: Optional[List[str]] = None, airflow_conns: Optional[List[str]] = None):
+    """Checks if the given Airflow Variables and Connections exist.
+
+    :param airflow_vars: the Airflow Variables to check exist.
+    :param airflow_conns: the Airflow Connections to check exist.
+    :return: None.
+    """
+
+    vars_valid = True
+    conns_valid = True
+    if airflow_vars:
+        vars_valid = check_variables(airflow_vars)
+    if airflow_conns:
+        conns_valid = check_connections(airflow_conns)
+
+    if not vars_valid or not conns_valid:
+        raise AirflowSkipException("Required variables or connections are missing")
+
+
+def make_task_id(prefix: str, snapshot_date: pendulum.DateTime):
+    return f"{prefix}{snapshot_date.format('YYYYMMDD')}"
 
 
 class CrossrefFundrefRelease(SnapshotRelease):
@@ -69,146 +98,113 @@ class CrossrefFundrefRelease(SnapshotRelease):
         self.extract_file_path = os.path.join(self.extract_folder, self.extract_file_name)
         self.transform_file_path = os.path.join(self.transform_folder, self.transform_file_name)
 
-
-class CrossrefFundrefTelescope(Workflow):
-    def __init__(
-        self,
-        *,
-        dag_id: str,
-        cloud_workspace: CloudWorkspace,
-        bq_dataset_id: str = "crossref_fundref",
-        bq_table_name: str = "crossref_fundref",
-        api_dataset_id: str = "crossref_fundref",
-        schema_folder: str = os.path.join(default_schema_folder(), "crossref_fundref"),
-        dataset_description: str = "The Crossref Funder Registry dataset: https://www.crossref.org/services/funder-registry/",
-        table_description: str = "The Crossref Funder Registry dataset: https://www.crossref.org/services/funder-registry/",
-        observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
-        start_date: pendulum.DateTime = pendulum.datetime(2014, 2, 23),
-        schedule: str = "@weekly",
-        catchup: bool = True,
-        gitlab_pool_name: str = "gitlab_pool",
-        gitlab_pool_slots: int = 2,
-        gitlab_pool_description: str = "A pool to limit the connections to Gitlab",
-    ):
-        """Construct a CrossrefFundrefTelescope instance.
-
-        :param dag_id: the id of the DAG.
-        :param cloud_workspace: the cloud workspace settings.
-        :param bq_dataset_id: the BigQuery dataset id.
-        :param bq_table_name: the BigQuery table name.
-        :param api_dataset_id: the Dataset ID to use when storing releases.
-        :param schema_folder: the SQL schema path.
-        :param dataset_description: description for the BigQuery dataset.
-        :param table_description: description for the BigQuery table.
-        :param observatory_api_conn_id: the Observatory API connection key.
-        :param start_date: the start date of the DAG.
-        :param schedule: the schedule interval of the DAG.
-        :param catchup: whether to catchup the DAG or not.
-        :param gitlab_pool_name: name of the Gitlab Pool.
-        :param gitlab_pool_slots: number of slots for the Gitlab Pool.
-        :param gitlab_pool_description: description for the Gitlab Pool.
-        """
-
-        super().__init__(
-            dag_id=dag_id,
-            start_date=start_date,
-            schedule=schedule,
-            catchup=catchup,
-            airflow_conns=[observatory_api_conn_id],
-            tags=[Tag.academic_observatory],
+    def to_dict(self) -> Dict:
+        return dict(
+            dag_id=self.dag_id, run_id=self.run_id, snapshot_date=self.snapshot_date.to_date_string(), url=self.url
         )
 
-        self.cloud_workspace = cloud_workspace
-        self.bq_dataset_id = bq_dataset_id
-        self.bq_table_name = bq_table_name
-        self.api_dataset_id = api_dataset_id
-        self.schema_folder = schema_folder
-        self.dataset_description = dataset_description
-        self.table_description = table_description
-        self.observatory_api_conn_id = observatory_api_conn_id
-
-        # Create Gitlab pool to limit the number of connections to Gitlab, which is very quick to block requests if
-        # there are too many at once.
-        create_pool(gitlab_pool_name, gitlab_pool_slots, gitlab_pool_description)
-
-        self.add_setup_task(self.check_dependencies)
-        self.add_setup_task(self.get_release_info, pool=gitlab_pool_name)
-        self.add_task(self.download, pool=gitlab_pool_name)
-        self.add_task(self.upload_downloaded)
-        self.add_task(self.extract)
-        self.add_task(self.transform)
-        self.add_task(self.upload_transformed)
-        self.add_task(self.bq_load)
-        self.add_task(self.add_new_dataset_releases)
-        self.add_task(self.cleanup)
-
-    def make_release(self, **kwargs) -> List[CrossrefFundrefRelease]:
-        """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is
-        called in 'task_callable'.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: a list of CrossrefFundrefRelease instances.
-        """
-
-        ti: TaskInstance = kwargs["ti"]
-        release_info = ti.xcom_pull(
-            key=CrossrefFundrefTelescope.RELEASE_INFO,
-            task_ids=self.get_release_info.__name__,
-            include_prior_dates=False,
+    @staticmethod
+    def from_dict(dict_: Dict) -> CrossrefFundrefRelease:
+        return CrossrefFundrefRelease(
+            dag_id=dict_["dag_id"],
+            run_id=dict_["run_id"],
+            snapshot_date=pendulum.parse(dict_["snapshot_date"]),
+            url=dict_["url"],
         )
-        releases = []
-        run_id = kwargs["run_id"]
-        for release in release_info:
-            snapshot_date = pendulum.parse(release["date"])
-            releases.append(
-                CrossrefFundrefRelease(
-                    dag_id=self.dag_id, run_id=run_id, snapshot_date=snapshot_date, url=release["url"]
+
+
+def create_dag(
+    *,
+    dag_id: str,
+    cloud_workspace: CloudWorkspace,
+    bq_dataset_id: str = "crossref_fundref",
+    bq_table_name: str = "crossref_fundref",
+    api_dataset_id: str = "crossref_fundref",
+    schema_folder: str = os.path.join(default_schema_folder(), "crossref_fundref"),
+    dataset_description: str = "The Crossref Funder Registry dataset: https://www.crossref.org/services/funder-registry/",
+    table_description: str = "The Crossref Funder Registry dataset: https://www.crossref.org/services/funder-registry/",
+    observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
+    start_date: pendulum.DateTime = pendulum.datetime(2014, 2, 23),
+    schedule: str = "@weekly",
+    catchup: bool = True,
+    gitlab_pool_name: str = "gitlab_pool",
+    gitlab_pool_slots: int = 2,
+    gitlab_pool_description: str = "A pool to limit the connections to Gitlab",
+):
+    """Construct a CrossrefFundrefTelescope instance.
+
+    :param dag_id: the id of the DAG.
+    :param cloud_workspace: the cloud workspace settings.
+    :param bq_dataset_id: the BigQuery dataset id.
+    :param bq_table_name: the BigQuery table name.
+    :param api_dataset_id: the Dataset ID to use when storing releases.
+    :param schema_folder: the SQL schema path.
+    :param dataset_description: description for the BigQuery dataset.
+    :param table_description: description for the BigQuery table.
+    :param observatory_api_conn_id: the Observatory API connection key.
+    :param start_date: the start date of the DAG.
+    :param schedule: the schedule interval of the DAG.
+    :param catchup: whether to catchup the DAG or not.
+    :param gitlab_pool_name: name of the Gitlab Pool.
+    :param gitlab_pool_slots: number of slots for the Gitlab Pool.
+    :param gitlab_pool_description: description for the Gitlab Pool.
+    """
+
+    # Create Gitlab pool to limit the number of connections to Gitlab, which is very quick to block requests if
+    # there are too many at once.
+    create_pool(gitlab_pool_name, gitlab_pool_slots, gitlab_pool_description)
+
+    @dag(
+        schedule=schedule,
+        start_date=start_date,
+        catchup=catchup,
+        tags=[Tag.academic_observatory],
+    )
+    def crossref_fundref():
+        @task(pool=gitlab_pool_name)
+        def fetch_releases(context: Dict[str, Any]):
+            """Based on a list of all releases, checks which ones were released between the prev and this execution date
+            of the DAG. If the release falls within the time period mentioned above, checks if a bigquery table doesn't
+            exist yet for the release. A list of releases that passed both checks is passed to the next tasks. If the
+            list is empty the workflow will stop."""
+
+            # List releases between a start date and an end date [ )
+            run_id = context["run_id"]
+            start_date = pendulum.instance(context["data_interval_start"])
+            end_date = pendulum.instance(context["data_interval_end"])
+            all_releases = list_releases(start_date, end_date)
+            all_releases = [
+                CrossrefFundrefRelease.from_dict(dict(dag_id=dag_id, run_id=run_id, **release))
+                for release in all_releases
+            ]
+            logging.info(f"Releases between start_date={start_date} and end_date={end_date}")
+            logging.info(all_releases)
+
+            # Check if the BigQuery table for each release already exists and only process release if the table
+            # doesn't exist
+            releases = []
+            for release in all_releases:
+                table_id = bq_sharded_table_id(
+                    cloud_workspace.output_project_id, bq_dataset_id, bq_table_name, release.snapshot_date
                 )
-            )
-        return releases
+                logging.info("Checking if bigquery table already exists:")
+                if bq_table_exists(table_id):
+                    logging.info(f"Skipping as table exists for {release.url}: {table_id}")
+                else:
+                    logging.info(f"Table does not exist yet, processing {release.url} in this workflow")
+                    releases.append(release)
 
-    def get_release_info(self, **kwargs) -> bool:
-        """Based on a list of all releases, checks which ones were released between the prev and this execution date
-        of the DAG. If the release falls within the time period mentioned above, checks if a bigquery table doesn't
-        exist yet for the release. A list of releases that passed both checks is passed to the next tasks. If the
-        list is empty the workflow will stop."""
-
-        # List releases between a start date and an end date [ )
-        start_date = pendulum.instance(kwargs["data_interval_start"])
-        end_date = pendulum.instance(kwargs["data_interval_end"])
-        releases_list = list_releases(start_date, end_date)
-        logging.info(f"Releases between start_date={start_date} and end_date={end_date}")
-        logging.info(releases_list)
-
-        # Check if the BigQuery table for each release already exists and only process release if the table
-        # doesn't exist
-        releases_list_out = []
-        for release in releases_list:
-            snapshot_date = pendulum.parse(release["date"])
-            table_id = bq_sharded_table_id(
-                self.cloud_workspace.output_project_id, self.bq_dataset_id, self.bq_table_name, snapshot_date
-            )
-            logging.info("Checking if bigquery table already exists:")
-            if bq_table_exists(table_id):
-                logging.info(f"Skipping as table exists for {release['url']}: {table_id}")
+            # If releases_list_out contains items then the DAG will continue (return releases) otherwise it will
+            # stop (AirflowSkipException)
+            if len(releases) > 0:
+                return [release.to_dict() for release in releases]
             else:
-                logging.info(f"Table does not exist yet, processing {release['url']} in this workflow")
-                releases_list_out.append(release)
+                raise AirflowSkipException("No new releases found, skipping")
 
-        # If releases_list_out contains items then the DAG will continue (return True) otherwise it will
-        # stop (return False)
-        continue_dag = len(releases_list_out) > 0
-        if continue_dag:
-            ti: TaskInstance = kwargs["ti"]
-            ti.xcom_push(CrossrefFundrefTelescope.RELEASE_INFO, releases_list_out, kwargs["logical_date"])
-        return continue_dag
+        @task(task_id=lambda release: make_task_id("bq_load", release))
+        def download(release: CrossrefFundrefRelease):
+            """Downloads release tar.gz file from url."""
 
-    def download(self, releases: List[CrossrefFundrefRelease], **kwargs):
-        """Downloads release tar.gz file from url."""
-
-        for release in releases:
             logging.info(f"Downloading file: {release.download_file_path}, url: {release.url}")
             clean_dir(release.download_folder)
 
@@ -239,19 +235,18 @@ class CrossrefFundrefTelescope(Workflow):
                 with open(release.download_file_path, "wb") as file:
                     shutil.copyfileobj(response.raw, file)
 
-    def upload_downloaded(self, releases: List[CrossrefFundrefRelease], **kwargs):
-        """Upload the data to Cloud Storage."""
-
-        for release in releases:
+            # Upload to Cloud Storage
             success = gcs_upload_files(
-                bucket_name=self.cloud_workspace.download_bucket, file_paths=[release.download_file_path]
+                bucket_name=cloud_workspace.download_bucket, file_paths=[release.download_file_path]
             )
-            set_task_state(success, self.upload_downloaded.__name__, release)
+            set_task_state(success, download.__name__, release)
 
-    def extract(self, releases: List[CrossrefFundrefRelease], **kwargs):
-        """Extract release from gzipped tar file."""
+        @task(task_id=lambda release: make_task_id("bq_load", release))
+        def transform(release: CrossrefFundrefRelease):
+            """Transforms release by storing file content in gzipped json format. Relationships between funders are added."""
 
-        for release in releases:
+            clean_dir(release.transform_folder)
+
             logging.info(f"Extracting file: {release.download_file_path}")
             clean_dir(release.extract_folder)
 
@@ -267,12 +262,6 @@ class CrossrefFundrefTelescope(Workflow):
 
             logging.info(f"File extracted to: {release.extract_file_path}")
 
-    def transform(self, releases: List[CrossrefFundrefRelease], **kwargs):
-        """Transforms release by storing file content in gzipped json format. Relationships between funders are added."""
-
-        for release in releases:
-            clean_dir(release.transform_folder)
-
             # Parse RDF funders data
             funders, funders_by_key = parse_fundref_registry_rdf(release.extract_file_path)
             funders = add_funders_relationships(funders, funders_by_key)
@@ -281,67 +270,71 @@ class CrossrefFundrefTelescope(Workflow):
             save_jsonl_gz(release.transform_file_path, funders)
             logging.info(f"Success transforming release: {release.url}")
 
-    def upload_transformed(self, releases: List[CrossrefFundrefRelease], **kwargs) -> None:
-        """Upload the transformed data to Cloud Storage."""
-
-        for release in releases:
             success = gcs_upload_files(
-                bucket_name=self.cloud_workspace.transform_bucket, file_paths=[release.transform_file_path]
+                bucket_name=cloud_workspace.transform_bucket, file_paths=[release.transform_file_path]
             )
-            set_task_state(success, self.upload_transformed.__name__, release)
+            set_task_state(success, transform.__name__, release)
 
-    def bq_load(self, releases: List[CrossrefFundrefRelease], **kwargs) -> None:
-        """Load the data into BigQuery."""
+        @task(task_id=lambda release: make_task_id("bq_load", release))
+        def bq_load(release: CrossrefFundrefRelease):
+            """Load the data into BigQuery."""
 
-        bq_create_dataset(
-            project_id=self.cloud_workspace.output_project_id,
-            dataset_id=self.bq_dataset_id,
-            location=self.cloud_workspace.data_location,
-            description=self.dataset_description,
-        )
-
-        for release in releases:
-            uri = gcs_blob_uri(
-                self.cloud_workspace.transform_bucket, gcs_blob_name_from_path(release.transform_file_path)
+            bq_create_dataset(
+                project_id=cloud_workspace.output_project_id,
+                dataset_id=bq_dataset_id,
+                location=cloud_workspace.data_location,
+                description=dataset_description,
             )
+            uri = gcs_blob_uri(cloud_workspace.transform_bucket, gcs_blob_name_from_path(release.transform_file_path))
             schema_file_path = bq_find_schema(
-                path=self.schema_folder, table_name=self.bq_table_name, release_date=release.snapshot_date
+                path=schema_folder, table_name=bq_table_name, release_date=release.snapshot_date
             )
             table_id = bq_sharded_table_id(
-                self.cloud_workspace.output_project_id, self.bq_dataset_id, self.bq_table_name, release.snapshot_date
+                cloud_workspace.output_project_id,
+                bq_dataset_id,
+                bq_table_name,
+                release.snapshot_date,
             )
             success = bq_load_table(
                 uri=uri,
                 table_id=table_id,
                 schema_file_path=schema_file_path,
                 source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
-                table_description=self.table_description,
+                table_description=table_description,
                 ignore_unknown_values=True,
             )
-            set_task_state(success, self.bq_load.__name__, release)
+            set_task_state(success, bq_load.__name__, release)
 
-    def add_new_dataset_releases(self, releases: List[CrossrefFundrefRelease], **kwargs) -> None:
-        """Adds release information to API."""
+        @task(task_id=lambda release: make_task_id("bq_load", release))
+        def add_new_dataset_releases(release: CrossrefFundrefRelease, context: Dict[str, Any]):
+            """Adds release information to API."""
 
-        for release in releases:
             dataset_release = DatasetRelease(
-                dag_id=self.dag_id,
-                dataset_id=self.api_dataset_id,
+                dag_id=dag_id,
+                dataset_id=api_dataset_id,
                 dag_run_id=release.run_id,
                 snapshot_date=release.snapshot_date,
-                data_interval_start=kwargs["data_interval_start"],
-                data_interval_end=kwargs["data_interval_end"],
+                data_interval_start=context["data_interval_start"],
+                data_interval_end=context["data_interval_end"],
             )
-            api = make_observatory_api(observatory_api_conn_id=self.observatory_api_conn_id)
+            api = make_observatory_api(observatory_api_conn_id=observatory_api_conn_id)
             api.post_dataset_release(dataset_release)
 
-    def cleanup(self, releases: List[CrossrefFundrefRelease], **kwargs) -> None:
-        """Delete all files, folders and XComs associated with this release."""
+        @task(task_id=lambda release: make_task_id("bq_load", release))
+        def cleanup(release: CrossrefFundrefRelease, context: Dict[str, Any]):
+            """Delete all files, folders and XComs associated with this release."""
 
-        for release in releases:
-            cleanup(
-                dag_id=self.dag_id, execution_date=kwargs["execution_date"], workflow_folder=release.workflow_folder
-            )
+            cleanup(dag_id=dag_id, execution_date=context["execution_date"], workflow_folder=release.workflow_folder)
+
+        check_dependencies(airflow_conns=[observatory_api_conn_id])
+        releases = fetch_releases()
+        for data in releases:
+            release = CrossrefFundrefRelease.from_dict(data)
+            download(release)
+            transform(release)
+            bq_load(release)
+            add_new_dataset_releases(release)
+            cleanup(release)
 
 
 def list_releases(start_date: pendulum.DateTime, end_date: pendulum.DateTime) -> List[dict]:
@@ -376,7 +369,7 @@ def list_releases(start_date: pendulum.DateTime, end_date: pendulum.DateTime) ->
         },
     ]
 
-    release_info = []
+    releases = []
     headers = random.choice(headers_list)
     current_page = 1
 
@@ -412,14 +405,14 @@ def list_releases(start_date: pendulum.DateTime, end_date: pendulum.DateTime) ->
 
                     # Only include release if it is within start and end dates
                     if start_date <= snapshot_date < end_date:
-                        release_info.append({"url": source["url"], "date": snapshot_date.format("YYYYMMDD")})
+                        releases.append({"url": source["url"], "snapshot_date": snapshot_date.to_date_string()})
 
         # Check if we should exit or get the next page
         if num_pages <= current_page:
             break
         current_page += 1
 
-    return release_info
+    return releases
 
 
 def new_funder_template():
