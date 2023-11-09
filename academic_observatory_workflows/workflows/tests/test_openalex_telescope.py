@@ -1,4 +1,4 @@
-# Copyright 2022 Curtin University
+# Copyright 2022-2023 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Aniek Roelofs, James Diprose
+# Author: Aniek Roelofs, James Diprose, Alex Massen-Hane
 
 import copy
 import datetime
@@ -44,10 +44,12 @@ from academic_observatory_workflows.workflows.openalex_telescope import (
     OpenAlexEntity,
     fetch_manifest,
     fetch_merged_ids,
+    bq_compare_schemas,
 )
 from academic_observatory_workflows.workflows.openalex_telescope import (
     parse_release_msg,
 )
+from observatory.platform.config import AirflowConns
 from observatory.platform.api import get_dataset_releases
 from observatory.platform.bigquery import bq_table_id, bq_sharded_table_id
 from observatory.platform.files import save_jsonl_gz, load_file
@@ -469,6 +471,75 @@ class TestOpenAlexUtils(ObservatoryTestCase):
         transform_object(obj4)
         self.assertDictEqual({"abstract_inverted_index": None}, obj4)
 
+    def test_bq_compare_schemas(self):
+        # Test with matching fields and types.
+        expected = [
+            {"name": "field1", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "field2", "type": "INTEGER", "mode": "REQUIRED"},
+            {"name": "field3", "type": "FLOAT", "mode": "REQUIRED"},
+        ]
+        actual = [
+            {"name": "field1", "type": "STRING", "mode": "REQUIRED"},
+            {"name": "field2", "type": "INTEGER", "mode": "REQUIRED"},
+            {"name": "field3", "type": "FLOAT", "mode": "REQUIRED", "description": ""},
+        ]
+
+        self.assertTrue(bq_compare_schemas(expected, actual, True))
+
+        # Test with non-matching number of fields.
+        expected = [
+            {"name": "field1", "type": "STRING", "mode": "REQUIRED"},
+            {"name": "field2", "type": "INTEGER", "mode": "REQUIRED"},
+        ]
+        actual = [
+            {"name": "field1", "type": "STRING", "mode": "REQUIRED"},
+            {"name": "field2", "type": "FLOAT", "mode": "REQUIRED"},
+            {"name": "field3", "type": "INTEGER", "mode": "REQUIRED"},
+        ]
+
+        self.assertFalse(bq_compare_schemas(expected, actual, True))
+
+        # Test with non-matching field names
+        expected = [
+            {"name": "field1", "type": "STRING", "mode": "REQUIRED"},
+            {"name": "field2", "type": "INTEGER", "mode": "REQUIRED"},
+        ]
+        actual = [
+            {"name": "field1", "type": "STRING", "mode": "REQUIRED"},
+            {"name": "field3", "type": "FLOAT", "mode": "REQUIRED"},
+        ]
+
+        self.assertFalse(bq_compare_schemas(expected, actual, True))
+
+        # Test with non-matching data types
+        expected = [
+            {"name": "field1", "type": "STRING", "mode": "REQUIRED"},
+            {"name": "field2", "type": "INTEGER", "mode": "REQUIRED"},
+        ]
+        actual = [
+            {"name": "field1", "type": "STRING", "mode": "REQUIRED"},
+            {"name": "field2", "type": "FLOAT", "mode": "REQUIRED"},
+        ]
+
+        self.assertFalse(bq_compare_schemas(expected, actual, True))
+
+        # Test with non-matching sub fields
+        expected = [
+            {
+                "name": "field1",
+                "type": "STRING",
+                "mode": "REQUIRED",
+                "fields": [{"name": "field3", "type": "FLOAT", "mode": "REQUIRED"}],
+            },
+            {"name": "field2", "type": "INTEGER", "mode": "REQUIRED"},
+        ]
+        actual = [
+            {"name": "field1", "type": "STRING", "mode": "REQUIRED"},
+            {"name": "field2", "type": "INTEGER", "mode": "REQUIRED"},
+        ]
+
+        self.assertFalse(bq_compare_schemas(expected, actual, True))
+
 
 def upload_folder_to_s3(bucket_name: str, folder_path: str, s3_prefix=None):
     s3 = boto3.client("s3")
@@ -593,6 +664,8 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             "bq_snapshot",
             "download",
             "transform",
+            "upload_schema",
+            "compare_schemas",
             "upload",
             "bq_load_upserts",
             "bq_upsert_records",
@@ -632,10 +705,11 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         with env.create():
             self.assert_dag_load_from_config(self.dag_id)
 
-    def test_telescope(self):
+    @patch("observatory.platform.workflows.vm_workflow.send_slack_msg")
+    def test_telescope(self, m_send_slack_msg):
         """Test the OpenAlex telescope end to end."""
 
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port(), age_to_delete=0.05)
         bq_dataset_id = env.add_dataset()
 
         # Create the Observatory environment and run tests
@@ -645,13 +719,20 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 cloud_workspace=env.cloud_workspace,
                 bq_dataset_id=bq_dataset_id,
             )
-            conn = Connection(
+            conn_aws = Connection(
                 conn_id=workflow.aws_conn_id,
                 conn_type="aws",
                 login=self.aws_access_key_id,
                 password=self.aws_secret_access_key,
             )
-            env.add_connection(conn)
+            env.add_connection(conn_aws)
+
+            conn_slack = Connection(
+                conn_id=AirflowConns.SLACK,
+                uri="https://:my-slack-token@https%3A%2F%2Fhooks.slack.com%2Fservices",
+            )
+            env.add_connection(conn_slack)
+
             dag = workflow.make_dag()
 
             # Create bucket and dataset for use in first and second run
@@ -747,6 +828,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Task groups
+                    entity: OpenAlexEntity
                     for entity in expected_entities:
                         ti = env.run_task(f"{entity.entity_name}.bq_snapshot")
                         self.assertEqual(State.SKIPPED, ti.state)
@@ -762,6 +844,17 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         for entry in entity.current_entries:
                             file_path = os.path.join(release.transform_folder, entry.object_key)
                             self.assertTrue(os.path.isfile(file_path))
+                            self.assertTrue(os.path.isfile(entity.generated_schema_path))
+
+                        ti = env.run_task(f"{entity.entity_name}.upload_schema")
+                        self.assertEqual(State.SUCCESS, ti.state)
+                        for entry in entity.current_entries:
+                            self.assert_blob_exists(
+                                env.transform_bucket, gcs_blob_name_from_path(entity.generated_schema_path)
+                            )
+
+                        ti = env.run_task(f"{entity.entity_name}.compare_schemas")
+                        self.assertEqual(State.SUCCESS, ti.state)
 
                         ti = env.run_task(f"{entity.entity_name}.upload")
                         self.assertEqual(State.SUCCESS, ti.state)
@@ -830,6 +923,8 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             "bq_snapshot",
                             "download",
                             "transform",
+                            "upload_schema",
+                            "compare_schemas",
                             "upload",
                             "bq_load_upserts",
                             "bq_upsert_records",
@@ -982,6 +1077,17 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         for entry in entity.current_entries:
                             file_path = os.path.join(release.transform_folder, entry.object_key)
                             self.assertTrue(os.path.isfile(file_path))
+                            self.assertTrue(os.path.isfile(entity.generated_schema_path))
+
+                        ti = env.run_task(f"{entity.entity_name}.upload_schema")
+                        self.assertEqual(State.SUCCESS, ti.state)
+                        for entry in entity.current_entries:
+                            self.assert_blob_exists(
+                                env.transform_bucket, gcs_blob_name_from_path(entity.generated_schema_path)
+                            )
+
+                        ti = env.run_task(f"{entity.entity_name}.compare_schemas")
+                        self.assertEqual(State.SUCCESS, ti.state)
 
                         ti = env.run_task(f"{entity.entity_name}.upload")
                         self.assertEqual(State.SUCCESS, ti.state)
