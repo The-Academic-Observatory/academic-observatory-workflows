@@ -47,7 +47,7 @@ from observatory.platform.files import save_jsonl_gz, clean_dir
 from observatory.platform.gcs import gcs_blob_name_from_path, gcs_upload_files, gcs_blob_uri
 from observatory.platform.observatory_config import CloudWorkspace
 from observatory.platform.utils.url_utils import retry_get_url
-from observatory.platform.workflows.workflow import SnapshotRelease, set_task_state
+from observatory.platform.workflows.workflow import SnapshotRelease, set_task_state, cleanup as cleanup_workflow
 
 RELEASES_URL = "https://gitlab.com/api/v4/projects/crossref%2Fopen_funder_registry/releases"
 
@@ -67,9 +67,9 @@ def check_dependencies(airflow_vars: Optional[List[str]] = None, airflow_conns: 
     vars_valid = True
     conns_valid = True
     if airflow_vars:
-        vars_valid = check_variables(airflow_vars)
+        vars_valid = check_variables(*airflow_vars)
     if airflow_conns:
-        conns_valid = check_connections(airflow_conns)
+        conns_valid = check_connections(*airflow_conns)
 
     if not vars_valid or not conns_valid:
         raise AirflowSkipException("Required variables or connections are missing")
@@ -159,16 +159,16 @@ def create_dag(
     )
     def crossref_fundref():
         @task(pool=gitlab_pool_name)
-        def fetch_releases(**kwargs):
+        def fetch_releases(**context):
             """Based on a list of all releases, checks which ones were released between the prev and this execution date
             of the DAG. If the release falls within the time period mentioned above, checks if a bigquery table doesn't
             exist yet for the release. A list of releases that passed both checks is passed to the next tasks. If the
             list is empty the workflow will stop."""
 
             # List releases between a start date and an end date [ )
-            run_id = kwargs["run_id"]
-            start_date = pendulum.instance(kwargs["data_interval_start"])
-            end_date = pendulum.instance(kwargs["data_interval_end"])
+            run_id = context["run_id"]
+            start_date = pendulum.instance(context["data_interval_start"])
+            end_date = pendulum.instance(context["data_interval_end"])
             all_releases = list_releases(start_date, end_date)
             all_releases = [
                 CrossrefFundrefRelease.from_dict(dict(dag_id=dag_id, run_id=run_id, **release))
@@ -201,8 +201,10 @@ def create_dag(
         @task_group(group_id="process_release")
         def process_release(data):
             @task
-            def download(release: Dict):
+            def download(release: Dict, **context):
                 """Downloads release tar.gz file from url."""
+
+                logging.info(context)
 
                 release = CrossrefFundrefRelease.from_dict(release)
                 logging.info(f"Downloading file: {release.download_file_path}, url: {release.url}")
@@ -239,10 +241,10 @@ def create_dag(
                 success = gcs_upload_files(
                     bucket_name=cloud_workspace.download_bucket, file_paths=[release.download_file_path]
                 )
-                set_task_state(success, download.__name__, release)
+                set_task_state(success, context["ti"].task_id, release)
 
             @task
-            def transform(release: Dict):
+            def transform(release: Dict, **context):
                 """Transforms release by storing file content in gzipped json format. Relationships between funders are added."""
 
                 release = CrossrefFundrefRelease.from_dict(release)
@@ -274,10 +276,10 @@ def create_dag(
                 success = gcs_upload_files(
                     bucket_name=cloud_workspace.transform_bucket, file_paths=[release.transform_file_path]
                 )
-                set_task_state(success, transform.__name__, release)
+                set_task_state(success, context["ti"].task_id, release)
 
             @task
-            def bq_load(release: Dict):
+            def bq_load(release: Dict, **context):
                 """Load the data into BigQuery."""
 
                 release = CrossrefFundrefRelease.from_dict(release)
@@ -307,10 +309,10 @@ def create_dag(
                     table_description=table_description,
                     ignore_unknown_values=True,
                 )
-                set_task_state(success, bq_load.__name__, release)
+                set_task_state(success, context["ti"].task_id, release)
 
             @task
-            def add_new_dataset_releases(release: Dict, **kwargs):
+            def add_new_dataset_releases(release: Dict, **context):
                 """Adds release information to API."""
 
                 release = CrossrefFundrefRelease.from_dict(release)
@@ -319,18 +321,20 @@ def create_dag(
                     dataset_id=api_dataset_id,
                     dag_run_id=release.run_id,
                     snapshot_date=release.snapshot_date,
-                    data_interval_start=kwargs["data_interval_start"],
-                    data_interval_end=kwargs["data_interval_end"],
+                    data_interval_start=context["data_interval_start"],
+                    data_interval_end=context["data_interval_end"],
                 )
                 api = make_observatory_api(observatory_api_conn_id=observatory_api_conn_id)
                 api.post_dataset_release(dataset_release)
 
             @task
-            def cleanup(release: Dict, **kwargs):
+            def cleanup(release: Dict, **context):
                 """Delete all files, folders and XComs associated with this release."""
 
                 release = CrossrefFundrefRelease.from_dict(release)
-                cleanup(dag_id=dag_id, execution_date=kwargs["execution_date"], workflow_folder=release.workflow_folder)
+                cleanup_workflow(
+                    dag_id=dag_id, execution_date=context["execution_date"], workflow_folder=release.workflow_folder
+                )
 
             download(data) >> transform(data) >> bq_load(data) >> add_new_dataset_releases(data) >> cleanup(data)
 
