@@ -1,0 +1,36 @@
+{% include 'data.sql.jinja2' with context %}
+
+SELECT
+  removeRorPrefix(ror.id) as id,
+  ror.name,
+  STRUCT(
+    CAST(NULL AS STRING) as text,
+    CAST(NULL AS STRING) as license,
+    CAST(NULL AS STRING) as url
+  ) as description,
+  'institution' as entity_type,
+  CAST(NULL AS STRING) as logo_sm,
+  CAST(NULL AS STRING) as logo_md,
+  CAST(NULL AS STRING) as logo_lg,
+  (SELECT * from ror.links LIMIT 1) AS url,
+  ror.wikipedia_url,
+  country.region as region,
+  country.subregion as subregion,
+  country.alpha3 as country_code,
+  country.wikipedia_name as country_name,
+  (SELECT * from ror.types LIMIT 1) AS institution_type,
+  (SELECT MIN(year_struct.year) FROM UNNEST(years_agg.years) as year_struct) as start_year,
+  (SELECT MAX(year_struct.year) FROM UNNEST(years_agg.years) as year_struct) as end_year,
+  aggregate_data.stats as stats,
+  years_agg.years,
+  ror.acronyms,
+  repositories.repositories
+FROM `{{ ror_table_id }}` as ror
+LEFT OUTER JOIN `{{ country_table_id }}` as country ON ror.country.country_code = country.alpha2
+LEFT JOIN aggregate_data ON aggregate_data.id = ror.id
+LEFT JOIN years_agg ON years_agg.id = ror.id
+LEFT JOIN repositories ON repositories.id = ror.id
+LEFT JOIN `{{ institution_ids_table_id }}` AS institution_ids ON removeRorPrefix(ror.id) = institution_ids.ror_id
+WHERE ARRAY_LENGTH(years) > 0
+AND (stats.n_outputs >= {{ inclusion_threshold }} OR institution_ids.ror_id IS NOT NULL)
+ORDER BY stats.p_outputs_open DESC

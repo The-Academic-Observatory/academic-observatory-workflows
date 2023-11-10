@@ -22,7 +22,7 @@ import vcr
 
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.wikipedia import (
-    fetch_wiki_descriptions,
+    fetch_wikipedia_descriptions_batch,
     shorten_text_full_sentences,
     remove_text_between_brackets,
 )
@@ -72,7 +72,7 @@ class TestWikipedia(TestCase):
         expected.sort(key=lambda x: x[0])
 
         with vcr.use_cassette(test_fixtures_folder("wikipedia", "test_fetch_wiki_description.yaml")):
-            actual = fetch_wiki_descriptions(wikipedia_urls)
+            actual = fetch_wikipedia_descriptions_batch(wikipedia_urls)
 
         # Sort actual results based on Wikipedia url so that they match the expected results
         actual.sort(key=lambda x: x[0])
