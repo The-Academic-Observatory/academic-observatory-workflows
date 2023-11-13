@@ -16,19 +16,8 @@
 # https://airflow.apache.org/docs/stable/faq.html
 
 
-import logging
-from typing import List
+from __future__ import annotations
 
-from observatory.platform.airflow import fetch_workflows, make_workflow
-from observatory.platform.observatory_config import Workflow
+from observatory.platform.airflow import load_dags_from_config
 
-# TODO: put into re-usable function
-# Load DAGs
-workflows: List[Workflow] = fetch_workflows()
-for workflow in workflows:
-    dag_id = workflow.dag_id
-    logging.info(f"Making Workflow: {workflow.name}, dag_id={dag_id}")
-    dag = make_workflow(workflow)
-
-    logging.info(f"Adding DAG: dag_id={dag_id}, dag={dag}")
-    globals()[dag_id] = dag
+load_dags_from_config()

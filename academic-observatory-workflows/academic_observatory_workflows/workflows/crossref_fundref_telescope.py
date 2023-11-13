@@ -26,14 +26,14 @@ import xml.etree.ElementTree as ET
 from typing import List, Dict, Tuple, Optional
 
 import pendulum
+from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
 from airflow.api.common.experimental.pool import create_pool
 from airflow.decorators import dag, task, task_group
 from airflow.exceptions import AirflowSkipException
 from google.cloud.bigquery import SourceFormat
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
 from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.platform.airflow import check_variables, check_connections
+from observatory.platform.airflow import check_variables, check_connections, get_gcp_credentials
 from observatory.platform.api import make_observatory_api
 from observatory.platform.bigquery import (
     bq_find_schema,
@@ -41,6 +41,7 @@ from observatory.platform.bigquery import (
     bq_table_exists,
     bq_load_table,
     bq_create_dataset,
+    bq_client,
 )
 from observatory.platform.config import AirflowConns
 from observatory.platform.files import save_jsonl_gz, clean_dir
@@ -120,6 +121,7 @@ def create_dag(
     dataset_description: str = "The Crossref Funder Registry dataset: https://www.crossref.org/services/funder-registry/",
     table_description: str = "The Crossref Funder Registry dataset: https://www.crossref.org/services/funder-registry/",
     observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
+    gcp_conn_id: str = AirflowConns.GCP_CONN_ID,
     start_date: pendulum.DateTime = pendulum.datetime(2014, 2, 23),
     schedule: str = "@weekly",
     catchup: bool = True,
@@ -138,6 +140,7 @@ def create_dag(
     :param dataset_description: description for the BigQuery dataset.
     :param table_description: description for the BigQuery table.
     :param observatory_api_conn_id: the Observatory API connection key.
+    :param gcp_conn_id: the Google Cloud connection ID.
     :param start_date: the start date of the DAG.
     :param schedule: the schedule interval of the DAG.
     :param catchup: whether to catchup the DAG or not.
@@ -179,13 +182,14 @@ def create_dag(
 
             # Check if the BigQuery table for each release already exists and only process release if the table
             # doesn't exist
+            client = bq_client(conn_id=gcp_conn_id)
             releases = []
             for release in all_releases:
                 table_id = bq_sharded_table_id(
                     cloud_workspace.output_project_id, bq_dataset_id, bq_table_name, release.snapshot_date
                 )
                 logging.info("Checking if bigquery table already exists:")
-                if bq_table_exists(table_id):
+                if bq_table_exists(table_id, client=client):
                     logging.info(f"Skipping as table exists for {release.url}: {table_id}")
                 else:
                     logging.info(f"Table does not exist yet, processing {release.url} in this workflow")
@@ -239,7 +243,9 @@ def create_dag(
 
                 # Upload to Cloud Storage
                 success = gcs_upload_files(
-                    bucket_name=cloud_workspace.download_bucket, file_paths=[release.download_file_path]
+                    bucket_name=cloud_workspace.download_bucket,
+                    file_paths=[release.download_file_path],
+                    credentials=get_gcp_credentials(conn_id=gcp_conn_id),
                 )
                 set_task_state(success, context["ti"].task_id, release)
 
@@ -274,7 +280,9 @@ def create_dag(
                 logging.info(f"Success transforming release: {release.url}")
 
                 success = gcs_upload_files(
-                    bucket_name=cloud_workspace.transform_bucket, file_paths=[release.transform_file_path]
+                    bucket_name=cloud_workspace.transform_bucket,
+                    file_paths=[release.transform_file_path],
+                    credentials=get_gcp_credentials(conn_id=gcp_conn_id),
                 )
                 set_task_state(success, context["ti"].task_id, release)
 
@@ -308,6 +316,7 @@ def create_dag(
                     source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
                     table_description=table_description,
                     ignore_unknown_values=True,
+                    client=bq_client(conn_id=gcp_conn_id),
                 )
                 set_task_state(success, context["ti"].task_id, release)
 
@@ -338,7 +347,7 @@ def create_dag(
 
             download(data) >> transform(data) >> bq_load(data) >> add_new_dataset_releases(data) >> cleanup(data)
 
-        check_task = check_dependencies(airflow_conns=[observatory_api_conn_id])
+        check_task = check_dependencies(airflow_conns=[observatory_api_conn_id, gcp_conn_id])
         fetch_releases_task = fetch_releases()
         process_release_tg = process_release.expand(data=fetch_releases_task)
 
