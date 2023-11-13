@@ -242,10 +242,11 @@ def create_dag(
                         shutil.copyfileobj(response.raw, file)
 
                 # Upload to Cloud Storage
+                credentials, _ = get_gcp_credentials(conn_id=gcp_conn_id)
                 success = gcs_upload_files(
                     bucket_name=cloud_workspace.download_bucket,
                     file_paths=[release.download_file_path],
-                    credentials=get_gcp_credentials(conn_id=gcp_conn_id),
+                    credentials=credentials,
                 )
                 set_task_state(success, context["ti"].task_id, release)
 
@@ -279,10 +280,11 @@ def create_dag(
                 save_jsonl_gz(release.transform_file_path, funders)
                 logging.info(f"Success transforming release: {release.url}")
 
+                credentials, _ = get_gcp_credentials(conn_id=gcp_conn_id)
                 success = gcs_upload_files(
                     bucket_name=cloud_workspace.transform_bucket,
                     file_paths=[release.transform_file_path],
-                    credentials=get_gcp_credentials(conn_id=gcp_conn_id),
+                    credentials=credentials,
                 )
                 set_task_state(success, context["ti"].task_id, release)
 
