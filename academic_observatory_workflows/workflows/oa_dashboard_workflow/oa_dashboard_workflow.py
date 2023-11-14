@@ -441,7 +441,7 @@ class OaDashboardWorkflow(Workflow):
 
         # Get entities to fetch descriptions for
         results = bq_run_query(
-            f"SELECT DISTINCT wikipedia_url FROM {release.oa_dashboard_table_id(entity_type)} WHERE wikipedia_url IS NOT NULL"
+            f"SELECT DISTINCT wikipedia_url FROM {release.oa_dashboard_table_id(entity_type)} WHERE wikipedia_url IS NOT NULL AND TRIM(wikipedia_url) != ''"
         )
         wikipedia_urls = [result["wikipedia_url"] for result in results]
 
