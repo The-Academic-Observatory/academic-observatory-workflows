@@ -4,6 +4,5 @@ RUN git clone --branch feature/astro https://github.com/The-Academic-Observatory
 RUN pip install -e ./observatory-platform/observatory-api --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.6.3/constraints-no-providers-3.10.txt
 RUN pip install -e ./observatory-platform/observatory-platform --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.6.3/constraints-no-providers-3.10.txt
 
-RUN cd ..
 COPY academic-observatory-workflows ./academic-observatory-workflows
 RUN pip install -e ./academic-observatory-workflows --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.6.3/constraints-no-providers-3.10.txt

@@ -1,8 +1,0 @@
-[
-  {
-    "description": "The unique ID for the record.",
-    "mode": "REQUIRED",
-    "name": "id",
-    "type": "STRING"
-  }
-]
