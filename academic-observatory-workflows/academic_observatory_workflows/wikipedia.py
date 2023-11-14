@@ -61,7 +61,7 @@ def fetch_wikipedia_descriptions(wikipedia_urls: List[str]) -> List[Tuple[str, s
                 logging.info(f"Downloading descriptions {n_progress}/{total}: {p_progress:.2f}%")
 
     logging.info(f"Finished downloading wikipedia descriptions")
-    logging.info(f"Expected results: {total}, actual num descriptions returned: {len(wikipedia_urls)}")
+    logging.info(f"Expected results: {total}, actual num descriptions returned: {len(results)}")
     if total != len(results):
         raise Exception(f"Number of Wikipedia descriptions returned does not match the number of Wikipedia URLs sent")
 
