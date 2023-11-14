@@ -1021,15 +1021,16 @@ def fetch_institution_logos(build_path: str, entities: List[Tuple[str, str]]) ->
                     )
 
             # Wait for results
+            n_downloaded = 0
             for completed in as_completed(futures):
                 entity_id, logo_path = completed.result()
                 results[entity_id][f"logo_{size}"] = logo_path
+                n_downloaded += 1
 
                 # Print progress
-                n_progress = len(results)
-                p_progress = n_progress / total * 100
-                if n_progress % 100 == 0:
-                    logging.info(f"Downloading logos {n_progress}/{total}: {p_progress:.2f}%")
+                p_progress = n_downloaded / total * 100
+                if n_downloaded % 100 == 0:
+                    logging.info(f"Downloading logos {n_downloaded}/{total}: {p_progress:.2f}%")
 
         logging.info("Finished downloading logos")
 
