@@ -683,7 +683,7 @@ def save_oa_dashboard_dataset(
 
         # Save index for entity type
         path = os.path.join(build_data_path, f"{entity_type}.json")
-        save_json(path, index)
+        save_json(path, entities)
 
         stats_index[entity_type] = make_entity_stats(entities)
         index += entities
