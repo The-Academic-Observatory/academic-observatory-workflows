@@ -968,13 +968,18 @@ def fetch_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: st
     :param build_path: the build path for files of this workflow
     :return: The ROR id and relative path (from build path) to the logo
     """
+
     logo_path = "unknown.svg"
     size_folder = os.path.join(build_path, "images", "logos", "institution", size)
     os.makedirs(size_folder, exist_ok=True)
     file_path = os.path.join(size_folder, f"{ror_id}.{fmt}")
     if not os.path.isfile(file_path):
+        logging.debug(
+            f"fetch_institution_logo: downloading logo company_url={url}, file_path={file_path}, size={width}, fmt={fmt}"
+        )
         clearbit_download_logo(company_url=url, file_path=file_path, size=width, fmt=fmt)
     if os.path.isfile(file_path):
+        logging.debug(f"fetch_institution_logo: {file_path} exists, skipping download")
         logo_path = make_logo_url(entity_type="institution", entity_id=ror_id, size=size, fmt=fmt)
 
     return ror_id, logo_path
