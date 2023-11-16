@@ -15,13 +15,13 @@
 # Author: Alex Massen-Hane
 
 import os
+
 import pendulum
 from google.cloud import bigquery
 from google.cloud.bigquery import Table as BQTable
 
-from academic_observatory_workflows.workflows.tests.test_doi_workflow import TestDoiWorkflow
-from academic_observatory_workflows.model import bq_load_observatory_dataset, make_observatory_dataset
 from academic_observatory_workflows.config import test_fixtures_folder, schema_folder as default_schema_folder
+from academic_observatory_workflows.model import bq_load_observatory_dataset, make_observatory_dataset
 from academic_observatory_workflows.workflows.data_quality_workflow import (
     DataQualityWorkflow,
     Table,
@@ -33,7 +33,14 @@ from academic_observatory_workflows.workflows.data_quality_workflow import (
     create_table_hash_id,
     is_in_dqc_table,
 )
-
+from academic_observatory_workflows.workflows.tests.test_doi_workflow import TestDoiWorkflow
+from observatory.platform.bigquery import (
+    bq_table_id,
+    bq_load_from_memory,
+    bq_select_columns,
+    bq_delete_old_datasets_with_prefix,
+    bq_create_dataset,
+)
 from observatory.platform.files import load_jsonl
 from observatory.platform.observatory_config import Workflow
 from observatory.platform.observatory_environment import (
@@ -42,13 +49,6 @@ from observatory.platform.observatory_environment import (
     make_dummy_dag,
     find_free_port,
     random_id,
-)
-from observatory.platform.bigquery import (
-    bq_table_id,
-    bq_load_from_memory,
-    bq_select_columns,
-    bq_delete_old_datasets_with_prefix,
-    bq_create_dataset,
 )
 
 

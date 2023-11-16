@@ -17,25 +17,21 @@
 
 from __future__ import annotations
 
-import os
-import logging
 import hashlib
-import pendulum
-from datetime import timedelta
-from google.cloud import bigquery
+import logging
+import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
-from google.cloud.bigquery import Table as BQTable
 
+import pendulum
 from airflow import DAG
-from airflow.utils.task_group import TaskGroup
 from airflow.operators.python import PythonOperator
 from airflow.sensors.external_task import ExternalTaskSensor
+from airflow.utils.task_group import TaskGroup
+from google.cloud import bigquery
+from google.cloud.bigquery import Table as BQTable
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
-
-from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.workflows.workflow import Workflow, set_task_state, Release
 from observatory.platform.bigquery import (
     bq_table_id_parts,
     bq_load_from_memory,
@@ -47,6 +43,8 @@ from observatory.platform.bigquery import (
     bq_select_table_shard_dates,
     bq_table_id as make_bq_table_id,
 )
+from observatory.platform.observatory_config import CloudWorkspace
+from observatory.platform.workflows.workflow import Workflow, set_task_state, Release
 
 
 @dataclass
@@ -327,13 +325,13 @@ def create_data_quality_record(
     num_all_fields = len(bq_select_columns(table_id=full_table_id))
 
     return dict(
-        table_id=table_id,
-        dataset_id=dataset_id,
-        project_id=project_id,
         full_table_id=full_table_id,
         hash_id=hash_id,
-        is_sharded=is_sharded,
+        project_id=project_id,
+        dataset_id=dataset_id,
+        table_id=table_id,
         shard_date=shard_date.to_date_string() if shard_date is not None else shard_date,
+        is_sharded=is_sharded,
         date_created=date_created,
         expires=expires,
         date_expires=date_expires,
@@ -354,8 +352,8 @@ def create_table_hash_id(full_table_id: str, num_bytes: int, nrows: int, ncols: 
 
     :param full_table_id: The fully qualified table name.
     :param num_bytes: Number of bytes stored in the table.
-    :param num_rows: Number of rows/records in the table.
-    :param num_cols: Number of columns/fields in the table.
+    :param nrows: Number of rows/records in the table.
+    :param ncols: Number of columns/fields in the table.
     :return: A md5 hash based off of the given input parameters."""
 
     return hashlib.md5(f"{full_table_id}{num_bytes}{nrows}{ncols}".encode("utf-8")).hexdigest()
