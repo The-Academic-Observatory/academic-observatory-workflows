@@ -441,7 +441,7 @@ class OaDashboardWorkflow(Workflow):
 
         # Get entities to fetch descriptions for
         results = bq_run_query(
-            f"SELECT DISTINCT wikipedia_url FROM {release.oa_dashboard_table_id(entity_type)} WHERE wikipedia_url IS NOT NULL"
+            f"SELECT DISTINCT wikipedia_url FROM {release.oa_dashboard_table_id(entity_type)} WHERE wikipedia_url IS NOT NULL AND TRIM(wikipedia_url) != ''"
         )
         wikipedia_urls = [result["wikipedia_url"] for result in results]
 
@@ -683,7 +683,7 @@ def save_oa_dashboard_dataset(
 
         # Save index for entity type
         path = os.path.join(build_data_path, f"{entity_type}.json")
-        save_json(path, index)
+        save_json(path, entities)
 
         stats_index[entity_type] = make_entity_stats(entities)
         index += entities
@@ -968,13 +968,18 @@ def fetch_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: st
     :param build_path: the build path for files of this workflow
     :return: The ROR id and relative path (from build path) to the logo
     """
+
     logo_path = "unknown.svg"
     size_folder = os.path.join(build_path, "images", "logos", "institution", size)
     os.makedirs(size_folder, exist_ok=True)
     file_path = os.path.join(size_folder, f"{ror_id}.{fmt}")
     if not os.path.isfile(file_path):
+        logging.debug(
+            f"fetch_institution_logo: downloading logo company_url={url}, file_path={file_path}, size={width}, fmt={fmt}"
+        )
         clearbit_download_logo(company_url=url, file_path=file_path, size=width, fmt=fmt)
     if os.path.isfile(file_path):
+        logging.debug(f"fetch_institution_logo: {file_path} exists, skipping download")
         logo_path = make_logo_url(entity_type="institution", entity_id=ror_id, size=size, fmt=fmt)
 
     return ror_id, logo_path
@@ -1021,15 +1026,16 @@ def fetch_institution_logos(build_path: str, entities: List[Tuple[str, str]]) ->
                     )
 
             # Wait for results
+            n_downloaded = 0
             for completed in as_completed(futures):
                 entity_id, logo_path = completed.result()
                 results[entity_id][f"logo_{size}"] = logo_path
+                n_downloaded += 1
 
                 # Print progress
-                n_progress = len(results)
-                p_progress = n_progress / total * 100
-                if n_progress % 100 == 0:
-                    logging.info(f"Downloading logos {n_progress}/{total}: {p_progress:.2f}%")
+                p_progress = n_downloaded / total * 100
+                if n_downloaded % 100 == 0:
+                    logging.info(f"Downloading logos {n_downloaded}/{total}: {p_progress:.2f}%")
 
         logging.info("Finished downloading logos")
 

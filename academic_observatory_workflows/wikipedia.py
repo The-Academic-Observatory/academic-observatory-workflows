@@ -25,6 +25,8 @@ import nltk
 import requests
 from airflow.exceptions import AirflowException
 
+from observatory.platform.files import get_chunks
+
 WIKI_MAX_TITLES = 20  # Set the number of titles for which wiki descriptions are retrieved at once, the API can return max 20 extracts.
 
 
@@ -37,11 +39,12 @@ def fetch_wikipedia_descriptions(wikipedia_urls: List[str]) -> List[Tuple[str, s
 
     # Download 'punkt' resource, required when shortening wiki descriptions
     nltk.download("punkt")
-    total = len(wikipedia_urls)
 
     # Create list with dictionaries of max 20 ids + titles (this is wiki api max)
-    chunks = [wikipedia_urls[i : i + WIKI_MAX_TITLES] for i in range(0, len(wikipedia_urls), WIKI_MAX_TITLES)]
-    logging.info(f"Downloading {total} wikipedia descriptions in {len(chunks)} chunks.")
+    chunks = list(get_chunks(input_list=wikipedia_urls, chunk_size=WIKI_MAX_TITLES))
+    n_wikipedia_urls = len(wikipedia_urls)
+    n_chunks = len(chunks)
+    logging.info(f"Downloading {n_wikipedia_urls} wikipedia descriptions in {n_chunks} chunks.")
 
     # Process each dictionary in separate thread to get wiki descriptions
     futures, results = [], []
@@ -55,14 +58,13 @@ def fetch_wikipedia_descriptions(wikipedia_urls: List[str]) -> List[Tuple[str, s
             results += completed.result()
 
             # Print progress
-            n_progress = len(results)
-            p_progress = n_progress / total * 100
-            if n_progress % 100 == 0:
-                logging.info(f"Downloading descriptions {n_progress}/{total}: {p_progress:.2f}%")
+            n_downloaded = len(results)
+            p_progress = n_downloaded / n_wikipedia_urls * 100
+            logging.info(f"Downloading descriptions {n_downloaded}/{n_wikipedia_urls}: {p_progress:.2f}%")
 
     logging.info(f"Finished downloading wikipedia descriptions")
-    logging.info(f"Expected results: {total}, actual num descriptions returned: {len(wikipedia_urls)}")
-    if total != len(results):
+    logging.info(f"Expected results: {n_wikipedia_urls}, actual num descriptions returned: {n_downloaded}")
+    if n_wikipedia_urls != n_downloaded:
         raise Exception(f"Number of Wikipedia descriptions returned does not match the number of Wikipedia URLs sent")
 
     return results
