@@ -33,13 +33,11 @@ from academic_observatory_workflows.workflows.data_quality_workflow import (
     create_table_hash_id,
     is_in_dqc_table,
 )
-from academic_observatory_workflows.workflows.tests.test_doi_workflow import TestDoiWorkflow
 from observatory.platform.bigquery import (
     bq_table_id,
     bq_load_from_memory,
     bq_select_columns,
-    bq_delete_old_datasets_with_prefix,
-    bq_create_dataset,
+    bq_upsert_records,
 )
 from observatory.platform.files import load_jsonl
 from observatory.platform.observatory_config import Workflow
@@ -75,11 +73,12 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
                     kwargs=dict(
                         sensor_dag_ids=["doi"],
                         datasets={
-                            "observatory": {"tables": [{"table_id": "doi", "is_sharded": True, "fields": ["doi"]}]}
+                            "observatory": {"tables": [{"table_id": "doi", "is_sharded": True, "primary_key": ["doi"]}]}
                         },
                     ),
                 )
-            ]
+            ],
+            api_port=find_free_port(),
         )
 
         with env.create():
@@ -93,13 +92,21 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
             cloud_workspace=self.fake_cloud_workspace,
             sensor_dag_ids=["dummy1", "dummy2"],
             datasets={
-                "observatory": {"tables": [{"table_id": "doi", "is_sharded": True, "fields": ["doi"]}]},
+                "observatory": {
+                    "tables": [
+                        {
+                            "table_id": "doi",
+                            "is_sharded": True,
+                            "primary_key": ["doi"],
+                        }
+                    ],
+                },
                 "pubmed": {
                     "tables": [
                         {
                             "table_id": "pubmed",
                             "is_sharded": False,
-                            "fields": ["MedlineCitation.PMID.value", "MedlineCitation.PMID.Version"],
+                            "primary_key": ["MedlineCitation.PMID.value", "MedlineCitation.PMID.Version"],
                         }
                     ]
                 },
@@ -123,47 +130,52 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
 
         Borrowing off of the doi test structure."""
 
-        env = ObservatoryEnvironment(self.project_id, self.data_location)
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
 
         # Where the metadata generated for this workflow is going to be stored.
-        dqc_dataset_id = env.add_dataset(prefix="data_quality_check")
+        dq_dataset_id = env.add_dataset(prefix="data_quality_check")
         fake_dataset_id = env.add_dataset()
-        settings_dataset_id = env.add_dataset(prefix="settings")
 
-        # Borrowing from the DOI Workflow to create fake data for these tests
-        repositories = TestDoiWorkflow().repositories
-        institutions = TestDoiWorkflow().institutions
-        repository = load_jsonl(test_fixtures_folder("doi", "repository.jsonl"))
+        test_tables = [
+            {
+                "full_table_id": bq_table_id(self.project_id, fake_dataset_id, "people"),
+                "schema_path": os.path.join(test_fixtures_folder(), "data_quality", "people_schema.json"),
+                "expected": load_jsonl(os.path.join(test_fixtures_folder(), "data_quality", "people20230101.jsonl")),
+            },
+            {
+                "full_table_id": bq_table_id(self.project_id, fake_dataset_id, "people_shard20230101"),
+                "schema_path": os.path.join(test_fixtures_folder(), "data_quality", "people_schema.json"),
+                "expected": load_jsonl(os.path.join(test_fixtures_folder(), "data_quality", "people20230101.jsonl")),
+            },
+            {
+                "full_table_id": bq_table_id(self.project_id, fake_dataset_id, "people_shard20230108"),
+                "schema_path": os.path.join(test_fixtures_folder(), "data_quality", "people_schema.json"),
+                "expected": load_jsonl(os.path.join(test_fixtures_folder(), "data_quality", "people20230108.jsonl")),
+            },
+        ]
 
         with env.create(task_logging=True):
+            # Upload the test tables to Bigquery
+            for table in test_tables:
+                # print(f"------ the epected people data: {table['expected']}")
+                bq_load_from_memory(
+                    table_id=table["full_table_id"], records=table["expected"], schema_file_path=table["schema_path"]
+                )
+
             start_date = pendulum.datetime(year=2021, month=10, day=10)
             workflow = DataQualityWorkflow(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
-                bq_dataset_id=dqc_dataset_id,
+                bq_dataset_id=dq_dataset_id,
                 start_date=start_date,
                 sensor_dag_ids=["doi", "pubmed"],
                 datasets={
                     fake_dataset_id: {
                         "tables": [
-                            {"table_id": "crossref_events", "is_sharded": False, "fields": ["id"]},
-                            {"table_id": "crossref_fundref", "is_sharded": True, "fields": ["funder"]},
-                            {"table_id": "crossref_metadata", "is_sharded": True, "fields": ["doi"]},
-                            {"table_id": "open_citations", "is_sharded": True, "fields": ["oci"]},
-                            {
-                                "table_id": "pubmed",
-                                "is_sharded": False,
-                                "fields": [
-                                    "MedlineCitation.PMID.value",
-                                    "MedlineCitation.PMID.Version",
-                                ],
-                            },
-                            {"table_id": "ror", "is_sharded": True, "fields": ["id"]},
-                            {"table_id": "scihub", "is_sharded": True, "fields": ["doi"]},
-                            {"table_id": "unpaywall", "is_sharded": False, "fields": ["doi"]},
-                            {"table_id": "works", "is_sharded": False, "fields": ["id"]},
-                        ]
-                    }
+                            {"table_id": "people", "is_sharded": False, "primary_key": ["id"]},
+                            {"table_id": "people_shard", "is_sharded": True, "primary_key": ["id"], "age_threshold": 1},
+                        ],
+                    },
                 },
             )
 
@@ -171,7 +183,6 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
 
             # Run fake version of the dags that the workflow sensors are waiting for.
             execution_date = pendulum.datetime(year=2023, month=1, day=1)
-            snapshot_date = pendulum.datetime(year=2023, month=1, day=8)
             for dag_id in workflow.sensor_dag_ids:
                 dag = make_dummy_dag(dag_id, execution_date)
                 with env.create_dag_run(dag, execution_date):
@@ -180,9 +191,8 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
                     self.assertEqual("success", ti.state)
 
             ### FIRST RUN ###
-
-            # Creating the first instance of the observatory_dataset object means that there
-            # should only be one record in the DQC table for each dataset
+            # First run of the workflow. Will produce the data_quality table and an record for
+            # each of the test tables uploaded.
 
             # Run end to end tests for DQC DAG
             with env.create_dag_run(data_quality_dag, execution_date):
@@ -199,23 +209,6 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
                 ti = env.run_task(workflow.create_dataset.__name__)
                 self.assertEqual("success", ti.state)
 
-                # Generate fake datasets for this test
-                observatory_dataset = make_observatory_dataset(institutions, repositories)
-                bq_load_observatory_dataset(
-                    observatory_dataset,
-                    repository,
-                    env.download_bucket,
-                    fake_dataset_id,
-                    settings_dataset_id,
-                    snapshot_date,
-                    self.project_id,
-                )
-
-                # Check that at least one of the tables have been created
-                expected_rows = len(observatory_dataset.papers)
-                table_id = bq_table_id(self.project_id, fake_dataset_id, "works")
-                self.assert_table_integrity(table_id, expected_rows=expected_rows)
-
                 # Perform data quality check
                 for dataset_id, tables in workflow.datasets.items():
                     for table in tables["tables"]:
@@ -225,16 +218,21 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
 
                 # Check that DQC table has been created.
                 table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, workflow.bq_table_id)
-                self.assert_table_integrity(table_id, expected_rows=9)  # stop and look at table on BQ
+                self.assert_table_integrity(table_id, expected_rows=3)  # stop and look at table on BQ
 
             ### SECOND RUN ###
+            # For the sake of the test, we will change one of the tables by doing an upsert, so that the
+            # hash_id of the first will be different.
 
-            # Creating a new observatory_dataset object means that the faked data will be different than before.
-            # There should be more DQC records added to the table.
+            bq_upsert_records(
+                main_table_id=test_tables[0]["full_table_id"],
+                upsert_table_id=test_tables[2]["full_table_id"],
+                primary_key="id",
+            )
+            self.assert_table_integrity(test_tables[0]["full_table_id"], 16)
 
             # Run Dummy Dags
             execution_date = pendulum.datetime(year=2023, month=2, day=1)
-            snapshot_date = pendulum.datetime(year=2023, month=2, day=8)
             for dag_id in workflow.sensor_dag_ids:
                 dag = make_dummy_dag(dag_id, execution_date)
                 with env.create_dag_run(dag, execution_date):
@@ -256,30 +254,6 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
                 # Create dataset
                 ti = env.run_task(workflow.create_dataset.__name__)
                 self.assertEqual("success", ti.state)
-
-                # Need to delete tables that are being recreated by the bq_load_observatory_dataset function,
-                # otherwise it complains that they already exist.
-                for dataset_id in [fake_dataset_id, settings_dataset_id]:
-                    bq_delete_old_datasets_with_prefix(prefix=dataset_id, age_to_delete=0)
-                    bq_create_dataset(project_id=self.project_id, dataset_id=dataset_id, location=self.data_location)
-
-                # Generate new fake datasets for this second run - should be different due to faker randomisation.
-                observatory_dataset = make_observatory_dataset(institutions, repositories)
-                bq_load_observatory_dataset(
-                    observatory_dataset,
-                    repository,
-                    env.download_bucket,
-                    fake_dataset_id,
-                    settings_dataset_id,
-                    snapshot_date,
-                    self.project_id,
-                )
-
-                # Check that at least one of the tables have been created
-                expected_rows = len(observatory_dataset.papers)
-                table_id = bq_table_id(self.project_id, fake_dataset_id, "works")
-                self.assert_table_integrity(table_id, expected_rows=expected_rows)
-
                 # Perform data quality check
                 for dataset_id, tables in workflow.datasets.items():
                     for table in tables["tables"]:
@@ -289,16 +263,14 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
 
                 # Check that DQC table has been created.
                 table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, workflow.bq_table_id)
-                self.assert_table_integrity(table_id, expected_rows=18)
+                self.assert_table_integrity(table_id, expected_rows=4)
 
             ### THIRD RUN ###
-
-            # Using the same observatory_dataset object which will have the same faked table data.
-            # No new records should be added to the Data Quality table.
+            # For this third run, no tables should be updated or changed meaning that there should be
+            # no data quality checks done.
 
             # Run Dummy Dags
             execution_date = pendulum.datetime(year=2023, month=3, day=1)
-            snapshot_date = pendulum.datetime(year=2023, month=3, day=8)
             for dag_id in workflow.sensor_dag_ids:
                 dag = make_dummy_dag(dag_id, execution_date)
                 with env.create_dag_run(dag, execution_date):
@@ -331,7 +303,7 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
                 # Check that the DQC table has no new records added for this third run.
                 # Check that DQC table has been created.
                 table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, workflow.bq_table_id)
-                self.assert_table_integrity(table_id, expected_rows=18)
+                self.assert_table_integrity(table_id, expected_rows=4)
 
 
 class TestDataQualityUtils(ObservatoryTestCase):
@@ -389,7 +361,7 @@ class TestDataQualityUtils(ObservatoryTestCase):
             dataset_id=dataset_id,
             table_id=table_id,
             is_sharded=False,
-            fields=["id"],
+            primary_key=["id"],
         )
 
         with env.create(task_logging=True):
@@ -413,7 +385,7 @@ class TestDataQualityUtils(ObservatoryTestCase):
             dqc_record = create_data_quality_record(
                 hash_id=hash_id,
                 full_table_id=full_table_id,
-                fields=table_to_check.fields,
+                primary_key=table_to_check.primary_key,
                 is_sharded=table_to_check.is_sharded,
                 table_in_bq=table,
             )
@@ -437,7 +409,7 @@ class TestDataQualityUtils(ObservatoryTestCase):
             dataset_id=dataset_id,
             table_id=table_id,
             is_sharded=False,
-            fields=["id"],
+            primary_key=["id"],
         )
 
         with env.create(task_logging=True):
@@ -463,7 +435,7 @@ class TestDataQualityUtils(ObservatoryTestCase):
                 create_data_quality_record(
                     hash_id=hash_id,
                     full_table_id=full_table_id,
-                    fields=table_to_check.fields,
+                    primary_key=table_to_check.primary_key,
                     is_sharded=table_to_check.is_sharded,
                     table_in_bq=table,
                 )

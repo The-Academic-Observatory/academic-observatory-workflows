@@ -17,21 +17,24 @@
 
 from __future__ import annotations
 
+import os
 import hashlib
 import logging
-import os
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
-
 import pendulum
+from google.cloud import bigquery
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Union
+from google.cloud.bigquery import Table as BQTable
+
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.sensors.external_task import ExternalTaskSensor
 from airflow.utils.task_group import TaskGroup
-from google.cloud import bigquery
-from google.cloud.bigquery import Table as BQTable
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+
+from observatory.platform.observatory_config import CloudWorkspace
+from observatory.platform.workflows.workflow import Workflow, set_task_state, Release
 from observatory.platform.bigquery import (
     bq_table_id_parts,
     bq_load_from_memory,
@@ -43,8 +46,6 @@ from observatory.platform.bigquery import (
     bq_select_table_shard_dates,
     bq_table_id as make_bq_table_id,
 )
-from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.workflows.workflow import Workflow, set_task_state, Release
 
 
 @dataclass
@@ -53,41 +54,25 @@ class Table:
     dataset_id: str
     table_id: str
     is_sharded: bool
-    fields: List[str]
+    primary_key: List[str]
+    age_threshold: Optional[int] = 90
 
-    """Create a metadata class for tables to be processed by the DQC Workflow.
+    """Create a metadata class for tables to be processed by this Workflow.
 
     :param project_id: The Google project_id of where the tables are located.
     :param dataset_id: The dataset that the table is under.
     :param table_id: The name of the table (not the full qualifed table name).
     :param is_sharded: True if the table is shared or not.
-    :param fields: Location of where the primary key is located in the table e.g. doi, could be multiple different identifiers.
+    :param primary_key: Location of where the primary key is located in the table e.g. doi, could be multiple different identifiers.
+    :param age_threshold: This is a threshold in days. If it is older than this parameter, the table will not be processed by this workflow.
     """
+
+    def __post_init__(self):
+        self.age_threshold = 90 if self.age_threshold is None else self.age_threshold
 
     @property
     def full_table_id(self):
         return f"{self.project_id}.{self.dataset_id}.{self.table_id}"
-
-
-def make_tables(project_id: str, dataset_id: str, tables: Dict) -> List[Table]:
-    """Create a list table objects for the DQC Workflow to process.
-
-    :param project_id: The Google project ID that the tables are stored in.
-    :param dataset_id: Dataset of where the tables are stored.
-    :param tables: Dictionary of metadata of the given tables, including if the tables are sharded and the primary fields.
-    :return: A list of table objects for the workflow to process.
-    """
-
-    return [
-        Table(
-            project_id=project_id,
-            dataset_id=dataset_id,
-            table_id=table["table_id"],
-            is_sharded=table["is_sharded"],
-            fields=table["fields"],
-        )
-        for table in tables
-    ]
 
 
 class DataQualityWorkflow(Workflow):
@@ -183,9 +168,21 @@ class DataQualityWorkflow(Workflow):
             task_datasets_group = []
             for dataset_id in list(self.datasets.keys()):
                 with TaskGroup(group_id=dataset_id) as tg_dataset:
-                    tables: List[Table] = make_tables(self.project_id, dataset_id, self.datasets[dataset_id]["tables"])
+                    tables = self.datasets[dataset_id]["tables"]
 
-                    for table in tables:
+                    table_objects = [
+                        Table(
+                            project_id=self.project_id,
+                            dataset_id=dataset_id,
+                            table_id=table["table_id"],
+                            is_sharded=table["is_sharded"],
+                            primary_key=table["primary_key"],
+                            age_threshold=table.get("age_threshold"),
+                        )
+                        for table in tables
+                    ]
+
+                    for table in table_objects:
                         self.make_python_operator(
                             self.perform_data_quality_check,
                             task_id=f"{table.table_id}",
@@ -210,7 +207,7 @@ class DataQualityWorkflow(Workflow):
         return Release(dag_id=self.dag_id, run_id=kwargs["run_id"])
 
     def create_dataset(self, release: Release, **kwargs):
-        """Create a dataset for all of the DQC tables for the workflows."""
+        """Create a dataset for the table."""
 
         bq_create_dataset(
             project_id=self.project_id,
@@ -220,14 +217,15 @@ class DataQualityWorkflow(Workflow):
         )
 
     def perform_data_quality_check(self, release: Release, **kwargs):
-        """
-        For each dataset, create a table that holds metadata about each table in that dataset.
+        """For each dataset, create a table that holds metadata about the dataset.
+
         Please refer to the output of the create_data_quality_record function for all the metadata included in this workflow.
         """
 
         task_id = kwargs["task_id"]
         table_to_check: Table = kwargs["table"]
 
+        # Grab tables only if they are
         if table_to_check.is_sharded:
             dates = bq_select_table_shard_dates(
                 table_id=table_to_check.full_table_id, end_date=pendulum.now(tz="UTC"), limit=1000
@@ -257,17 +255,26 @@ class DataQualityWorkflow(Workflow):
                 ncols=len(bq_select_columns(table_id=full_table_id)),
             )
 
+            dt_modified = pendulum.instance(table.modified)
+            dt_created = pendulum.instance(table.created)
+            table_age_days = dt_created.diff(dt_modified).in_days()
+
             if not is_in_dqc_table(hash_id, self.dqc_full_table_id):
-                logging.info(f"Performing check on table {full_table_id} with hash {hash_id}")
-                dqc_check = create_data_quality_record(
-                    hash_id=hash_id,
-                    full_table_id=full_table_id,
-                    fields=table_to_check.fields,
-                    is_sharded=table_to_check.is_sharded,
-                    table_in_bq=table,
-                )
-                records.append(dqc_check)
-                print("dqc_check:", dqc_check)
+                if table_age_days < table_to_check.age_threshold:
+                    logging.info(f"Performing check on table {full_table_id} with hash {hash_id}")
+                    check = create_data_quality_record(
+                        hash_id=hash_id,
+                        full_table_id=full_table_id,
+                        primary_key=table_to_check.primary_key,
+                        is_sharded=table_to_check.is_sharded,
+                        table_in_bq=table,
+                    )
+                    records.append(check)
+
+                else:
+                    logging.info(
+                        f"Age of the table is too old and will increase our Bigquery bill, skipping table: {full_table_id}, age (days): {table_age_days}"
+                    )
             else:
                 logging.info(
                     f"Table {table_to_check.full_table_id} with hash {hash_id} has already been checked before. Not performing check again."
@@ -292,7 +299,7 @@ class DataQualityWorkflow(Workflow):
 def create_data_quality_record(
     hash_id: str,
     full_table_id: str,
-    fields: Union[str, List[str]],
+    primary_key: List[str],
     is_sharded: bool,
     table_in_bq: BQTable,
 ) -> Dict[str, Union[str, List[str], float, bool, int]]:
@@ -301,7 +308,7 @@ def create_data_quality_record(
 
     :param hash_id: Unique md5 style identifier of the table.
     :param full_table_id: The fully qualified table id, including the shard date suffix.
-    :param fields: The fields/columns that are inspected for the given table.
+    :param primary_key: The key identifier columns for the table.
     :param is_sharded: If the table is supposed to be sharded or not.
     :param table_in_bq: Table metadata object retrieved from the Bigquery API.
     :return: Dictionary of values from the data quality check.
@@ -318,9 +325,9 @@ def create_data_quality_record(
     expires = bool(table_in_bq.expires)
     date_expires = table_in_bq.expires.isoformat() if expires else None
 
-    num_distinct_records = bq_count_distinct_records(full_table_id, fields=fields)
-    num_null_records = bq_count_nulls(full_table_id, fields=fields)
-    num_duplicates = bq_count_duplicate_records(full_table_id, fields=fields)
+    num_distinct_records = bq_count_distinct_records(full_table_id, fields=primary_key)
+    num_null_records = bq_count_nulls(full_table_id, fields=primary_key)
+    num_duplicates = bq_count_duplicate_records(full_table_id, fields=primary_key)
 
     num_all_fields = len(bq_select_columns(table_id=full_table_id))
 
@@ -338,7 +345,7 @@ def create_data_quality_record(
         date_checked=date_checked,
         date_last_modified=date_last_modified,
         size_gb=float(table_in_bq.num_bytes) / (1024.0) ** 3,
-        primary_key=fields,
+        primary_key=primary_key,
         num_rows=table_in_bq.num_rows,
         num_distinct_records=num_distinct_records,
         num_null_records=num_null_records,
