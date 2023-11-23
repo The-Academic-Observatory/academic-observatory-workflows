@@ -53,22 +53,23 @@ class Table:
     project_id: str
     dataset_id: str
     table_id: str
-    is_sharded: bool
     primary_key: List[str]
-    age_threshold: Optional[int] = 90
+    is_sharded: bool
+    num_shards: Optional[int] = None
 
     """Create a metadata class for tables to be processed by this Workflow.
 
     :param project_id: The Google project_id of where the tables are located.
     :param dataset_id: The dataset that the table is under.
     :param table_id: The name of the table (not the full qualifed table name).
+    :param primary_key: Location of where the primary key is located in the table e.g. ["doi"],
+     could be multiple different identifiers like for Pubmed: ["MedlineCiation.PMID.value", "MedlineCiation.PMID.Version"]
     :param is_sharded: True if the table is shared or not.
-    :param primary_key: Location of where the primary key is located in the table e.g. doi, could be multiple different identifiers.
-    :param age_threshold: This is a threshold in days. If it is older than this parameter, the table will not be processed by this workflow.
+    :param num_shards: The number of shards to process for this series of table. 
     """
 
     def __post_init__(self):
-        self.age_threshold = 90 if self.age_threshold is None else self.age_threshold
+        self.num_shards = 5 if self.num_shards is None and self.is_sharded else self.num_shards
 
     @property
     def full_table_id(self):
@@ -168,8 +169,6 @@ class DataQualityWorkflow(Workflow):
             task_datasets_group = []
             for dataset_id in list(self.datasets.keys()):
                 with TaskGroup(group_id=dataset_id) as tg_dataset:
-                    tables = self.datasets[dataset_id]["tables"]
-
                     table_objects = [
                         Table(
                             project_id=self.project_id,
@@ -177,9 +176,9 @@ class DataQualityWorkflow(Workflow):
                             table_id=table["table_id"],
                             is_sharded=table["is_sharded"],
                             primary_key=table["primary_key"],
-                            age_threshold=table.get("age_threshold"),
+                            num_shards=table.get("num_shards"),
                         )
-                        for table in tables
+                        for table in self.datasets[dataset_id]["tables"]
                     ]
 
                     for table in table_objects:
@@ -230,8 +229,12 @@ class DataQualityWorkflow(Workflow):
             dates = bq_select_table_shard_dates(
                 table_id=table_to_check.full_table_id, end_date=pendulum.now(tz="UTC"), limit=1000
             )
+
+            # Use limited number of table shards checked to reduce BQ costs
+            num_shards = len(dates) if len(dates) <= table_to_check.num_shards else table_to_check.num_shards
+
             tables = []
-            for shard_date in dates:
+            for shard_date in dates[:num_shards]:
                 table_id = f'{table_to_check.full_table_id}{shard_date.strftime("%Y%m%d")}'
                 assert bq_table_exists(table_id), f"Sharded table {table_id} does not exist!"
                 table = bq_get_table(table_id)
@@ -255,26 +258,16 @@ class DataQualityWorkflow(Workflow):
                 ncols=len(bq_select_columns(table_id=full_table_id)),
             )
 
-            dt_modified = pendulum.instance(table.modified)
-            dt_created = pendulum.instance(table.created)
-            table_age_days = dt_created.diff(dt_modified).in_days()
-
             if not is_in_dqc_table(hash_id, self.dqc_full_table_id):
-                if table_age_days < table_to_check.age_threshold:
-                    logging.info(f"Performing check on table {full_table_id} with hash {hash_id}")
-                    check = create_data_quality_record(
-                        hash_id=hash_id,
-                        full_table_id=full_table_id,
-                        primary_key=table_to_check.primary_key,
-                        is_sharded=table_to_check.is_sharded,
-                        table_in_bq=table,
-                    )
-                    records.append(check)
-
-                else:
-                    logging.info(
-                        f"Age of the table is too old and will increase our Bigquery bill, skipping table: {full_table_id}, age (days): {table_age_days}"
-                    )
+                logging.info(f"Performing check on table {full_table_id} with hash {hash_id}")
+                check = create_data_quality_record(
+                    hash_id=hash_id,
+                    full_table_id=full_table_id,
+                    primary_key=table_to_check.primary_key,
+                    is_sharded=table_to_check.is_sharded,
+                    table_in_bq=table,
+                )
+                records.append(check)
             else:
                 logging.info(
                     f"Table {table_to_check.full_table_id} with hash {hash_id} has already been checked before. Not performing check again."

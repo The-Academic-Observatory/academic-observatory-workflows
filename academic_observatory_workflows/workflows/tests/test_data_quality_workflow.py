@@ -15,13 +15,11 @@
 # Author: Alex Massen-Hane
 
 import os
-
 import pendulum
 from google.cloud import bigquery
 from google.cloud.bigquery import Table as BQTable
 
 from academic_observatory_workflows.config import test_fixtures_folder, schema_folder as default_schema_folder
-from academic_observatory_workflows.model import bq_load_observatory_dataset, make_observatory_dataset
 from academic_observatory_workflows.workflows.data_quality_workflow import (
     DataQualityWorkflow,
     Table,
@@ -96,8 +94,9 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
                     "tables": [
                         {
                             "table_id": "doi",
-                            "is_sharded": True,
                             "primary_key": ["doi"],
+                            "is_sharded": True,
+                            "num_shards": 5,
                         }
                     ],
                 },
@@ -105,8 +104,8 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
                     "tables": [
                         {
                             "table_id": "pubmed",
-                            "is_sharded": False,
                             "primary_key": ["MedlineCitation.PMID.value", "MedlineCitation.PMID.Version"],
+                            "is_sharded": False,
                         }
                     ]
                 },
@@ -152,12 +151,16 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
                 "schema_path": os.path.join(test_fixtures_folder(), "data_quality", "people_schema.json"),
                 "expected": load_jsonl(os.path.join(test_fixtures_folder(), "data_quality", "people20230108.jsonl")),
             },
+            {
+                "full_table_id": bq_table_id(self.project_id, fake_dataset_id, "people_shard20230115"),
+                "schema_path": os.path.join(test_fixtures_folder(), "data_quality", "people_schema.json"),
+                "expected": load_jsonl(os.path.join(test_fixtures_folder(), "data_quality", "people20230108.jsonl")),
+            },
         ]
 
         with env.create(task_logging=True):
             # Upload the test tables to Bigquery
             for table in test_tables:
-                # print(f"------ the epected people data: {table['expected']}")
                 bq_load_from_memory(
                     table_id=table["full_table_id"], records=table["expected"], schema_file_path=table["schema_path"]
                 )
@@ -172,8 +175,8 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
                 datasets={
                     fake_dataset_id: {
                         "tables": [
-                            {"table_id": "people", "is_sharded": False, "primary_key": ["id"]},
-                            {"table_id": "people_shard", "is_sharded": True, "primary_key": ["id"], "age_threshold": 1},
+                            {"table_id": "people", "primary_key": ["id"], "is_sharded": False},
+                            {"table_id": "people_shard", "primary_key": ["id"], "is_sharded": True, "num_shards": 2},
                         ],
                     },
                 },
@@ -192,7 +195,7 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
 
             ### FIRST RUN ###
             # First run of the workflow. Will produce the data_quality table and an record for
-            # each of the test tables uploaded.
+            # each of the test tables uploaded, but will miss the 230101 shard due to the num_shards parameter set.
 
             # Run end to end tests for DQC DAG
             with env.create_dag_run(data_quality_dag, execution_date):
@@ -350,7 +353,7 @@ class TestDataQualityUtils(ObservatoryTestCase):
         self.assertEqual(result, self.test_table_hash)
 
     def test_create_dq_record(self):
-        """Test if a data quality record can be reliably created."""
+        """Test if a data quality check record can be reliably created."""
 
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
         dataset_id = env.add_dataset()
@@ -360,8 +363,8 @@ class TestDataQualityUtils(ObservatoryTestCase):
             project_id=self.project_id,
             dataset_id=dataset_id,
             table_id=table_id,
-            is_sharded=False,
             primary_key=["id"],
+            is_sharded=False,
         )
 
         with env.create(task_logging=True):
@@ -408,8 +411,8 @@ class TestDataQualityUtils(ObservatoryTestCase):
             project_id=self.project_id,
             dataset_id=dataset_id,
             table_id=table_id,
-            is_sharded=False,
             primary_key=["id"],
+            is_sharded=False,
         )
 
         with env.create(task_logging=True):
@@ -449,11 +452,11 @@ class TestDataQualityUtils(ObservatoryTestCase):
             )
             self.assertTrue(success)
 
-            # Ensure that hash is in the DQC table.
+            # Ensure that hash is in the data quality table.
             result = is_in_dqc_table(hash_to_check=hash_id, dqc_full_table_id=dqc_full_table_id)
             self.assertTrue(result)
 
-            # A random hash that we know shouldn't be in the DQC table.
+            # A random hash that we know shouldn't be in the data quality table.
             random_hash = random_id()
             result = is_in_dqc_table(hash_to_check=random_hash, dqc_full_table_id=dqc_full_table_id)
             self.assertFalse(result)
