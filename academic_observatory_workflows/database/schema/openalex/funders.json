@@ -101,6 +101,18 @@
         "type": "STRING",
         "mode": "NULLABLE",
         "description": "this funder's Wikidata ID"
+      },
+      {
+        "name": "crossref",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this funder's Crossref ID"
+      },
+      {
+        "name": "doi",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "this funder's DOI"
       }
     ],
     "description": "All the external identifiers that we know about for this funder. IDs are expressed as URIs whenever possible."

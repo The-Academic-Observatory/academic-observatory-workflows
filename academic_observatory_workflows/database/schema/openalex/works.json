@@ -441,50 +441,6 @@
     "description": "The DOI for the work. This is the Canonical External ID for works.\nOccasionally, a work has more than one DOI--for example, there might be one DOI for a preprint version hosted on bioRxiv, and another DOI for the published version. However, this field always has just one DOI, the DOI for the published work."
   },
   {
-    "name": "funders",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "awards",
-        "type": "STRING",
-        "mode": "REPEATED"
-      },
-      {
-        "name": "display_name",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "id",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "ids",
-        "type": "RECORD",
-        "mode": "NULLABLE",
-        "fields": [
-          {
-            "name": "openalex",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "ror",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "wikidata",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          }
-        ]
-      }
-    ]
-  },
-  {
     "name": "grants",
     "type": "RECORD",
     "mode": "REPEATED",
@@ -556,12 +512,6 @@
     "type": "INTEGER",
     "mode": "NULLABLE",
     "description": "Number of distinct institutions among the authorships for this work."
-  },
-  {
-    "name": "is_oa",
-    "type": "BOOLEAN",
-    "mode": "NULLABLE",
-    "description": "Set to true if the work hosted here can be read for free, without registration."
   },
   {
     "name": "is_paratext",
@@ -1041,5 +991,27 @@
     "type": "STRING",
     "mode": "NULLABLE",
     "description": "The version of the work, based on the DRIVER Guidelines versioning scheme. Possible values are: publishedVersion, acceptedVersion or submittedVersion."
+  },
+  {
+    "name": "keywords",
+    "type": "STRING",
+    "mode": "REPEATED"
+  },
+  {
+    "name": "cited_by_percentile_year",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "min",
+        "type": "FLOAT",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "max",
+        "type": "FLOAT",
+        "mode": "NULLABLE"
+      }
+    ]
   }
 ]
