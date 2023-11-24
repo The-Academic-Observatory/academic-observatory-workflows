@@ -23,7 +23,7 @@ import random
 import shutil
 import tarfile
 import xml.etree.ElementTree as ET
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 
 import pendulum
 from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
@@ -33,7 +33,6 @@ from airflow.exceptions import AirflowSkipException, AirflowException
 from google.cloud.bigquery import SourceFormat
 
 from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.platform.airflow import check_variables, check_connections
 from observatory.platform.api import make_observatory_api
 from observatory.platform.bigquery import (
     bq_find_schema,
@@ -51,33 +50,11 @@ from observatory.platform.gcs import (
     gcs_upload_file,
 )
 from observatory.platform.observatory_config import CloudWorkspace
+from observatory.platform.tasks import check_dependencies
 from observatory.platform.utils.url_utils import retry_get_url
 from observatory.platform.workflows.workflow import SnapshotRelease, set_task_state, cleanup as cleanup_workflow
 
 RELEASES_URL = "https://gitlab.com/api/v4/projects/crossref%2Fopen_funder_registry/releases"
-
-
-# TODO: move to common folder
-
-
-@task
-def check_dependencies(airflow_vars: Optional[List[str]] = None, airflow_conns: Optional[List[str]] = None):
-    """Checks if the given Airflow Variables and Connections exist.
-
-    :param airflow_vars: the Airflow Variables to check exist.
-    :param airflow_conns: the Airflow Connections to check exist.
-    :return: None.
-    """
-
-    vars_valid = True
-    conns_valid = True
-    if airflow_vars:
-        vars_valid = check_variables(*airflow_vars)
-    if airflow_conns:
-        conns_valid = check_connections(*airflow_conns)
-
-    if not vars_valid or not conns_valid:
-        raise AirflowSkipException("Required variables or connections are missing")
 
 
 class CrossrefFundrefRelease(SnapshotRelease):
