@@ -1,4 +1,4 @@
-# Copyright 2022 Curtin University
+# Copyright 2022-2023 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,24 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Aniek Roelofs, James Diprose
+# Author: Aniek Roelofs, James Diprose, Alex Massen-Hane
 
 from __future__ import annotations
 
-import datetime
-import gzip
-import json
-import logging
 import os
 import re
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import timedelta
-from functools import partial
-from typing import List, Dict, Tuple, Optional
-
+import gzip
 import boto3
-import jsonlines
+import json
+import logging
+import datetime
 import pendulum
+import jsonlines
+from deepdiff import DeepDiff
+from functools import partial
+from datetime import timedelta
+from collections import OrderedDict
+from json.encoder import JSONEncoder
+from mergedeep import merge, Strategy
+from typing import List, Dict, Tuple, Optional, Any
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from bigquery_schema_generator.generate_schema import SchemaGenerator, flatten_schema_map
+
 from airflow import DAG
 from airflow.exceptions import AirflowSkipException
 from airflow.hooks.base import BaseHook
@@ -44,7 +49,7 @@ from google.cloud.bigquery import SourceFormat
 
 from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
 from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.platform.airflow import PreviousDagRunSensor, is_first_dag_run
+from observatory.platform.airflow import PreviousDagRunSensor, is_first_dag_run, send_slack_msg
 from observatory.platform.api import get_dataset_releases, get_latest_dataset_release, make_observatory_api
 from observatory.platform.bigquery import (
     bq_table_id,
@@ -58,8 +63,9 @@ from observatory.platform.bigquery import (
     bq_upsert_records,
     bq_update_table_description,
 )
+from observatory.platform.observatory_environment import log_diff
 from observatory.platform.config import AirflowConns
-from observatory.platform.files import clean_dir
+from observatory.platform.files import clean_dir, load_jsonl
 from observatory.platform.gcs import (
     gcs_create_aws_transfer,
     gcs_upload_transfer_manifest,
@@ -130,6 +136,10 @@ class OpenAlexEntity:
     @property
     def schema_file_path(self):
         return os.path.join(self.release.schema_folder, f"{self.entity_name}.json")
+
+    @property
+    def generated_schema_path(self):
+        return os.path.join(self.release.transform_folder, f"generated_schema_{self.entity_name}.json")
 
     @property
     def upsert_uri(self):
@@ -312,6 +322,7 @@ class OpenAlexTelescope(Workflow):
         aws_conn_id: str = "aws_openalex",
         aws_openalex_bucket: str = "openalex",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
+        slack_conn_id: Optional[str] = AirflowConns.SLACK,
         start_date: pendulum.DateTime = pendulum.datetime(2021, 12, 1),
         schedule: str = "@weekly",
         queue: str = "remote_queue",
@@ -331,6 +342,7 @@ class OpenAlexTelescope(Workflow):
         :param aws_conn_id: the AWS Airflow Connection ID.
         :param aws_openalex_bucket: the OpenAlex AWS bucket name.
         :param observatory_api_conn_id: the Observatory API Airflow Connection ID.
+        :param slack_conn_id: the Slack Connection ID.
         :param start_date: the Apache Airflow DAG start date.
         :param schedule: the Apache Airflow schedule interval. Whilst OpenAlex snapshots are released monthly,
         they are not released on any particular day of the month, so we instead simply run the workflow weekly on a
@@ -362,6 +374,7 @@ class OpenAlexTelescope(Workflow):
         self.aws_conn_id = aws_conn_id
         self.aws_openalex_bucket = aws_openalex_bucket
         self.observatory_api_conn_id = observatory_api_conn_id
+        self.slack_conn_id = slack_conn_id
 
     def make_dag(self) -> DAG:
         with self.dag:
@@ -386,6 +399,8 @@ class OpenAlexTelescope(Workflow):
                     task_snapshot = self.make_python_operator(self.bq_snapshot, "bq_snapshot", op_kwargs={"entity_name": entity_name})
                     task_download = make_download_bash_op(self, entity_name, "download", trigger_rule=TriggerRule.NONE_FAILED)
                     task_transform = self.make_python_operator(self.transform, "transform", op_kwargs={"entity_name": entity_name})
+                    task_upload_schema = self.make_python_operator(self.upload_schema, "upload_schema", op_kwargs={"entity_name": entity_name})
+                    task_compare_schemas = self.make_python_operator(self.compare_schemas, "compare_schemas", op_kwargs={"entity_name": entity_name})
                     task_upload = self.make_python_operator(self.upload_upsert_files, "upload", op_kwargs={"entity_name": entity_name})
                     task_bq_load_upserts = self.make_python_operator(self.bq_load_upsert_tables, "bq_load_upserts", op_kwargs={"entity_name": entity_name})
                     task_bq_upsert_records = self.make_python_operator(self.bq_upsert_records, "bq_upsert_records", op_kwargs={"entity_name": entity_name})
@@ -398,6 +413,8 @@ class OpenAlexTelescope(Workflow):
                         task_snapshot
                         >> task_download
                         >> task_transform
+                        >> task_upload_schema
+                        >> task_compare_schemas
                         >> task_upload
                         >> task_bq_load_upserts
                         >> task_bq_upsert_records
@@ -640,7 +657,9 @@ class OpenAlexTelescope(Workflow):
         ), f"{task_id}: error creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
 
     def transform(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
-        """Transform all files for the Work, Concept and Institution entities. Transforms one file per process."""
+        """Transform all files for the Work, Concept and Institution entities. Transforms one file per process.
+
+        This step also scans through each file and generates a Biguqery style schema from the incoming data."""
 
         task_id = get_task_id(**kwargs)
         entity = release.get_entity(entity_name)
@@ -659,6 +678,8 @@ class OpenAlexTelescope(Workflow):
             max_processes = self.max_processes
         logging.info(f"{task_id}: transforming files for OpenAlexEntity({entity_name}), no. workers: {max_processes}")
 
+        # Merge function only expects dicts, not lists.
+        merged_schema = {"schema": []}
         with ProcessPoolExecutor(max_workers=max_processes) as executor:
             futures = []
             for entry in entity.current_entries:
@@ -666,7 +687,59 @@ class OpenAlexTelescope(Workflow):
                 output_path = os.path.join(release.transform_folder, entry.object_key)
                 futures.append(executor.submit(transform_file, input_path, output_path))
             for future in as_completed(futures):
-                future.result()
+                result, schema_error = future.result()
+                generated_schema = {"schema": result}
+
+                if schema_error:
+                    logging.info(f"Error generating schema from transformed data, please investigate: {schema_error}")
+
+                # Merge the schemas together (some part files may contain more keys/fields than others).
+                merged_schema = merge(merged_schema, generated_schema, strategy=Strategy.ADDITIVE)
+
+        # Save schema to file
+        with open(entity.generated_schema_path, mode="w") as f_out:
+            json.dump(merged_schema["schema"], f_out, indent=2)
+
+    def upload_schema(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
+        """Upload the generated schema from the transform step to GCS."""
+
+        task_id = get_task_id(**kwargs)
+        entity = release.get_entity(entity_name)
+        if entity is None:
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+
+        success = gcs_upload_files(
+            bucket_name=self.cloud_workspace.transform_bucket, file_paths=[entity.generated_schema_path]
+        )
+        set_task_state(success, self.upload_schema.__name__, release)
+
+    def compare_schemas(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
+        """Compare the generated schema against the expected schema for each entity."""
+
+        ti: TaskInstance = kwargs["ti"]
+        execution_date = kwargs["execution_date"]
+
+        task_id = get_task_id(**kwargs)
+        entity = release.get_entity(entity_name)
+        if entity is None:
+            raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+
+        logging.info(f"Loading schemas from file: generated: {entity.generated_schema_path}")
+        logging.info(f"Expected: {entity.schema_file_path}")
+
+        # Read in the expected schema for the entity.
+        merged_schema = load_json(entity.generated_schema_path)
+        expected_schema = load_json(entity.schema_file_path)
+
+        try:
+            match = bq_compare_schemas(expected_schema, merged_schema, check_types_match=False)
+        except:
+            match = False
+
+        if not match:
+            logging.info("Generated schema and expected do not match! - Sending a notification via Slack")
+            slack_msg = f"Found differences in the OpenAlex entity {entity_name} data structure for the data dump vs pre-defined Bigquery schema. Please investigate."
+            send_slack_msg(ti=ti, execution_date=execution_date, comments=slack_msg, slack_conn_id=self.slack_conn_id)
 
     def upload_upsert_files(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Upload the transformed data to Cloud Storage.
@@ -1019,28 +1092,46 @@ def fetch_merged_ids(
     return results
 
 
-def transform_file(download_path: str, transform_path: str):
+def transform_file(download_path: str, transform_path: str) -> Tuple[dict, list]:
     """Transforms a single file.
     Each entry/object in the gzip input file is transformed and the transformed object is immediately written out to
     a gzip file. For each entity only one field has to be transformed.
 
+    This function generates and returnms a Bigquery style schema from the transformed object,
+    using the ScehmaGenerator from the 'bigquery_schema_generator' package.
+
     :param download_path: The path to the file with the OpenAlex entries.
     :param transform_path: The path where transformed data will be saved
-    :return: None.
+    :return: schema. A BQ style schema generated from the transformed records.
     """
 
     # Make base folder, e.g. authors/updated_date=2023-09-17
     base_folder = os.path.dirname(transform_path)
     os.makedirs(base_folder, exist_ok=True)
 
+    schema_map = OrderedDict()
+    schema_generator = SchemaGenerator(input_format="dict")
+
     logging.info(f"Transforming {download_path}")
     with gzip.open(download_path, "rb") as f_in, gzip.open(transform_path, "wt", encoding="ascii") as f_out:
         reader = jsonlines.Reader(f_in)
         for obj in reader.iter(skip_empty=True):
             transform_object(obj)
+
+            try:
+                schema_generator.deduce_schema_for_record(obj, schema_map)
+            except Exception:
+                pass
+
             json.dump(obj, f_out)
             f_out.write("\n")
+
     logging.info(f"Finished transform, saved to {transform_path}")
+
+    # Convert schema from nested OrderedDicts to regular dictionaries
+    schema = flatten_schema(schema_map)
+
+    return schema, schema_generator.error_logs
 
 
 def transform_object(obj: dict):
@@ -1094,3 +1185,75 @@ def transform_object(obj: dict):
     field = "updated_date"
     if field in obj:
         obj[field] = pendulum.parse(obj[field]).to_iso8601_string()
+
+
+def bq_compare_schemas(expected: List[dict], actual: List[dict], check_types_match: Optional[bool] = False) -> bool:
+    """Compare two Bigquery style schemas for if they have the same fields and/or data types.
+
+    :param expected: the expected schema.
+    :param actual: the actual schema.
+    :check_types_match: Optional, if checking data types of fields is required.
+    :return: whether the expected and actual match.
+    """
+
+    expected.sort(key=lambda c: c["name"], reverse=False)
+    actual.sort(key=lambda c: c["name"], reverse=False)
+
+    exp_names = [field_def["name"] for field_def in expected]
+    act_names = [field_def["name"] for field_def in actual]
+
+    if len(exp_names) != len(act_names):
+        logging.info("Fields do not match:")
+        logging.info(f"Only in expected: {set(exp_names) - set(act_names)}")
+        logging.info(f"Only in actual: {set(act_names) - set(exp_names)}")
+        return False
+
+    # Check data types of fields
+    if check_types_match:
+        for exp_field, act_field in zip(expected, actual):
+            if exp_field["type"] != act_field["type"]:
+                logging.info(
+                    f"Field types do not match for field  '{exp_field['name']}' ! Actual: {act_field['type']} vs Expected: {exp_field['type']}"
+                )
+            all_matched = False
+
+    # Check for sub-fields within the schema.
+    all_matched = True
+    for exp_field, act_field in zip(expected, actual):
+        # Ignore the "mode" and "description" definitions in fields as they are not required for check.
+        diff = DeepDiff(exp_field, act_field, ignore_order=True, exclude_regex_paths=r"\s*(description|mode)")
+        logging.info(f"Differeneces in the fields: {exp_field}")
+        for diff_type, changes in diff.items():
+            all_matched = False
+            log_diff(diff_type, changes)
+
+    return all_matched
+
+
+def flatten_schema(schema_map: OrderedDict) -> dict:
+    """A quick trick using the JSON encoder and load string function to convert from a nested
+    OrderedDict object to a regular dictionary.
+
+    :param schema_map: The generated schema from SchemaGenerator.
+    :return schema: A Bigquery style schema."""
+
+    encoded_schema = JSONEncoder().encode(
+        flatten_schema_map(
+            schema_map,
+            keep_nulls=False,
+            sorted_schema=True,
+            infer_mode=True,
+            input_format="json",
+        )
+    )
+
+    return json.loads(encoded_schema)
+
+
+def load_json(file_path: str) -> Any:
+    """Read in a *.json file."""
+
+    with open(file_path, "r") as f_in:
+        data = json.load(f_in)
+
+    return data
