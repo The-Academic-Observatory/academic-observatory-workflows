@@ -137,7 +137,8 @@ def create_dag(
     queue: str = "default",
     retries: int = 3,
     max_active_runs: int = 1,
-    gke_image="python:3.10-slim",
+    gke_image="your.private.registry.com/your-image:latest",
+    gke_image_pull_secrets="",
     gke_namespace: str = "coki-astro",
     gke_startup_timeout_seconds: int = 300,
     gke_volume_name: str = "crossref_metadata",
@@ -169,9 +170,10 @@ def create_dag(
 
     # Common @task.kubernetes params
     kubernetes_task_params = dict(
+        image=gke_image,
+        image_pull_secrets="myregistrykey",
         do_xcom_push=True,
         get_logs=True,
-        image=gke_image,
         in_cluster=False,
         kubernetes_conn_id=kubernetes_conn_id,
         log_events_on_failure=True,
@@ -239,7 +241,7 @@ def create_dag(
         @task.kubernetes(
             name="download",
             resources=V1ResourceRequirements(
-                requests={"memory": "4Gi", "cpu": "2"}, limits={"memory": "4Gi", "cpu": "4"}
+                requests={"memory": "4Gi", "cpu": "4"}, limits={"memory": "4Gi", "cpu": "4"}
             ),
             secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
             **kubernetes_task_params,
@@ -280,7 +282,7 @@ def create_dag(
         @task.kubernetes(
             name="upload_downloaded",
             resources=V1ResourceRequirements(
-                requests={"memory": "4Gi", "cpu": "2"}, limits={"memory": "4Gi", "cpu": "4"}
+                requests={"memory": "4Gi", "cpu": "4"}, limits={"memory": "4Gi", "cpu": "4"}
             ),
             **kubernetes_task_params,
         )
