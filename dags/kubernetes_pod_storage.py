@@ -6,6 +6,8 @@ from observatory.platform.gcp import gcp_delete_disk, gcp_create_disk
 from observatory.platform.gke import gke_create_volume, gke_delete_volume
 
 
+# https://github.com/apache/airflow/blob/main/airflow/providers/cncf/kubernetes/decorators/kubernetes.py
+
 def make_dag(
     *,
     dag_id: str,

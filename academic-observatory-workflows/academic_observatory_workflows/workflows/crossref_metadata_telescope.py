@@ -137,8 +137,8 @@ def create_dag(
     queue: str = "default",
     retries: int = 3,
     max_active_runs: int = 1,
-    gke_image="your.private.registry.com/your-image:latest",
-    gke_image_pull_secrets="",
+    gke_image="us-docker.pkg.dev/project-id/academic-observatory/academic-observatory:latest",
+    # gke_image_pull_secrets="docker-registry",
     gke_namespace: str = "coki-astro",
     gke_startup_timeout_seconds: int = 300,
     gke_volume_name: str = "crossref_metadata",
@@ -147,7 +147,6 @@ def create_dag(
     gke_volume_size: int = 1000,
     kubernetes_conn_id: str = "gke_cluster",
 ):
-
     """The Crossref Metadata telescope
 
     :param dag_id: the id of the DAG.
@@ -171,7 +170,7 @@ def create_dag(
     # Common @task.kubernetes params
     kubernetes_task_params = dict(
         image=gke_image,
-        image_pull_secrets="myregistrykey",
+        # image_pull_secrets=gke_image_pull_secrets,
         do_xcom_push=True,
         get_logs=True,
         in_cluster=False,

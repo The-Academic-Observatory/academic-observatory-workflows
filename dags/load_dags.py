@@ -18,6 +18,6 @@
 
 from __future__ import annotations
 
-# from observatory.platform.airflow import load_dags_from_config
+from observatory.platform.airflow import load_dags_from_config
 
-# load_dags_from_config()
+load_dags_from_config()
