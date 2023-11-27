@@ -26,12 +26,17 @@ from typing import Dict
 import jsonlines
 import pendulum
 import requests
-from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+# import __editable___academic_observatory_workflows_1_0_0_finder
+from academic_observatory_workflows.config import Tag
+from academic_observatory_workflows.config import schema_folder as default_schema_folder
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
+from airflow.providers.cncf.kubernetes.secret import Secret
 from bs4 import BeautifulSoup
 from google.cloud.bigquery import SourceFormat
+from kubernetes.client import models as k8s
+from kubernetes.client.models import V1ResourceRequirements
 
 from observatory.platform.airflow import on_failure_callback
 from observatory.platform.bigquery import (
@@ -64,7 +69,15 @@ def get_api_key(crossref_metadata_conn_id: str):
 
 
 class CrossrefMetadataRelease(SnapshotRelease):
-    def __init__(self, *, dag_id: str, run_id: str, snapshot_date: pendulum.DateTime):
+    def __init__(
+        self,
+        *,
+        dag_id: str,
+        run_id: str,
+        snapshot_date: pendulum.DateTime,
+        cloud_workspace: CloudWorkspace,
+        batch_size: int,
+    ):
         """Construct a RorRelease.
 
         :param dag_id: the DAG id.
@@ -73,6 +86,8 @@ class CrossrefMetadataRelease(SnapshotRelease):
         """
 
         super().__init__(dag_id=dag_id, run_id=run_id, snapshot_date=snapshot_date)
+        self.cloud_workspace = cloud_workspace
+        self.batch_size = batch_size
         self.download_file_name = "crossref_metadata.json.tar.gz"
         self.download_file_path = os.path.join(self.download_folder, self.download_file_name)
         self.extract_files_regex = r".*\.json$"
@@ -83,13 +98,24 @@ class CrossrefMetadataRelease(SnapshotRelease):
         dag_id = dict_["dag_id"]
         run_id = dict_["run_id"]
         snapshot_date = pendulum.parse(dict_["snapshot_date"])
-        return CrossrefMetadataRelease(dag_id=dag_id, run_id=run_id, snapshot_date=snapshot_date)
+        cloud_workspace = CloudWorkspace.from_dict(dict_["cloud_workspace"])
+        batch_size = dict_["run_id"]
+        return CrossrefMetadataRelease(
+            dag_id=dag_id,
+            run_id=run_id,
+            snapshot_date=snapshot_date,
+            cloud_workspace=cloud_workspace,
+            batch_size=batch_size,
+        )
 
     def to_dict(self) -> dict:
-        return dict(dag_id=self.dag_id, run_id=self.run_id, snapshot_date=self.snapshot_date.to_date_string())
-
-
-# Secrets: https://github.com/apache/airflow/blob/providers-cncf-kubernetes/7.9.0/tests/system/providers/cncf/kubernetes/example_kubernetes.py
+        return dict(
+            dag_id=self.dag_id,
+            run_id=self.run_id,
+            snapshot_date=self.snapshot_date.to_date_string(),
+            cloud_workspace=self.cloud_workspace.to_dict(),
+            batch_size=self.batch_size,
+        )
 
 
 def create_dag(
@@ -104,7 +130,6 @@ def create_dag(
     table_description: str = "The Crossref Metadata Plus dataset: https://www.crossref.org/services/metadata-retrieval/metadata-plus/",
     crossref_metadata_conn_id: str = "crossref_metadata",
     observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
-    max_processes: int = os.cpu_count(),
     batch_size: int = 20,
     start_date: pendulum.DateTime = pendulum.datetime(2020, 6, 7),
     schedule: str = "0 0 7 * *",
@@ -112,9 +137,13 @@ def create_dag(
     queue: str = "default",
     retries: int = 3,
     max_active_runs: int = 1,
-    gke_volume_name="crossref_metadata",
-    gke_zone="us-central1-a",
-    gke_volume_size=1000,
+    gke_image="python:3.10-slim",
+    gke_namespace: str = "coki-astro",
+    gke_startup_timeout_seconds: int = 300,
+    gke_volume_name: str = "crossref_metadata",
+    gke_volume_path: str = "/data",
+    gke_zone: str = "us-central1-a",
+    gke_volume_size: int = 1000,
     kubernetes_conn_id: str = "gke_cluster",
 ):
 
@@ -130,7 +159,6 @@ def create_dag(
     :param table_description: description for the BigQuery table.
     :param crossref_metadata_conn_id: the Crossref Metadata Airflow connection key.
     :param observatory_api_conn_id: the Observatory API connection key.
-    :param max_processes: the number of processes used with ProcessPoolExecutor to transform files in parallel.
     :param batch_size: the number of files to send to ProcessPoolExecutor at one time.
     :param start_date: the start date of the DAG.
     :param schedule: the schedule interval of the DAG.
@@ -138,6 +166,25 @@ def create_dag(
     :param queue: what Airflow queue this job runs on.
     :param max_active_runs: the maximum number of DAG runs that can be run at once.
     """
+
+    # Common @task.kubernetes params
+    kubernetes_task_params = dict(
+        do_xcom_push=True,
+        get_logs=True,
+        image=gke_image,
+        in_cluster=False,
+        kubernetes_conn_id=kubernetes_conn_id,
+        log_events_on_failure=True,
+        namespace=gke_namespace,
+        startup_timeout_seconds=gke_startup_timeout_seconds,
+        volumes=[
+            k8s.V1Volume(
+                name=gke_volume_name,
+                persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(claim_name=gke_volume_name),
+            )
+        ],
+        volume_mounts=[k8s.V1VolumeMount(mount_path=gke_volume_path, name=gke_volume_name)],
+    )
 
     @dag(
         dag_id=dag_id,
@@ -181,9 +228,22 @@ def create_dag(
             # The release date is always the end of the execution_date month
             snapshot_date = context["data_interval_start"].end_of("month")
             run_id = context["run_id"]
-            return CrossrefMetadataRelease(dag_id=dag_id, run_id=run_id, snapshot_date=snapshot_date).to_dict()
+            return CrossrefMetadataRelease(
+                dag_id=dag_id,
+                run_id=run_id,
+                snapshot_date=snapshot_date,
+                cloud_workspace=cloud_workspace,
+                batch_size=batch_size,
+            ).to_dict()
 
-        @task.kubernetes()
+        @task.kubernetes(
+            name="download",
+            resources=V1ResourceRequirements(
+                requests={"memory": "4Gi", "cpu": "2"}, limits={"memory": "4Gi", "cpu": "4"}
+            ),
+            secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
+            **kubernetes_task_params,
+        )
         def download(release: Dict, **context):
             """Task to download the CrossrefMetadataRelease release for a given month."""
 
@@ -193,6 +253,7 @@ def create_dag(
 
             from observatory.platform.files import clean_dir
             from observatory.platform.utils.url_utils import retry_get_url
+            from academic_observatory_workflows.workflows.crossref_metadata_telescope import CrossrefMetadataRelease
 
             release = CrossrefMetadataRelease.from_dict(release)
             clean_dir(release.download_folder)
@@ -201,7 +262,12 @@ def create_dag(
             logging.info(f"Downloading from url: {url}")
 
             # Set API token header
-            header = {"Crossref-Plus-API-Token": f"Bearer {get_api_key(crossref_metadata_conn_id)}"}
+            api_key = os.environ.get("CROSSREF_METADATA_API_KEY")
+            if api_key is None:
+                raise AirflowException(
+                    f"download: the CROSSREF_METADATA_API_KEY environment variable is not set, please set it with a Kubernetes Secret."
+                )
+            header = {"Crossref-Plus-API-Token": f"Bearer {api_key}"}
 
             # Download release
             with retry_get_url(url, headers=header, stream=True) as response:
@@ -211,7 +277,13 @@ def create_dag(
 
             logging.info(f"Successfully download url to {release.download_file_path}")
 
-        @task.kubernetes()
+        @task.kubernetes(
+            name="upload_downloaded",
+            resources=V1ResourceRequirements(
+                requests={"memory": "4Gi", "cpu": "2"}, limits={"memory": "4Gi", "cpu": "4"}
+            ),
+            **kubernetes_task_params,
+        )
         def upload_downloaded(release: Dict, **context):
             """Upload data to Cloud Storage."""
 
@@ -219,14 +291,46 @@ def create_dag(
             from observatory.platform.workflows.workflow import (
                 set_task_state,
             )
+            from academic_observatory_workflows.workflows.crossref_metadata_telescope import CrossrefMetadataRelease
 
             release = CrossrefMetadataRelease.from_dict(release)
             success = gcs_upload_files(
-                bucket_name=cloud_workspace.download_bucket, file_paths=[release.download_file_path]
+                bucket_name=release.cloud_workspace.download_bucket, file_paths=[release.download_file_path]
             )
             set_task_state(success, context["ti"].task_id, release)
 
-        @task.kubernetes()
+        @task.kubernetes(
+            name="extract",
+            resources=V1ResourceRequirements(
+                requests={"memory": "30Gi", "cpu": "8"}, limits={"memory": "30Gi", "cpu": "8"}
+            ),
+            **kubernetes_task_params,
+        )
+        def extract(release: Dict, **context):
+            import subprocess
+            from observatory.platform.utils.proc_utils import stream_process
+            from academic_observatory_workflows.workflows.crossref_metadata_telescope import CrossrefMetadataRelease
+
+            release = CrossrefMetadataRelease.from_dict(release)
+            logging.info(f"Extract {release.download_file_path} to folder: {release.extract_folder}")
+            process = subprocess.Popen(
+                ["tar", "-xv", "-I", '"pigz -d"', "-f", release.download_file_path, "-C", release.extract_folder],
+                shell=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            success = stream_process(process)
+            if not success:
+                raise AirflowException(f"Error extracting {release.download_file_path}")
+
+        @task.kubernetes(
+            name="transform",
+            resources=V1ResourceRequirements(
+                requests={"memory": "30Gi", "cpu": "8"}, limits={"memory": "30Gi", "cpu": "8"}
+            ),
+            **kubernetes_task_params,
+        )
         def transform(release: Dict, **context):
             """Task to transform the CrossrefMetadataRelease release for a given month.
             Each extracted file is transformed."""
@@ -234,10 +338,9 @@ def create_dag(
             import logging
             import os
             from concurrent.futures import ProcessPoolExecutor, as_completed
-
             from natsort import natsorted
-
             from observatory.platform.files import list_files, get_chunks, clean_dir
+            from academic_observatory_workflows.workflows.crossref_metadata_telescope import CrossrefMetadataRelease
 
             release = CrossrefMetadataRelease.from_dict(release)
             logging.info(f"Transform input folder: {release.extract_folder}, output folder: {release.transform_folder}")
@@ -248,8 +351,8 @@ def create_dag(
             input_file_paths = natsorted(list_files(release.extract_folder, release.extract_files_regex))
 
             # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
-            for i, chunk in enumerate(get_chunks(input_list=input_file_paths, chunk_size=batch_size)):
-                with ProcessPoolExecutor(max_workers=max_processes) as executor:
+            for i, chunk in enumerate(get_chunks(input_list=input_file_paths, chunk_size=release.batch_size)):
+                with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
                     futures = []
 
                     # Create tasks for each file
@@ -265,7 +368,13 @@ def create_dag(
                         if finished % 1000 == 0:
                             logging.info(f"Transformed {finished} files")
 
-        @task.kubernetes()
+        @task.kubernetes(
+            name="upload_transformed",
+            resources=V1ResourceRequirements(
+                requests={"memory": "8Gi", "cpu": "8"}, limits={"memory": "8Gi", "cpu": "8"}
+            ),
+            **kubernetes_task_params,
+        )
         def upload_transformed(release: Dict, **context):
             """Upload the transformed data to Cloud Storage."""
 
@@ -274,10 +383,11 @@ def create_dag(
             from observatory.platform.workflows.workflow import (
                 set_task_state,
             )
+            from academic_observatory_workflows.workflows.crossref_metadata_telescope import CrossrefMetadataRelease
 
             release = CrossrefMetadataRelease.from_dict(release)
             files_list = list_files(release.transform_folder, release.transform_files_regex)
-            success = gcs_upload_files(bucket_name=cloud_workspace.transform_bucket, file_paths=files_list)
+            success = gcs_upload_files(bucket_name=release.cloud_workspace.transform_bucket, file_paths=files_list)
             set_task_state(success, context["ti"].task_id, release)
 
         @task
@@ -315,30 +425,6 @@ def create_dag(
             )
             set_task_state(success, context["ti"].task_id, release)
 
-        # class WorkflowBashOperator(BashOperator):
-        #     def __init__(self, workflow: Workflow, *args, **kwargs):
-        #         super().__init__(*args, **kwargs)
-        #         self.workflow = workflow
-        #
-        #     def render_template(self, content, context, *args, **kwargs):
-        #         # Make release and set in context
-        #         obj = self.workflow.make_release(**context)
-        #         if isinstance(obj, list):
-        #             context["releases"] = obj
-        #         elif isinstance(obj, Release):
-        #             context["release"] = obj
-        #
-        #         # Add workflow to context
-        #         if self.workflow is not None:
-        #             context["workflow"] = self.workflow
-        #
-        #         else:
-        #             raise AirflowException(
-        #                 f"WorkflowBashOperator.render_template: self.make_release returned an object of an invalid type (should be a list of Releases, or a single Release object): {type(obj)}"
-        #             )
-        #
-        #         return super().render_template(content, context, *args, **kwargs)
-
         # Define task connections
         task_check = check_dependencies(
             airflow_conns=[observatory_api_conn_id, crossref_metadata_conn_id, kubernetes_conn_id]
@@ -369,14 +455,6 @@ def create_dag(
             >> task_bq_load
             >> task_delete_storage
         )
-
-        #         self.add_operator(
-        #             WorkflowBashOperator(
-        #                 workflow=self,
-        #                 task_id="extract",
-        #                 bash_command='tar -xv -I "pigz -d" -f {{ release.download_file_path }} -C {{ release.extract_folder }}',
-        #             )
-        #         )
 
 
 def check_release_exists(month: pendulum.DateTime, api_key: str) -> bool:
