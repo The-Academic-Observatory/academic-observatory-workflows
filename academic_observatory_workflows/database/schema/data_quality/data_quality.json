@@ -1,0 +1,116 @@
+[
+  {
+    "name": "full_table_id",
+    "description": "The fully qualified table name: project_id.dataset_id.table_id",
+    "type": "STRING",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "hash_id",
+    "description": "A unique table identifier based off of the full_table_id, number of bytes, number of rows and numbre of columms.",
+    "type": "STRING",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "project_id",
+    "description": "Name of the project.",
+    "type": "STRING",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "dataset_id",
+    "description": "Dataset that holds the table.",
+    "type": "STRING",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "table_id",
+    "description": "Name of the table.",
+    "type": "STRING",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "shard_date",
+    "description": "Date from the table shard (if null it is not a sharded table).",
+    "type": "DATE",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "is_sharded",
+    "description": "If the table is sharded or not.",
+    "type": "BOOL",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "date_created",
+    "description": "Date of when the table was created.",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "expires",
+    "description": "If the table is set to expire or not.",
+    "type": "BOOLEAN",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "date_expires",
+    "description": "Date of when the table expires.",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "date_last_modified",
+    "description": "Date of when the table was modified.",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "date_checked",
+    "description": "Date of when this table was checked by the QA workflow.",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "size_gb",
+    "description": "Size of the table in Gigabytes.",
+    "type": "FLOAT",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "primary_key",
+    "description": "Array of primary keys that are used to identify records.",
+    "type": "STRING",
+    "mode": "REPEATED"
+  },
+  {
+    "name": "num_rows",
+    "description": "Number of rows / records in the table.",
+    "type": "INTEGER",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "num_distinct_records",
+    "description": "Number of records in the table that have a distinct 'primary_key'.",
+    "type": "INTEGER",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "num_null_records",
+    "description": "Number of records that do not have an entry under 'primary_key' (None or nulls).",
+    "type": "INTEGER",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "num_duplicates",
+    "description": "Number of duplicate records under the 'primary_key' (None or nulls).",
+    "type": "INTEGER",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "num_all_fields",
+    "description": "Number fields that the table has in total, included nested fields.",
+    "type": "INTEGER",
+    "mode": "REQUIRED"
+  }
+]
