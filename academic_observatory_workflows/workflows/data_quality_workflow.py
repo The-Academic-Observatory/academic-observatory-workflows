@@ -231,8 +231,11 @@ class DataQualityWorkflow(Workflow):
                 table_id=table_to_check.full_table_id, end_date=pendulum.now(tz="UTC"), limit=1000
             )
 
-            # Use limited number of table shards checked to reduce BQ costs
-            shard_limit = len(dates) if len(dates) <= table_to_check.shard_limit else table_to_check.shard_limit
+            # Use limited number of table shards checked to reduce querying costs.
+            if table_to_check.shard_limit and len(dates) > table_to_check.shard_limit:
+                shard_limit = table_to_check.shard_limit
+            else:
+                shard_limit = len(dates)
 
             tables = []
             for shard_date in dates[:shard_limit]:
