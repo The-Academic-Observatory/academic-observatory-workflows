@@ -21,14 +21,13 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Dict
 
 import jsonlines
 import pendulum
 import requests
+
 # import __editable___academic_observatory_workflows_1_0_0_finder
-from academic_observatory_workflows.config import Tag
-from academic_observatory_workflows.config import schema_folder as default_schema_folder
+from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
@@ -138,7 +137,6 @@ def create_dag(
     retries: int = 3,
     max_active_runs: int = 1,
     gke_image="us-docker.pkg.dev/project-id/academic-observatory/academic-observatory:latest",
-    # gke_image_pull_secrets="docker-registry",
     gke_namespace: str = "coki-astro",
     gke_startup_timeout_seconds: int = 300,
     gke_volume_name: str = "crossref_metadata",
@@ -146,6 +144,7 @@ def create_dag(
     gke_zone: str = "us-central1-a",
     gke_volume_size: int = 1000,
     kubernetes_conn_id: str = "gke_cluster",
+    docker_astro_uid: int = 50000,
 ):
     """The Crossref Metadata telescope
 
@@ -168,9 +167,32 @@ def create_dag(
     """
 
     # Common @task.kubernetes params
+    volume_mounts = [k8s.V1VolumeMount(mount_path=gke_volume_path, name=gke_volume_name)]
     kubernetes_task_params = dict(
         image=gke_image,
-        # image_pull_secrets=gke_image_pull_secrets,
+        # init-container is used to apply the astro:astro owner to the /data directory
+        init_containers=[
+            k8s.V1Container(
+                name="init-container",
+                image="ubuntu",
+                command=[
+                    "sh",
+                    "-c",
+                    f"useradd -u {docker_astro_uid} astro && chown -R astro:astro /data",
+                ],
+                volume_mounts=volume_mounts,
+                security_context=k8s.V1PodSecurityContext(fs_group=0, run_as_group=0, run_as_user=0),
+            )
+        ],
+        # TODO: supposed to make makes pod run as astro user so that it has access to /data volume
+        # It doesn't seem to work
+        security_context=k8s.V1PodSecurityContext(
+            # fs_user=docker_astro_uid,
+            fs_group=docker_astro_uid,
+            fs_group_change_policy="OnRootMismatch",
+            run_as_group=docker_astro_uid,
+            run_as_user=docker_astro_uid,
+        ),
         do_xcom_push=True,
         get_logs=True,
         in_cluster=False,
@@ -178,13 +200,14 @@ def create_dag(
         log_events_on_failure=True,
         namespace=gke_namespace,
         startup_timeout_seconds=gke_startup_timeout_seconds,
+        env_vars={"DATA_PATH": gke_volume_path},
         volumes=[
             k8s.V1Volume(
                 name=gke_volume_name,
                 persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(claim_name=gke_volume_name),
             )
         ],
-        volume_mounts=[k8s.V1VolumeMount(mount_path=gke_volume_path, name=gke_volume_name)],
+        volume_mounts=volume_mounts,
     )
 
     @dag(
@@ -239,27 +262,31 @@ def create_dag(
 
         @task.kubernetes(
             name="download",
-            resources=V1ResourceRequirements(
+            container_resources=V1ResourceRequirements(
                 requests={"memory": "4Gi", "cpu": "4"}, limits={"memory": "4Gi", "cpu": "4"}
             ),
             secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
             **kubernetes_task_params,
         )
-        def download(release: Dict, **context):
+        def download(release: dict, **context):
             """Task to download the CrossrefMetadataRelease release for a given month."""
 
+            import os
             import functools
             import logging
             import shutil
 
             from observatory.platform.files import clean_dir
             from observatory.platform.utils.url_utils import retry_get_url
+            from airflow.exceptions import AirflowException
             from academic_observatory_workflows.workflows.crossref_metadata_telescope import CrossrefMetadataRelease
 
             release = CrossrefMetadataRelease.from_dict(release)
             clean_dir(release.download_folder)
 
-            url = make_snapshot_url(release.snapshot_date)
+            url = "https://api.crossref.org/snapshots/monthly/{year}/{month:02d}/all.json.tar.gz".format(
+                year=release.snapshot_date.year, month=release.snapshot_date.month
+            )
             logging.info(f"Downloading from url: {url}")
 
             # Set API token header
@@ -280,12 +307,12 @@ def create_dag(
 
         @task.kubernetes(
             name="upload_downloaded",
-            resources=V1ResourceRequirements(
+            container_resources=V1ResourceRequirements(
                 requests={"memory": "4Gi", "cpu": "4"}, limits={"memory": "4Gi", "cpu": "4"}
             ),
             **kubernetes_task_params,
         )
-        def upload_downloaded(release: Dict, **context):
+        def upload_downloaded(release: dict, **context):
             """Upload data to Cloud Storage."""
 
             from observatory.platform.gcs import gcs_upload_files
@@ -302,14 +329,16 @@ def create_dag(
 
         @task.kubernetes(
             name="extract",
-            resources=V1ResourceRequirements(
+            container_resources=V1ResourceRequirements(
                 requests={"memory": "30Gi", "cpu": "8"}, limits={"memory": "30Gi", "cpu": "8"}
             ),
             **kubernetes_task_params,
         )
-        def extract(release: Dict, **context):
+        def extract(release: dict, **context):
+            import logging
             import subprocess
             from observatory.platform.utils.proc_utils import stream_process
+            from airflow.exceptions import AirflowException
             from academic_observatory_workflows.workflows.crossref_metadata_telescope import CrossrefMetadataRelease
 
             release = CrossrefMetadataRelease.from_dict(release)
@@ -327,12 +356,12 @@ def create_dag(
 
         @task.kubernetes(
             name="transform",
-            resources=V1ResourceRequirements(
+            container_resources=V1ResourceRequirements(
                 requests={"memory": "30Gi", "cpu": "8"}, limits={"memory": "30Gi", "cpu": "8"}
             ),
             **kubernetes_task_params,
         )
-        def transform(release: Dict, **context):
+        def transform(release: dict, **context):
             """Task to transform the CrossrefMetadataRelease release for a given month.
             Each extracted file is transformed."""
 
@@ -371,12 +400,12 @@ def create_dag(
 
         @task.kubernetes(
             name="upload_transformed",
-            resources=V1ResourceRequirements(
+            container_resources=V1ResourceRequirements(
                 requests={"memory": "8Gi", "cpu": "8"}, limits={"memory": "8Gi", "cpu": "8"}
             ),
             **kubernetes_task_params,
         )
-        def upload_transformed(release: Dict, **context):
+        def upload_transformed(release: dict, **context):
             """Upload the transformed data to Cloud Storage."""
 
             from observatory.platform.files import list_files
@@ -392,7 +421,7 @@ def create_dag(
             set_task_state(success, context["ti"].task_id, release)
 
         @task
-        def bq_load(release: Dict, **context):
+        def bq_load(release: dict, **context):
             """Task to load each transformed release to BigQuery.
             The table_id is set to the file name without the extension."""
 
@@ -456,6 +485,8 @@ def create_dag(
             >> task_bq_load
             >> task_delete_storage
         )
+
+    return crossref_metadata()
 
 
 def check_release_exists(month: pendulum.DateTime, api_key: str) -> bool:
