@@ -26,10 +26,12 @@ from unittest.mock import patch
 
 import boto3
 import pendulum
+from collections import OrderedDict
 from airflow.models import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
 from google.cloud.exceptions import NotFound
+from bigquery_schema_generator.generate_schema import SchemaGenerator
 
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.openalex_telescope import (
@@ -39,12 +41,15 @@ from academic_observatory_workflows.workflows.openalex_telescope import (
     Manifest,
     Meta,
     MergedId,
+    load_json,
     transform_object,
     s3_uri_parts,
     OpenAlexEntity,
     fetch_manifest,
     fetch_merged_ids,
     bq_compare_schemas,
+    merge_schema_maps,
+    flatten_schema,
 )
 from academic_observatory_workflows.workflows.openalex_telescope import (
     parse_release_msg,
@@ -52,7 +57,7 @@ from academic_observatory_workflows.workflows.openalex_telescope import (
 from observatory.platform.config import AirflowConns
 from observatory.platform.api import get_dataset_releases
 from observatory.platform.bigquery import bq_table_id, bq_sharded_table_id
-from observatory.platform.files import save_jsonl_gz, load_file
+from observatory.platform.files import save_jsonl_gz, load_file, load_jsonl
 from observatory.platform.gcs import gcs_blob_name_from_path
 from observatory.platform.observatory_config import Workflow, CloudWorkspace
 from observatory.platform.observatory_environment import (
@@ -540,6 +545,34 @@ class TestOpenAlexUtils(ObservatoryTestCase):
 
         self.assertFalse(bq_compare_schemas(expected, actual, True))
 
+    def test_merge_schema_maps(self):
+        test1 = load_jsonl(os.path.join(test_fixtures_folder(), "openalex", "schema_generator", "part_000.jsonl"))
+        test2 = load_jsonl(os.path.join(test_fixtures_folder(), "openalex", "schema_generator", "part_001.jsonl"))
+
+        expected_schema_path = os.path.join(test_fixtures_folder(), "openalex", "schema_generator", "expected.json")
+        expected = load_and_parse_json(file_path=expected_schema_path)
+
+        # Create schema maps using both the test files
+        schema_map1 = OrderedDict()
+        schema_map2 = OrderedDict()
+        schema_generator = SchemaGenerator(input_format="dict")
+
+        # Both schema_maps need to be independent of each other here.
+        for record1 in test1:
+            schema_generator.deduce_schema_for_record(record1, schema_map1)
+
+        for record2 in test2:
+            schema_generator.deduce_schema_for_record(record2, schema_map2)
+
+        # Merge the two schemas together - this is similar to how it will merge when each process from a ProcessPool
+        # gives a new schema map from each data file that's been transformed.
+        merged_schema_map = OrderedDict()
+        for incoming in [schema_map1, schema_map2]:
+            merged_schema_map = merge_schema_maps(to_merge=incoming, old_schema=merged_schema_map)
+        merged_schema = flatten_schema(merged_schema_map)
+
+        self.assertTrue(bq_compare_schemas(actual=merged_schema, expected=expected))
+
 
 def upload_folder_to_s3(bucket_name: str, folder_path: str, s3_prefix=None):
     s3 = boto3.client("s3")
@@ -709,7 +742,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
     def test_telescope(self, m_send_slack_msg):
         """Test the OpenAlex telescope end to end."""
 
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port(), age_to_delete=0.05)
+        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
         bq_dataset_id = env.add_dataset()
 
         # Create the Observatory environment and run tests
