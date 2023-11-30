@@ -98,7 +98,7 @@ class CrossrefMetadataRelease(SnapshotRelease):
         run_id = dict_["run_id"]
         snapshot_date = pendulum.parse(dict_["snapshot_date"])
         cloud_workspace = CloudWorkspace.from_dict(dict_["cloud_workspace"])
-        batch_size = dict_["run_id"]
+        batch_size = dict_["batch_size"]
         return CrossrefMetadataRelease(
             dag_id=dag_id,
             run_id=run_id,
@@ -263,7 +263,7 @@ def create_dag(
         @task.kubernetes(
             name="download",
             container_resources=V1ResourceRequirements(
-                requests={"memory": "4Gi", "cpu": "4"}, limits={"memory": "4Gi", "cpu": "4"}
+                requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
             ),
             secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
             **kubernetes_task_params,
@@ -308,7 +308,7 @@ def create_dag(
         @task.kubernetes(
             name="upload_downloaded",
             container_resources=V1ResourceRequirements(
-                requests={"memory": "4Gi", "cpu": "4"}, limits={"memory": "4Gi", "cpu": "4"}
+                requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
             ),
             **kubernetes_task_params,
         )
@@ -325,12 +325,12 @@ def create_dag(
             success = gcs_upload_files(
                 bucket_name=release.cloud_workspace.download_bucket, file_paths=[release.download_file_path]
             )
-            set_task_state(success, context["ti"].task_id, release)
+            set_task_state(success, "upload_downloaded", release)
 
         @task.kubernetes(
             name="extract",
             container_resources=V1ResourceRequirements(
-                requests={"memory": "30Gi", "cpu": "8"}, limits={"memory": "30Gi", "cpu": "8"}
+                requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
             ),
             **kubernetes_task_params,
         )
@@ -344,12 +344,13 @@ def create_dag(
             release = CrossrefMetadataRelease.from_dict(release)
             logging.info(f"Extract {release.download_file_path} to folder: {release.extract_folder}")
             process = subprocess.Popen(
-                ["tar", "-xv", "-I", '"pigz -d"', "-f", release.download_file_path, "-C", release.extract_folder],
+                ["tar", "-xv", "-I", "pigz -d", "-f", release.download_file_path, "-C", release.extract_folder],
                 shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
             )
+            # TODO: stream_process did not exit
             success = stream_process(process)
             if not success:
                 raise AirflowException(f"Error extracting {release.download_file_path}")
@@ -357,7 +358,7 @@ def create_dag(
         @task.kubernetes(
             name="transform",
             container_resources=V1ResourceRequirements(
-                requests={"memory": "30Gi", "cpu": "8"}, limits={"memory": "30Gi", "cpu": "8"}
+                requests={"memory": "8Gi", "cpu": "8"}, limits={"memory": "8Gi", "cpu": "8"}
             ),
             **kubernetes_task_params,
         )
@@ -370,7 +371,7 @@ def create_dag(
             from concurrent.futures import ProcessPoolExecutor, as_completed
             from natsort import natsorted
             from observatory.platform.files import list_files, get_chunks, clean_dir
-            from academic_observatory_workflows.workflows.crossref_metadata_telescope import CrossrefMetadataRelease
+            from academic_observatory_workflows.workflows.crossref_metadata_telescope import CrossrefMetadataRelease, transform_file
 
             release = CrossrefMetadataRelease.from_dict(release)
             logging.info(f"Transform input folder: {release.extract_folder}, output folder: {release.transform_folder}")
@@ -381,6 +382,7 @@ def create_dag(
             input_file_paths = natsorted(list_files(release.extract_folder, release.extract_files_regex))
 
             # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
+            print(f"Batch size: {release.batch_size}")
             for i, chunk in enumerate(get_chunks(input_list=input_file_paths, chunk_size=release.batch_size)):
                 with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
                     futures = []
@@ -398,10 +400,11 @@ def create_dag(
                         if finished % 1000 == 0:
                             logging.info(f"Transformed {finished} files")
 
+        # TODO: check CPU and memory usage
         @task.kubernetes(
             name="upload_transformed",
             container_resources=V1ResourceRequirements(
-                requests={"memory": "8Gi", "cpu": "8"}, limits={"memory": "8Gi", "cpu": "8"}
+                requests={"memory": "4Gi", "cpu": "4"}, limits={"memory": "4Gi", "cpu": "4"}
             ),
             **kubernetes_task_params,
         )
@@ -418,7 +421,7 @@ def create_dag(
             release = CrossrefMetadataRelease.from_dict(release)
             files_list = list_files(release.transform_folder, release.transform_files_regex)
             success = gcs_upload_files(bucket_name=release.cloud_workspace.transform_bucket, file_paths=files_list)
-            set_task_state(success, context["ti"].task_id, release)
+            set_task_state(success, "upload_transformed", release)
 
         @task
         def bq_load(release: dict, **context):
