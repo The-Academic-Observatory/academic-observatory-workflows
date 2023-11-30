@@ -568,7 +568,7 @@ class TestOpenAlexUtils(ObservatoryTestCase):
         # gives a new schema map from each data file that's been transformed.
         merged_schema_map = OrderedDict()
         for incoming in [schema_map1, schema_map2]:
-            merged_schema_map = merge_schema_maps(to_merge=incoming, old_schema=merged_schema_map)
+            merged_schema_map = merge_schema_maps(to_add=incoming, old=merged_schema_map)
         merged_schema = flatten_schema(merged_schema_map)
 
         self.assertTrue(bq_compare_schemas(actual=merged_schema, expected=expected))
