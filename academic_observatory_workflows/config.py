@@ -24,6 +24,7 @@ class Tag:
     """DAG tag."""
 
     academic_observatory = "academic-observatory"
+    data_quality = "data-quality"
 
 
 def test_fixtures_folder(*subdirs: str, workflow_module: Optional[str] = None) -> str:
