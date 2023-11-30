@@ -1236,19 +1236,19 @@ def merge_schema_maps(to_add: OrderedDict, old: OrderedDict) -> OrderedDict:
     """Using the SchemaGenerator from the bigquery_schema_generator library, merge the schemas found
     when from scanning through files into one large nested OrderedDict.
 
-    :param to_add: The incoming schema to add to the existing "old_schema".
+    :param to_add: The incoming schema to add to the existing "old" schema.
     :param old: The existing old schema with previously populated values.
     :return: The old schema with newly added fields.
     """
 
     schema_generator = SchemaGenerator()
 
-    # Initialise it with first result if it is empty.
-    if not old:
-        old = to_add.copy()
-    else:
+    if old:
         for key, value in to_add.items():
             old[key] = schema_generator.merge_schema_entry(old_schema_entry=old[key], new_schema_entry=value)
+    else:
+        # Initialise it with first result if it is empty
+        old = to_add.copy()
 
     return old
 
