@@ -1229,6 +1229,15 @@ def bq_compare_schemas(expected: List[dict], actual: List[dict], check_types_mat
             all_matched = False
             log_diff(diff_type, changes)
 
+        if "fields" in exp_field and not "fields" in act_field:
+            logging.info(f"Fields are present under expected but not in actual! Field name: {exp_field['name']}")
+            all_mathced = False
+        elif not "fields" in exp_field and "fields" in act_field:
+            logging.info(f"Fields are present under actual but not in expected! Field name: {act_field['name']}")
+            all_matched = False
+        elif "fields" in exp_field and "fields" in act_field:
+            all_matched = bq_compare_schemas(exp_field["fields"], act_field["fields"], check_types_match)
+
     return all_matched
 
 
