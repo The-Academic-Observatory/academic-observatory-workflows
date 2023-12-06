@@ -41,6 +41,16 @@
         "description": "APC converted to USD"
       },
       {
+        "mode": "NULLABLE",
+        "name": "value",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "value_usd",
+        "type": "INTEGER"
+      },
+      {
         "name": "provenance",
         "type": "STRING",
         "mode": "NULLABLE"
@@ -70,12 +80,32 @@
         "description": "APC converted to USD"
       },
       {
+        "mode": "NULLABLE",
+        "name": "value",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "value_usd",
+        "type": "INTEGER"
+      },
+      {
         "name": "provenance",
         "type": "STRING",
         "mode": "NULLABLE"
       }
     ],
     "description": "Object: Information about the paid APC (article processing charge) for this work. You can find the listed APC price (when we know it) for a given work using apc_list. However, authors don\u2019t always pay the listed price; often they get a discounted price from publishers. So it\u2019s useful to know the APC actually paid by authors, as distinct from the list price. This is our effort to provide this. Our best source for the actually paid price is the OpenAPC project. Where available, we use that data, and so apc_paid.provenance is openapc. Where OpenAPC data is unavailable (and unfortunately this is common) we make our best guess by assuming the author paid the APC list price, and apc_paid.provenance will be set to wherever we got the list price from."
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "authors_count",
+    "type": "INTEGER"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "authorships_truncated",
+    "type": "BOOLEAN"
   },
   {
     "name": "authorships",
@@ -113,6 +143,11 @@
         "type": "STRING",
         "mode": "NULLABLE",
         "description": "A summarized description of this author's position in the work's author list. Possible values are first, middle, and last. It's not strictly necessary, because author order is already implicitly recorded by the list order of Authorship objects; however it's useful in some contexts to have this as a categorical value."
+      },
+      {
+        "mode": "REPEATED",
+        "name": "countries",
+        "type": "STRING"
       },
       {
         "name": "institutions",
@@ -189,10 +224,25 @@
     "mode": "NULLABLE",
     "fields": [
       {
+        "mode": "NULLABLE",
+        "name": "doi",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "is_accepted",
+        "type": "BOOLEAN"
+      },
+      {
         "name": "is_oa",
         "type": "BOOLEAN",
         "mode": "NULLABLE",
         "description": "True if this work is Open Access (OA)."
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "is_published",
+        "type": "BOOLEAN"
       },
       {
         "name": "landing_page_url",
@@ -222,6 +272,16 @@
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The name of the source."
+          },
+          {
+            "mode": "REPEATED",
+            "name": "host_institution_lineage",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "host_institution_lineage_names",
+            "type": "STRING"
           },
           {
             "name": "host_organization",
@@ -260,6 +320,11 @@
             "description": "Whether this is a journal listed in the Directory of Open Access Journals (DOAJ)."
           },
           {
+            "name": "is_oa",
+            "type": "BOOLEAN",
+            "mode": "NULLABLE"
+          },
+          {
             "name": "issn",
             "type": "STRING",
             "mode": "REPEATED",
@@ -275,13 +340,23 @@
             "name": "publisher",
             "type": "STRING",
             "mode": "NULLABLE",
-            "description": ""
+            "description": "The publisher name."
           },
           {
             "name": "publisher_id",
             "type": "STRING",
             "mode": "NULLABLE",
-            "description": ""
+            "description": "The OpenAlex ID of the publisher."
+          },
+          {
+            "mode": "REPEATED",
+            "name": "publisher_lineage",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "publisher_lineage_names",
+            "type": "STRING"
           },
           {
             "name": "type",
@@ -379,6 +454,11 @@
     "description": "List of dehydrated Concept objects. \nEach Concept object in the list also has one additional property"
   },
   {
+    "mode": "NULLABLE",
+    "name": "concepts_count",
+    "type": "INTEGER"
+  },
+  {
     "name": "corresponding_author_ids",
     "type": "STRING",
     "mode": "REPEATED",
@@ -441,6 +521,16 @@
     "description": "The DOI for the work. This is the Canonical External ID for works.\nOccasionally, a work has more than one DOI--for example, there might be one DOI for a preprint version hosted on bioRxiv, and another DOI for the published version. However, this field always has just one DOI, the DOI for the published work."
   },
   {
+    "mode": "NULLABLE",
+    "name": "doi_registration_agency",
+    "type": "STRING"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "fulltext_origin",
+    "type": "STRING"
+  },
+  {
     "name": "grants",
     "type": "RECORD",
     "mode": "REPEATED",
@@ -464,6 +554,11 @@
     "description": "List of grant objects, which include the Funder and the award ID, if available. Our grants data comes from Crossref, and is currently fairly limited."
   },
   {
+    "mode": "NULLABLE",
+    "name": "has_fulltext",
+    "type": "BOOLEAN"
+  },
+  {
     "name": "id",
     "type": "STRING",
     "mode": "NULLABLE",
@@ -474,6 +569,11 @@
     "type": "RECORD",
     "mode": "NULLABLE",
     "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "arxiv_id",
+        "type": "STRING"
+      },
       {
         "name": "doi",
         "type": "STRING",
@@ -543,6 +643,11 @@
     "mode": "REPEATED",
     "fields": [
       {
+        "mode": "NULLABLE",
+        "name": "doi",
+        "type": "STRING"
+      },
+      {
         "name": "is_accepted",
         "type": "BOOLEAN",
         "mode": "NULLABLE",
@@ -590,6 +695,16 @@
             "description": "The name of the source."
           },
           {
+            "mode": "REPEATED",
+            "name": "host_institution_lineage",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "host_institution_lineage_names",
+            "type": "STRING"
+          },
+          {
             "name": "host_organization",
             "type": "STRING",
             "mode": "NULLABLE",
@@ -626,6 +741,11 @@
             "description": "Whether this is a journal listed in the Directory of Open Access Journals (DOAJ)."
           },
           {
+            "name": "is_oa",
+            "type": "BOOLEAN",
+            "mode": "NULLABLE"
+          },
+          {
             "name": "issn",
             "type": "STRING",
             "mode": "REPEATED",
@@ -647,7 +767,17 @@
             "name": "publisher_id",
             "type": "STRING",
             "mode": "NULLABLE",
-            "description": "The OpenAlex publisher ID."
+            "description": "The OpenAlex ID of the publisher."
+          },
+          {
+            "mode": "REPEATED",
+            "name": "publisher_lineage",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "publisher_lineage_names",
+            "type": "STRING"
           },
           {
             "name": "type",
@@ -742,10 +872,25 @@
     "mode": "NULLABLE",
     "fields": [
       {
+        "mode": "NULLABLE",
+        "name": "doi",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "is_accepted",
+        "type": "BOOLEAN"
+      },
+      {
         "name": "is_oa",
         "type": "BOOLEAN",
         "mode": "NULLABLE",
         "description": "True if this work is Open Access (OA)."
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "is_published",
+        "type": "BOOLEAN"
       },
       {
         "name": "landing_page_url",
@@ -775,6 +920,16 @@
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The name of the source."
+          },
+          {
+            "mode": "REPEATED",
+            "name": "host_institution_lineage",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "host_institution_lineage_names",
+            "type": "STRING"
           },
           {
             "name": "host_organization",
@@ -813,6 +968,11 @@
             "description": "Whether this is a journal listed in the Directory of Open Access Journals (DOAJ)."
           },
           {
+            "name": "is_oa",
+            "type": "BOOLEAN",
+            "mode": "NULLABLE"
+          },
+          {
             "name": "issn",
             "type": "STRING",
             "mode": "REPEATED",
@@ -835,6 +995,16 @@
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The OpenAlex ID of the publisher."
+          },
+          {
+            "mode": "REPEATED",
+            "name": "publisher_lineage",
+            "type": "STRING"
+          },
+          {
+            "mode": "REPEATED",
+            "name": "publisher_lineage_names",
+            "type": "STRING"
           },
           {
             "name": "type",
@@ -870,6 +1040,11 @@
     "type": "STRING",
     "mode": "REPEATED",
     "description": "OpenAlex IDs for works that this work cites. These are citations that go from this work out to another work: This work \u279e Other works."
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "referenced_works_count",
+    "type": "INTEGER"
   },
   {
     "name": "related_works",
@@ -975,6 +1150,11 @@
     "description": "Legacy type information, using Crossref's \"type\" controlled vocabulary."
   },
   {
+    "mode": "NULLABLE",
+    "name": "updated",
+    "type": "TIMESTAMP"
+  },
+  {
     "name": "updated_date",
     "type": "TIMESTAMP",
     "mode": "NULLABLE",
@@ -994,8 +1174,20 @@
   },
   {
     "name": "keywords",
-    "type": "STRING",
-    "mode": "REPEATED"
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "mode": "NULLABLE",
+        "name": "keyword",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "score",
+        "type": "FLOAT"
+      }
+    ]
   },
   {
     "name": "cited_by_percentile_year",
