@@ -30,7 +30,6 @@ from functools import partial
 from datetime import timedelta
 from collections import OrderedDict
 from json.encoder import JSONEncoder
-from mergedeep import merge, Strategy
 from typing import List, Dict, Tuple, Optional, Any
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from bigquery_schema_generator.generate_schema import SchemaGenerator, flatten_schema_map
@@ -65,7 +64,7 @@ from observatory.platform.bigquery import (
 )
 from observatory.platform.observatory_environment import log_diff
 from observatory.platform.config import AirflowConns
-from observatory.platform.files import clean_dir, load_jsonl
+from observatory.platform.files import clean_dir
 from observatory.platform.gcs import (
     gcs_create_aws_transfer,
     gcs_upload_transfer_manifest,
@@ -678,8 +677,9 @@ class OpenAlexTelescope(Workflow):
             max_processes = self.max_processes
         logging.info(f"{task_id}: transforming files for OpenAlexEntity({entity_name}), no. workers: {max_processes}")
 
-        # Merge function only expects dicts, not lists.
-        merged_schema = {"schema": []}
+        # Initialise schema generator
+        merged_schema_map = OrderedDict()
+
         with ProcessPoolExecutor(max_workers=max_processes) as executor:
             futures = []
             for entry in entity.current_entries:
@@ -687,18 +687,20 @@ class OpenAlexTelescope(Workflow):
                 output_path = os.path.join(release.transform_folder, entry.object_key)
                 futures.append(executor.submit(transform_file, input_path, output_path))
             for future in as_completed(futures):
-                result, schema_error = future.result()
-                generated_schema = {"schema": result}
+                schema_map, schema_error = future.result()
 
                 if schema_error:
                     logging.info(f"Error generating schema from transformed data, please investigate: {schema_error}")
 
-                # Merge the schemas together (some part files may contain more keys/fields than others).
-                merged_schema = merge(merged_schema, generated_schema, strategy=Strategy.ADDITIVE)
+                # Merge the schemas from each process. Each data file could have more fields than others.
+                merged_schema_map = merge_schema_maps(to_add=schema_map, old=merged_schema_map)
+
+        # Flatten schema from nested OrderedDicts to a regular Bigquery schema.
+        merged_schema = flatten_schema(schema_map=merged_schema_map)
 
         # Save schema to file
         with open(entity.generated_schema_path, mode="w") as f_out:
-            json.dump(merged_schema["schema"], f_out, indent=2)
+            json.dump(merged_schema, f_out, indent=2)
 
     def upload_schema(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Upload the generated schema from the transform step to GCS."""
@@ -1092,7 +1094,7 @@ def fetch_merged_ids(
     return results
 
 
-def transform_file(download_path: str, transform_path: str) -> Tuple[dict, list]:
+def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict, list]:
     """Transforms a single file.
     Each entry/object in the gzip input file is transformed and the transformed object is immediately written out to
     a gzip file. For each entity only one field has to be transformed.
@@ -1101,14 +1103,16 @@ def transform_file(download_path: str, transform_path: str) -> Tuple[dict, list]
     using the ScehmaGenerator from the 'bigquery_schema_generator' package.
 
     :param download_path: The path to the file with the OpenAlex entries.
-    :param transform_path: The path where transformed data will be saved
-    :return: schema. A BQ style schema generated from the transformed records.
+    :param transform_path: The path where transformed data will be saved.
+    :return: schema_map. A nested OrderedDict object produced by the SchemaGenertaor.
+    :return: schema_generator.error_logs: Possible error logs produced by the SchemaGenerator.
     """
 
     # Make base folder, e.g. authors/updated_date=2023-09-17
     base_folder = os.path.dirname(transform_path)
     os.makedirs(base_folder, exist_ok=True)
 
+    # Initialise the schema generator.
     schema_map = OrderedDict()
     schema_generator = SchemaGenerator(input_format="dict")
 
@@ -1118,6 +1122,8 @@ def transform_file(download_path: str, transform_path: str) -> Tuple[dict, list]
         for obj in reader.iter(skip_empty=True):
             transform_object(obj)
 
+            # Wrap this in a try and pass so that it doesn't
+            # cause the transform step to fail unexpectedly.
             try:
                 schema_generator.deduce_schema_for_record(obj, schema_map)
             except Exception:
@@ -1128,10 +1134,7 @@ def transform_file(download_path: str, transform_path: str) -> Tuple[dict, list]
 
     logging.info(f"Finished transform, saved to {transform_path}")
 
-    # Convert schema from nested OrderedDicts to regular dictionaries
-    schema = flatten_schema(schema_map)
-
-    return schema, schema_generator.error_logs
+    return schema_map, schema_generator.error_logs
 
 
 def transform_object(obj: dict):
@@ -1222,12 +1225,41 @@ def bq_compare_schemas(expected: List[dict], actual: List[dict], check_types_mat
     for exp_field, act_field in zip(expected, actual):
         # Ignore the "mode" and "description" definitions in fields as they are not required for check.
         diff = DeepDiff(exp_field, act_field, ignore_order=True, exclude_regex_paths=r"\s*(description|mode)")
-        logging.info(f"Differeneces in the fields: {exp_field}")
         for diff_type, changes in diff.items():
             all_matched = False
             log_diff(diff_type, changes)
 
+        if "fields" in exp_field and not "fields" in act_field:
+            logging.info(f"Fields are present under expected but not in actual! Field name: {exp_field['name']}")
+            all_mathced = False
+        elif not "fields" in exp_field and "fields" in act_field:
+            logging.info(f"Fields are present under actual but not in expected! Field name: {act_field['name']}")
+            all_matched = False
+        elif "fields" in exp_field and "fields" in act_field:
+            all_matched = bq_compare_schemas(exp_field["fields"], act_field["fields"], check_types_match)
+
     return all_matched
+
+
+def merge_schema_maps(to_add: OrderedDict, old: OrderedDict) -> OrderedDict:
+    """Using the SchemaGenerator from the bigquery_schema_generator library, merge the schemas found
+    when from scanning through files into one large nested OrderedDict.
+
+    :param to_add: The incoming schema to add to the existing "old" schema.
+    :param old: The existing old schema with previously populated values.
+    :return: The old schema with newly added fields.
+    """
+
+    schema_generator = SchemaGenerator()
+
+    if old:
+        for key, value in to_add.items():
+            old[key] = schema_generator.merge_schema_entry(old_schema_entry=old[key], new_schema_entry=value)
+    else:
+        # Initialise it with first result if it is empty
+        old = to_add.copy()
+
+    return old
 
 
 def flatten_schema(schema_map: OrderedDict) -> dict:
