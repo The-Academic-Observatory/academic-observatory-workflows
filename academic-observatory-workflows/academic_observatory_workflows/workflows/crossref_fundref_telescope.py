@@ -137,7 +137,6 @@ def create_dag(
     dataset_description: str = "The Crossref Funder Registry dataset: https://www.crossref.org/services/funder-registry/",
     table_description: str = "The Crossref Funder Registry dataset: https://www.crossref.org/services/funder-registry/",
     observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
-    gcp_conn_id: str = AirflowConns.GCP_CONN_ID,
     start_date: pendulum.DateTime = pendulum.datetime(2014, 2, 23),
     schedule: str = "@weekly",
     catchup: bool = True,
@@ -156,7 +155,6 @@ def create_dag(
     :param dataset_description: description for the BigQuery dataset.
     :param table_description: description for the BigQuery table.
     :param observatory_api_conn_id: the Observatory API connection key.
-    :param gcp_conn_id: the Google Cloud connection ID.
     :param start_date: the start date of the DAG.
     :param schedule: the schedule interval of the DAG.
     :param catchup: whether to catchup the DAG or not.
@@ -220,7 +218,7 @@ def create_dag(
         @task_group(group_id="process_release")
         def process_release(data):
             @task
-            def download(release: Dict, **context):
+            def download(release: dict, **context):
                 """Downloads release tar.gz file from url."""
 
                 release = CrossrefFundrefRelease.from_dict(release, cloud_workspace=cloud_workspace)
@@ -266,7 +264,7 @@ def create_dag(
                     )
 
             @task
-            def transform(release: Dict, **context):
+            def transform(release: dict, **context):
                 """Transforms release by storing file content in gzipped json format. Relationships between funders are added."""
 
                 release = CrossrefFundrefRelease.from_dict(release, cloud_workspace=cloud_workspace)
@@ -314,7 +312,7 @@ def create_dag(
                     )
 
             @task
-            def bq_load(release: Dict, **context):
+            def bq_load(release: dict, **context):
                 """Load the data into BigQuery."""
 
                 release = CrossrefFundrefRelease.from_dict(release, cloud_workspace=cloud_workspace)
@@ -344,7 +342,7 @@ def create_dag(
                 set_task_state(success, context["ti"].task_id, release)
 
             @task
-            def add_new_dataset_releases(release: Dict, **context):
+            def add_new_dataset_releases(release: dict, **context):
                 """Adds release information to API."""
 
                 release = CrossrefFundrefRelease.from_dict(release, cloud_workspace=cloud_workspace)
@@ -360,7 +358,7 @@ def create_dag(
                 api.post_dataset_release(dataset_release)
 
             @task
-            def cleanup(release: Dict, **context):
+            def cleanup(release: dict, **context):
                 """Delete all files, folders and XComs associated with this release."""
 
                 release = CrossrefFundrefRelease.from_dict(release, cloud_workspace=cloud_workspace)
@@ -370,7 +368,7 @@ def create_dag(
 
             download(data) >> transform(data) >> bq_load(data) >> add_new_dataset_releases(data) >> cleanup(data)
 
-        check_task = check_dependencies(airflow_conns=[observatory_api_conn_id, gcp_conn_id])
+        check_task = check_dependencies(airflow_conns=[observatory_api_conn_id])
         fetch_releases_task = fetch_releases()
         process_release_tg = process_release.expand(data=fetch_releases_task)
 
@@ -494,7 +492,7 @@ def new_funder_template():
     }
 
 
-def parse_fundref_registry_rdf(registry_file_path: str) -> Tuple[List, Dict]:
+def parse_fundref_registry_rdf(registry_file_path: str) -> Tuple[List, dic]:
     """Helper function to parse a fundref registry rdf file and to return a python list containing each funder.
 
     :param registry_file_path: the filename of the registry.rdf file to be parsed.
