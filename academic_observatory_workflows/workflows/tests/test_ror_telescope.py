@@ -237,21 +237,19 @@ class TestRorTelescope(ObservatoryTestCase):
         start_date = pendulum.datetime(2023, 3, 16)
         end_date = pendulum.datetime(2023, 4, 12)
 
-        with vcr.use_cassette(
-            test_fixtures_folder(self.dag_id, "list_ror_records.yaml"),
-        ):
+        with vcr.use_cassette(test_fixtures_folder(self.dag_id, "list_ror_records.yaml")):
             records = list_ror_records(self.ror_conceptrecid, start_date, end_date)
             self.assertEqual(2, len(records))
             self.assertEqual(
                 [
                     {
                         "snapshot_date": "20230330",
-                        "url": "https://zenodo.org/api/files/a07c49b9-cfc3-47fc-a9db-e86017139af3/v1.22-2023-03-30-ror-data.zip",
+                        "url": "https://zenodo.org/api/records/7787102/files/v1.22-2023-03-30-ror-data.zip/content",
                         "checksum": "md5:019db485a7a88293851e91a0c4aa4206",
                     },
                     {
                         "snapshot_date": "20230316",
-                        "url": "https://zenodo.org/api/files/2f01ec70-346b-4555-a15b-e55a9febdc82/v1.21-2023-03-16-ror-data.zip",
+                        "url": "https://zenodo.org/api/records/7742581/files/v1.21-2023-03-16-ror-data.zip/content",
                         "checksum": "md5:2f24c6cf13186b4688ffa0f27abf2b5b",
                     },
                 ],
