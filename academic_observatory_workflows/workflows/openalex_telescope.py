@@ -59,6 +59,7 @@ from observatory.platform.bigquery import (
     bq_sharded_table_id,
     bq_table_exists,
     bq_upsert_records,
+    bq_update_table_description,
 )
 from observatory.platform.config import AirflowConns
 from observatory.platform.files import clean_dir
@@ -79,19 +80,7 @@ from observatory.platform.workflows.workflow import (
     cleanup,
 )
 
-
-def bq_set_table_expiry(*, table_id: str, days: int):
-    """Set the expiry time for a BigQuery table.
-
-    :param table_id: the fully qualified BigQuery table identifier.
-    :param days: the number of days from now until the table expires.
-    :return:
-    """
-
-    client = bigquery.Client()
-    table = bigquery.Table(table_id)
-    table.expires = pendulum.now().add(days=days)
-    client.update_table(table, ["expires"])
+TEMP_TABLE_DESCRIPTION = "Temporary table for internal use. Do not use."
 
 
 class OpenAlexEntity:
@@ -675,6 +664,9 @@ class OpenAlexTelescope(Workflow):
                 f"{task_id}: error creating backup snapshot for {entity.bq_main_table_id} as {entity.bq_snapshot_table_id} expiring on {expiry_date}"
             )
 
+        # Add a description to the snapshot table
+        bq_update_table_description(table_id=entity.bq_snapshot_table_id, description=TEMP_TABLE_DESCRIPTION)
+
     def transform(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
         """Transform all files for the Work, Concept and Institution entities. Transforms one file per process.
 
@@ -790,9 +782,11 @@ class OpenAlexTelescope(Workflow):
 
         table_name = "main"
         table_id = entity.bq_main_table_id
+        description = entity.table_description
         if not release.is_first_run:
             table_name = "upsert"
             table_id = entity.bq_upsert_table_id
+            description = TEMP_TABLE_DESCRIPTION
             if entity is None:
                 raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
 
@@ -809,6 +803,7 @@ class OpenAlexTelescope(Workflow):
             source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
             write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
             ignore_unknown_values=True,
+            table_description=description,
         )
         if not success:
             raise AirflowException(
@@ -865,6 +860,7 @@ class OpenAlexTelescope(Workflow):
             csv_skip_leading_rows=1,
             write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
             ignore_unknown_values=True,
+            table_description=TEMP_TABLE_DESCRIPTION,
         )
         if not success:
             raise AirflowException(
@@ -1335,3 +1331,17 @@ def load_json(file_path: str) -> Any:
         data = json.load(f_in)
 
     return data
+
+
+def bq_set_table_expiry(*, table_id: str, days: int):
+    """Set the expiry time for a BigQuery table.
+
+    :param table_id: the fully qualified BigQuery table identifier.
+    :param days: the number of days from now until the table expires.
+    :return:
+    """
+
+    client = bigquery.Client()
+    table = bigquery.Table(table_id)
+    table.expires = pendulum.now().add(days=days)
+    client.update_table(table, ["expires"])
