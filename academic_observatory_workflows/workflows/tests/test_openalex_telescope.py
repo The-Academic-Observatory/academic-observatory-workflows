@@ -21,17 +21,18 @@ import json
 import os
 import pathlib
 import tempfile
+from collections import OrderedDict
 from typing import Dict
 from unittest.mock import patch
 
 import boto3
 import pendulum
-from collections import OrderedDict
 from airflow.models import Connection
 from airflow.utils.state import State
-from click.testing import CliRunner
-from google.cloud.exceptions import NotFound
 from bigquery_schema_generator.generate_schema import SchemaGenerator
+from click.testing import CliRunner
+from google.cloud import bigquery
+from google.cloud.exceptions import NotFound
 
 from academic_observatory_workflows.config import test_fixtures_folder
 from academic_observatory_workflows.workflows.openalex_telescope import (
@@ -41,7 +42,6 @@ from academic_observatory_workflows.workflows.openalex_telescope import (
     Manifest,
     Meta,
     MergedId,
-    load_json,
     transform_object,
     s3_uri_parts,
     OpenAlexEntity,
@@ -54,9 +54,9 @@ from academic_observatory_workflows.workflows.openalex_telescope import (
 from academic_observatory_workflows.workflows.openalex_telescope import (
     parse_release_msg,
 )
-from observatory.platform.config import AirflowConns
 from observatory.platform.api import get_dataset_releases
 from observatory.platform.bigquery import bq_table_id, bq_sharded_table_id
+from observatory.platform.config import AirflowConns
 from observatory.platform.files import save_jsonl_gz, load_file, load_jsonl
 from observatory.platform.gcs import gcs_blob_name_from_path
 from observatory.platform.observatory_config import Workflow, CloudWorkspace
@@ -321,8 +321,8 @@ class TestOpenAlexUtils(ObservatoryTestCase):
             # schema_file_path
             self.assertTrue(entity.schema_file_path.endswith("authors.json"))
 
-            # upsert_uri
-            self.assertTrue(entity.upsert_uri.endswith("data/authors/*"))
+            # data_uri
+            self.assertTrue(entity.data_uri.endswith("data/authors/*"))
 
             # merged_ids_uri
             self.assertTrue(entity.merged_ids_uri.endswith("data/merged_ids/authors/*"))
@@ -700,7 +700,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             "upload_schema",
             "compare_schemas",
             "upload",
-            "bq_load_upserts",
+            "bq_load_table",
             "bq_upsert_records",
             "bq_load_deletes",
             "bq_delete_records",
@@ -895,12 +895,13 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             file_path = os.path.join(release.transform_folder, entry.object_key)
                             self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
 
-                        ti = env.run_task(f"{entity.entity_name}.bq_load_upserts")
+                        ti = env.run_task(f"{entity.entity_name}.bq_load_table")
                         self.assertEqual(State.SUCCESS, ti.state)
-                        self.assert_table_integrity(entity.bq_upsert_table_id, 4)
+                        self.assert_table_integrity(entity.bq_main_table_id, 4)
+                        self.assertIsNone(get_table_expiry(entity.bq_main_table_id))
 
                         ti = env.run_task(f"{entity.entity_name}.bq_upsert_records")
-                        self.assertEqual(State.SUCCESS, ti.state)
+                        self.assertEqual(State.SKIPPED, ti.state)
                         self.assert_table_integrity(entity.bq_main_table_id, 4)
 
                         # These two don't do anything on the first run
@@ -959,7 +960,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             "upload_schema",
                             "compare_schemas",
                             "upload",
-                            "bq_load_upserts",
+                            "bq_load_table",
                             "bq_upsert_records",
                             "bq_load_deletes",
                             "bq_delete_records",
@@ -1114,10 +1115,9 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
                         ti = env.run_task(f"{entity.entity_name}.upload_schema")
                         self.assertEqual(State.SUCCESS, ti.state)
-                        for entry in entity.current_entries:
-                            self.assert_blob_exists(
-                                env.transform_bucket, gcs_blob_name_from_path(entity.generated_schema_path)
-                            )
+                        self.assert_blob_exists(
+                            env.transform_bucket, gcs_blob_name_from_path(entity.generated_schema_path)
+                        )
 
                         ti = env.run_task(f"{entity.entity_name}.compare_schemas")
                         self.assertEqual(State.SUCCESS, ti.state)
@@ -1128,7 +1128,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             file_path = os.path.join(release.transform_folder, entry.object_key)
                             self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
 
-                        ti = env.run_task(f"{entity.entity_name}.bq_load_upserts")
+                        ti = env.run_task(f"{entity.entity_name}.bq_load_table")
                         self.assertEqual(State.SUCCESS, ti.state)
                         expected_row_index = {
                             "authors": 3,
@@ -1141,6 +1141,13 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         }
                         expected_rows = expected_row_index[entity.entity_name]
                         self.assert_table_integrity(entity.bq_upsert_table_id, expected_rows)
+                        self.assertIsNone(get_table_expiry(entity.bq_main_table_id))
+                        table_expiry = get_table_expiry(entity.bq_upsert_table_id)
+                        self.assertIsNotNone(table_expiry)
+                        self.assertEqual(
+                            pendulum.now().date(),
+                            pendulum.instance(table_expiry).subtract(days=workflow.temp_table_expiry_days).date(),
+                        )
 
                         ti = env.run_task(f"{entity.entity_name}.bq_upsert_records")
                         self.assertEqual(State.SUCCESS, ti.state)
@@ -1150,6 +1157,13 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         if entity.has_merged_ids:
                             self.assertEqual(State.SUCCESS, ti.state)
                             self.assert_table_integrity(entity.bq_delete_table_id, 1)
+
+                            table_expiry = get_table_expiry(entity.bq_delete_table_id)
+                            self.assertIsNotNone(table_expiry)
+                            self.assertEqual(
+                                pendulum.now().date(),
+                                pendulum.instance(table_expiry).subtract(days=workflow.temp_table_expiry_days).date(),
+                            )
                         else:
                             self.assertEqual(State.SKIPPED, ti.state)
                             with self.assertRaises(NotFound):
@@ -1198,3 +1212,9 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
                     ti = env.run_task("dag_run_complete")
                     self.assertEqual(State.SUCCESS, ti.state)
+
+
+def get_table_expiry(table_id: str):
+    client = bigquery.Client()
+    table = client.get_table(table_id)
+    return table.expires
