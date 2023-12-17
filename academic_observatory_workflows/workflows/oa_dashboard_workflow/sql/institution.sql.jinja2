@@ -13,7 +13,7 @@ SELECT
   CAST(NULL AS STRING) as logo_md,
   CAST(NULL AS STRING) as logo_lg,
   (SELECT * from ror.links LIMIT 1) AS url,
-  ror.wikipedia_url,
+  REGEXP_REPLACE(ror.wikipedia_url, r'^http://', 'https://') AS wikipedia_url,
   country.region as region,
   country.subregion as subregion,
   country.alpha3 as country_code,

@@ -71,7 +71,7 @@ from observatory.platform.workflows.workflow import Workflow, make_snapshot_date
 from observatory.platform.workflows.workflow import cleanup
 
 WORKFLOW_MODULE = "oa_dashboard_workflow"
-INCLUSION_THRESHOLD = {"country": 15, "institution": 1000}
+INCLUSION_THRESHOLD = {"country": 5, "institution": 50}
 MAX_REPOSITORIES = 200
 START_YEAR = 2000
 END_YEAR = pendulum.now().year - 1
