@@ -920,10 +920,11 @@ def make_entity_stats(entities: List[Dict]) -> EntityStats:
     data, bins = np.histogram(p_outputs_open, bins="auto")
     hist_p_outputs_open = Histogram(data.tolist(), bins.tolist())
 
-    data, bins = np.histogram(np.log10(n_outputs[n_outputs != 0]), bins="auto")
+    # Make log10 shifted histograms. Add 1 to values to make consistent with UI
+    data, bins = np.histogram(np.log10(n_outputs + 1), bins="auto")
     hist_n_outputs = Histogram(data.tolist(), bins.tolist())
 
-    data, bins = np.histogram(np.log10(n_outputs_open[n_outputs_open != 0]), bins="auto")
+    data, bins = np.histogram(np.log10(n_outputs_open + 1), bins="auto")
     hist_n_outputs_open = Histogram(data.tolist(), bins.tolist())
 
     return EntityStats(
