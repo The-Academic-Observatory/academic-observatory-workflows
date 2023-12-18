@@ -71,7 +71,7 @@ from observatory.platform.workflows.workflow import Workflow, make_snapshot_date
 from observatory.platform.workflows.workflow import cleanup
 
 WORKFLOW_MODULE = "oa_dashboard_workflow"
-INCLUSION_THRESHOLD = {"country": 15, "institution": 1000}
+INCLUSION_THRESHOLD = {"country": 5, "institution": 50}
 MAX_REPOSITORIES = 200
 START_YEAR = 2000
 END_YEAR = pendulum.now().year - 1
@@ -920,10 +920,11 @@ def make_entity_stats(entities: List[Dict]) -> EntityStats:
     data, bins = np.histogram(p_outputs_open, bins="auto")
     hist_p_outputs_open = Histogram(data.tolist(), bins.tolist())
 
-    data, bins = np.histogram(np.log10(n_outputs[n_outputs != 0]), bins="auto")
+    # Make log10 shifted histograms. Add 1 to values to make consistent with UI
+    data, bins = np.histogram(np.log10(n_outputs + 1), bins="auto")
     hist_n_outputs = Histogram(data.tolist(), bins.tolist())
 
-    data, bins = np.histogram(np.log10(n_outputs_open[n_outputs_open != 0]), bins="auto")
+    data, bins = np.histogram(np.log10(n_outputs_open + 1), bins="auto")
     hist_n_outputs_open = Histogram(data.tolist(), bins.tolist())
 
     return EntityStats(

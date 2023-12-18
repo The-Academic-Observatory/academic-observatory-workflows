@@ -12,7 +12,7 @@ SELECT
   FORMAT("logos/country/sm/%s.svg", country.alpha3) as logo_sm,
   FORMAT("logos/country/md/%s.svg", country.alpha3) as logo_md,
   FORMAT("logos/country/md/%s.svg", country.alpha3) as logo_lg,
-  country.wikipedia_url,
+  REGEXP_REPLACE(country.wikipedia_url, r'^http://', 'https://') AS wikipedia_url,
   country.region as region,
   country.subregion as subregion,
   (SELECT MIN(year_struct.year) FROM UNNEST(years_agg.years) as year_struct) as start_year,
