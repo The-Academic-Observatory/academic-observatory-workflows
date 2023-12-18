@@ -546,7 +546,12 @@ class PubMedTelescope(Workflow):
         updatefiles_xml_gz = [file for file in updatefiles_list if file.endswith(".xml.gz")]
 
         # Determine start date for the new data interval period for this run.
-        release_interval_end = pendulum.instance(kwargs["execution_date"])
+        release_interval_end = pendulum.instance(kwargs["data_interval_end"])
+        if baseline_upload_date > release_interval_end:
+            raise AirflowException(
+                f"Baseline_upload_date: {baseline_upload_date} is after the release_interval_end: {release_interval_end}!"
+            )
+
         logging.info(f"release_interval_end from workflow: {release_interval_end}")
         if is_first_run:
             assert (
@@ -561,7 +566,6 @@ class PubMedTelescope(Workflow):
             ), f"fetch_releases: there should be at least 1 DatasetRelease in the Observatory API after the first DAG run"
 
             release_interval_start = baseline_upload_date
-
         else:
             assert (
                 len(dataset_releases) >= 1
@@ -618,7 +622,7 @@ class PubMedTelescope(Workflow):
         # Sort from oldest to newest using the file index
         files_to_download.sort(key=lambda c: c.file_index, reverse=False)
 
-        # Check that all updatefiles pulled from the FTP server are not missing any between start_index and end_index.
+        # Check that all baseline/updatefiles pulled from the FTP server are not missing any between start_index and end_index.
         # e.g. 10, 11, 13, 14 - will throw an error.
         file_index_prev = files_to_download[0].file_index
         logging.info(f"Starting datafile file_index: {file_index_prev}")
