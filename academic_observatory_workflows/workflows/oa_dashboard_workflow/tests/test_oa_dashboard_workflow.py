@@ -144,8 +144,12 @@ class TestFunctions(TestCase):
             median=dict(p_outputs_open=50),
             histograms=EntityHistograms(
                 p_outputs_open=Histogram(data=[2, 0, 1], bins=[30.0, 53.33333333333333, 76.66666666666666, 100.0]),
-                n_outputs=Histogram(data=[1, 1, 1], bins=[1.0, 1.6666666666666665, 2.333333333333333, 3.0]),
-                n_outputs_open=Histogram(data=[1, 1, 1], bins=[1.0, 1.6666666666666665, 2.333333333333333, 3.0]),
+                n_outputs=Histogram(
+                    data=[1, 1, 1], bins=[1.041392685158225, 1.6944064825985894, 2.3474202800389543, 3.000434077479319]
+                ),
+                n_outputs_open=Histogram(
+                    data=[1, 1, 1], bins=[1.041392685158225, 1.6944064825985894, 2.3474202800389543, 3.000434077479319]
+                ),
             ),
         )
         self.assertEqual(expected_stats, stats)
