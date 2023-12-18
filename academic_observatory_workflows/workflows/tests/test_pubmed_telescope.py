@@ -408,15 +408,13 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                     ##### BASELINE #####
 
-                    baseline = [datafile for datafile in release.datafile_list if datafile.baseline]
-
                     ### Download baseline ###
                     task_id = workflow.download_baseline.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Loop through downloaded baseline files, check that they exist and that hashes match.
-                    for datafile in baseline:
+                    for datafile in release.baseline_files:
                         self.assertTrue(os.path.exists(datafile.download_file_path))
                         with open(datafile.download_file_path, "rb") as f_hash:
                             data = f_hash.read()
@@ -429,7 +427,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    for datafile in baseline:
+                    for datafile in release.baseline_files:
                         self.assert_blob_integrity(
                             env.download_bucket,
                             gcs_blob_name_from_path(datafile.download_file_path),
@@ -441,7 +439,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    for datafile in baseline:
+                    for datafile in release.baseline_files:
                         self.assertTrue(os.path.exists(datafile.transform_baseline_file_path))
 
                     ### Upload transformed baseline ###
@@ -450,7 +448,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Get list of transformed files for upload.
-                    file_paths = [datafile.transform_baseline_file_path for datafile in baseline if datafile.baseline]
+                    file_paths = [datafile.transform_baseline_file_path for datafile in release.baseline_files]
 
                     for file in file_paths:
                         logging.info(f"Transform_file_path - {file}")
@@ -472,15 +470,13 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                     ##### UPDATEFILES #####
 
-                    updatefiles = [datafile for datafile in release.datafile_list if not datafile.baseline]
-
                     ### Download updatefiles ###
                     task_id = workflow.download_updatefiles.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Loop through downloaded baseline files, check that they exist and that hashes match.
-                    for datafile in updatefiles:
+                    for datafile in release.updatefiles:
                         self.assertTrue(os.path.exists(datafile.download_file_path))
                         with open(datafile.download_file_path, "rb") as f_hash:
                             data = f_hash.read()
@@ -493,7 +489,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    for datafile in updatefiles:
+                    for datafile in release.updatefiles:
                         self.assert_blob_integrity(
                             env.download_bucket,
                             gcs_blob_name_from_path(datafile.download_file_path),
@@ -506,7 +502,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # This step pulls out the upserts from the updatefiles and writes them as *.jsonl
-                    for datafile in updatefiles:
+                    for datafile in release.updatefiles:
                         self.assertTrue(os.path.exists(datafile.transform_upsert_file_path))
 
                     ### Merge upserts and deletes ###
@@ -516,12 +512,12 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                     # Check that the merged upserts and deletes have been written to disk.
                     self.assertTrue(os.path.exists(release.merged_delete_file_path))
-                    for datafile in updatefiles:
+                    for datafile in release.updatefiles:
                         self.assertTrue(os.path.exists(datafile.merged_upsert_file_path))
 
                     ##### UPSERTS #####
 
-                    file_paths = [datafile.merged_upsert_file_path for datafile in updatefiles if not datafile.baseline]
+                    file_paths = [datafile.merged_upsert_file_path for datafile in release.updatefiles]
 
                     ### Upload merged upsert records ###
                     task_id = workflow.upload_merged_upsert_records.__name__
@@ -706,8 +702,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ##### BASELINE #####
 
                     # No new baseline files should be downloaded as it's already been done for this year.
-                    baseline = [datafile for datafile in release.datafile_list if datafile.baseline]
-                    self.assertEqual(len(baseline), 0)
+                    self.assertEqual(len(release.baseline_files), 0)
 
                     task_ids = [
                         "download_baseline",
@@ -728,15 +723,13 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                     ##### UPDATEFILES #####
 
-                    updatefiles = [datafile for datafile in release.datafile_list if not datafile.baseline]
-
                     ### Download updatefiles ###
                     task_id = workflow.download_updatefiles.__name__
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Loop through downloaded baseline files, check that they exist and that hashes match.
-                    for datafile in updatefiles:
+                    for datafile in release.updatefiles:
                         self.assertTrue(os.path.exists(datafile.download_file_path))
                         with open(datafile.download_file_path, "rb") as f_hash:
                             data = f_hash.read()
@@ -749,7 +742,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    for datafile in updatefiles:
+                    for datafile in release.updatefiles:
                         self.assert_blob_integrity(
                             env.download_bucket,
                             gcs_blob_name_from_path(datafile.download_file_path),
@@ -762,7 +755,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # This step pulls out the upserts and delete records from the files
-                    for datafile in updatefiles:
+                    for datafile in release.updatefiles:
                         self.assertTrue(os.path.exists(datafile.transform_upsert_file_path))
 
                     ### Merge upserts and deletes  ###
@@ -772,7 +765,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                     # Check that the merged upserts and deletes have been written to disk.
                     self.assertTrue(os.path.exists(release.merged_delete_file_path))
-                    for datafile in updatefiles:
+                    for datafile in release.updatefiles:
                         self.assertTrue(os.path.exists(datafile.merged_upsert_file_path))
 
                     ##### UPSERTS #####
@@ -782,7 +775,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ti = env.run_task(task_id)
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    file_paths = [datafile.merged_upsert_file_path for datafile in updatefiles if not datafile.baseline]
+                    file_paths = [datafile.merged_upsert_file_path for datafile in release.updatefiles]
 
                     # Check that they exist in the cloud.
                     for file in file_paths:
@@ -870,7 +863,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 ##### THIRD RUN #####
 
                 # This run only needs to confirm that the first year run bool works and it downloads the new baseline dataset.
-
                 run = self.third_run
                 with env.create_dag_run(dag, run["execution_date"]) as dag_run:
                     # Before the tests start, we need to manually change the modified dates of the datafiles
@@ -943,8 +935,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                     ##### BASELINE #####
 
-                    baseline_datafiles = [datafile for datafile in release.datafile_list if datafile.baseline]
-                    self.assertEqual(len(baseline_datafiles), 2)
+                    self.assertEqual(len(release.baseline_files), 2)
 
                     task_ids = [
                         "create_snapshot",
