@@ -20,7 +20,7 @@ import json
 import os
 from typing import Dict
 from unittest import TestCase
-from unittest.mock import patch, ANY, MagicMock
+from unittest.mock import patch, MagicMock
 
 from airflow.exceptions import AirflowException
 from click.testing import CliRunner
@@ -176,27 +176,33 @@ class TestZenodo(TestCase):
             f"{self.host}/api/deposit/depositions/{id}/files/{file_id}", params={"access_token": self.access_token}
         )
 
-    @patch("academic_observatory_workflows.zenodo.requests.post")
-    def test_upload_file(self, mock_post: MagicMock):
+    @patch("academic_observatory_workflows.zenodo.requests.get")
+    @patch("academic_observatory_workflows.zenodo.requests.put")
+    def test_upload_file(self, mock_put: MagicMock, mock_get: MagicMock):
         with CliRunner().isolated_filesystem() as t:
             # Make file
             file_name = "file.txt"
             file_path = os.path.join(t, file_name)
             with open(file_path, mode="w") as f:
                 f.write("Hello World")
-
             id = 1
-            data = {"name": file_name}
+            bucket_url = "https://bucket-url.com"
+            mock_get.return_value.json.return_value = {"links": {"bucket": bucket_url}}
             self.zenodo.upload_file(id, file_path)
-            mock_post.assert_called_once_with(
-                f"{self.host}/api/deposit/depositions/{id}/files",
-                data=data,
-                files=ANY,
+
+            mock_get.assert_called_once_with(
+                f"{self.host}/api/deposit/depositions/{id}",
+                json={},
+                params={"access_token": self.access_token},
+            )
+            mock_put.assert_called_once_with(
+                f"{bucket_url}/file.txt",
+                data=mock_put.call_args.kwargs["data"],
                 params={"access_token": self.access_token},
             )
 
             # Check that correct file was set to be uploaded
-            actual_buffered_reader = mock_post.call_args.kwargs["files"]["file"]
+            actual_buffered_reader = mock_put.call_args.kwargs["data"]
             self.assertIsInstance(actual_buffered_reader, io.BufferedReader)
             self.assertEqual(file_path, actual_buffered_reader.name)
 
