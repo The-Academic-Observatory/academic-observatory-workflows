@@ -285,6 +285,16 @@ class PubMedRelease(DatafileRelease):
         return f"gs://{self.cloud_workspace.transform_bucket}/{gcs_blob_name_from_path(self.datafile_release.transform_folder)}/{table_type}_*.{self.datafile_list[0].file_type}"
 
     @property
+    def baseline_files(self) -> List[Datafile]:
+        """Return a list of the "baseline" datafiles files for this release."""
+        return [datafile for datafile in self.datafile_list if datafile.baseline]
+
+    @property
+    def updatefiles(self) -> List[Datafile]:
+        """Return a list of "updatefile" datafiles for this release."""
+        return [datafile for datafile in self.datafile_list if not datafile.baseline]
+
+    @property
     def merged_upsert_uri_blob_pattern(self) -> str:
         """
         Create a uri blob pattern for importing the transformed merged upserts from GCS into Bigquery.
@@ -536,7 +546,12 @@ class PubMedTelescope(Workflow):
         updatefiles_xml_gz = [file for file in updatefiles_list if file.endswith(".xml.gz")]
 
         # Determine start date for the new data interval period for this run.
-        release_interval_end = pendulum.instance(kwargs["execution_date"])
+        release_interval_end = pendulum.instance(kwargs["data_interval_end"])
+        if baseline_upload_date > release_interval_end:
+            raise AirflowException(
+                f"Baseline_upload_date: {baseline_upload_date} is after the release_interval_end: {release_interval_end}!"
+            )
+
         logging.info(f"release_interval_end from workflow: {release_interval_end}")
         if is_first_run:
             assert (
@@ -551,7 +566,6 @@ class PubMedTelescope(Workflow):
             ), f"fetch_releases: there should be at least 1 DatasetRelease in the Observatory API after the first DAG run"
 
             release_interval_start = baseline_upload_date
-
         else:
             assert (
                 len(dataset_releases) >= 1
@@ -608,7 +622,7 @@ class PubMedTelescope(Workflow):
         # Sort from oldest to newest using the file index
         files_to_download.sort(key=lambda c: c.file_index, reverse=False)
 
-        # Check that all updatefiles pulled from the FTP server are not missing any between start_index and end_index.
+        # Check that all baseline/updatefiles pulled from the FTP server are not missing any between start_index and end_index.
         # e.g. 10, 11, 13, 14 - will throw an error.
         file_index_prev = files_to_download[0].file_index
         logging.info(f"Starting datafile file_index: {file_index_prev}")
@@ -706,10 +720,8 @@ class PubMedTelescope(Workflow):
             logging.info("download_baseline: skipping as this is only run when there is a new baseline dump available.")
             return
 
-        datafiles = [datafile for datafile in release.datafile_list if datafile.baseline]
-
         success = download_datafiles(
-            datafile_list=datafiles,
+            datafile_list=release.baseline_files,
             ftp_server_url=self.ftp_server_url,
             ftp_port=self.ftp_port,
             reset_ftp_counter=self.reset_ftp_counter,
@@ -728,7 +740,7 @@ class PubMedTelescope(Workflow):
             return
 
         # Grab list of files to upload.
-        file_paths = [datafile.download_file_path for datafile in release.datafile_list if datafile.baseline]
+        file_paths = [datafile.download_file_path for datafile in release.baseline_files]
 
         success = gcs_upload_files(
             bucket_name=self.cloud_workspace.download_bucket,
@@ -748,11 +760,8 @@ class PubMedTelescope(Workflow):
             )
             return
 
-        # Get list of datafiles for the baseline to trasform.
-        datafiles = [datafile for datafile in release.datafile_list if datafile.baseline]
-
         # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
-        for i, chunk in enumerate(get_chunks(input_list=datafiles, chunk_size=self.max_processes)):
+        for i, chunk in enumerate(get_chunks(input_list=release.baseline_files, chunk_size=self.max_processes)):
             with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
                 logging.info(f"In chunk {i} and processing files: {chunk}")
 
@@ -778,7 +787,7 @@ class PubMedTelescope(Workflow):
             )
             return
 
-        file_paths = [datafile.transform_baseline_file_path for datafile in release.datafile_list if datafile.baseline]
+        file_paths = [datafile.transform_baseline_file_path for datafile in release.baseline_files]
 
         success = gcs_upload_files(
             bucket_name=self.cloud_workspace.transform_bucket,
@@ -829,10 +838,12 @@ class PubMedTelescope(Workflow):
         Unable to do this in parallel due to limitations of their FTP server.
         """
 
-        updatefiles_datafiles = [datafile for datafile in release.datafile_list if not datafile.baseline]
+        if not release.updatefiles:
+            logging.info("download_updatefiles: skipping as there are no updatefiles for this release.")
+            return
 
         success = download_datafiles(
-            datafile_list=updatefiles_datafiles,
+            datafile_list=release.updatefiles,
             ftp_server_url=self.ftp_server_url,
             ftp_port=self.ftp_port,
             reset_ftp_counter=self.reset_ftp_counter,
@@ -844,9 +855,11 @@ class PubMedTelescope(Workflow):
     def upload_downloaded_updatefiles(self, release: PubMedRelease, **kwargs):
         """Upload downloaded updatefiles files to GCS."""
 
-        datafiles_to_upload = [
-            datafile.download_file_path for datafile in release.datafile_list if not datafile.baseline
-        ]
+        if not release.updatefiles:
+            logging.info("upload_downloaded_updatefiles: skipping as there are no updatefiles for this release.")
+            return
+
+        datafiles_to_upload = [datafile.download_file_path for datafile in release.updatefiles]
 
         success = gcs_upload_files(
             bucket_name=self.cloud_workspace.download_bucket,
@@ -862,14 +875,15 @@ class PubMedTelescope(Workflow):
         This is a multithreaded and pulls the PubmedArticle records from the downloaded XML files.
         """
 
-        # Get list of datafiles for the baseline to trasform.
-        datafiles = [datafile for datafile in release.datafile_list if not datafile.baseline]
+        if not release.updatefiles:
+            logging.info("transform_updatefiles: skipping as there are no updatefiles for this release.")
+            return
 
         # Object to store all of the upserts and delete keys that are present in each file.
         updatefiles: List[PubmedUpdatefile] = []
 
         # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
-        for i, chunk in enumerate(get_chunks(input_list=datafiles, chunk_size=self.max_processes)):
+        for i, chunk in enumerate(get_chunks(input_list=release.updatefiles, chunk_size=self.max_processes)):
             with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
                 logging.info(f"In chunk {i} and processing files: {chunk}")
 
@@ -884,9 +898,9 @@ class PubMedTelescope(Workflow):
                 for future in as_completed(futures):
                     updatefiles.append(future.result())
 
-        assert len(datafiles) == len(
+        assert len(release.updatefiles) == len(
             updatefiles
-        ), f"Number of updatefiles does not match the number of non baseline datafiles: {len(datafiles)} vs {len(updatefiles)}"
+        ), f"Number of updatefiles does not match the number of non baseline datafiles: {len(release.updatefiles)} vs {len(updatefiles)}"
 
         ti: TaskInstance = kwargs["ti"]
         updatefile_list = [updatefile.to_dict() for updatefile in updatefiles]
@@ -895,7 +909,9 @@ class PubMedTelescope(Workflow):
     def merge_upserts_and_deletes(self, release: PubMedRelease, **kwargs):
         """Merge the upserts and deletes for this release period."""
 
-        datafiles = [datafile for datafile in release.datafile_list if not datafile.baseline]
+        if not release.updatefiles:
+            logging.info("merge_upserts_and_deletes: skipping as there are no updatefiles for this release.")
+            return
 
         ti: TaskInstance = kwargs["ti"]
         updatefile_list: list = ti.xcom_pull(key="updatefile_list")
@@ -913,7 +929,7 @@ class PubMedTelescope(Workflow):
         save_jsonl_gz(release.merged_delete_file_path, data)
 
         # Save final upserts
-        for i, chunk in enumerate(get_chunks(input_list=datafiles, chunk_size=self.max_processes)):
+        for i, chunk in enumerate(get_chunks(input_list=release.updatefiles, chunk_size=self.max_processes)):
             with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
                 logging.info(f"In chunk {i} and processing files: {chunk}")
 
@@ -939,7 +955,11 @@ class PubMedTelescope(Workflow):
     def upload_merged_upsert_records(self, release: PubMedRelease, **kwargs):
         """Upload the merged upsert records to GCS."""
 
-        file_paths = [datafile.merged_upsert_file_path for datafile in release.datafile_list if not datafile.baseline]
+        if not release.updatefiles:
+            logging.info("upload_merged_upsert_records: skipping as there are no updatefiles for this release.")
+            return
+
+        file_paths = [datafile.merged_upsert_file_path for datafile in release.updatefiles]
 
         success = gcs_upload_files(
             bucket_name=self.cloud_workspace.transform_bucket,
@@ -950,6 +970,10 @@ class PubMedTelescope(Workflow):
 
     def bq_load_upsert_table(self, release: PubMedRelease, **kwargs):
         """Ingest the upsert records from GCS to BQ using a glob pattern."""
+
+        if not release.updatefiles:
+            logging.info("bq_load_upsert_table: skipping as there are no updatefiles for this release.")
+            return
 
         logging.info(f"Uploading to table - {self.upsert_table_id}")
 
@@ -978,6 +1002,10 @@ class PubMedTelescope(Workflow):
         the main table.
         """
 
+        if not release.updatefiles:
+            logging.info("bq_upsert_records: skipping as there are no updatefiles for this release.")
+            return
+
         keys_to_match_on = ["MedlineCitation.PMID.value", "MedlineCitation.PMID.Version"]
 
         bq_upsert_records(
@@ -991,6 +1019,10 @@ class PubMedTelescope(Workflow):
     def upload_merged_delete_records(self, release: PubMedRelease, **kwargs):
         """Upload the merged delete records to GCS."""
 
+        if not release.updatefiles:
+            logging.info("upload_merged_delete_records: skipping as there are no updatefiles for this release.")
+            return
+
         file_paths = [release.merged_delete_file_path]
 
         success = gcs_upload_files(
@@ -1002,6 +1034,10 @@ class PubMedTelescope(Workflow):
 
     def bq_load_delete_table(self, release: PubMedRelease, **kwargs):
         """Ingest delete records from GCS to BQ."""
+
+        if not release.updatefiles:
+            logging.info("bq_load_delete_table: skipping as there are no updatefiles for this release.")
+            return
 
         logging.info(f"Uploading to table - {self.delete_table_id}")
 
@@ -1029,6 +1065,10 @@ class PubMedTelescope(Workflow):
         Has to match on both the PMID value and the Version number, as there could be multiple different versions in
         the main table.
         """
+
+        if not release.updatefiles:
+            logging.info("bq_delete_records: skipping as there are no updatefiles for this release.")
+            return
 
         main_table_keys_to_match_on = ["MedlineCitation.PMID.value", "MedlineCitation.PMID.Version"]
         delete_table_keys_to_match_on = ["value", "Version"]
