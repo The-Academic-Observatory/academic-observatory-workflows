@@ -1,13 +1,16 @@
 {
   "title": "Academic Observatory Workflows",
-  "description": "<p>Academic Observatory Workflows provides Apache Airflow workflows for fetching, processing and analysing data about academic institutions.&nbsp;The workflows include: Crossref Events, Crossref Fundref, Crossref Metadata, Geonames, GRID, Microsoft Academic Graph, Open Citations, ORCID, Scopus, Unpaywall and Web of Science.</p>\n\n<p><strong>Contributors</strong><br>\nConceptualization: Richard Hosking, James P. Diprose, Aniek Roelofs, Lucy Montgomery, and Cameron Neylon.&nbsp;<br>\nData curation: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, and Cameron Neylon.&nbsp;<br>\nFormal analysis: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, Bianca Kramer, and Cameron Neylon.&nbsp;<br>\nFunding acquisition: Lucy Montgomery and Cameron Neylon.<br>\nInvestigation: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, and Rebecca N. Handcock.<br>\nMethodology: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, and Rebecca N. Handcock.&nbsp;<br>\nProject administration: Richard Hosking, Kathryn Napier, Lucy Montgomery, and Cameron Neylon.&nbsp;<br>\nResources: Richard Hosking, James P. Diprose, and Aniek Roelofs.&nbsp;<br>\nSoftware: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, and Cameron Neylon.&nbsp;<br>\nSupervision: Richard Hosking, James P. Diprose, Kathryn Napier, and Cameron Neylon.<br>\nValidation: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, Bianca Kramer, and Cameron Neylon.&nbsp;<br>\nVisualization: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, and Cameron Neylon.<br>\nWriting - original draft: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, and Cameron Neylon.<br>\nWriting - review &amp; editing: Richard Hosking, Aniek Roelofs, Bianca Kramer, and Cameron Neylon.</p>",
-  "notes": "The Curtin Open Knowledge Initiative (COKI) is a strategic initiative of the Research Office at Curtin, the Faculty of Humanities, School of Media, Creative Arts and Social Inquiry and the Curtin Institute for Computation, with additional support from the Andrew W. Mellon Foundation and the Arcadia Fund, a charitable fund of Lisbet Rausing and Peter Baldwin.",
+  "description": "<p>Academic Observatory Workflows provides Apache Airflow workflows for fetching, processing and analysing data about academic institutions.&nbsp;The workflows include: Crossref Events, Crossref Fundref, Crossref Metadata, Geonames, Open Citations, OpenAlex, ORCID, PubMed, ROR, Scopus, Unpaywall and Web of Science.</p>\n\n<p><strong>Contributors</strong><br>\nConceptualization: Richard Hosking, James P. Diprose, Aniek Roelofs, Lucy Montgomery, and Cameron Neylon.&nbsp;<br>\nData curation: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, Cameron Neylon, Keegan R. Smith, and Julian Tonti-Filippini.&nbsp;<br>\nFormal analysis: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, Bianca Kramer, and Cameron Neylon.&nbsp;<br>\nFunding acquisition: Lucy Montgomery and Cameron Neylon.<br>\nInvestigation: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, Alex Massen-Hane, Keegan R. Smith, and Julian Tonti-Filippini.<br>\nMethodology: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, Alex Massen-Hane, Keegan R. Smith, and Julian Tonti-Filippini.&nbsp;<br>\nProject administration: Richard Hosking, Kathryn Napier, Lucy Montgomery, and Cameron Neylon.&nbsp;<br>\nResources: Richard Hosking, James P. Diprose, and Aniek Roelofs.&nbsp;<br>\nSoftware: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, Cameron Neylon, Alex Massen-Hane, and Keegan R. Smith.&nbsp;<br>\nSupervision: Richard Hosking, James P. Diprose, Kathryn Napier, and Cameron Neylon.<br>\nValidation: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, Bianca Kramer, and Cameron Neylon.&nbsp;<br>\nVisualization: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Rebecca N. Handcock, and Cameron Neylon.<br>\nWriting - original draft: Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, and Cameron Neylon.<br>\nWriting - review &amp; editing: Richard Hosking, Aniek Roelofs, Bianca Kramer, and Cameron Neylon.</p>",
+  "notes": "The Curtin Open Knowledge Initiative (COKI) is a strategic initiative of the Research Office at Curtin, the Faculty of Humanities, School of Media, Creative Arts and Social Inquiry and the Curtin Institute for Data Science, with additional support from the Mellon Foundation and the Arcadia Fund, a charitable fund of Lisbet Rausing and Peter Baldwin.",
   "communities": [
     {
       "identifier": "coki"
     },
     {
       "identifier": "2020to2022-developing-pilot-data-trust-for-oa-book-usage"
+    },
+    {
+      "identifier": "book-analytics-dashboard-project"
     }
   ],
   "keywords": [
@@ -16,7 +19,8 @@
     "data",
     "apache airflow",
     "academic",
-    "higher-education"
+    "higher-education",
+    "bad-project"
   ],
   "license": {
     "id": "Apache-2.0"
@@ -25,47 +29,62 @@
     {
       "orcid": "0000-0001-8288-5241",
       "affiliation": "Centre for Culture and Technology, Curtin University",
-      "name": "Richard Hosking"
+      "name": "Hosking, Richard"
     },
     {
       "orcid": "0000-0002-5094-3571",
       "affiliation": "Centre for Culture and Technology, Curtin University",
-      "name": "James P. Diprose"
+      "name": "Diprose, James P"
     },
     {
       "orcid": "0000-0003-0485-3388",
       "affiliation": "Curtin Institute for Computation, Curtin University",
-      "name": "Aniek Roelofs"
+      "name": "Roelofs, Aniek"
     },
     {
       "orcid": "0000-0002-6237-7423",
       "affiliation": "Centre for Culture and Technology, Curtin University",
-      "name": "Tuan-Yow Chien"
+      "name": "Chien, Tuan-Yow"
+    },
+    {
+      "orcid": "0009-0001-9854-1483",
+      "affiliation": "Curtin Institute for Data Science, Curtin University",
+      "name": "Massen-Hane, Alex"
+    },
+    {
+      "orcid": "0000-0001-7801-9105",
+      "affiliation": "Curtin Institute for Data Science, Curtin University",
+      "name": "Smith, Keegan R"
     },
     {
       "orcid": "0000-0001-5903-6620",
       "affiliation": "Curtin Institute for Computation, Curtin University",
-      "name": "Rebecca N. Handcock"
+      "name": "Handcock, Rebecca N"
     },
     {
       "orcid": "0000-0002-5965-6560",
       "affiliation": "Utrecht University",
-      "name": "Bianca Kramer"
+      "name": "Kramer, Bianca"
     },
     {
       "orcid": "0000-0003-1202-7238",
       "affiliation": "Curtin Institute for Computation, Curtin University",
-      "name": "Kathryn R. Napier"
+      "name": "Napier, Kathryn R"
+    },
+    {
+      "orcid": "0000-0003-3464-0770",
+      "affiliation": "Curtin Institute for Data Science, Curtin University",
+      "name": "Tonti-Filippini, Julian"
     },
     {
       "orcid": "0000-0001-6551-8140",
       "affiliation": "Centre for Culture and Technology, Curtin University",
-      "name": "Lucy Montgomery"
+      "name": "Montgomery, Lucy"
     },
     {
       "orcid": "0000-0002-0068-716X",
       "affiliation": "Centre for Culture and Technology, Curtin University",
-      "name": "Cameron Neylon"
+      "name": "Neylon, Cameron"
     }
   ]
 }
