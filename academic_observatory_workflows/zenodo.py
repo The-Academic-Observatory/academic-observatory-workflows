@@ -76,10 +76,21 @@ class Zenodo:
         return requests.put(url, data=json.dumps(data), headers=headers, params={"access_token": self.access_token})
 
     def upload_file(self, id: int, file_path: str):
-        url = self.make_url(f"/api/deposit/depositions/{id}/files")
-        data = {"name": os.path.basename(file_path)}
-        files = {"file": open(file_path, "rb")}
-        return requests.post(url, data=data, files=files, params={"access_token": self.access_token})
+        url = self.make_url(f"/api/deposit/depositions/{id}")
+        params = {"access_token": self.access_token}
+        res = requests.get(
+            url,
+            json={},
+            params=params,
+        )
+        bucket_url = res.json()["links"]["bucket"]
+        with open(file_path, "rb") as data:
+            res = requests.put(
+                f"{bucket_url}/{os.path.basename(file_path)}",
+                data=data,
+                params=params,
+            )
+        return res
 
     def publish(self, id: int):
         url = self.make_url(f"/api/deposit/depositions/{id}/actions/publish")

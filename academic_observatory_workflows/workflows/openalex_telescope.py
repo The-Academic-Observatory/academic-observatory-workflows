@@ -1295,8 +1295,14 @@ def merge_schema_maps(to_add: OrderedDict, old: OrderedDict) -> OrderedDict:
     schema_generator = SchemaGenerator()
 
     if old:
+        # Loop through the fields to add to the schema
         for key, value in to_add.items():
-            old[key] = schema_generator.merge_schema_entry(old_schema_entry=old[key], new_schema_entry=value)
+            if key in old:
+                # Merge existing fields together.
+                old[key] = schema_generator.merge_schema_entry(old_schema_entry=old[key], new_schema_entry=value)
+            else:
+                # New top level field is added.
+                old[key] = value
     else:
         # Initialise it with first result if it is empty
         old = to_add.copy()
