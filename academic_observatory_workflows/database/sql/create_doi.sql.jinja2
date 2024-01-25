@@ -41,7 +41,7 @@ SELECT
     ref.doi as doi,
     (SELECT as STRUCT * from `{{ crossref_metadata.project_id }}.{{ crossref_metadata.dataset_id }}.{{ crossref_metadata.table_id }}` as ref_row WHERE ref_row.doi = ref.doi) as crossref,
     (SELECT as STRUCT * from `{{ openaccess.project_id }}.{{ openaccess.dataset_id }}.{{ openaccess.table_id }}` as oa WHERE oa.doi = ref.doi) as openaccess,
-    (SELECT as STRUCT * from `{{ unpaywall.project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}` as unpaywall WHERE unpaywall.doi = ref.doi) as unpaywall,
+    (SELECT as STRUCT * from `{{ unpaywall.project_id }}.{{ unpaywall.dataset_id }}.{{ unpaywall.table_id }}` as unpaywall WHERE UPPER(TRIM(unpaywall.doi)) = ref.doi) as unpaywall,
     (SELECT as STRUCT * from `{{ openalex.project_id }}.{{ openalex.dataset_id }}.{{ openalex.table_id }}` as openalex WHERE openalex.doi = ref.doi) as openalex,
     (SELECT as STRUCT * from `{{ open_citations.project_id }}.{{ open_citations.dataset_id }}.{{ open_citations.table_id }}` as oa WHERE oa.doi = ref.doi) as open_citations,
     (SELECT as STRUCT * from `{{ crossref_events.project_id }}.{{ crossref_events.dataset_id }}.{{ crossref_events.table_id }}` as events WHERE events.doi = ref.doi) as events,
