@@ -81,6 +81,7 @@ from observatory.platform.workflows.workflow import (
 )
 
 TEMP_TABLE_DESCRIPTION = "Temporary table for internal use. Do not use."
+UPSERT_BYTE_LIMIT = int(2.5 * 2**40)
 
 
 class OpenAlexEntity:
@@ -834,6 +835,7 @@ class OpenAlexTelescope(Workflow):
             main_table_id=entity.bq_main_table_id,
             upsert_table_id=entity.bq_upsert_table_id,
             primary_key=self.primary_key,
+            bytes_budget=UPSERT_BYTE_LIMIT,
         )
 
     def bq_load_delete_table(self, release: OpenAlexRelease, entity_name: str = None, **kwargs):
