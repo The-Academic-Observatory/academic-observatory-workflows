@@ -1090,7 +1090,7 @@ class TestPubMedUtils(ObservatoryTestCase):
     def test_load_datafile(self):
         """Test that a Pubmed datafile can be read in and parsed."""
 
-        xml_file_path = os.path.join(FIXTURES_FOLDER, "baseline", "pubmed22n0001.xml.gz")
+        xml_file_path = os.path.join(FIXTURES_FOLDER, "pubmed", "baseline", "pubmed22n0001.xml.gz")
         data = load_datafile(input_path=xml_file_path)
 
         self.assertTrue(data)
@@ -1211,7 +1211,7 @@ class TestPubMedUtils(ObservatoryTestCase):
                 datafile_date=pendulum.now(),
                 datafile_release=changefile_release,
             )
-            bad_xml_file_path = os.path.join(FIXTURES_FOLDER, "pubmed22n0001_bad_fields.xml.gz")
+            bad_xml_file_path = os.path.join(FIXTURES_FOLDER, "pubmed", "pubmed22n0001_bad_fields.xml.gz")
             shutil.copy2(bad_xml_file_path, datafile_bad.download_file_path)
 
             # Attempt to transform bad xml - just a baseline file, returns a baseline file if it is successful.
@@ -1231,7 +1231,7 @@ class TestPubMedUtils(ObservatoryTestCase):
             )
 
             ### VALID BASELINE XML ###
-            valid_xml_file_path = os.path.join(FIXTURES_FOLDER, "baseline", "pubmed22n0001.xml.gz")
+            valid_xml_file_path = os.path.join(FIXTURES_FOLDER, "pubmed", "baseline", "pubmed22n0001.xml.gz")
             shutil.copy2(valid_xml_file_path, datafile_good.download_file_path)
 
             # Attempt to transform valid xml - should output a transformed file if it is successful.
@@ -1260,7 +1260,7 @@ class TestPubMedUtils(ObservatoryTestCase):
                 datafile_release=changefile_release,
             )
 
-            valid_xml_file_path = os.path.join(FIXTURES_FOLDER, "updatefiles", "pubmed22n0003.xml.gz")
+            valid_xml_file_path = os.path.join(FIXTURES_FOLDER, "pubmed", "updatefiles", "pubmed22n0003.xml.gz")
             shutil.copy2(valid_xml_file_path, datafile_good.download_file_path)
 
             result: PubmedUpdatefile = transform_pubmed(

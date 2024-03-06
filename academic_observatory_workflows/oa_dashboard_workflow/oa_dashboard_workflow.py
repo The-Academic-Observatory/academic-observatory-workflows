@@ -507,7 +507,7 @@ class OaDashboardWorkflow(Workflow):
             raise AirflowException(f"Uploading data to {logos_table_id} table failed")
 
         # Update with entity table
-        template_path = project_path("oa_dashboard_workflow", "sql" "update_logos.sql.jinja2")
+        template_path = project_path("oa_dashboard_workflow", "sql", "update_logos.sql.jinja2")
         sql = render_template(
             template_path,
             entity_table_id=release.oa_dashboard_table_id(entity_type),
