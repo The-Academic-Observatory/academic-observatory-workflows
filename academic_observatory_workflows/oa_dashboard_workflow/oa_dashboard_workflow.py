@@ -501,7 +501,7 @@ class OaDashboardWorkflow(Workflow):
         success = bq_load_from_memory(
             logos_table_id,
             data,
-            schema_file_path=project_path("oa_dashboard_workflow", "schema" "logos.json"),
+            schema_file_path=project_path("oa_dashboard_workflow", "schema", "logos.json"),
         )
         if not success:
             raise AirflowException(f"Uploading data to {logos_table_id} table failed")

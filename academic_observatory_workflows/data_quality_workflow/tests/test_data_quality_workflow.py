@@ -64,7 +64,7 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
                 Workflow(
                     dag_id=self.dag_id,
                     name="Data Quality Check Workflow",
-                    class_name="academic_observatory_workflows.crossref_metadata_telescope.data_quality_workflow.DataQualityWorkflow",
+                    class_name="academic_observatory_workflows.data_quality_workflow.data_quality_workflow.DataQualityWorkflow",
                     cloud_workspace=self.fake_cloud_workspace,
                     kwargs=dict(
                         sensor_dag_ids=["doi"],

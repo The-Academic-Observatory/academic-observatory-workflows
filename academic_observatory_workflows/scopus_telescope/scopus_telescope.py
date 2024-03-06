@@ -56,7 +56,7 @@ from observatory.platform.workflows.workflow import (
 )
 from ratelimit import limits, sleep_and_retry
 
-from academic_observatory_workflows.config import project_folder, Tag
+from academic_observatory_workflows.config import project_path, Tag
 
 
 class ScopusRelease(SnapshotRelease):
@@ -99,7 +99,7 @@ class ScopusTelescope(Workflow):
         bq_dataset_id: str = "scopus",
         bq_table_name: str = "scopus",
         api_dataset_id: str = "scopus",
-        schema_folder: str = project_folder("scopus_telescope", "schema"),
+        schema_folder: str = project_path("scopus_telescope", "schema"),
         dataset_description: str = "The Scopus citation database: https://www.scopus.com",
         table_description: str = "The Scopus citation database: https://www.scopus.com",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,

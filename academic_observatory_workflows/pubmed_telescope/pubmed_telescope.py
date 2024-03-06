@@ -60,7 +60,7 @@ from observatory.platform.workflows.workflow import (
     Workflow,
 )
 
-from academic_observatory_workflows.config import project_folder, Tag
+from academic_observatory_workflows.config import project_path, Tag
 
 
 class Datafile:
@@ -275,7 +275,7 @@ class PubMedRelease(DatafileRelease):
             datafile.datafile_release = self.datafile_release
 
     def schema_file_path(self, record_type: str) -> str:
-        return project_folder("pubmed_telescope", "schema", f"{record_type}.json")
+        return project_path("pubmed_telescope", "schema", f"{record_type}.json")
 
     def transfer_blob_pattern(self, table_type: str) -> str:
         """

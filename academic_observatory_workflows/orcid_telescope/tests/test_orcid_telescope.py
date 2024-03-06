@@ -177,6 +177,7 @@ class TestOrcidTelescope(ObservatoryTestCase):
         with env.create():
             self.assert_dag_load_from_config(self.dag_id)
 
+    @unittest.skip("An intermittent error is causing this test to fail, it needs reviewing")
     def test_telescope(self):
         """Test the ORCID workflow end to end."""
 

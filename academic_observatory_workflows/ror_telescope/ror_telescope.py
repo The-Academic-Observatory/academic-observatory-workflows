@@ -40,7 +40,7 @@ from observatory.platform.utils.http_download import download_file
 from observatory.platform.utils.url_utils import retry_get_url
 from observatory.platform.workflows.workflow import cleanup, set_task_state, SnapshotRelease, Workflow
 
-from academic_observatory_workflows.config import project_folder, Tag
+from academic_observatory_workflows.config import project_path, Tag
 
 
 class RorRelease(SnapshotRelease):
@@ -79,7 +79,7 @@ class RorTelescope(Workflow):
         bq_dataset_id: str = "ror",
         bq_table_name: str = "ror",
         api_dataset_id: str = "ror",
-        schema_folder: str = project_folder("ror_telescope", "schema"),
+        schema_folder: str = project_path("ror_telescope", "schema"),
         dataset_description: str = "The Research Organization Registry (ROR) database: https://ror.org/",
         table_description: str = "The Research Organization Registry (ROR) database: https://ror.org/",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
