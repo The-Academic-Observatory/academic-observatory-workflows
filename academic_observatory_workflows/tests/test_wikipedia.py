@@ -15,17 +15,20 @@
 # Author: Aniek Roelofs, James Diprose
 
 import json
+import os.path
 from unittest import TestCase
 
 import nltk
 import vcr
 
-from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.wikipedia import (
     fetch_wikipedia_descriptions_batch,
-    shorten_text_full_sentences,
     remove_text_between_brackets,
+    shorten_text_full_sentences,
 )
+
+FIXTURES_FOLDER = project_path("tests", "fixtures")
 
 
 class TestWikipedia(TestCase):
@@ -63,7 +66,7 @@ class TestWikipedia(TestCase):
             "https://en.wikipedia.org/wiki/National_Oilwell_Varco#Awards_and_Accolades",
             "https://en.wikipedia.org/wiki/%C3%85land",
         ]
-        path = test_fixtures_folder("wikipedia", "expected_fetch_wiki_descriptions.json")
+        path = os.path.join(FIXTURES_FOLDER, "expected_fetch_wiki_descriptions.json")
         with open(path, "r") as f:
             expected = json.load(f)
 
@@ -71,7 +74,7 @@ class TestWikipedia(TestCase):
         expected = [tuple(row) for row in expected]
         expected.sort(key=lambda x: x[0])
 
-        with vcr.use_cassette(test_fixtures_folder("wikipedia", "test_fetch_wiki_description.yaml")):
+        with vcr.use_cassette(os.path.join(FIXTURES_FOLDER, "test_fetch_wiki_description.yaml")):
             actual = fetch_wikipedia_descriptions_batch(wikipedia_urls)
 
         # Sort actual results based on Wikipedia url so that they match the expected results

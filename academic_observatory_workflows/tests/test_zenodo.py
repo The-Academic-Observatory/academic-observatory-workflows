@@ -20,16 +20,12 @@ import json
 import os
 from typing import Dict
 from unittest import TestCase
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from airflow.exceptions import AirflowException
 from click.testing import CliRunner
 
-from academic_observatory_workflows.zenodo import (
-    Zenodo,
-    make_draft_version,
-    publish_new_version,
-)
+from academic_observatory_workflows.zenodo import make_draft_version, publish_new_version, Zenodo
 
 
 class MockResponse:
