@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
@@ -44,7 +43,7 @@ from observatory.platform.bigquery import (
 from observatory.platform.observatory_config import CloudWorkspace
 from observatory.platform.workflows.workflow import Release, set_task_state, Workflow
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+from academic_observatory_workflows.config import project_path, Tag
 
 
 @dataclass
@@ -88,7 +87,7 @@ class DataQualityWorkflow(Workflow):
         bq_dataset_description: str = "This dataset holds metadata about the tables that the Academic Observatory Worflows produce. If there are multiple shards tables, it will go back on the table and check if it hasn't done that table previously.",
         bq_table_id: str = "data_quality",
         bq_table_description: str = "Data quality check for all tables produced by the Academic Observatory workflows.",
-        schema_path: str = os.path.join(default_schema_folder(), "data_quality", "data_quality.json"),
+        schema_path: str = project_path("data_quality_workflow", "schema", "data_quality.json"),
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 1, 1),
         schedule: str = "@weekly",
         queue: str = "default",

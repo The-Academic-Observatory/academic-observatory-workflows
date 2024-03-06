@@ -77,7 +77,7 @@ from observatory.platform.workflows.workflow import (
     WorkflowBashOperator,
 )
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+from academic_observatory_workflows.config import project_path, Tag
 
 TEMP_TABLE_DESCRIPTION = "Temporary table for internal use. Do not use."
 UPSERT_BYTE_LIMIT = int(2.5 * 2**40)
@@ -313,7 +313,7 @@ class OpenAlexTelescope(Workflow):
         cloud_workspace: CloudWorkspace,
         bq_dataset_id: str = "openalex",
         entity_names: List[str] = None,
-        schema_folder: str = os.path.join(default_schema_folder(), "openalex"),
+        schema_folder: str = project_path("openalex_telescope", "schema"),
         dataset_description: str = "The OpenAlex dataset: https://docs.openalex.org/",
         temp_table_expiry_days: int = 7,
         snapshot_expiry_days: int = 31,

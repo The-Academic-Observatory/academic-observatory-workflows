@@ -58,7 +58,7 @@ from ratelimit import limits, sleep_and_retry
 from suds import WebFault
 from wos import WosClient
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+from academic_observatory_workflows.config import project_path, Tag
 
 
 class WebOfScienceRelease(SnapshotRelease):
@@ -102,7 +102,7 @@ class WebOfScienceTelescope(Workflow):
         bq_dataset_id: str = "web_of_science",
         bq_table_name: str = "web_of_science",
         api_dataset_id: str = "web_of_science",
-        schema_folder: str = os.path.join(default_schema_folder(), "web_of_science"),
+        schema_folder: str = project_path("web_of_science_telescope", "schema"),
         dataset_description: str = "The Web of Science citation database: https://clarivate.com/webofsciencegroup/solutions/web-of-science",
         table_description: str = "The Web of Science citation database: https://clarivate.com/webofsciencegroup/solutions/web-of-science",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,

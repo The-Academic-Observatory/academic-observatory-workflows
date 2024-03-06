@@ -62,7 +62,7 @@ from observatory.platform.gcs import (
 from observatory.platform.observatory_config import CloudWorkspace
 from observatory.platform.workflows.workflow import ChangefileRelease, cleanup, set_task_state, Workflow
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+from academic_observatory_workflows.config import project_path, Tag
 from academic_observatory_workflows.s5cmd import S5Cmd
 
 ORCID_AWS_SUMMARIES_BUCKET = "v2.0-summaries"
@@ -220,8 +220,8 @@ class OrcidTelescope(Workflow):
         dataset_description: str = "The ORCID dataset and supporting tables",
         table_description: str = "The ORCID dataset",
         snapshot_expiry_days: int = 31,
-        schema_file_path: str = os.path.join(default_schema_folder(), "orcid", "orcid.json"),
-        delete_schema_file_path: str = os.path.join(default_schema_folder(), "orcid", "orcid_delete.json"),
+        schema_file_path: str = project_path("orcid_telescope", "schema", "orcid.json"),
+        delete_schema_file_path: str = project_path("orcid_telescope", "schema", "orcid_delete.json"),
         transfer_attempts: int = 5,
         max_workers: int = os.cpu_count() * 2,
         api_dataset_id: str = "orcid",

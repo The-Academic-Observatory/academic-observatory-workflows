@@ -33,7 +33,7 @@ from observatory.platform.gcs import gcs_blob_name_from_path
 from observatory.platform.observatory_config import Workflow
 from observatory.platform.observatory_environment import find_free_port, ObservatoryEnvironment, ObservatoryTestCase
 
-from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.web_of_science_telescope.web_of_science_telescope import (
     transform_xml_to_json,
     WebOfScienceRelease,
@@ -43,6 +43,8 @@ from academic_observatory_workflows.web_of_science_telescope.web_of_science_tele
     WosUtilConst,
     WosUtility,
 )
+
+FIXTURES_FOLDER = project_path("web_of_science_telescope", "tests", "fixtures")
 
 
 class TestWebOfScienceTelescope(ObservatoryTestCase):
@@ -331,7 +333,7 @@ class TestWebOfScienceTelescope(ObservatoryTestCase):
     def test_transform_xml_to_json(self):
         """Check that transform_xml_to_json succeeds and fails in certain cases"""
 
-        test_folder = test_fixtures_folder("web_of_science")
+        test_folder = project_path("web_of_science_telescope", "tests", "fixtures")
         api_response_file_path = os.path.join(test_folder, "api_response.xml")
         api_response_diff_file_path = os.path.join(test_folder, "api_response_diff_schema.xml")
 
@@ -636,9 +638,8 @@ class TestWosParse(unittest.TestCase):
 
         super(TestWosParse, self).__init__(*args, **kwargs)
 
-        self.fixtures_dir = test_fixtures_folder("web_of_science")
         self.fixture_file = "wos-2020-10-01.json"
-        self.wos_2020_10_01_json_path = os.path.join(self.fixtures_dir, self.fixture_file)
+        self.wos_2020_10_01_json_path = os.path.join(FIXTURES_FOLDER, self.fixture_file)
 
         with open(self.wos_2020_10_01_json_path, "r") as f:
             self.data = json.load(f)
@@ -1056,7 +1057,7 @@ class TestWosParse(unittest.TestCase):
 
 class MockApiResponse:
     def __init__(self, file):
-        fixture_dir = test_fixtures_folder("web_of_science")
+        fixture_dir = project_path("web_of_science_telescope", "tests", "fixtures")
         api_response_file = os.path.join(fixture_dir, file)
         with open(api_response_file, "r") as f:
             self.records = f.read()

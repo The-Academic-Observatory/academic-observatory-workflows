@@ -64,13 +64,12 @@ from observatory.platform.workflows.workflow import (
 )
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
-from academic_observatory_workflows.config import schema_folder, sql_folder, Tag
+from academic_observatory_workflows.config import project_path, Tag
 from academic_observatory_workflows.github import trigger_repository_dispatch
 from academic_observatory_workflows.oa_dashboard_workflow.institution_ids import INSTITUTION_IDS
 from academic_observatory_workflows.wikipedia import fetch_wikipedia_descriptions
 from academic_observatory_workflows.zenodo import make_draft_version, publish_new_version, Zenodo
 
-WORKFLOW_MODULE = "oa_dashboard_workflow"
 INCLUSION_THRESHOLD = {"country": 5, "institution": 50}
 MAX_REPOSITORIES = 200
 START_YEAR = 2000
@@ -400,7 +399,7 @@ class OaDashboardWorkflow(Workflow):
         success = bq_load_from_memory(
             release.institution_ids_table_id,
             data,
-            schema_file_path=os.path.join(schema_folder(WORKFLOW_MODULE), "institution_ids.json"),
+            schema_file_path=project_path("oa_dashboard_workflow", "schema", "institution_ids.json"),
         )
         set_task_state(success, self.upload_institution_ids.__name__, release)
 
@@ -411,7 +410,7 @@ class OaDashboardWorkflow(Workflow):
 
         # Query the country and institution aggregations
         for entity_type in self.entity_types:
-            template_path = os.path.join(sql_folder(WORKFLOW_MODULE), f"{entity_type}.sql.jinja2")
+            template_path = project_path("oa_dashboard_workflow", "sql", f"{entity_type}.sql.jinja2")
             sql = render_template(
                 template_path,
                 agg_table_id=release.observatory_agg_table_id(entity_type),
@@ -454,13 +453,13 @@ class OaDashboardWorkflow(Workflow):
         success = bq_load_from_memory(
             desc_table_id,
             data,
-            schema_file_path=os.path.join(schema_folder(WORKFLOW_MODULE), "descriptions.json"),
+            schema_file_path=project_path("oa_dashboard_workflow", "schema", "descriptions.json"),
         )
         if not success:
             raise AirflowException(f"Uploading data to {desc_table_id} table failed")
 
         # Update entity table
-        template_path = os.path.join(sql_folder(WORKFLOW_MODULE), "update_descriptions.sql.jinja2")
+        template_path = project_path("oa_dashboard_workflow", "sql", "update_descriptions.sql.jinja2")
         sql = render_template(
             template_path,
             entity_table_id=release.oa_dashboard_table_id(entity_type),
@@ -502,13 +501,13 @@ class OaDashboardWorkflow(Workflow):
         success = bq_load_from_memory(
             logos_table_id,
             data,
-            schema_file_path=os.path.join(schema_folder(WORKFLOW_MODULE), "logos.json"),
+            schema_file_path=project_path("oa_dashboard_workflow", "schema" "logos.json"),
         )
         if not success:
             raise AirflowException(f"Uploading data to {logos_table_id} table failed")
 
         # Update with entity table
-        template_path = os.path.join(sql_folder(WORKFLOW_MODULE), "update_logos.sql.jinja2")
+        template_path = project_path("oa_dashboard_workflow", "sql" "update_logos.sql.jinja2")
         sql = render_template(
             template_path,
             entity_table_id=release.oa_dashboard_table_id(entity_type),

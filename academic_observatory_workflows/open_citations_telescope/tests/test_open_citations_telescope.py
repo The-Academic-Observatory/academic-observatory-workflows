@@ -34,12 +34,14 @@ from observatory.platform.observatory_environment import (
 )
 from observatory.platform.utils.http_download import DownloadInfo
 
-from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.open_citations_telescope.open_citations_telescope import (
     list_releases,
     OpenCitationsRelease,
     OpenCitationsTelescope,
 )
+
+FIXTURES_FOLDER = project_path("open_citations_telescope", "tests", "fixtures")
 
 
 class TestOpenCitationsTelescope(ObservatoryTestCase):
@@ -157,7 +159,7 @@ class TestOpenCitationsTelescope(ObservatoryTestCase):
                 self.assertEqual(release_info, actual_release_info)
 
                 # Download
-                server = HttpServer(directory=test_fixtures_folder(self.dag_id), port=self.server_port)
+                server = HttpServer(directory=FIXTURES_FOLDER, port=self.server_port)
                 with server.create():
                     ti = env.run_task(workflow.download.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
@@ -255,7 +257,7 @@ class TestOpenCitationsTelescope(ObservatoryTestCase):
         """Test that the list_releases function works correctly"""
 
         with vcr.use_cassette(
-            test_fixtures_folder(self.dag_id, "list_releases.yaml"),
+            os.path.join(FIXTURES_FOLDER, "list_releases.yaml"),
         ):
             # Test that 2 releases are returned
             # 2018-07-13T22:10:34Z, 2018-11-12T21:42:54Z, 2020-01-21T06:35:29Z

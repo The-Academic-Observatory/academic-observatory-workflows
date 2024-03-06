@@ -47,7 +47,7 @@ from observatory.platform.observatory_environment import (
     ObservatoryTestCase,
 )
 
-from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.openalex_telescope.openalex_telescope import (
     bq_compare_schemas,
     fetch_manifest,
@@ -65,6 +65,8 @@ from academic_observatory_workflows.openalex_telescope.openalex_telescope import
     s3_uri_parts,
     transform_object,
 )
+
+FIXTURES_FOLDER = project_path("openalex_telescope", "tests", "fixtures")
 
 
 class TestOpenAlexUtils(ObservatoryTestCase):
@@ -352,7 +354,7 @@ class TestOpenAlexUtils(ObservatoryTestCase):
             )
 
     def test_fetch_manifest(self):
-        manifest_path = test_fixtures_folder(self.dag_id, "manifest")
+        manifest_path = os.path.join(FIXTURES_FOLDER, "manifest")
         with aws_bucket_test_env(prefix=self.dag_id, region_name=self.aws_region_name) as bucket_name:
             s3 = boto3.client("s3")
             s3_object_key = "data/publishers/manifest"
@@ -542,10 +544,10 @@ class TestOpenAlexUtils(ObservatoryTestCase):
         self.assertFalse(bq_compare_schemas(expected, actual, True))
 
     def test_merge_schema_maps(self):
-        test1 = load_jsonl(os.path.join(test_fixtures_folder(), "openalex", "schema_generator", "part_000.jsonl"))
-        test2 = load_jsonl(os.path.join(test_fixtures_folder(), "openalex", "schema_generator", "part_001.jsonl"))
+        test1 = load_jsonl(os.path.join(FIXTURES_FOLDER, "schema_generator", "part_000.jsonl"))
+        test2 = load_jsonl(os.path.join(FIXTURES_FOLDER, "schema_generator", "part_001.jsonl"))
 
-        expected_schema_path = os.path.join(test_fixtures_folder(), "openalex", "schema_generator", "expected.json")
+        expected_schema_path = os.path.join(FIXTURES_FOLDER, "schema_generator", "expected.json")
         expected = load_and_parse_json(file_path=expected_schema_path)
 
         # Create schema maps using both the test files
@@ -769,7 +771,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 # Create data
                 workflow.aws_openalex_bucket = bucket_name
                 manifest_index = create_openalex_dataset(
-                    pathlib.Path(test_fixtures_folder(self.dag_id, "2023-04-02")),
+                    pathlib.Path(FIXTURES_FOLDER, "2023-04-02"),
                     bucket_name,
                 )
                 # fmt: off
@@ -914,7 +916,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, entity.entity_name)
                         print(f"Assert content run 1 {entity.entity_name}: {table_id}")
                         expected_data = load_and_parse_json(
-                            test_fixtures_folder(self.dag_id, "2023-04-02", "expected", f"{entity.entity_name}.json"),
+                            os.path.join(FIXTURES_FOLDER, "2023-04-02", "expected", f"{entity.entity_name}.json"),
                             date_fields={"created_date", "publication_date"},
                             timestamp_fields={"updated_date"},
                         )
@@ -983,7 +985,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             with aws_bucket_test_env(prefix=self.dag_id, region_name=self.aws_region_name) as bucket_name:
                 workflow.aws_openalex_bucket = bucket_name
                 manifest_index = create_openalex_dataset(
-                    pathlib.Path(test_fixtures_folder(self.dag_id, "2023-04-16")),
+                    pathlib.Path(os.path.join(FIXTURES_FOLDER, "2023-04-16")),
                     bucket_name,
                 )
                 merged_ids_index = {
@@ -1186,7 +1188,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, entity.entity_name)
                         print(f"Assert content run 2 {entity.entity_name}: {table_id}")
                         expected_data = load_and_parse_json(
-                            test_fixtures_folder(self.dag_id, "2023-04-16", "expected", f"{entity.entity_name}.json"),
+                            os.path.join(FIXTURES_FOLDER, "2023-04-16", "expected", f"{entity.entity_name}.json"),
                             date_fields={"created_date", "publication_date"},
                             timestamp_fields={"updated_date"},
                         )

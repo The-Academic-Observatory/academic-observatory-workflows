@@ -28,12 +28,14 @@ from observatory.platform.gcs import gcs_blob_name_from_path
 from observatory.platform.observatory_config import Workflow
 from observatory.platform.observatory_environment import find_free_port, ObservatoryEnvironment, ObservatoryTestCase
 
-from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.crossref_fundref_telescope.crossref_fundref_telescope import (
     CrossrefFundrefRelease,
     CrossrefFundrefTelescope,
     list_releases,
 )
+
+FIXTURES_FOLDER = project_path("crossref_fundref_telescope", "tests", "fixtures")
 
 
 class TestCrossrefFundrefTelescope(ObservatoryTestCase):
@@ -131,7 +133,7 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
 
                 # Test list releases task
                 with vcr.use_cassette(
-                    test_fixtures_folder(self.dag_id, "get_release_info.yaml"),
+                    os.path.join(FIXTURES_FOLDER, "get_release_info.yaml"),
                     ignore_hosts=["oauth2.googleapis.com", "bigquery.googleapis.com"],
                     ignore_localhost=True,
                 ):
@@ -147,7 +149,7 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
 
                 # Test download task
                 with httpretty.enabled():
-                    mock_file_path = test_fixtures_folder(self.dag_id, "crossref_fundref_v1.34.tar.gz")
+                    mock_file_path = os.path.join(FIXTURES_FOLDER, "crossref_fundref_v1.34.tar.gz")
                     self.setup_mock_file_download(url, mock_file_path)
                     ti = env.run_task(workflow.download.__name__)
                     self.assertEqual(State.SUCCESS, ti.state)
@@ -206,7 +208,7 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
 
         :return: None.
         """
-        cassette_path = test_fixtures_folder("crossref_fundref", "list_fundref_releases.yaml")
+        cassette_path = os.path.join(FIXTURES_FOLDER, "list_fundref_releases.yaml")
         with vcr.use_cassette(cassette_path):
             releases = list_releases(pendulum.datetime(2014, 3, 1), pendulum.datetime(2020, 6, 1))
             self.assertIsInstance(releases, List)

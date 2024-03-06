@@ -39,7 +39,7 @@ from observatory.platform.observatory_environment import (
 )
 
 import academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow
-from academic_observatory_workflows.config import schema_folder, test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow import (
     clean_url,
     data_file_pattern,
@@ -51,7 +51,6 @@ from academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow 
     make_logo_url,
     OaDashboardRelease,
     OaDashboardWorkflow,
-    WORKFLOW_MODULE,
     yield_data_glob,
 )
 from academic_observatory_workflows.tests.test_zenodo import MockZenodo
@@ -60,6 +59,12 @@ academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow.INCLU
     "country": 0,
     "institution": 0,
 }
+
+
+FIXTURES_FOLDER = project_path("oa_dashboard_workflow", "tests", "fixtures")
+DOI_FIXTURES_FOLDER = project_path("doi_workflow", "tests", "fixtures")
+DOI_SCHEMA_FOLDER = project_path("doi_workflow", "schema")
+ROR_SCHEMA_FOLDER = project_path("ror_telescope", "schema")
 
 
 class TestFunctions(TestCase):
@@ -282,13 +287,11 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
     def setup_tables(
         self, dataset_id_all: str, dataset_id_settings: str, bucket_name: str, snapshot_date: pendulum.DateTime
     ):
-        ror = load_jsonl(test_fixtures_folder("doi", "ror.jsonl"))
-        country = load_jsonl(test_fixtures_folder("country.jsonl.gz", workflow_module=WORKFLOW_MODULE))
-        institution = load_jsonl(test_fixtures_folder("institution.jsonl.gz", workflow_module=WORKFLOW_MODULE))
-        settings_country = load_jsonl(test_fixtures_folder("doi", "country.jsonl"))
+        ror = load_jsonl(os.path.join(DOI_FIXTURES_FOLDER, "ror.jsonl"))
+        settings_country = load_jsonl(os.path.join(DOI_FIXTURES_FOLDER, "country.jsonl"))
+        country = load_jsonl(os.path.join(FIXTURES_FOLDER, "country.jsonl.gz"))
+        institution = load_jsonl(os.path.join(FIXTURES_FOLDER, "institution.jsonl.gz"))
 
-        global_schema_path = schema_folder()
-        tests_schema_path = test_fixtures_folder("schema", workflow_module=WORKFLOW_MODULE)
         with CliRunner().isolated_filesystem() as t:
             tables = [
                 Table(
@@ -297,7 +300,7 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                     dataset_id_all,
                     ror,
                     bq_find_schema(
-                        path=os.path.join(global_schema_path, "ror"),
+                        path=ROR_SCHEMA_FOLDER,
                         table_name="ror",
                         release_date=snapshot_date,
                     ),
@@ -307,21 +310,21 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                     True,
                     dataset_id_all,
                     country,
-                    bq_find_schema(path=tests_schema_path, table_name="country"),
+                    bq_find_schema(path=os.path.join(FIXTURES_FOLDER, "schema"), table_name="country"),
                 ),
                 Table(
                     "institution",
                     True,
                     dataset_id_all,
                     institution,
-                    bq_find_schema(path=tests_schema_path, table_name="institution"),
+                    bq_find_schema(path=os.path.join(FIXTURES_FOLDER, "schema"), table_name="institution"),
                 ),
                 Table(
                     "country",
                     False,
                     dataset_id_settings,
                     settings_country,
-                    bq_find_schema(path=os.path.join(global_schema_path, "doi"), table_name="country"),
+                    bq_find_schema(path=DOI_SCHEMA_FOLDER, table_name="country"),
                 ),
             ]
 
@@ -367,7 +370,7 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
 
             # Upload fake cached zip files file to bucket
             for file_name in ["images-base.zip", "images.zip"]:
-                file_path = test_fixtures_folder(file_name, workflow_module=WORKFLOW_MODULE)
+                file_path = os.path.join(FIXTURES_FOLDER, file_name)
                 gcs_upload_file(bucket_name=data_bucket, blob_name=file_name, file_path=file_path)
 
             # Setup workflow and connections
@@ -451,7 +454,7 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
 
                 # Check that the data is as expected
                 for entity_type in workflow.entity_types:
-                    file_path = test_fixtures_folder("expected", f"{entity_type}.json", workflow_module=WORKFLOW_MODULE)
+                    file_path = os.path.join(FIXTURES_FOLDER, "expected", f"{entity_type}.json")
                     with open(file_path, "r") as f:
                         expected_data = json.load(f)
                     actual_data = list(yield_data_glob(data_file_pattern(release.download_folder, entity_type)))

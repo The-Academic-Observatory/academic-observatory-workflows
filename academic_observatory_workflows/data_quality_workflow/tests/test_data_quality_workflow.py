@@ -30,7 +30,7 @@ from observatory.platform.observatory_environment import (
     random_id,
 )
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder, test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.data_quality_workflow.data_quality_workflow import (
     bq_count_distinct_records,
     bq_count_duplicate_records,
@@ -42,6 +42,8 @@ from academic_observatory_workflows.data_quality_workflow.data_quality_workflow 
     is_in_dqc_table,
     Table,
 )
+
+FIXTURES_FOLDER = project_path("data_quality_workflow", "tests", "fixtures")
 
 
 class TestDataQualityWorkflow(ObservatoryTestCase):
@@ -134,23 +136,23 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
         test_tables = [
             {
                 "full_table_id": bq_table_id(self.project_id, fake_dataset_id, "people"),
-                "schema_path": os.path.join(test_fixtures_folder(), "data_quality", "people_schema.json"),
-                "expected": load_jsonl(os.path.join(test_fixtures_folder(), "data_quality", "people20230101.jsonl")),
+                "schema_path": os.path.join(FIXTURES_FOLDER, "people_schema.json"),
+                "expected": load_jsonl(os.path.join(FIXTURES_FOLDER, "people20230101.jsonl")),
             },
             {
                 "full_table_id": bq_table_id(self.project_id, fake_dataset_id, "people_shard20230101"),
-                "schema_path": os.path.join(test_fixtures_folder(), "data_quality", "people_schema.json"),
-                "expected": load_jsonl(os.path.join(test_fixtures_folder(), "data_quality", "people20230101.jsonl")),
+                "schema_path": os.path.join(FIXTURES_FOLDER, "people_schema.json"),
+                "expected": load_jsonl(os.path.join(FIXTURES_FOLDER, "people20230101.jsonl")),
             },
             {
                 "full_table_id": bq_table_id(self.project_id, fake_dataset_id, "people_shard20230108"),
-                "schema_path": os.path.join(test_fixtures_folder(), "data_quality", "people_schema.json"),
-                "expected": load_jsonl(os.path.join(test_fixtures_folder(), "data_quality", "people20230108.jsonl")),
+                "schema_path": os.path.join(FIXTURES_FOLDER, "people_schema.json"),
+                "expected": load_jsonl(os.path.join(FIXTURES_FOLDER, "people20230108.jsonl")),
             },
             {
                 "full_table_id": bq_table_id(self.project_id, fake_dataset_id, "people_shard20230115"),
-                "schema_path": os.path.join(test_fixtures_folder(), "data_quality", "people_schema.json"),
-                "expected": load_jsonl(os.path.join(test_fixtures_folder(), "data_quality", "people20230108.jsonl")),
+                "schema_path": os.path.join(FIXTURES_FOLDER, "people_schema.json"),
+                "expected": load_jsonl(os.path.join(FIXTURES_FOLDER, "people20230108.jsonl")),
             },
         ]
 
@@ -312,8 +314,7 @@ class TestDataQualityUtils(ObservatoryTestCase):
         self.dag_id = "data_quality_checks"
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
-
-        self.schema_path = os.path.join(default_schema_folder(), "data_quality", "data_quality.json")
+        self.schema_path = project_path("data_quality_workflow", "schema", "data_quality.json")
 
         # Can't use faker here because the number of bytes in a table is needed to be the same for each test run.
         self.test_table_hash = "771c9176e77c1b03f64b1b5fa4a39cdb"

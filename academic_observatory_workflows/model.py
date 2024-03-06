@@ -34,7 +34,7 @@ from observatory.platform.files import load_jsonl
 from observatory.platform.observatory_environment import bq_load_tables, Table
 from pendulum import DateTime
 
-from academic_observatory_workflows.config import schema_folder, test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 
 LICENSES = ["cc-by", None]
 
@@ -1293,12 +1293,12 @@ def bq_load_observatory_dataset(
     orcid: List[dict] = make_orcid(observatory_dataset)
 
     # Load fake ROR and settings datasets
-    test_doi_path = test_fixtures_folder("doi")
-    ror = load_jsonl(os.path.join(test_doi_path, "ror.jsonl"))
-    country = load_jsonl(os.path.join(test_doi_path, "country.jsonl"))
-    groupings = load_jsonl(os.path.join(test_doi_path, "groupings.jsonl"))
+    doi_fixtures_path = project_path("doi_workflow", "tests", "fixtures")
+    ror = load_jsonl(os.path.join(doi_fixtures_path, "ror.jsonl"))
+    country = load_jsonl(os.path.join(doi_fixtures_path, "country.jsonl"))
+    groupings = load_jsonl(os.path.join(doi_fixtures_path, "groupings.jsonl"))
 
-    schema_path = schema_folder()
+    # schema_path = schema_folder()
     with CliRunner().isolated_filesystem() as t:
         tables = [
             Table(
@@ -1306,7 +1306,7 @@ def bq_load_observatory_dataset(
                 False,
                 dataset_id_settings,
                 repository,
-                bq_find_schema(path=os.path.join(schema_path, "doi"), table_name="repository"),
+                bq_find_schema(path=project_path("doi_workflow", "schema"), table_name="repository"),
             ),
             Table(
                 "crossref_events",
@@ -1314,7 +1314,7 @@ def bq_load_observatory_dataset(
                 dataset_id_all,
                 crossref_events,
                 bq_find_schema(
-                    path=os.path.join(schema_path, "crossref_events"),
+                    path=project_path("crossref_events_telescope", "schema"),
                     table_name="crossref_events",
                 ),
             ),
@@ -1324,7 +1324,7 @@ def bq_load_observatory_dataset(
                 dataset_id_all,
                 crossref_metadata,
                 bq_find_schema(
-                    path=os.path.join(schema_path, "crossref_metadata"),
+                    path=project_path("crossref_metadata_telescope", "schema"),
                     table_name="crossref_metadata",
                     release_date=snapshot_date,
                 ),
@@ -1335,7 +1335,7 @@ def bq_load_observatory_dataset(
                 dataset_id_all,
                 crossref_fundref,
                 bq_find_schema(
-                    path=os.path.join(schema_path, "crossref_fundref"),
+                    path=project_path("crossref_fundref_telescope", "schema"),
                     table_name="crossref_fundref",
                     release_date=snapshot_date,
                 ),
@@ -1346,7 +1346,7 @@ def bq_load_observatory_dataset(
                 dataset_id_all,
                 open_citations,
                 bq_find_schema(
-                    path=os.path.join(schema_path, "open_citations"),
+                    path=project_path("open_citations_telescope", "schema"),
                     table_name="open_citations",
                     release_date=snapshot_date,
                 ),
@@ -1357,7 +1357,7 @@ def bq_load_observatory_dataset(
                 dataset_id_all,
                 scihub,
                 bq_find_schema(
-                    path=os.path.join(schema_path, "scihub"), release_date=snapshot_date, table_name="scihub"
+                    path=project_path("scihub_telescope", "schema"), release_date=snapshot_date, table_name="scihub"
                 ),
             ),
             Table(
@@ -1365,49 +1365,51 @@ def bq_load_observatory_dataset(
                 False,
                 dataset_id_all,
                 unpaywall,
-                bq_find_schema(path=os.path.join(schema_path, "unpaywall"), table_name="unpaywall"),
+                bq_find_schema(path=project_path("unpaywall_telescope", "schema"), table_name="unpaywall"),
             ),
             Table(
                 "ror",
                 True,
                 dataset_id_all,
                 ror,
-                bq_find_schema(path=os.path.join(schema_path, "ror"), table_name="ror", release_date=snapshot_date),
+                bq_find_schema(
+                    path=project_path("ror_telescope", "schema"), table_name="ror", release_date=snapshot_date
+                ),
             ),
             Table(
                 "country",
                 False,
                 dataset_id_settings,
                 country,
-                bq_find_schema(path=os.path.join(schema_path, "doi"), table_name="country"),
+                bq_find_schema(path=project_path("doi_workflow", "schema"), table_name="country"),
             ),
             Table(
                 "groupings",
                 False,
                 dataset_id_settings,
                 groupings,
-                bq_find_schema(path=os.path.join(schema_path, "doi"), table_name="groupings"),
+                bq_find_schema(path=project_path("doi_workflow", "schema"), table_name="groupings"),
             ),
             Table(
                 "orcid",
                 False,
                 dataset_id_all,
                 orcid,
-                bq_find_schema(path=os.path.join(schema_path, "orcid"), table_name="orcid"),
+                bq_find_schema(path=project_path("orcid_telescope", "schema"), table_name="orcid"),
             ),
             Table(
                 "works",
                 False,
                 dataset_id_all,
                 openalex,
-                bq_find_schema(path=os.path.join(schema_path, "openalex"), table_name="works"),
+                bq_find_schema(path=project_path("openalex_telescope", "schema"), table_name="works"),
             ),
             Table(
                 "pubmed",
                 False,
                 dataset_id_all,
                 pubmed,
-                bq_find_schema(path=os.path.join(schema_path, "pubmed"), table_name="pubmed"),
+                bq_find_schema(path=project_path("pubmed_telescope", "schema"), table_name="pubmed"),
             ),
         ]
 

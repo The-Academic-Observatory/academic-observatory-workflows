@@ -48,7 +48,7 @@ from observatory.platform.workflows.workflow import (
     WorkflowBashOperator,
 )
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+from academic_observatory_workflows.config import project_path, Tag
 
 SNAPSHOT_URL = "https://api.crossref.org/snapshots/monthly/{year}/{month:02d}/all.json.tar.gz"
 
@@ -88,7 +88,7 @@ class CrossrefMetadataTelescope(Workflow):
         bq_dataset_id: str = "crossref_metadata",
         bq_table_name: str = "crossref_metadata",
         api_dataset_id: str = "crossref_metadata",
-        schema_folder: str = os.path.join(default_schema_folder(), "crossref_metadata"),
+        schema_folder: str = project_path("crossref_metadata_telescope", "schema"),
         dataset_description: str = "The Crossref Metadata Plus dataset: https://www.crossref.org/services/metadata-retrieval/metadata-plus/",
         table_description: str = "The Crossref Metadata Plus dataset: https://www.crossref.org/services/metadata-retrieval/metadata-plus/",
         crossref_metadata_conn_id: str = "crossref_metadata",

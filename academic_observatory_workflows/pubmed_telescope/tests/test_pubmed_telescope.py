@@ -39,7 +39,7 @@ from observatory.platform.observatory_environment import (
 )
 from observatory.platform.workflows.workflow import ChangefileRelease
 
-from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.pubmed_telescope.pubmed_telescope import (
     add_attributes,
     change_pubmed_list_structure,
@@ -58,6 +58,8 @@ from academic_observatory_workflows.pubmed_telescope.pubmed_telescope import (
     save_pubmed_merged_upserts,
     transform_pubmed,
 )
+
+FIXTURES_FOLDER = project_path("pubmed_telescope", "tests", "fixtures")
 
 
 def query_table(table_id: str, select_columns: str, order_by_field: str) -> List[Dict]:
@@ -309,9 +311,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
         bq_dataset_id = env.add_dataset()
 
         # Create mock FTP server that holds the testing Pubmed Files.
-        ftp_server = FtpServer(
-            host=self.ftp_server_url, port=self.ftp_port, directory=os.path.join(test_fixtures_folder())
-        )
+        ftp_server = FtpServer(host=self.ftp_server_url, port=self.ftp_port, directory=FIXTURES_FOLDER)
 
         with ftp_server.create():
             with env.create(task_logging=True):
@@ -1039,9 +1039,7 @@ class TestPubMedUtils(ObservatoryTestCase):
         """Test that an exmaple PubMed XMLs can be transformed successfully."""
 
         # Create mock FTP server to host the test Pubmed Files.
-        ftp_server = FtpServer(
-            host=self.ftp_server_url, port=self.ftp_port, directory=os.path.join(test_fixtures_folder())
-        )
+        ftp_server = FtpServer(host=self.ftp_server_url, port=self.ftp_port, directory=FIXTURES_FOLDER)
 
         with ftp_server.create():
             # Setup environment
@@ -1092,7 +1090,7 @@ class TestPubMedUtils(ObservatoryTestCase):
     def test_load_datafile(self):
         """Test that a Pubmed datafile can be read in and parsed."""
 
-        xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "baseline", "pubmed22n0001.xml.gz")
+        xml_file_path = os.path.join(FIXTURES_FOLDER, "baseline", "pubmed22n0001.xml.gz")
         data = load_datafile(input_path=xml_file_path)
 
         self.assertTrue(data)
@@ -1213,7 +1211,7 @@ class TestPubMedUtils(ObservatoryTestCase):
                 datafile_date=pendulum.now(),
                 datafile_release=changefile_release,
             )
-            bad_xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "pubmed22n0001_bad_fields.xml.gz")
+            bad_xml_file_path = os.path.join(FIXTURES_FOLDER, "pubmed22n0001_bad_fields.xml.gz")
             shutil.copy2(bad_xml_file_path, datafile_bad.download_file_path)
 
             # Attempt to transform bad xml - just a baseline file, returns a baseline file if it is successful.
@@ -1233,7 +1231,7 @@ class TestPubMedUtils(ObservatoryTestCase):
             )
 
             ### VALID BASELINE XML ###
-            valid_xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "baseline", "pubmed22n0001.xml.gz")
+            valid_xml_file_path = os.path.join(FIXTURES_FOLDER, "baseline", "pubmed22n0001.xml.gz")
             shutil.copy2(valid_xml_file_path, datafile_good.download_file_path)
 
             # Attempt to transform valid xml - should output a transformed file if it is successful.
@@ -1262,7 +1260,7 @@ class TestPubMedUtils(ObservatoryTestCase):
                 datafile_release=changefile_release,
             )
 
-            valid_xml_file_path = os.path.join(test_fixtures_folder(), "pubmed", "updatefiles", "pubmed22n0003.xml.gz")
+            valid_xml_file_path = os.path.join(FIXTURES_FOLDER, "updatefiles", "pubmed22n0003.xml.gz")
             shutil.copy2(valid_xml_file_path, datafile_good.download_file_path)
 
             result: PubmedUpdatefile = transform_pubmed(

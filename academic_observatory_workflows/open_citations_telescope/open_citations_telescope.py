@@ -38,7 +38,7 @@ from observatory.platform.utils.http_download import download_files, DownloadInf
 from observatory.platform.utils.url_utils import get_http_response_json, get_observatory_http_header
 from observatory.platform.workflows.workflow import cleanup, set_task_state, SnapshotRelease, Workflow
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+from academic_observatory_workflows.config import project_path, Tag
 
 VERSION_URL = "https://api.figshare.com/v2/articles/6741422/versions"
 
@@ -70,7 +70,7 @@ class OpenCitationsTelescope(Workflow):
         bq_dataset_id: str = "open_citations",
         bq_table_name: str = "open_citations",
         api_dataset_id: str = "open_citations",
-        schema_folder: str = os.path.join(default_schema_folder(), "open_citations"),
+        schema_folder: str = project_path("open_citations_telescope", "schema"),
         dataset_description: str = "The OpenCitations Indexes: http://opencitations.net/",
         table_description: str = "The OpenCitations COCI CSV table: http://opencitations.net/",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,

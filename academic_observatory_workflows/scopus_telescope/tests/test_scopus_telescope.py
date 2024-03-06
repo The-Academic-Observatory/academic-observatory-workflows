@@ -12,22 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Author: Tuan Chien, James Diprose
+
 import datetime
 import json
 import os
 import unittest
 from queue import Empty, Queue
 from threading import Event, Thread
-from unittest.mock import MagicMock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pendulum
 import time_machine
 from airflow import AirflowException
 from airflow.models import Connection
 from airflow.utils.state import State
+from observatory.platform.api import get_dataset_releases
+from observatory.platform.bigquery import bq_sharded_table_id
+from observatory.platform.files import list_files
+from observatory.platform.gcs import gcs_blob_name_from_path
+from observatory.platform.observatory_config import Workflow
+from observatory.platform.observatory_environment import find_free_port, ObservatoryEnvironment, ObservatoryTestCase
+from observatory.platform.utils.url_utils import get_user_agent
 
-from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.scopus_telescope.scopus_telescope import (
     ScopusClient,
     ScopusJsonParser,
@@ -36,20 +44,8 @@ from academic_observatory_workflows.scopus_telescope.scopus_telescope import (
     ScopusUtility,
     ScopusUtilWorker,
 )
-from observatory.platform.api import get_dataset_releases
-from observatory.platform.bigquery import bq_sharded_table_id
-from observatory.platform.files import list_files
-from observatory.platform.gcs import gcs_blob_name_from_path
-from observatory.platform.observatory_config import Workflow
-from observatory.platform.observatory_environment import (
-    ObservatoryEnvironment,
-    ObservatoryTestCase,
-    find_free_port,
-)
-from observatory.platform.utils.url_utils import get_user_agent
 
-
-# Author: Tuan Chien, James Diprose
+FIXTURES_FOLDER = project_path("scopus_telescope", "tests", "fixtures")
 
 
 class TestScopusTelescope(ObservatoryTestCase):
@@ -169,7 +165,7 @@ class TestScopusTelescope(ObservatoryTestCase):
                     "academic_observatory_workflows.scopus_telescope.scopus_telescope.ScopusUtility.make_query"
                 ) as m_search:
                     # Load mocked data
-                    fixture_file = os.path.join(test_fixtures_folder("scopus"), "test.json")
+                    fixture_file = project_path(FIXTURES_FOLDER, "test.json")
                     with open(fixture_file, "r") as f:
                         results_str = f.read()
                     results_len = 1

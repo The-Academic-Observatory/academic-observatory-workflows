@@ -20,10 +20,12 @@ import unittest
 
 import vcr
 from click.testing import CliRunner
+from observatory.platform.files import get_file_hash
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
-from academic_observatory_workflows.config import test_fixtures_folder
-from observatory.platform.files import get_file_hash
+from academic_observatory_workflows.config import project_path
+
+FIXTURES_FOLDER = project_path("tests", "fixtures")
 
 
 class TestClearbitUtils(unittest.TestCase):
@@ -31,7 +33,7 @@ class TestClearbitUtils(unittest.TestCase):
         """Test clearbit_download_logo"""
 
         with CliRunner().isolated_filesystem() as t:
-            with vcr.use_cassette(test_fixtures_folder("clearbit", "clearbit_download_logo.yaml")):
+            with vcr.use_cassette(os.path.join(FIXTURES_FOLDER, "clearbit_download_logo.yaml")):
                 # Company that exists
                 file_path = os.path.join(t, "blueorigin.jpg")
                 success = clearbit_download_logo(company_url="blueorigin.com", file_path=file_path)

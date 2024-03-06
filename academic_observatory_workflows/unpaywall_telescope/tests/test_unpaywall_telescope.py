@@ -38,7 +38,7 @@ from observatory.platform.observatory_environment import (
 )
 
 import academic_observatory_workflows
-from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.unpaywall_telescope.unpaywall_telescope import (
     Changefile,
     changefile_download_url,
@@ -52,8 +52,13 @@ from academic_observatory_workflows.unpaywall_telescope.unpaywall_telescope impo
     UnpaywallTelescope,
 )
 
+FIXTURES_FOLDER = project_path("unpaywall_telescope", "tests", "fixtures")
+
 
 class TestUnpaywallUtils(ObservatoryTestCase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     def test_changefile(self):
         class MockRelease:
             @property
@@ -149,7 +154,7 @@ class TestUnpaywallUtils(ObservatoryTestCase):
         # This cassette was run with a valid api key, which is not saved into the cassette or code
         # Set UNPAYWALL_API_KEY to use the real api key
         with vcr.use_cassette(
-            test_fixtures_folder("unpaywall", "get_snapshot_file_name_success.yaml"),
+            os.path.join(FIXTURES_FOLDER, "get_snapshot_file_name_success.yaml"),
             filter_query_parameters=["api_key"],
         ):
             filename = get_snapshot_file_name(os.getenv("UNPAYWALL_API_KEY", "my-api-key"))
@@ -157,7 +162,7 @@ class TestUnpaywallUtils(ObservatoryTestCase):
 
         # An invalid API key
         with vcr.use_cassette(
-            test_fixtures_folder("unpaywall", "get_snapshot_file_name_failure.yaml"),
+            os.path.join(FIXTURES_FOLDER, "get_snapshot_file_name_failure.yaml"),
             filter_query_parameters=["api_key"],
         ):
             with self.assertRaises(AirflowException):
@@ -333,7 +338,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Download and process snapshot
-                server = HttpServer(directory=test_fixtures_folder(self.dag_id), port=find_free_port())
+                server = HttpServer(directory=FIXTURES_FOLDER, port=find_free_port())
                 with server.create():
                     with patch.object(
                         academic_observatory_workflows.unpaywall_telescope.unpaywall_telescope,
@@ -376,14 +381,14 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                 self.assertEqual(State.SUCCESS, ti.state)
                 self.assert_table_integrity(release.bq_main_table_id, expected_rows=10)
                 expected_content = load_and_parse_json(
-                    test_fixtures_folder(self.dag_id, "expected", "run1_bq_load_main_table.json"),
+                    os.path.join(FIXTURES_FOLDER, "expected", "run1_bq_load_main_table.json"),
                     date_fields={"oa_date", "published_date"},
                     timestamp_fields={"updated"},
                 )
                 self.assert_table_content(release.bq_main_table_id, expected_content, "doi")
 
                 # Download and process changefiles
-                server = HttpServer(directory=test_fixtures_folder(self.dag_id), port=find_free_port())
+                server = HttpServer(directory=FIXTURES_FOLDER, port=find_free_port())
                 with server.create():
                     with patch.object(
                         academic_observatory_workflows.unpaywall_telescope.unpaywall_telescope,
@@ -433,7 +438,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                 self.assertEqual(State.SUCCESS, ti.state)
                 self.assert_table_integrity(release.bq_main_table_id, expected_rows=10)
                 expected_content = load_and_parse_json(
-                    test_fixtures_folder(self.dag_id, "expected", "run1_bq_upsert_records.json"),
+                    os.path.join(FIXTURES_FOLDER, "expected", "run1_bq_upsert_records.json"),
                     date_fields={"oa_date", "published_date"},
                     timestamp_fields={"updated"},
                 )
@@ -569,7 +574,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                     self.assertEqual(State.SUCCESS, ti.state)
 
                 # Run changefile tasks
-                server = HttpServer(directory=test_fixtures_folder(self.dag_id), port=find_free_port())
+                server = HttpServer(directory=FIXTURES_FOLDER, port=find_free_port())
                 with server.create():
                     with patch.object(
                         academic_observatory_workflows.unpaywall_telescope.unpaywall_telescope,
@@ -619,7 +624,7 @@ class TestUnpaywallTelescope(ObservatoryTestCase):
                 self.assertEqual(State.SUCCESS, ti.state)
                 self.assert_table_integrity(release.bq_main_table_id, expected_rows=12)
                 expected_content = load_and_parse_json(
-                    test_fixtures_folder(self.dag_id, "expected", "run3_bq_upsert_records.json"),
+                    os.path.join(FIXTURES_FOLDER, "expected", "run3_bq_upsert_records.json"),
                     date_fields={"oa_date", "published_date"},
                     timestamp_fields={"updated"},
                 )

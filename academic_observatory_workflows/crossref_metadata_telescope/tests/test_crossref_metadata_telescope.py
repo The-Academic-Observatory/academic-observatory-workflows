@@ -29,7 +29,7 @@ from observatory.platform.gcs import gcs_blob_name_from_path
 from observatory.platform.observatory_config import Workflow
 from observatory.platform.observatory_environment import find_free_port, ObservatoryEnvironment, ObservatoryTestCase
 
-from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.crossref_metadata_telescope.crossref_metadata_telescope import (
     check_release_exists,
     CrossrefMetadataRelease,
@@ -38,6 +38,8 @@ from academic_observatory_workflows.crossref_metadata_telescope.crossref_metadat
     transform_file,
     transform_item,
 )
+
+FIXTURES_FOLDER = project_path("crossref_metadata_telescope", "tests", "fixtures")
 
 
 class TestCrossrefMetadataTelescope(ObservatoryTestCase):
@@ -54,7 +56,7 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
         self.dag_id = "crossref_metadata"
         self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
         self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
-        self.download_path = test_fixtures_folder("crossref_metadata", "crossref_metadata.json.tar.gz")
+        self.download_path = os.path.join(FIXTURES_FOLDER, "crossref_metadata.json.tar.gz")
 
     def test_dag_structure(self):
         """Test that the DAG has the correct structure."""

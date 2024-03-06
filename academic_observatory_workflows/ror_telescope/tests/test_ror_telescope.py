@@ -32,7 +32,7 @@ from observatory.platform.observatory_environment import (
     ObservatoryTestCase,
 )
 
-from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.ror_telescope.ror_telescope import (
     is_lat_lng_valid,
     list_ror_records,
@@ -40,6 +40,8 @@ from academic_observatory_workflows.ror_telescope.ror_telescope import (
     RorTelescope,
     transform_ror,
 )
+
+FIXTURES_FOLDER = project_path("ror_telescope", "tests", "fixtures")
 
 
 class TestRorTelescope(ObservatoryTestCase):
@@ -71,8 +73,8 @@ class TestRorTelescope(ObservatoryTestCase):
             },
         ]
         self.mocked_files = [
-            test_fixtures_folder(self.dag_id, "v1.11-2022-10-20-ror-data.zip"),
-            test_fixtures_folder(self.dag_id, "v1.10-2022-10-17-ror-data.zip"),
+            os.path.join(FIXTURES_FOLDER, "v1.11-2022-10-20-ror-data.zip"),
+            os.path.join(FIXTURES_FOLDER, "v1.10-2022-10-17-ror-data.zip"),
         ]
 
     def test_dag_structure(self):
@@ -164,7 +166,7 @@ class TestRorTelescope(ObservatoryTestCase):
                 self.assertListEqual(self.release_info, records)
 
                 # Test download task
-                server = HttpServer(test_fixtures_folder(self.dag_id), port=self.server_port)
+                server = HttpServer(FIXTURES_FOLDER, port=self.server_port)
                 with server.create():
                     ti = env.run_task(workflow.download.__name__)
                     self.assertEqual(State.SUCCESS, ti.state)
@@ -207,7 +209,7 @@ class TestRorTelescope(ObservatoryTestCase):
                 # Test that data loaded into BigQuery
                 ti = env.run_task(workflow.bq_load.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
-                expected_content = load_jsonl(test_fixtures_folder("ror", "table_content.jsonl"))
+                expected_content = load_jsonl(os.path.join(FIXTURES_FOLDER, "table_content.jsonl"))
                 for release in releases:
                     table_id = bq_sharded_table_id(
                         self.project_id, workflow.bq_dataset_id, workflow.bq_table_name, release.snapshot_date
@@ -237,7 +239,7 @@ class TestRorTelescope(ObservatoryTestCase):
         start_date = pendulum.datetime(2023, 3, 16)
         end_date = pendulum.datetime(2023, 4, 12)
 
-        with vcr.use_cassette(test_fixtures_folder(self.dag_id, "list_ror_records.yaml")):
+        with vcr.use_cassette(os.path.join(FIXTURES_FOLDER, "list_ror_records.yaml")):
             records = list_ror_records(self.ror_conceptrecid, start_date, end_date)
             self.assertEqual(2, len(records))
             self.assertEqual(

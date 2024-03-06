@@ -19,7 +19,6 @@ from __future__ import annotations
 import copy
 import json
 import logging
-import os
 from concurrent.futures import as_completed, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import timedelta
@@ -48,13 +47,12 @@ from observatory.platform.config import AirflowConns
 from observatory.platform.observatory_config import CloudWorkspace
 from observatory.platform.utils.dag_run_sensor import DagRunSensor
 from observatory.platform.utils.jinja2_utils import (
-    make_sql_jinja2_filename,
     render_template,
 )
 from observatory.platform.utils.url_utils import retry_get_url
 from observatory.platform.workflows.workflow import make_snapshot_date, set_task_state, SnapshotRelease, Workflow
 
-from academic_observatory_workflows.config import sql_folder, Tag
+from academic_observatory_workflows.config import project_path, Tag
 
 MAX_QUERIES = 100
 
@@ -607,7 +605,7 @@ class DoiWorkflow(Workflow):
         """Create the repository_institution_to_ror_table."""
 
         # Fetch unique Unpaywall repository institution names
-        template_path = os.path.join(sql_folder(), make_sql_jinja2_filename("create_openaccess_repo_names"))
+        template_path = project_path("doi_workflow", "sql", "create_openaccess_repo_names.sql.jinja2")
         sql = render_template(template_path, project_id=self.input_project_id, dataset_id=self.bq_unpaywall_dataset_id)
         records = bq_run_query(sql)
 
@@ -682,7 +680,7 @@ class DoiWorkflow(Workflow):
                 input_tables.append(f"{table.project_id}.{table.dataset_id}.{table.table_id}")
 
         # Create processed table
-        template_path = os.path.join(sql_folder(), make_sql_jinja2_filename(sql_query.name))
+        template_path = project_path("doi_workflow", "sql", f"{sql_query.name}.sql.jinja2")
         sql = render_template(
             template_path,
             snapshot_date=release.snapshot_date,
@@ -710,7 +708,7 @@ class DoiWorkflow(Workflow):
         """Runs the aggregate table query."""
 
         agg: Aggregation = kwargs["aggregation"]
-        template_path = os.path.join(sql_folder(), make_sql_jinja2_filename("create_aggregate"))
+        template_path = project_path("doi_workflow", "sql", "create_aggregate.sql.jinja2")
         sql = render_template(
             template_path,
             project_id=self.output_project_id,
@@ -797,7 +795,7 @@ class DoiWorkflow(Workflow):
         """Create views for dashboards dataset."""
 
         # Create processed dataset
-        template_path = os.path.join(sql_folder(), make_sql_jinja2_filename("comparison_view"))
+        template_path = project_path("doi_workflow", "sql", "comparison_view.sql.jinja2")
 
         # Create views
         table_names = ["country", "funder", "group", "institution", "publisher", "subregion"]

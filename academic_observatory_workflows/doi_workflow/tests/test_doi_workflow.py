@@ -34,7 +34,7 @@ from observatory.platform.observatory_environment import (
     ObservatoryTestCase,
 )
 
-from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.doi_workflow.doi_workflow import (
     DoiWorkflow,
     fetch_ror_affiliations,
@@ -50,6 +50,8 @@ from academic_observatory_workflows.model import (
     Repository,
     sort_events,
 )
+
+FIXTURES_FOLDER = project_path("doi_workflow", "tests", "fixtures")
 
 
 def query_table(table_id: str, order_by_field: str) -> List[Dict]:
@@ -73,7 +75,6 @@ class TestDoiWorkflow(ObservatoryTestCase):
         self.project_id: str = os.getenv("TEST_GCP_PROJECT_ID")
         self.bucket_name: str = os.getenv("TEST_GCP_BUCKET_NAME")
         self.data_location: str = os.getenv("TEST_GCP_DATA_LOCATION")
-        self.doi_fixtures = "doi"
 
         # Institutions
         repo_curtin = Repository(
@@ -160,7 +161,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
     def test_fetch_ror_affiliations(self):
         """Test fetch_ror_affiliations"""
 
-        with vcr.use_cassette(test_fixtures_folder(self.doi_fixtures, "test_fetch_ror_affiliations.yaml")):
+        with vcr.use_cassette(os.path.join(FIXTURES_FOLDER, "test_fetch_ror_affiliations.yaml")):
             # Single match
             repository_institution = "Augsburg University - OPUS - Augsburg University Publication Server"
             expected = {
@@ -281,7 +282,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
     def test_ror_to_ror_hierarchy_index(self):
         """Test ror_to_ror_hierarchy_index. Check that correct ancestor relationships created."""
 
-        ror = load_jsonl(test_fixtures_folder(self.doi_fixtures, "ror.jsonl"))
+        ror = load_jsonl(os.path.join(FIXTURES_FOLDER, "ror.jsonl"))
         index = ror_to_ror_hierarchy_index(ror)
         self.assertEqual(247, len(index))
 
@@ -380,7 +381,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 self.assertEqual(expected_state, ti.state)
 
                 # Generate fake dataset
-                repository = load_jsonl(test_fixtures_folder(self.doi_fixtures, "repository.jsonl"))
+                repository = load_jsonl(os.path.join(FIXTURES_FOLDER, "repository.jsonl"))
                 observatory_dataset = make_observatory_dataset(self.institutions, self.repositories)
                 bq_load_observatory_dataset(
                     observatory_dataset,
@@ -394,7 +395,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
                 # Create repository institution table
                 with vcr.use_cassette(
-                    test_fixtures_folder("doi", "create_repo_institution_to_ror_table.yaml"),
+                    os.path.join(FIXTURES_FOLDER, "create_repo_institution_to_ror_table.yaml"),
                     ignore_hosts=["oauth2.googleapis.com", "bigquery.googleapis.com"],
                     ignore_localhost=True,
                 ):

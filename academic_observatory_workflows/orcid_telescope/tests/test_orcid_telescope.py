@@ -42,7 +42,7 @@ from observatory.platform.observatory_environment import (
     random_id,
 )
 
-from academic_observatory_workflows.config import test_fixtures_folder
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.orcid_telescope.orcid_telescope import (
     BATCH_REGEX,
     create_orcid_batch_manifest,
@@ -55,12 +55,13 @@ from academic_observatory_workflows.orcid_telescope.orcid_telescope import (
     transform_orcid_record,
 )
 
+FIXTURES_FOLDER = project_path("orcid_telescope", "tests", "fixtures")
+
 
 @dataclass
 class OrcidTestRecords:
     # First run
-    fixtures_folder = test_fixtures_folder("orcid")
-    first_run_folder = os.path.join(fixtures_folder, "first_run")
+    first_run_folder = os.path.join(FIXTURES_FOLDER, "first_run")
     first_run_records = [
         {
             "orcid": "0000-0001-5000-5000",
@@ -86,7 +87,7 @@ class OrcidTestRecords:
     first_run_main_table = os.path.join(first_run_folder, "main_table.json")
 
     # Second run
-    second_run_folder = os.path.join(fixtures_folder, "second_run")
+    second_run_folder = os.path.join(FIXTURES_FOLDER, "second_run")
     second_run_records = [
         {
             "orcid": "0000-0001-5000-5000",
@@ -107,12 +108,12 @@ class OrcidTestRecords:
     # Invalid Key
     invalid_key_orcid = {
         "orcid": "0000-0001-5010-1000",
-        "path": os.path.join(fixtures_folder, "0000-0001-5010-1000.xml"),
+        "path": os.path.join(FIXTURES_FOLDER, "0000-0001-5010-1000.xml"),
     }
     # ORICD doesn't match path
     mismatched_orcid = {
         "orcid": "0000-0001-5011-1000",
-        "path": os.path.join(fixtures_folder, "0000-0001-5011-1000.xml"),
+        "path": os.path.join(FIXTURES_FOLDER, "0000-0001-5011-1000.xml"),
     }
 
     # Table date fields
@@ -131,7 +132,7 @@ class TestOrcidTelescope(ObservatoryTestCase):
         self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
         self.aws_region_name = os.getenv("AWS_DEFAULT_REGION")
 
-    def test_dag_load(self):
+    def test_dag_structure(self):
         """Test that the DAG has the correct structure."""
 
         workflow = OrcidTelescope(dag_id=self.dag_id, cloud_workspace=self.fake_cloud_workspace)
@@ -582,7 +583,7 @@ class TestOrcidBatch(unittest.TestCase):
             )
 
             # Make the manifest file
-            shutil.copy(os.path.join(OrcidTestRecords.fixtures_folder, "test_manifest.csv"), test_batch.manifest_file)
+            shutil.copy(os.path.join(FIXTURES_FOLDER, "test_manifest.csv"), test_batch.manifest_file)
 
             # Check that missing, expected and existing records are correctly identified
             records = [os.path.basename(record["path"]) for record in OrcidTestRecords.first_run_records]

@@ -45,7 +45,7 @@ from observatory.platform.observatory_config import CloudWorkspace
 from observatory.platform.utils.url_utils import retry_get_url
 from observatory.platform.workflows.workflow import cleanup, set_task_state, SnapshotRelease, Workflow
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+from academic_observatory_workflows.config import project_path, Tag
 
 RELEASES_URL = "https://gitlab.com/api/v4/projects/crossref%2Fopen_funder_registry/releases"
 
@@ -79,7 +79,7 @@ class CrossrefFundrefTelescope(Workflow):
         bq_dataset_id: str = "crossref_fundref",
         bq_table_name: str = "crossref_fundref",
         api_dataset_id: str = "crossref_fundref",
-        schema_folder: str = os.path.join(default_schema_folder(), "crossref_fundref"),
+        schema_folder: str = project_path("crossref_fundref_telescope", "schema"),
         dataset_description: str = "The Crossref Funder Registry dataset: https://www.crossref.org/services/funder-registry/",
         table_description: str = "The Crossref Funder Registry dataset: https://www.crossref.org/services/funder-registry/",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,

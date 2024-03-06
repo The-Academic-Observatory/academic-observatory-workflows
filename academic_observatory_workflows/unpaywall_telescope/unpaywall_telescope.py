@@ -60,7 +60,7 @@ from observatory.platform.workflows.workflow import (
     WorkflowBashOperator,
 )
 
-from academic_observatory_workflows.config import schema_folder as default_schema_folder, Tag
+from academic_observatory_workflows.config import project_path, Tag
 
 # See https://unpaywall.org/products/data-feed for details of available APIs
 SNAPSHOT_URL = "https://api.unpaywall.org/feed/snapshot"
@@ -200,7 +200,7 @@ class UnpaywallTelescope(Workflow):
         bq_dataset_id: str = "unpaywall",
         bq_table_name: str = "unpaywall",
         api_dataset_id: str = "unpaywall",
-        schema_folder: str = os.path.join(default_schema_folder(), "unpaywall"),
+        schema_folder: str = project_path("unpaywall_telescope", "schema"),
         dataset_description: str = "Unpaywall Data Feed: https://unpaywall.org/products/data-feed",
         table_description: str = "Unpaywall Data Feed: https://unpaywall.org/products/data-feed",
         primary_key: str = "doi",
