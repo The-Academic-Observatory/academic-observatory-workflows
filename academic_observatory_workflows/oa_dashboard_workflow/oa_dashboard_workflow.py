@@ -1,4 +1,4 @@
-# Copyright 2021-2023 Curtin University
+# Copyright 2021-2024 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,11 +35,20 @@ import google.cloud.bigquery as bigquery
 import jsonlines
 import numpy as np
 import pendulum
+from airflow.decorators import dag, task
 from airflow.exceptions import AirflowException
+from airflow.models.baseoperator import chain
 from airflow.sensors.external_task import ExternalTaskSensor
 from glom import Coalesce, glom, SKIP
 from jinja2 import Template
-from observatory.platform.airflow import get_airflow_connection_password
+
+from academic_observatory_workflows.clearbit import clearbit_download_logo
+from academic_observatory_workflows.config import project_path, Tag
+from academic_observatory_workflows.github import trigger_repository_dispatch
+from academic_observatory_workflows.oa_dashboard_workflow.institution_ids import INSTITUTION_IDS
+from academic_observatory_workflows.wikipedia import fetch_wikipedia_descriptions
+from academic_observatory_workflows.zenodo import make_draft_version, publish_new_version, Zenodo
+from observatory.platform.airflow import get_airflow_connection_password, on_failure_callback
 from observatory.platform.bigquery import (
     bq_create_dataset,
     bq_create_table_from_query,
@@ -52,23 +61,14 @@ from observatory.platform.bigquery import (
 from observatory.platform.files import yield_jsonl
 from observatory.platform.gcs import gcs_blob_name_from_path, gcs_download_blob, gcs_download_blobs, gcs_upload_file
 from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.utils.jinja2_utils import (
-    render_template,
-)
+from observatory.platform.refactor.tasks import check_dependencies
+from observatory.platform.utils.jinja2_utils import render_template
 from observatory.platform.workflows.workflow import (
     cleanup,
     make_snapshot_date,
     set_task_state,
     SnapshotRelease,
-    Workflow,
 )
-
-from academic_observatory_workflows.clearbit import clearbit_download_logo
-from academic_observatory_workflows.config import project_path, Tag
-from academic_observatory_workflows.github import trigger_repository_dispatch
-from academic_observatory_workflows.oa_dashboard_workflow.institution_ids import INSTITUTION_IDS
-from academic_observatory_workflows.wikipedia import fetch_wikipedia_descriptions
-from academic_observatory_workflows.zenodo import make_draft_version, publish_new_version, Zenodo
 
 INCLUSION_THRESHOLD = {"country": 5, "institution": 50}
 MAX_REPOSITORIES = 200
@@ -201,11 +201,79 @@ class OaDashboardRelease(SnapshotRelease):
             self.output_project_id, self.bq_oa_dashboard_dataset_id, f"{table_name}_logos", self.snapshot_date
         )
 
+    @staticmethod
+    def from_dict(dict_: dict):
+        return OaDashboardRelease(
+            dag_id=dict_["dag_id"],
+            run_id=dict_["run_id"],
+            snapshot_date=pendulum.parse(dict_["snapshot_date"]),
+            input_project_id=dict_["input_project_id"],
+            output_project_id=dict_["output_project_id"],
+            bq_agg_dataset_id=dict_["bq_agg_dataset_id"],
+            bq_ror_dataset_id=dict_["bq_ror_dataset_id"],
+            bq_settings_dataset_id=dict_["bq_settings_dataset_id"],
+            bq_oa_dashboard_dataset_id=dict_["bq_oa_dashboard_dataset_id"],
+        )
 
-class OaDashboardWorkflow(Workflow):
-    """The OaDashboardWorkflow generates data files for the COKI Open Access Dashboard.
+    def to_dict(self) -> dict:
+        return dict(
+            dag_id=self.dag_id,
+            run_id=self.run_id,
+            snapshot_date=self.snapshot_date.to_datetime_string(),
+            input_project_id=self.input_project_id,
+            output_project_id=self.output_project_id,
+            bq_agg_dataset_id=self.bq_agg_dataset_id,
+            bq_ror_dataset_id=self.bq_ror_dataset_id,
+            bq_settings_dataset_id=self.bq_settings_dataset_id,
+            bq_oa_dashboard_dataset_id=self.bq_oa_dashboard_dataset_id,
+        )
 
-    The figure below illustrates the generated data and notes about what each file is used for.
+
+def create_dag(
+    *,
+    dag_id: str,
+    cloud_workspace: CloudWorkspace,
+    data_bucket: str,
+    conceptrecid: int,
+    doi_dag_id: str = "doi",
+    entity_types: List[str] = None,
+    bq_agg_dataset_id: str = "observatory",
+    bq_ror_dataset_id: str = "ror",
+    bq_settings_dataset_id: str = "settings",
+    bq_oa_dashboard_dataset_id: str = "oa_dashboard",
+    data_location: str = "us",
+    version: str = "v10",
+    zenodo_host: str = "https://zenodo.org",
+    github_conn_id="oa_dashboard_github_token",
+    zenodo_conn_id="oa_dashboard_zenodo_token",
+    start_date: Optional[pendulum.DateTime] = pendulum.datetime(2021, 5, 2),
+    schedule: Optional[str] = "@weekly",
+    max_active_runs: int = 1,
+    retries: int = 3,
+):
+    """Create the OaDashboardWorkflow, which generates data files for the COKI Open Access Dashboard.
+
+    :param dag_id: the DAG id.
+    :param cloud_workspace: The CloudWorkspace.
+    :param data_bucket: the Google Cloud Storage bucket where image data should be stored.
+    :param conceptrecid: the Zenodo Concept Record ID for the COKI Open Access Dataset. The Concept Record ID is
+    the last set of numbers from the Concept DOI.
+    :param doi_dag_id: the DAG id to wait for.
+    :param entity_types: the table names.
+    :param bq_agg_dataset_id: the id of the BigQuery dataset where the Academic Observatory aggregated data lives.
+    :param bq_ror_dataset_id: the id of the BigQuery dataset containing the ROR table.
+    :param bq_settings_dataset_id: the id of the BigQuery settings dataset, which contains the country table.
+    :param bq_oa_dashboard_dataset_id: the id of the BigQuery dataset where the tables produced by this workflow will be created.
+    :param version: the dataset version published by this workflow. The Github Action pulls from a specific dataset
+    version: https://github.com/The-Academic-Observatory/coki-oa-web/blob/develop/.github/workflows/build-on-data-update.yml#L68-L74.
+    This is so that when breaking changes are made to the schema, the web application won't break.
+    :param zenodo_host: the Zenodo hostname, can be changed to https://sandbox.zenodo.org for testing.
+    :param github_conn_id: the Github Token Airflow Connection ID.
+    :param zenodo_conn_id: the Zenodo Token Airflow Connection ID.
+    :param start_date: the start date.
+    :param schedule: the schedule interval.
+
+    The figure below illustrates the data files produced by this workflow:
     .
     ├── data: data
     │   ├── index.json: used by the Cloudflare Worker search and filtering API.
@@ -250,383 +318,360 @@ class OaDashboardWorkflow(Workflow):
                     └── 05ynxx418.jpg
     """
 
-    def __init__(
-        self,
-        *,
-        dag_id: str,
-        cloud_workspace: CloudWorkspace,
-        data_bucket: str,
-        conceptrecid: int,
-        doi_dag_id: str = "doi",
-        entity_types: List[str] = None,
-        bq_agg_dataset_id: str = "observatory",
-        bq_ror_dataset_id: str = "ror",
-        bq_settings_dataset_id: str = "settings",
-        bq_oa_dashboard_dataset_id: str = "oa_dashboard",
-        data_location: str = "us",
-        version: str = "v10",
-        zenodo_host: str = "https://zenodo.org",
-        github_conn_id="oa_dashboard_github_token",
-        zenodo_conn_id="oa_dashboard_zenodo_token",
-        start_date: Optional[pendulum.DateTime] = pendulum.datetime(2021, 5, 2),
-        schedule: Optional[str] = "@weekly",
-    ):
-        """Create the OaDashboardWorkflow.
+    if entity_types is None:
+        entity_types = ["country", "institution"]
 
-        :param dag_id: the DAG id.
-        :param cloud_workspace: The CloudWorkspace.
-        :param data_bucket: the Google Cloud Storage bucket where image data should be stored.
-        :param conceptrecid: the Zenodo Concept Record ID for the COKI Open Access Dataset. The Concept Record ID is
-        the last set of numbers from the Concept DOI.
-        :param doi_dag_id: the DAG id to wait for.
-        :param entity_types: the table names.
-        :param bq_agg_dataset_id: the id of the BigQuery dataset where the Academic Observatory aggregated data lives.
-        :param bq_ror_dataset_id: the id of the BigQuery dataset containing the ROR table.
-        :param bq_settings_dataset_id: the id of the BigQuery settings dataset, which contains the country table.
-        :param bq_oa_dashboard_dataset_id: the id of the BigQuery dataset where the tables produced by this workflow will be created.
-        :param version: the dataset version published by this workflow. The Github Action pulls from a specific dataset
-        version: https://github.com/The-Academic-Observatory/coki-oa-web/blob/develop/.github/workflows/build-on-data-update.yml#L68-L74.
-        This is so that when breaking changes are made to the schema, the web application won't break.
-        :param zenodo_host: the Zenodo hostname, can be changed to https://sandbox.zenodo.org for testing.
-        :param github_conn_id: the Github Token Airflow Connection ID.
-        :param zenodo_conn_id: the Zenodo Token Airflow Connection ID.
-        :param start_date: the start date.
-        :param schedule: the schedule interval.
-        """
+    @dag(
+        dag_id=dag_id,
+        start_date=start_date,
+        schedule=schedule,
+        catchup=False,
+        max_active_runs=max_active_runs,
+        tags=["academic-observatory"],
+        default_args={
+            "owner": "airflow",
+            "on_failure_callback": on_failure_callback,
+            "retries": retries,
+        },
+    )
+    def oa_dashboard_workflow():
+        @task
+        def fetch_release(**context):
+            """Fetch a release"""
+            snapshot_date = make_snapshot_date(**context)
+            release = OaDashboardRelease(
+                dag_id=dag_id,
+                run_id=context["run_id"],
+                snapshot_date=snapshot_date,
+                input_project_id=cloud_workspace.input_project_id,
+                output_project_id=cloud_workspace.output_project_id,
+                bq_ror_dataset_id=bq_ror_dataset_id,
+                bq_settings_dataset_id=bq_settings_dataset_id,
+                bq_agg_dataset_id=bq_agg_dataset_id,
+                bq_oa_dashboard_dataset_id=bq_oa_dashboard_dataset_id,
+            )
 
-        if entity_types is None:
-            entity_types = ["country", "institution"]
+            return release.to_dict()
 
-        super().__init__(
-            dag_id=dag_id,
-            start_date=start_date,
-            schedule=schedule,
-            catchup=False,
-            airflow_conns=[github_conn_id, zenodo_conn_id],
-            tags=[Tag.academic_observatory],
-        )
-        self.cloud_workspace = cloud_workspace
-        self.input_project_id = cloud_workspace.input_project_id
-        self.output_project_id = cloud_workspace.output_project_id
-        self.data_bucket = data_bucket
-        self.bq_agg_dataset_id = bq_agg_dataset_id
-        self.bq_ror_dataset_id = bq_ror_dataset_id
-        self.bq_settings_dataset_id = bq_settings_dataset_id
-        self.bq_oa_dashboard_dataset_id = bq_oa_dashboard_dataset_id
-        self.data_location = data_location
-        self.entity_types = entity_types
-        self.version = version
-        self.conceptrecid = conceptrecid
-        self.zenodo_host = zenodo_host
+        @task
+        def create_dataset(**context):
+            """Make BigQuery datasets."""
 
-        self.github_conn_id = github_conn_id
-        self.zenodo_conn_id = zenodo_conn_id
-        self.zenodo: Optional[Zenodo] = None
+            bq_create_dataset(
+                project_id=cloud_workspace.output_project_id,
+                dataset_id=bq_oa_dashboard_dataset_id,
+                location=data_location,
+                description="The COKI Open Access Dashboard dataset",
+            )
 
-        self.add_operator(
-            ExternalTaskSensor(task_id=f"{doi_dag_id}_sensor", external_dag_id=doi_dag_id, mode="reschedule")
-        )
-        self.add_setup_task(self.check_dependencies)
-        self.add_task(self.make_bq_datasets)
-        self.add_task(self.upload_institution_ids)
-        self.add_task(self.create_entity_tables)
-        self.add_task(
-            self.add_wiki_descriptions,
-            op_kwargs={"entity_type": "country"},
-            task_id="add_wiki_descriptions_country",
-        )
-        self.add_task(
-            self.add_wiki_descriptions,
-            op_kwargs={"entity_type": "institution"},
-            task_id="add_wiki_descriptions_institution",
-        )
-        self.add_task(self.download_assets)
-        self.add_task(self.download_institution_logos)
-        self.add_task(self.export_tables)
-        self.add_task(self.download_data)
-        self.add_task(self.make_draft_zenodo_version)
-        self.add_task(self.build_datasets)
-        self.add_task(self.publish_zenodo_version)
-        self.add_task(self.upload_dataset)
-        self.add_task(self.repository_dispatch)
-        self.add_task(self.cleanup)
+        @task
+        def upload_institution_ids(release: dict, **context):
+            """Upload the institution IDs to BigQuery"""
 
-    ######################################
-    # Airflow tasks
-    ######################################
+            release = OaDashboardRelease.from_dict(release)
+            data = [{"ror_id": ror_id} for ror_id in INSTITUTION_IDS]
+            success = bq_load_from_memory(
+                release.institution_ids_table_id,
+                data,
+                schema_file_path=project_path("oa_dashboard_workflow", "schema", "institution_ids.json"),
+            )
+            set_task_state(success, "upload_institution_ids", release)
 
-    def make_release(self, **kwargs) -> OaDashboardRelease:
-        """Make release instances. The release is passed as an argument to the function (TelescopeFunction) that is
-        called in 'task_callable'.
+        @task
+        def create_entity_tables(release: dict, **context):
+            """Create the country and institution tables"""
 
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: A list of OaDashboardRelease instances
-        """
+            release = OaDashboardRelease.from_dict(release)
+            results, queries = [], []
 
-        # Make Zenodo instance
-        zenodo_token = get_airflow_connection_password(self.zenodo_conn_id)
-        self.zenodo = Zenodo(host=self.zenodo_host, access_token=zenodo_token)
+            # Query the country and institution aggregations
+            for entity_type in entity_types:
+                template_path = project_path("oa_dashboard_workflow", "sql", f"{entity_type}.sql.jinja2")
+                sql = render_template(
+                    template_path,
+                    agg_table_id=release.observatory_agg_table_id(entity_type),
+                    start_year=START_YEAR,
+                    end_year=END_YEAR,
+                    ror_table_id=release.ror_table_id,
+                    country_table_id=release.country_table_id,
+                    institution_ids_table_id=release.institution_ids_table_id,
+                    inclusion_threshold=INCLUSION_THRESHOLD[entity_type],
+                )
+                dst_table_id = release.oa_dashboard_table_id(entity_type)
+                queries.append((sql, dst_table_id))
 
-        snapshot_date = make_snapshot_date(**kwargs)
-        return OaDashboardRelease(
-            dag_id=self.dag_id,
-            run_id=kwargs["run_id"],
-            snapshot_date=snapshot_date,
-            input_project_id=self.input_project_id,
-            output_project_id=self.output_project_id,
-            bq_ror_dataset_id=self.bq_ror_dataset_id,
-            bq_settings_dataset_id=self.bq_settings_dataset_id,
-            bq_agg_dataset_id=self.bq_agg_dataset_id,
-            bq_oa_dashboard_dataset_id=self.bq_oa_dashboard_dataset_id,
-        )
+            # Run queries, saving to BigQuery
+            for (sql, dst_table_id) in queries:
+                success = bq_create_table_from_query(sql=sql, table_id=dst_table_id)
+                results.append(success)
 
-    def make_bq_datasets(self, release: OaDashboardRelease, **kwargs):
-        """Make BigQuery datasets."""
+            state = all(results)
+            if not state:
+                raise AirflowException("OaDashboardWorkflow.query failed")
 
-        bq_create_dataset(
-            project_id=self.output_project_id,
-            dataset_id=self.bq_oa_dashboard_dataset_id,
-            location=self.data_location,
-            description="The COKI Open Access Dashboard dataset",
-        )
+        wiki_tasks = []
+        for entity_type in entity_types:
 
-    def upload_institution_ids(self, release: OaDashboardRelease, **kwargs):
-        """Upload the institution IDs to BigQuery"""
+            @task(task_id=f"add_wiki_descriptions_{entity_type}")
+            def add_wiki_descriptions(release: dict, **context):
+                """Download wiki descriptions and update indexes."""
 
-        data = [{"ror_id": ror_id} for ror_id in INSTITUTION_IDS]
-        success = bq_load_from_memory(
-            release.institution_ids_table_id,
-            data,
-            schema_file_path=project_path("oa_dashboard_workflow", "schema", "institution_ids.json"),
-        )
-        set_task_state(success, self.upload_institution_ids.__name__, release)
+                logging.info(f"add_wiki_descriptions: {entity_type}")
+                release = OaDashboardRelease.from_dict(release)
 
-    def create_entity_tables(self, release: OaDashboardRelease, **kwargs):
-        """Create the country and institution tables"""
+                # Get entities to fetch descriptions for
+                results = bq_run_query(
+                    f"SELECT DISTINCT wikipedia_url FROM {release.oa_dashboard_table_id(entity_type)} WHERE wikipedia_url IS NOT NULL AND TRIM(wikipedia_url) != ''"
+                )
+                wikipedia_urls = [result["wikipedia_url"] for result in results]
 
-        results, queries = [], []
+                # Fetch Wikipedia descriptions
+                results = fetch_wikipedia_descriptions(wikipedia_urls)
 
-        # Query the country and institution aggregations
-        for entity_type in self.entity_types:
-            template_path = project_path("oa_dashboard_workflow", "sql", f"{entity_type}.sql.jinja2")
+                # Upload to BigQuery
+                data = [{"url": wikipedia_url, "text": description} for wikipedia_url, description in results]
+                desc_table_id = release.descriptions_table_id(entity_type)
+                success = bq_load_from_memory(
+                    desc_table_id,
+                    data,
+                    schema_file_path=project_path("oa_dashboard_workflow", "schema", "descriptions.json"),
+                )
+                if not success:
+                    raise AirflowException(f"Uploading data to {desc_table_id} table failed")
+
+                # Update entity table
+                template_path = project_path("oa_dashboard_workflow", "sql", "update_descriptions.sql.jinja2")
+                sql = render_template(
+                    template_path,
+                    entity_table_id=release.oa_dashboard_table_id(entity_type),
+                    descriptions_table_id=desc_table_id,
+                )
+                bq_run_query(sql)
+
+            wiki_tasks.append(add_wiki_descriptions)
+
+        @task
+        def download_assets(release: dict, **context):
+            """Download assets"""
+
+            # Download assets
+            # They are unzipped in this particular order so that images-base overwrites any files in images
+            release = OaDashboardRelease.from_dict(release)
+            blob_names = ["images.zip", "images-base.zip"]
+            for blob_name in blob_names:
+                # Download asset zip
+                file_path = os.path.join(release.download_folder, blob_name)
+                gcs_download_blob(bucket_name=data_bucket, blob_name=blob_name, file_path=file_path)
+
+                # Unzip into build
+                unzip_folder_path = os.path.join(release.build_path, "images")
+                with ZipFile(file_path) as zip_file:
+                    zip_file.extractall(unzip_folder_path)  # Overwrites by default
+
+        @task
+        def download_institution_logos(release: dict, **context):
+            """Download logos and update indexes."""
+
+            logging.info(f"download_logos: institution")
+
+            # Get entities to fetch descriptions for
+            release = OaDashboardRelease.from_dict(release)
+            entity_type = "institution"
+            results = bq_run_query(f"SELECT id, url FROM {release.oa_dashboard_table_id(entity_type)}")
+            entities = [(result["id"], result["url"]) for result in results]
+
+            # Update logos
+            data = fetch_institution_logos(release.build_path, entities)
+
+            # Upload to BigQuery
+            logos_table_id = release.logos_table_id(entity_type)
+            success = bq_load_from_memory(
+                logos_table_id,
+                data,
+                schema_file_path=project_path("oa_dashboard_workflow", "schema", "logos.json"),
+            )
+            if not success:
+                raise AirflowException(f"Uploading data to {logos_table_id} table failed")
+
+            # Update with entity table
+            template_path = project_path("oa_dashboard_workflow", "sql", "update_logos.sql.jinja2")
             sql = render_template(
                 template_path,
-                agg_table_id=release.observatory_agg_table_id(entity_type),
-                start_year=START_YEAR,
-                end_year=END_YEAR,
-                ror_table_id=release.ror_table_id,
-                country_table_id=release.country_table_id,
-                institution_ids_table_id=release.institution_ids_table_id,
-                inclusion_threshold=INCLUSION_THRESHOLD[entity_type],
+                entity_table_id=release.oa_dashboard_table_id(entity_type),
+                logos_table_id=logos_table_id,
             )
-            dst_table_id = release.oa_dashboard_table_id(entity_type)
-            queries.append((sql, dst_table_id))
+            bq_run_query(sql)
 
-        # Run queries, saving to BigQuery
-        for (sql, dst_table_id) in queries:
-            success = bq_create_table_from_query(sql=sql, table_id=dst_table_id)
-            results.append(success)
-
-        state = all(results)
-        if not state:
-            raise AirflowException("OaDashboardWorkflow.query failed")
-
-    def add_wiki_descriptions(self, release: OaDashboardRelease, entity_type: str, **kwargs):
-        """Download wiki descriptions and update indexes."""
-
-        logging.info(f"add_wiki_descriptions: {entity_type}")
-
-        # Get entities to fetch descriptions for
-        results = bq_run_query(
-            f"SELECT DISTINCT wikipedia_url FROM {release.oa_dashboard_table_id(entity_type)} WHERE wikipedia_url IS NOT NULL AND TRIM(wikipedia_url) != ''"
-        )
-        wikipedia_urls = [result["wikipedia_url"] for result in results]
-
-        # Fetch Wikipedia descriptions
-        results = fetch_wikipedia_descriptions(wikipedia_urls)
-
-        # Upload to BigQuery
-        data = [{"url": wikipedia_url, "text": description} for wikipedia_url, description in results]
-        desc_table_id = release.descriptions_table_id(entity_type)
-        success = bq_load_from_memory(
-            desc_table_id,
-            data,
-            schema_file_path=project_path("oa_dashboard_workflow", "schema", "descriptions.json"),
-        )
-        if not success:
-            raise AirflowException(f"Uploading data to {desc_table_id} table failed")
-
-        # Update entity table
-        template_path = project_path("oa_dashboard_workflow", "sql", "update_descriptions.sql.jinja2")
-        sql = render_template(
-            template_path,
-            entity_table_id=release.oa_dashboard_table_id(entity_type),
-            descriptions_table_id=desc_table_id,
-        )
-        bq_run_query(sql)
-
-    def download_assets(self, release: OaDashboardRelease, **kwargs):
-        """Download assets"""
-
-        # Download assets
-        # They are unzipped in this particular order so that images-base overwrites any files in images
-        blob_names = ["images.zip", "images-base.zip"]
-        for blob_name in blob_names:
-            # Download asset zip
-            file_path = os.path.join(release.download_folder, blob_name)
-            gcs_download_blob(bucket_name=self.data_bucket, blob_name=blob_name, file_path=file_path)
-
-            # Unzip into build
-            unzip_folder_path = os.path.join(release.build_path, "images")
-            with ZipFile(file_path) as zip_file:
-                zip_file.extractall(unzip_folder_path)  # Overwrites by default
-
-    def download_institution_logos(self, release: OaDashboardRelease, **kwargs):
-        """Download logos and update indexes."""
-
-        logging.info(f"download_logos: institution")
-
-        # Get entities to fetch descriptions for
-        entity_type = "institution"
-        results = bq_run_query(f"SELECT id, url FROM {release.oa_dashboard_table_id(entity_type)}")
-        entities = [(result["id"], result["url"]) for result in results]
-
-        # Update logos
-        data = fetch_institution_logos(release.build_path, entities)
-
-        # Upload to BigQuery
-        logos_table_id = release.logos_table_id(entity_type)
-        success = bq_load_from_memory(
-            logos_table_id,
-            data,
-            schema_file_path=project_path("oa_dashboard_workflow", "schema", "logos.json"),
-        )
-        if not success:
-            raise AirflowException(f"Uploading data to {logos_table_id} table failed")
-
-        # Update with entity table
-        template_path = project_path("oa_dashboard_workflow", "sql", "update_logos.sql.jinja2")
-        sql = render_template(
-            template_path,
-            entity_table_id=release.oa_dashboard_table_id(entity_type),
-            logos_table_id=logos_table_id,
-        )
-        bq_run_query(sql)
-
-        # Zip dataset
-        shutil.make_archive(os.path.join(release.out_path, "images"), "zip", os.path.join(release.build_path, "images"))
-
-    def export_tables(self, release: OaDashboardRelease, **kwargs):
-        """Export and download the queried data"""
-
-        # Fetch data
-        blob_prefix = gcs_blob_name_from_path(release.download_folder)
-
-        results = []
-        for entity_type in self.entity_types:
-            destination_uri = f"gs://{self.cloud_workspace.download_bucket}/{blob_prefix}/{entity_type}-data-*.jsonl.gz"
-            table_id = release.oa_dashboard_table_id(entity_type)
-            success = bq_query_to_gcs(
-                query=f"SELECT * FROM {table_id} ORDER BY stats.p_outputs_open DESC",  # Uses a query to export data to make sure it is in the correct order
-                project_id=self.output_project_id,
-                destination_uri=destination_uri,
-            )
-            results.append(success)
-
-        if not all(results):
-            raise AirflowException("OaDashboardWorkflow.download failed")
-
-    def download_data(self, release: OaDashboardRelease, **kwargs):
-        """Download the queried data."""
-
-        blob_prefix = gcs_blob_name_from_path(release.download_folder)
-        state = gcs_download_blobs(
-            bucket_name=self.cloud_workspace.download_bucket,
-            prefix=blob_prefix,
-            destination_path=release.download_folder,
-        )
-        if not state:
-            raise AirflowException("OaDashboardWorkflow.download failed")
-
-    def make_draft_zenodo_version(self, release: OaDashboardRelease, **kwargs):
-        """Make a draft Zenodo version of the dataset.
-
-        :param release: the release instance.
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are
-        passed to this argument.
-        :return: None.
-        """
-
-        make_draft_version(self.zenodo, self.conceptrecid)
-
-    def build_datasets(self, release: OaDashboardRelease, **kwargs):
-        """Transform the queried data into the final format for the open access website."""
-
-        # Get versions
-        res = self.zenodo.get_versions(self.conceptrecid, all_versions=1)
-        if res.status_code != 200:
-            raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
-        zenodo_versions = [
-            ZenodoVersion(
-                pendulum.parse(version["created"]),
-                f"https://zenodo.org/record/{version['id']}/files/coki-oa-dataset.zip?download=1",
-            )
-            for version in res.json()
-        ]
-
-        # Save OA Dashboard dataset
-        build_data_path = os.path.join(release.build_path, "data")
-        save_oa_dashboard_dataset(release.download_folder, build_data_path, self.entity_types, zenodo_versions)
-        shutil.make_archive(os.path.join(release.out_path, "data"), "zip", os.path.join(release.build_path, "data"))
-
-        # Save COKI Open Access Dataset
-        coki_dataset_path = os.path.join(release.transform_folder, "coki-oa-dataset")
-        save_zenodo_dataset(release.download_folder, coki_dataset_path, self.entity_types)
-        shutil.make_archive(os.path.join(release.out_path, "coki-oa-dataset"), "zip", coki_dataset_path)
-
-    def publish_zenodo_version(self, release: OaDashboardRelease, **kwargs):
-        """Publish the new Zenodo version of the dataset."""
-
-        res = self.zenodo.get_versions(self.conceptrecid, all_versions=0)
-        if res.status_code != 200:
-            raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
-        draft = res.json()[0]
-        draft_id = draft["id"]
-        if draft["state"] != "unsubmitted":
-            raise AirflowException(f"Latest version is not a draft: {draft_id}")
-
-        file_path = os.path.join(release.out_path, "coki-oa-dataset.zip")
-        publish_new_version(self.zenodo, draft_id, file_path)
-
-    def upload_dataset(self, release: OaDashboardRelease, **kwargs):
-        """Publish the dataset produced by this workflow."""
-
-        # gcs_upload_file should always rewrite a new version of latest.zip if it exists
-        # object versioning on the bucket will keep the previous versions
-        for file_name in ["data.zip", "images.zip"]:
-            blob_name = f"{self.version}/{file_name}"
-            file_path = os.path.join(release.out_path, file_name)
-            gcs_upload_file(
-                bucket_name=self.data_bucket, blob_name=blob_name, file_path=file_path, check_blob_hash=False
+            # Zip dataset
+            shutil.make_archive(
+                os.path.join(release.out_path, "images"), "zip", os.path.join(release.build_path, "images")
             )
 
-    def repository_dispatch(self, release: OaDashboardRelease, **kwargs):
-        """Trigger a Github repository_dispatch to trigger new website builds."""
+        @task
+        def export_tables(release: dict, **context):
+            """Export and download the queried data"""
 
-        token = get_airflow_connection_password(self.github_conn_id)
-        event_types = ["data-update/develop", "data-update/staging", "data-update/production"]
-        for event_type in event_types:
-            trigger_repository_dispatch(
-                org="The-Academic-Observatory", repo_name="coki-oa-web", token=token, event_type=event_type
+            # Fetch data
+            release = OaDashboardRelease.from_dict(release)
+            blob_prefix = gcs_blob_name_from_path(release.download_folder)
+
+            results = []
+            for entity_type in entity_types:
+                destination_uri = f"gs://{cloud_workspace.download_bucket}/{blob_prefix}/{entity_type}-data-*.jsonl.gz"
+                table_id = release.oa_dashboard_table_id(entity_type)
+                success = bq_query_to_gcs(
+                    query=f"SELECT * FROM {table_id} ORDER BY stats.p_outputs_open DESC",  # Uses a query to export data to make sure it is in the correct order
+                    project_id=release.output_project_id,
+                    destination_uri=destination_uri,
+                )
+                results.append(success)
+
+            if not all(results):
+                raise AirflowException("OaDashboardWorkflow.download failed")
+
+        @task
+        def download_data(release: dict, **context):
+            """Download the queried data."""
+
+            release = OaDashboardRelease.from_dict(release)
+            blob_prefix = gcs_blob_name_from_path(release.download_folder)
+            state = gcs_download_blobs(
+                bucket_name=cloud_workspace.download_bucket,
+                prefix=blob_prefix,
+                destination_path=release.download_folder,
             )
+            if not state:
+                raise AirflowException("OaDashboardWorkflow.download failed")
 
-    def cleanup(self, release: OaDashboardRelease, **kwargs):
-        """Delete all files and folders associated with this release."""
+        @task
+        def make_draft_zenodo_version(release: dict, **context):
+            """Make a draft Zenodo version of the dataset."""
 
-        cleanup(dag_id=self.dag_id, execution_date=kwargs["execution_date"], workflow_folder=release.workflow_folder)
+            zenodo_token = get_airflow_connection_password(zenodo_conn_id)
+            zenodo = Zenodo(host=zenodo_host, access_token=zenodo_token)
+            make_draft_version(zenodo, conceptrecid)
+
+        @task
+        def build_datasets(release: dict, **context):
+            """Transform the queried data into the final format for the open access website."""
+
+            # Get versions
+            zenodo_token = get_airflow_connection_password(zenodo_conn_id)
+            zenodo = Zenodo(host=zenodo_host, access_token=zenodo_token)
+            res = zenodo.get_versions(conceptrecid, all_versions=1)
+            if res.status_code != 200:
+                raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
+            zenodo_versions = [
+                ZenodoVersion(
+                    pendulum.parse(version["created"]),
+                    f"https://zenodo.org/record/{version['id']}/files/coki-oa-dataset.zip?download=1",
+                )
+                for version in res.json()
+            ]
+
+            # Save OA Dashboard dataset
+            release = OaDashboardRelease.from_dict(release)
+            build_data_path = os.path.join(release.build_path, "data")
+            save_oa_dashboard_dataset(release.download_folder, build_data_path, entity_types, zenodo_versions)
+            shutil.make_archive(os.path.join(release.out_path, "data"), "zip", os.path.join(release.build_path, "data"))
+
+            # Save COKI Open Access Dataset
+            coki_dataset_path = os.path.join(release.transform_folder, "coki-oa-dataset")
+            save_zenodo_dataset(release.download_folder, coki_dataset_path, entity_types)
+            shutil.make_archive(os.path.join(release.out_path, "coki-oa-dataset"), "zip", coki_dataset_path)
+
+        @task
+        def publish_zenodo_version(release: dict, **context):
+            """Publish the new Zenodo version of the dataset."""
+
+            release = OaDashboardRelease.from_dict(release)
+            zenodo_token = get_airflow_connection_password(zenodo_conn_id)
+            zenodo = Zenodo(host=zenodo_host, access_token=zenodo_token)
+            res = zenodo.get_versions(conceptrecid, all_versions=0)
+            if res.status_code != 200:
+                raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
+            draft = res.json()[0]
+            draft_id = draft["id"]
+            if draft["state"] != "unsubmitted":
+                raise AirflowException(f"Latest version is not a draft: {draft_id}")
+
+            file_path = os.path.join(release.out_path, "coki-oa-dataset.zip")
+            publish_new_version(zenodo, draft_id, file_path)
+
+        @task
+        def upload_dataset(release: dict, **context):
+            """Publish the dataset produced by this workflow."""
+
+            # gcs_upload_file should always rewrite a new version of latest.zip if it exists
+            # object versioning on the bucket will keep the previous versions
+            release = OaDashboardRelease.from_dict(release)
+            for file_name in ["data.zip", "images.zip"]:
+                blob_name = f"{version}/{file_name}"
+                file_path = os.path.join(release.out_path, file_name)
+                gcs_upload_file(
+                    bucket_name=data_bucket, blob_name=blob_name, file_path=file_path, check_blob_hash=False
+                )
+
+        @task
+        def repository_dispatch(release: dict, **context):
+            """Trigger a Github repository_dispatch to trigger new website builds."""
+
+            token = get_airflow_connection_password(github_conn_id)
+            event_types = ["data-update/develop", "data-update/staging", "data-update/production"]
+            for event_type in event_types:
+                trigger_repository_dispatch(
+                    org="The-Academic-Observatory", repo_name="coki-oa-web", token=token, event_type=event_type
+                )
+
+        @task
+        def cleanup_workflow(release: dict, **context):
+            """Delete all files and folders associated with this release."""
+
+            release = OaDashboardRelease.from_dict(release)
+            cleanup(dag_id=dag_id, execution_date=context["logical_date"], workflow_folder=release.workflow_folder)
+
+        # Define task connections
+        task_doi_sensor = ExternalTaskSensor(
+            task_id=f"{doi_dag_id}_sensor", external_dag_id=doi_dag_id, mode="reschedule"
+        )
+        task_check_dependencies = check_dependencies(airflow_conns=[github_conn_id, zenodo_conn_id])
+        task_create_dataset = create_dataset()
+        xcom_release = fetch_release()
+        task_upload_institution_ids = upload_institution_ids(xcom_release)
+        task_create_entity_tables = create_entity_tables(xcom_release)
+        tasks_wiki = [func(xcom_release) for func in wiki_tasks]
+        task_download_assets = download_assets(xcom_release)
+        task_download_institution_logos = download_institution_logos(xcom_release)
+        task_export_tables = export_tables(xcom_release)
+        task_download_data = download_data(xcom_release)
+        task_make_draft_zenodo_version = make_draft_zenodo_version(xcom_release)
+        task_build_datasets = build_datasets(xcom_release)
+        task_publish_zenodo_version = publish_zenodo_version(xcom_release)
+        task_upload_dataset = upload_dataset(xcom_release)
+        task_repository_dispatch = repository_dispatch(xcom_release)
+        task_cleanup_workflow = cleanup_workflow(xcom_release)
+
+        chain(
+            task_doi_sensor,
+            task_check_dependencies,
+            task_create_dataset,
+            xcom_release,
+            task_upload_institution_ids,
+            task_create_entity_tables,
+            *tasks_wiki,
+            task_download_assets,
+            task_download_institution_logos,
+            task_export_tables,
+            task_download_data,
+            task_make_draft_zenodo_version,
+            task_build_datasets,
+            task_publish_zenodo_version,
+            task_upload_dataset,
+            task_repository_dispatch,
+            task_cleanup_workflow,
+        )
+
+    return oa_dashboard_workflow()
 
 
 def bq_query_to_gcs(*, query: str, project_id: str, destination_uri: str, location: str = "us") -> bool:

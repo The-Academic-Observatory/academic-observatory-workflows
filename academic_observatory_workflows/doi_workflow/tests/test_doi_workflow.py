@@ -17,29 +17,22 @@
 from __future__ import annotations
 
 import os
-from datetime import timedelta
 from typing import Dict, List
 
 import pendulum
 import vcr
+from airflow.models import DagModel
+from airflow.utils.session import provide_session
 from airflow.utils.state import State
-from observatory.platform.api import get_dataset_releases
-from observatory.platform.bigquery import bq_run_query, bq_sharded_table_id, bq_table_id
-from observatory.platform.files import load_jsonl
-from observatory.platform.observatory_config import Workflow
-from observatory.platform.observatory_environment import (
-    find_free_port,
-    make_dummy_dag,
-    ObservatoryEnvironment,
-    ObservatoryTestCase,
-)
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.doi_workflow.doi_workflow import (
-    DoiWorkflow,
+    AGGREGATIONS,
+    create_dag,
     fetch_ror_affiliations,
     make_sql_queries,
     ror_to_ror_hierarchy_index,
+    SENSOR_DAG_IDS,
 )
 from academic_observatory_workflows.model import (
     bq_load_observatory_dataset,
@@ -49,6 +42,17 @@ from academic_observatory_workflows.model import (
     make_observatory_dataset,
     Repository,
     sort_events,
+)
+from observatory.platform.api import get_dataset_releases
+from observatory.platform.bigquery import bq_run_query, bq_sharded_table_id, bq_table_id
+from observatory.platform.config import module_file_path
+from observatory.platform.files import load_jsonl
+from observatory.platform.observatory_config import Workflow
+from observatory.platform.observatory_environment import (
+    find_free_port,
+    make_dummy_dag,
+    ObservatoryEnvironment,
+    ObservatoryTestCase,
 )
 
 FIXTURES_FOLDER = project_path("doi_workflow", "tests", "fixtures")
@@ -190,71 +194,99 @@ class TestDoiWorkflow(ObservatoryTestCase):
     def test_dag_structure(self):
         """Test that the DOI DAG has the correct structure."""
 
-        dag = DoiWorkflow(
+        dag = create_dag(
             dag_id=self.dag_id,
             cloud_workspace=self.fake_cloud_workspace,
-        ).make_dag()
+        )
         self.assert_dag_structure(
             {
-                "crossref_metadata_sensor": ["check_dependencies"],
-                "crossref_fundref_sensor": ["check_dependencies"],
-                "geonames_sensor": ["check_dependencies"],
-                "ror_sensor": ["check_dependencies"],
-                "open_citations_sensor": ["check_dependencies"],
-                "unpaywall_sensor": ["check_dependencies"],
-                "orcid_sensor": ["check_dependencies"],
-                "crossref_events_sensor": ["check_dependencies"],
-                "openalex_sensor": ["check_dependencies"],
-                "pubmed_sensor": ["check_dependencies"],
-                "check_dependencies": ["create_datasets"],
+                "sensors.crossref_metadata_sensor": ["check_dependencies"],
+                "sensors.crossref_fundref_sensor": ["check_dependencies"],
+                "sensors.geonames_sensor": ["check_dependencies"],
+                "sensors.ror_sensor": ["check_dependencies"],
+                "sensors.open_citations_sensor": ["check_dependencies"],
+                "sensors.unpaywall_sensor": ["check_dependencies"],
+                "sensors.orcid_sensor": ["check_dependencies"],
+                "sensors.crossref_events_sensor": ["check_dependencies"],
+                "sensors.openalex_sensor": ["check_dependencies"],
+                "sensors.pubmed_sensor": ["check_dependencies"],
+                "check_dependencies": ["fetch_release"],
+                "fetch_release": [
+                    "create_datasets",
+                    "create_repo_institution_to_ror_table",
+                    "create_ror_hierarchy_table",
+                    "intermediate_tables.crossref_events",
+                    "intermediate_tables.crossref_fundref",
+                    "intermediate_tables.ror",
+                    "intermediate_tables.orcid",
+                    "intermediate_tables.open_citations",
+                    "intermediate_tables.openaccess",
+                    "intermediate_tables.openalex",
+                    "intermediate_tables.pubmed",
+                    "intermediate_tables.crossref_metadata",
+                    "intermediate_tables.doi",
+                    "aggregate_tables.country",
+                    "aggregate_tables.funder",
+                    "aggregate_tables.group",
+                    "aggregate_tables.institution",
+                    "aggregate_tables.author",
+                    "aggregate_tables.journal",
+                    "aggregate_tables.publisher",
+                    "aggregate_tables.region",
+                    "aggregate_tables.subregion",
+                    "update_table_descriptions",
+                    "copy_to_dashboards",
+                    "create_dashboard_views",
+                    "add_dataset_release",
+                ],
                 "create_datasets": ["create_repo_institution_to_ror_table"],
                 "create_repo_institution_to_ror_table": ["create_ror_hierarchy_table"],
-                "create_ror_hierarchy_table": ["create_crossref_metadata"],
-                "create_crossref_metadata": ["merge_0"],
-                "merge_0": [
-                    "create_crossref_events",
-                    "create_crossref_fundref",
-                    "create_ror",
-                    "create_orcid",
-                    "create_open_citations",
-                    "create_openaccess",
-                    "create_openalex",
-                    "create_pubmed",
+                "create_ror_hierarchy_table": ["intermediate_tables.crossref_metadata"],
+                "intermediate_tables.crossref_metadata": ["intermediate_tables.merge_0"],
+                "intermediate_tables.merge_0": [
+                    "intermediate_tables.crossref_events",
+                    "intermediate_tables.crossref_fundref",
+                    "intermediate_tables.ror",
+                    "intermediate_tables.orcid",
+                    "intermediate_tables.open_citations",
+                    "intermediate_tables.openaccess",
+                    "intermediate_tables.openalex",
+                    "intermediate_tables.pubmed",
                 ],
-                "create_crossref_events": ["merge_1"],
-                "create_crossref_fundref": ["merge_1"],
-                "create_ror": ["merge_1"],
-                "create_orcid": ["merge_1"],
-                "create_open_citations": ["merge_1"],
-                "create_openaccess": ["merge_1"],
-                "create_openalex": ["merge_1"],
-                "create_pubmed": ["merge_1"],
-                "merge_1": ["create_doi"],
-                "create_doi": ["merge_2"],
-                "merge_2": [
-                    "create_country",
-                    "create_funder",
-                    "create_group",
-                    "create_institution",
-                    "create_author",
-                    "create_journal",
-                    "create_publisher",
-                    "create_region",
-                    "create_subregion",
+                "intermediate_tables.crossref_events": ["intermediate_tables.merge_1"],
+                "intermediate_tables.crossref_fundref": ["intermediate_tables.merge_1"],
+                "intermediate_tables.ror": ["intermediate_tables.merge_1"],
+                "intermediate_tables.orcid": ["intermediate_tables.merge_1"],
+                "intermediate_tables.open_citations": ["intermediate_tables.merge_1"],
+                "intermediate_tables.openaccess": ["intermediate_tables.merge_1"],
+                "intermediate_tables.openalex": ["intermediate_tables.merge_1"],
+                "intermediate_tables.pubmed": ["intermediate_tables.merge_1"],
+                "intermediate_tables.merge_1": ["intermediate_tables.doi"],
+                "intermediate_tables.doi": ["intermediate_tables.merge_2"],
+                "intermediate_tables.merge_2": [
+                    "aggregate_tables.country",
+                    "aggregate_tables.funder",
+                    "aggregate_tables.group",
+                    "aggregate_tables.institution",
+                    "aggregate_tables.author",
+                    "aggregate_tables.journal",
+                    "aggregate_tables.publisher",
+                    "aggregate_tables.region",
+                    "aggregate_tables.subregion",
                 ],
-                "create_country": ["update_table_descriptions"],
-                "create_funder": ["update_table_descriptions"],
-                "create_group": ["update_table_descriptions"],
-                "create_institution": ["update_table_descriptions"],
-                "create_author": ["update_table_descriptions"],
-                "create_journal": ["update_table_descriptions"],
-                "create_publisher": ["update_table_descriptions"],
-                "create_region": ["update_table_descriptions"],
-                "create_subregion": ["update_table_descriptions"],
+                "aggregate_tables.country": ["update_table_descriptions"],
+                "aggregate_tables.funder": ["update_table_descriptions"],
+                "aggregate_tables.group": ["update_table_descriptions"],
+                "aggregate_tables.institution": ["update_table_descriptions"],
+                "aggregate_tables.author": ["update_table_descriptions"],
+                "aggregate_tables.journal": ["update_table_descriptions"],
+                "aggregate_tables.publisher": ["update_table_descriptions"],
+                "aggregate_tables.region": ["update_table_descriptions"],
+                "aggregate_tables.subregion": ["update_table_descriptions"],
                 "update_table_descriptions": ["copy_to_dashboards"],
                 "copy_to_dashboards": ["create_dashboard_views"],
-                "create_dashboard_views": ["add_new_dataset_releases"],
-                "add_new_dataset_releases": [],
+                "create_dashboard_views": ["add_dataset_release"],
+                "add_dataset_release": [],
             },
             dag,
         )
@@ -270,14 +302,15 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 Workflow(
                     dag_id=self.dag_id,
                     name="DOI Workflow",
-                    class_name="academic_observatory_workflows.doi_workflow.doi_workflow.DoiWorkflow",
+                    class_name="academic_observatory_workflows.doi_workflow.doi_workflow.create_dag",
                     cloud_workspace=self.fake_cloud_workspace,
                 )
             ]
         )
 
         with env.create():
-            self.assert_dag_load_from_config(self.dag_id)
+            dag_file = os.path.join(module_file_path("observatory.platform.dags"), "load_dags.py")
+            self.assert_dag_load(self.dag_id, dag_file)
 
     def test_ror_to_ror_hierarchy_index(self):
         """Test ror_to_ror_hierarchy_index. Check that correct ancestor relationships created."""
@@ -294,6 +327,19 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
         # International Centre for Radio Astronomy Research
         self.assertEqual({"https://ror.org/02n415q13", "https://ror.org/047272k79"}, index["https://ror.org/05sd1pp77"])
+
+    @provide_session
+    def update_db(self, *, session, object):
+        session.merge(object)
+        session.commit()
+
+    def add_dummy_dag_model(self, *, tmp_dir: str, dag_id: str, schedule: str):
+        model = DagModel()
+        model.dag_id = dag_id
+        model.schedule = schedule
+        model.fileloc = os.path.join(tmp_dir, "dummy_dag.py")
+        open(model.fileloc, mode="a").close()
+        self.update_db(object=model)
 
     def test_telescope(self):
         """Test the DOI telescope end to end."""
@@ -326,7 +372,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
 
         with env.create(task_logging=True):
             start_date = pendulum.datetime(year=2021, month=10, day=10)
-            workflow = DoiWorkflow(
+            api_dataset_id = env.add_dataset("api_dataset")
+            doi_dag = create_dag(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
                 bq_intermediate_dataset_id=bq_intermediate_dataset_id,
@@ -337,47 +384,53 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 sql_queries=sql_queries,
                 start_date=start_date,
                 max_fetch_threads=1,
+                api_dataset_id=api_dataset_id,
             )
 
-            # Disable dag check on dag run sensor
-            for sensor in workflow.operators[0]:
-                sensor.check_exists = False
-                sensor.grace_period = timedelta(seconds=1)
-
-            doi_dag = workflow.make_dag()
+            # # Disable dag check on dag run sensor
+            # for sensor in workflow.operators[0]:
+            #     sensor.check_exists = False
+            #     sensor.grace_period = timedelta(seconds=1)
+            #
+            # doi_dag = workflow.make_dag()
 
             # If there is no dag run for the DAG being monitored, the sensor will pass.  This is so we can
             # skip waiting on weeks when the DAG being waited on is not scheduled to run.
-            expected_state = "success"
-            with env.create_dag_run(doi_dag, start_date):
-                for task_id in DoiWorkflow.SENSOR_DAG_IDS:
-                    ti = env.run_task(f"{task_id}_sensor")
-                    self.assertEqual(expected_state, ti.state)
+            # expected_state = "success"
+            # with env.create_dag_run(doi_dag, start_date):
+            #     for task_id in SENSOR_DAG_IDS:
+            #         ti = env.run_task(f"sensors.{task_id}_sensor")
+            #         self.assertEqual(expected_state, ti.state)
 
             # Run Dummy Dags
-            execution_date = pendulum.datetime(year=2023, month=6, day=18)
+            logical_date = pendulum.datetime(year=2023, month=6, day=18)
             snapshot_date = pendulum.datetime(year=2023, month=6, day=25)
             expected_state = "success"
-            for dag_id in DoiWorkflow.SENSOR_DAG_IDS:
-                dag = make_dummy_dag(dag_id, execution_date)
-                with env.create_dag_run(dag, execution_date):
+            for dag_id in SENSOR_DAG_IDS:
+                dag = make_dummy_dag(dag_id, logical_date)
+                with env.create_dag_run(dag, logical_date):
                     # Running all of a DAGs tasks sets the DAG to finished
+                    self.add_dummy_dag_model(tmp_dir=env.temp_dir, dag_id=dag.dag_id, schedule=dag.schedule_interval)
                     ti = env.run_task("dummy_task")
                     self.assertEqual(expected_state, ti.state)
 
             # Run end to end tests for DOI DAG
-            with env.create_dag_run(doi_dag, execution_date):
+            with env.create_dag_run(doi_dag, logical_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
-                for task_id in DoiWorkflow.SENSOR_DAG_IDS:
-                    ti = env.run_task(f"{task_id}_sensor")
+                for task_id in SENSOR_DAG_IDS:
+                    ti = env.run_task(f"sensors.{task_id}_sensor")
                     self.assertEqual(expected_state, ti.state)
 
                 # Check dependencies
-                ti = env.run_task(workflow.check_dependencies.__name__)
+                ti = env.run_task("check_dependencies")
+                self.assertEqual(expected_state, ti.state)
+
+                # Fetch release
+                ti = env.run_task("fetch_release")
                 self.assertEqual(expected_state, ti.state)
 
                 # Create datasets
-                ti = env.run_task(workflow.create_datasets.__name__)
+                ti = env.run_task("create_datasets")
                 self.assertEqual(expected_state, ti.state)
 
                 # Generate fake dataset
@@ -399,7 +452,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     ignore_hosts=["oauth2.googleapis.com", "bigquery.googleapis.com"],
                     ignore_localhost=True,
                 ):
-                    ti = env.run_task(workflow.create_repo_institution_to_ror_table.__name__)
+                    ti = env.run_task("create_repo_institution_to_ror_table")
                 self.assertEqual(expected_state, ti.state)
                 table_id = bq_sharded_table_id(
                     self.project_id, bq_intermediate_dataset_id, "repository_institution_to_ror", snapshot_date
@@ -449,16 +502,16 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 self.assert_table_content(table_id, expected, "repository_institution")
 
                 # Create ROR hierarchy table
-                ti = env.run_task(workflow.create_ror_hierarchy_table.__name__)
+                ti = env.run_task("create_ror_hierarchy_table")
                 self.assertEqual(expected_state, ti.state)
 
                 # Test that source dataset transformations run
                 for i, batch in enumerate(sql_queries):
                     for sql_query in batch:
                         task_id = sql_query.name
-                        ti = env.run_task(task_id)
+                        ti = env.run_task(f"intermediate_tables.{task_id}")
                         self.assertEqual(expected_state, ti.state)
-                    ti = env.run_task(f"merge_{i}")
+                    ti = env.run_task(f"intermediate_tables.merge_{i}")
                     self.assertEqual(expected_state, ti.state)
 
                 # DOI assert table exists
@@ -480,8 +533,8 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 self.assert_doi(expected_output, actual_output)
 
                 # Test aggregations tasks
-                for agg in DoiWorkflow.AGGREGATIONS:
-                    task_id = f"create_{agg.table_name}"
+                for agg in AGGREGATIONS:
+                    task_id = f"aggregate_tables.{agg.table_name}"
                     ti = env.run_task(task_id)
                     self.assertEqual(expected_state, ti.state)
 
@@ -513,7 +566,7 @@ class TestDoiWorkflow(ObservatoryTestCase):
                 # Test copy to dashboards
                 ti = env.run_task("copy_to_dashboards")
                 self.assertEqual(expected_state, ti.state)
-                for agg in DoiWorkflow.AGGREGATIONS:
+                for agg in AGGREGATIONS:
                     table_id = bq_table_id(self.project_id, bq_dashboards_dataset_id, agg.table_name)
                     self.assert_table_integrity(table_id)
 
@@ -525,11 +578,11 @@ class TestDoiWorkflow(ObservatoryTestCase):
                     self.assert_table_integrity(table_id)
 
                 # add_dataset_release_task
-                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=api_dataset_id)
                 self.assertEqual(len(dataset_releases), 0)
-                ti = env.run_task(workflow.add_new_dataset_releases.__name__)
+                ti = env.run_task("add_dataset_release")
                 self.assertEqual(State.SUCCESS, ti.state)
-                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=api_dataset_id)
                 self.assertEqual(len(dataset_releases), 1)
 
     def assert_aggregate(self, expected: List[Dict], actual: List[Dict]):

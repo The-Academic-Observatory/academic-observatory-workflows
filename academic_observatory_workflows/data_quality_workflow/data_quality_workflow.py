@@ -23,12 +23,14 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 import pendulum
-from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.decorators import dag, task, task_group
+from airflow.models.baseoperator import chain
 from airflow.sensors.external_task import ExternalTaskSensor
-from airflow.utils.task_group import TaskGroup
 from google.cloud import bigquery
 from google.cloud.bigquery import Table as BQTable
+
+from academic_observatory_workflows.config import project_path
+from observatory.platform.airflow import on_failure_callback
 from observatory.platform.bigquery import (
     bq_create_dataset,
     bq_get_table,
@@ -41,9 +43,7 @@ from observatory.platform.bigquery import (
     bq_table_id_parts,
 )
 from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.workflows.workflow import Release, set_task_state, Workflow
-
-from academic_observatory_workflows.config import project_path, Tag
+from observatory.platform.workflows.workflow import set_task_state
 
 
 @dataclass
@@ -75,220 +75,203 @@ class Table:
         return f"{self.project_id}.{self.dataset_id}.{self.table_id}"
 
 
-class DataQualityWorkflow(Workflow):
-    def __init__(
-        self,
-        *,
-        dag_id: str,
-        cloud_workspace: CloudWorkspace,
-        datasets: Dict,
-        sensor_dag_ids: Optional[List[str]] = None,
-        bq_dataset_id: str = "data_quality_checks",
-        bq_dataset_description: str = "This dataset holds metadata about the tables that the Academic Observatory Worflows produce. If there are multiple shards tables, it will go back on the table and check if it hasn't done that table previously.",
-        bq_table_id: str = "data_quality",
-        bq_table_description: str = "Data quality check for all tables produced by the Academic Observatory workflows.",
-        schema_path: str = project_path("data_quality_workflow", "schema", "data_quality.json"),
-        start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 1, 1),
-        schedule: str = "@weekly",
-        queue: str = "default",
-    ):
-        """Create the DataQualityCheck Workflow.
+def create_dag(
+    *,
+    dag_id: str,
+    cloud_workspace: CloudWorkspace,
+    datasets: Dict,
+    sensor_dag_ids: Optional[List[str]] = None,
+    bq_dataset_id: str = "data_quality_checks",
+    bq_dataset_description: str = "This dataset holds metadata about the tables that the Academic Observatory Worflows produce. If there are multiple shards tables, it will go back on the table and check if it hasn't done that table previously.",
+    bq_table_id: str = "data_quality",
+    bq_table_description: str = "Data quality check for all tables produced by the Academic Observatory workflows.",
+    schema_path: str = project_path("data_quality_workflow", "schema", "data_quality.json"),
+    start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 1, 1),
+    schedule: str = "@weekly",
+    catchup: bool = False,
+    max_active_runs: int = 1,
+    retries: int = 3,
+):
+    """Create the DataQualityCheck Workflow.
 
-        This workflow creates metadata for all the tables defined in the "datasets" dictionary.
-        If a table has already been checked before, it will no do it again. This based on if the
-        number of columns, rows or bytesof data stored in the table changes. We cannot use the "date modified"
-        from the Biguqery table object because it changes if any other metadata is modified, i.e. description, etc.
+    This workflow creates metadata for all the tables defined in the "datasets" dictionary.
+    If a table has already been checked before, it will no do it again. This based on if the
+    number of columns, rows or bytesof data stored in the table changes. We cannot use the "date modified"
+    from the Biguqery table object because it changes if any other metadata is modified, i.e. description, etc.
 
-        :param dag_id: the DAG ID.
-        :param cloud_workspace: the cloud workspace settings.
-        :param datasets: A dictionary of datasets holding tables that will processed by this workflow.
-        :param sensor_dag_ids: List of dags that this workflow will wait to finish before running.
-        :param bq_dataset_id: The dataset_id of where the data quality records will be stored.
-        :param bq_dataset_description: Description of the data quality check dataset.
-        :param bq_table_id: The name of the table in Bigquery.
-        :param bq_table_description: The description of the table in Biguqery.
-        :param schema_path: The path to the schema file for the records produced by this workflow.
-        :param start_date: The start date of the workflow.
-        :param schedule: Schedule of how often the workflow runs.
-        :param queue: Which queue this workflow will run.
-        """
+    :param dag_id: the DAG ID.
+    :param cloud_workspace: the cloud workspace settings.
+    :param datasets: A dictionary of datasets holding tables that will processed by this workflow.
+    :param sensor_dag_ids: List of dags that this workflow will wait to finish before running.
+    :param bq_dataset_id: The dataset_id of where the data quality records will be stored.
+    :param bq_dataset_description: Description of the data quality check dataset.
+    :param bq_table_id: The name of the table in Bigquery.
+    :param bq_table_description: The description of the table in Biguqery.
+    :param schema_path: The path to the schema file for the records produced by this workflow.
+    :param start_date: The start date of the workflow.
+    :param schedule: Schedule of how often the workflow runs.
+    :param queue: Which queue this workflow will run.
+    """
 
-        super().__init__(
-            dag_id=dag_id,
-            start_date=start_date,
-            schedule=schedule,
-            tags=[Tag.data_quality],
-            queue=queue,
-        )
+    project_id = cloud_workspace.project_id
+    data_location = cloud_workspace.data_location
+    dqc_full_table_id = make_bq_table_id(
+        project_id, bq_dataset_id, bq_table_id
+    )  # Full table id for the data quality records
+    sensor_dag_ids = (
+        sensor_dag_ids if sensor_dag_ids is not None else []
+    )  # If no sensor workflow is given, then it will run on a regular scheduled basis.
+    assert datasets, "No dataset or tables given for this DQC Workflow! Please revise the config file."
 
-        self.cloud_workspace = cloud_workspace
-        self.project_id = cloud_workspace.project_id
-        self.bq_dataset_id = bq_dataset_id
-        self.bq_table_id = bq_table_id
-        self.bq_dataset_description = bq_dataset_description
-        self.bq_table_description = bq_table_description
-        self.data_location = cloud_workspace.data_location
-        self.schema_path = schema_path
-        self.datasets = datasets
+    @dag(
+        dag_id=dag_id,
+        start_date=start_date,
+        schedule=schedule,
+        catchup=catchup,
+        max_active_runs=max_active_runs,
+        tags=["data-quality"],
+        default_args={
+            "owner": "airflow",
+            "on_failure_callback": on_failure_callback,
+            "retries": retries,
+        },
+    )
+    def data_quality():
+        @task_group(group_id="sensors")
+        def sensors(**context):
+            tasks = []
+            for ext_dag_id in sensor_dag_ids:
+                sensor = ExternalTaskSensor(
+                    task_id=f"{ext_dag_id}_sensor",
+                    external_dag_id=ext_dag_id,
+                    mode="reschedule",
+                )
+                tasks.append(sensor)
 
-        # Full table id for the data quality records.
-        self.dqc_full_table_id = make_bq_table_id(self.project_id, self.bq_dataset_id, bq_table_id)
+            chain(tasks)
 
-        # If no sensor workflow is given, then it will run on a regular scheduled basis.
-        self.sensor_dag_ids = sensor_dag_ids if sensor_dag_ids is not None else []
+        @task
+        def create_dataset(**context):
+            """Create a dataset for the table."""
 
-        assert datasets, "No dataset or tables given for this DQC Workflow! Please revise the config file."
-
-    def make_dag(self) -> DAG:
-        """Create a DAG object for the workflow explicitly defining the tasks and task groups.
-
-        :return: The DAG object for the workflow."""
-
-        with self.dag:
-            # Create a group of sensors for the workflow.
-            task_sensor_group = []
-            if self.sensor_dag_ids:
-                with TaskGroup(group_id="dag_sensors") as tg_sensors:
-                    for ext_dag_id in self.sensor_dag_ids:
-                        ExternalTaskSensor(
-                            task_id=f"{ext_dag_id}_sensor",
-                            external_dag_id=ext_dag_id,
-                            mode="reschedule",
-                        )
-
-                    task_sensor_group = tg_sensors
-
-            # Add the standard tasks for the workflow
-            # fmt: off
-            task_check_dependencies = PythonOperator(python_callable=self.check_dependencies, task_id="check_dependencies")
-            task_create_dataset = self.make_python_operator(self.create_dataset, "create_dataset")
-            # fmt: on
-
-            # Add each dataset as a task group and perform the checks on the tables in parallel.
-            task_datasets_group = []
-            for dataset_id in list(self.datasets.keys()):
-                with TaskGroup(group_id=dataset_id) as tg_dataset:
-                    table_objects = [
-                        Table(
-                            project_id=self.project_id,
-                            dataset_id=dataset_id,
-                            table_id=table["table_id"],
-                            is_sharded=table["is_sharded"],
-                            primary_key=table["primary_key"],
-                            shard_limit=table.get("shard_limit"),
-                        )
-                        for table in self.datasets[dataset_id]["tables"]
-                    ]
-
-                    for table in table_objects:
-                        self.make_python_operator(
-                            self.perform_data_quality_check,
-                            task_id=f"{table.table_id}",
-                            op_kwargs={f"task_id": f"{table.table_id}", "table": table},
-                        )
-
-                    task_datasets_group.append(tg_dataset)
-
-            # Link all tasks and task groups together.
-            (task_sensor_group >> task_check_dependencies >> task_create_dataset >> task_datasets_group)
-
-        return self.dag
-
-    def make_release(self, **kwargs) -> Release:
-        """Make a release instance.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
-        to this argument.
-        :return: A release instance.
-        """
-        return Release(dag_id=self.dag_id, run_id=kwargs["run_id"])
-
-    def create_dataset(self, release: Release, **kwargs):
-        """Create a dataset for the table."""
-
-        bq_create_dataset(
-            project_id=self.project_id,
-            dataset_id=self.bq_dataset_id,
-            location=self.data_location,
-            description=self.bq_dataset_description,
-        )
-
-    def perform_data_quality_check(self, release: Release, **kwargs):
-        """For each dataset, create a table that holds metadata about the dataset.
-
-        Please refer to the output of the create_data_quality_record function for all the metadata included in this workflow.
-        """
-
-        task_id = kwargs["task_id"]
-        table_to_check: Table = kwargs["table"]
-
-        # Grab tables only if they are
-        if table_to_check.is_sharded:
-            dates = bq_select_table_shard_dates(
-                table_id=table_to_check.full_table_id, end_date=pendulum.now(tz="UTC"), limit=1000
+            bq_create_dataset(
+                project_id=project_id,
+                dataset_id=bq_dataset_id,
+                location=data_location,
+                description=bq_dataset_description,
             )
 
-            # Use limited number of table shards checked to reduce querying costs.
-            if table_to_check.shard_limit and len(dates) > table_to_check.shard_limit:
-                shard_limit = table_to_check.shard_limit
+        @task_group
+        def analyse_datasets(dataset_id: str, **context):
+            table_objects = [
+                Table(
+                    project_id=project_id,
+                    dataset_id=dataset_id,
+                    table_id=table["table_id"],
+                    is_sharded=table["is_sharded"],
+                    primary_key=table["primary_key"],
+                    shard_limit=table.get("shard_limit"),
+                )
+                for table in datasets[dataset_id]["tables"]
+            ]
+
+            tasks = []
+            for table in table_objects:
+                task_id = table.table_id
+                t = perform_data_quality_check.override(task_id=f"{task_id}")(
+                    task_id=task_id,
+                    table=table,
+                )
+                tasks.append(t)
+
+            chain(tasks)
+
+        @task
+        def perform_data_quality_check(**context):
+            """For each dataset, create a table that holds metadata about the dataset.
+
+            Please refer to the output of the create_data_quality_record function for all the metadata included in this workflow.
+            """
+
+            task_id = context["task_id"]
+            table_to_check: Table = context["table"]
+
+            # Grab tables only if they are
+            if table_to_check.is_sharded:
+                dates = bq_select_table_shard_dates(
+                    table_id=table_to_check.full_table_id, end_date=pendulum.now(tz="UTC"), limit=1000
+                )
+
+                # Use limited number of table shards checked to reduce querying costs.
+                if table_to_check.shard_limit and len(dates) > table_to_check.shard_limit:
+                    shard_limit = table_to_check.shard_limit
+                else:
+                    shard_limit = len(dates)
+
+                tables = []
+                for shard_date in dates[:shard_limit]:
+                    table_id = f'{table_to_check.full_table_id}{shard_date.strftime("%Y%m%d")}'
+                    assert bq_table_exists(table_id), f"Sharded table {table_id} does not exist!"
+                    table = bq_get_table(table_id)
+                    tables.append(table)
             else:
-                shard_limit = len(dates)
+                tables = [bq_get_table(table_to_check.full_table_id)]
 
-            tables = []
-            for shard_date in dates[:shard_limit]:
-                table_id = f'{table_to_check.full_table_id}{shard_date.strftime("%Y%m%d")}'
-                assert bq_table_exists(table_id), f"Sharded table {table_id} does not exist!"
-                table = bq_get_table(table_id)
-                tables.append(table)
-        else:
-            tables = [bq_get_table(table_to_check.full_table_id)]
+            assert (
+                len(tables) > 0 and tables[0] is not None
+            ), f"No table or sharded tables found in Bigquery for: {table_to_check.dataset_id}.{table_to_check.table_id}"
 
-        assert (
-            len(tables) > 0 and tables[0] is not None
-        ), f"No table or sharded tables found in Bigquery for: {table_to_check.dataset_id}.{table_to_check.table_id}"
+            records = []
+            table: BQTable
+            for table in tables:
+                full_table_id = str(table.reference)
 
-        records = []
-        table: BQTable
-        for table in tables:
-            full_table_id = str(table.reference)
-
-            hash_id = create_table_hash_id(
-                full_table_id=full_table_id,
-                num_bytes=table.num_bytes,
-                nrows=table.num_rows,
-                ncols=len(bq_select_columns(table_id=full_table_id)),
-            )
-
-            if not is_in_dqc_table(hash_id, self.dqc_full_table_id):
-                logging.info(f"Performing check on table {full_table_id} with hash {hash_id}")
-                check = create_data_quality_record(
-                    hash_id=hash_id,
+                hash_id = create_table_hash_id(
                     full_table_id=full_table_id,
-                    primary_key=table_to_check.primary_key,
-                    is_sharded=table_to_check.is_sharded,
-                    table_in_bq=table,
+                    num_bytes=table.num_bytes,
+                    nrows=table.num_rows,
+                    ncols=len(bq_select_columns(table_id=full_table_id)),
                 )
-                records.append(check)
+
+                if not is_in_dqc_table(hash_id, dqc_full_table_id):
+                    logging.info(f"Performing check on table {full_table_id} with hash {hash_id}")
+                    check = create_data_quality_record(
+                        hash_id=hash_id,
+                        full_table_id=full_table_id,
+                        primary_key=table_to_check.primary_key,
+                        is_sharded=table_to_check.is_sharded,
+                        table_in_bq=table,
+                    )
+                    records.append(check)
+                else:
+                    logging.info(
+                        f"Table {table_to_check.full_table_id} with hash {hash_id} has already been checked before. Not performing check again."
+                    )
+
+            if records:
+                logging.info(f"Uploading DQC records for table: {task_id}: {dqc_full_table_id}")
+                success = bq_load_from_memory(
+                    table_id=dqc_full_table_id,
+                    records=records,
+                    schema_file_path=schema_path,
+                    write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+                )
+
+                assert success, f"Error uploading data quality check to Bigquery."
             else:
-                logging.info(
-                    f"Table {table_to_check.full_table_id} with hash {hash_id} has already been checked before. Not performing check again."
-                )
+                success = True
 
-        if records:
-            logging.info(f"Uploading DQC records for table: {task_id}: {self.dqc_full_table_id}")
-            success = bq_load_from_memory(
-                table_id=self.dqc_full_table_id,
-                records=records,
-                schema_file_path=self.schema_path,
-                write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-            )
+            set_task_state(success, task_id)
 
-            assert success, f"Error uploading data quality check to Bigquery."
-        else:
-            success = True
+        sensor_task_group = sensors()
+        create_dataset_task = create_dataset()
+        tgs = []
+        for dataset_id in list(datasets.keys()):
+            tgs.append(analyse_datasets.override(group_id=dataset_id)(dataset_id))
 
-        set_task_state(success, task_id, release)
+        (sensor_task_group >> create_dataset_task >> tgs)
+
+    return data_quality()
 
 
 def create_data_quality_record(

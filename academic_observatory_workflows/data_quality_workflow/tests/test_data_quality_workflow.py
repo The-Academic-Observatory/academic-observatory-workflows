@@ -19,7 +19,26 @@ import os
 import pendulum
 from google.cloud import bigquery
 from google.cloud.bigquery import Table as BQTable
-from observatory.platform.bigquery import bq_load_from_memory, bq_select_columns, bq_table_id, bq_upsert_records
+
+from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.data_quality_workflow.data_quality_workflow import (
+    bq_count_distinct_records,
+    bq_count_duplicate_records,
+    bq_count_nulls,
+    bq_get_table,
+    create_dag,
+    create_data_quality_record,
+    create_table_hash_id,
+    is_in_dqc_table,
+    Table,
+)
+from observatory.platform.bigquery import (
+    bq_load_from_memory,
+    bq_select_columns,
+    bq_table_id as make_bq_table_id,
+    bq_upsert_records,
+)
+from observatory.platform.config import module_file_path
 from observatory.platform.files import load_jsonl
 from observatory.platform.observatory_config import Workflow
 from observatory.platform.observatory_environment import (
@@ -28,19 +47,6 @@ from observatory.platform.observatory_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
     random_id,
-)
-
-from academic_observatory_workflows.config import project_path
-from academic_observatory_workflows.data_quality_workflow.data_quality_workflow import (
-    bq_count_distinct_records,
-    bq_count_duplicate_records,
-    bq_count_nulls,
-    bq_get_table,
-    create_data_quality_record,
-    create_table_hash_id,
-    DataQualityWorkflow,
-    is_in_dqc_table,
-    Table,
 )
 
 FIXTURES_FOLDER = project_path("data_quality_workflow", "tests", "fixtures")
@@ -64,7 +70,7 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
                 Workflow(
                     dag_id=self.dag_id,
                     name="Data Quality Check Workflow",
-                    class_name="academic_observatory_workflows.data_quality_workflow.data_quality_workflow.DataQualityWorkflow",
+                    class_name="academic_observatory_workflows.data_quality_workflow.data_quality_workflow.create_dag",
                     cloud_workspace=self.fake_cloud_workspace,
                     kwargs=dict(
                         sensor_dag_ids=["doi"],
@@ -78,12 +84,13 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
         )
 
         with env.create():
-            self.assert_dag_load_from_config(self.dag_id)
+            dag_file = os.path.join(module_file_path("observatory.platform.dags"), "load_dags.py")
+            self.assert_dag_load(self.dag_id, dag_file)
 
     def test_dag_structure(self):
         """Test that the DAG has the correct structure."""
 
-        workflow = DataQualityWorkflow(
+        dag = create_dag(
             dag_id=self.dag_id,
             cloud_workspace=self.fake_cloud_workspace,
             sensor_dag_ids=["dummy1", "dummy2"],
@@ -109,12 +116,10 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
                 },
             },
         )
-        dag = workflow.make_dag()
         self.assert_dag_structure(
             {
-                "dag_sensors.dummy1_sensor": ["check_dependencies"],
-                "dag_sensors.dummy2_sensor": ["check_dependencies"],
-                "check_dependencies": ["create_dataset"],
+                "sensors.dummy1_sensor": ["create_dataset"],
+                "sensors.dummy2_sensor": ["create_dataset"],
                 "create_dataset": ["observatory.doi", "pubmed.pubmed"],
                 "observatory.doi": [],
                 "pubmed.pubmed": [],
@@ -130,27 +135,28 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
 
         # Where the metadata generated for this workflow is going to be stored.
-        dq_dataset_id = env.add_dataset(prefix="data_quality_check")
+        bq_table_id = ""
+        bq_dataset_id = env.add_dataset(prefix="data_quality_check")
         fake_dataset_id = env.add_dataset()
 
         test_tables = [
             {
-                "full_table_id": bq_table_id(self.project_id, fake_dataset_id, "people"),
+                "full_table_id": make_bq_table_id(self.project_id, fake_dataset_id, "people"),
                 "schema_path": os.path.join(FIXTURES_FOLDER, "people_schema.json"),
                 "expected": load_jsonl(os.path.join(FIXTURES_FOLDER, "people20230101.jsonl")),
             },
             {
-                "full_table_id": bq_table_id(self.project_id, fake_dataset_id, "people_shard20230101"),
+                "full_table_id": make_bq_table_id(self.project_id, fake_dataset_id, "people_shard20230101"),
                 "schema_path": os.path.join(FIXTURES_FOLDER, "people_schema.json"),
                 "expected": load_jsonl(os.path.join(FIXTURES_FOLDER, "people20230101.jsonl")),
             },
             {
-                "full_table_id": bq_table_id(self.project_id, fake_dataset_id, "people_shard20230108"),
+                "full_table_id": make_bq_table_id(self.project_id, fake_dataset_id, "people_shard20230108"),
                 "schema_path": os.path.join(FIXTURES_FOLDER, "people_schema.json"),
                 "expected": load_jsonl(os.path.join(FIXTURES_FOLDER, "people20230108.jsonl")),
             },
             {
-                "full_table_id": bq_table_id(self.project_id, fake_dataset_id, "people_shard20230115"),
+                "full_table_id": make_bq_table_id(self.project_id, fake_dataset_id, "people_shard20230115"),
                 "schema_path": os.path.join(FIXTURES_FOLDER, "people_schema.json"),
                 "expected": load_jsonl(os.path.join(FIXTURES_FOLDER, "people20230108.jsonl")),
             },
@@ -164,29 +170,31 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
                 )
 
             start_date = pendulum.datetime(year=2021, month=10, day=10)
-            workflow = DataQualityWorkflow(
+            sensor_dag_ids = ["doi", "pubmed"]
+            datasets = {
+                fake_dataset_id: {
+                    "tables": [
+                        {"table_id": "people", "primary_key": ["id"], "is_sharded": False},
+                        {"table_id": "people_shard", "primary_key": ["id"], "is_sharded": True, "shard_limit": 2},
+                    ],
+                },
+            }
+            bq_table_id = "data_quality"
+            data_quality_dag = create_dag(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
-                bq_dataset_id=dq_dataset_id,
+                bq_dataset_id=bq_dataset_id,
                 start_date=start_date,
-                sensor_dag_ids=["doi", "pubmed"],
-                datasets={
-                    fake_dataset_id: {
-                        "tables": [
-                            {"table_id": "people", "primary_key": ["id"], "is_sharded": False},
-                            {"table_id": "people_shard", "primary_key": ["id"], "is_sharded": True, "shard_limit": 2},
-                        ],
-                    },
-                },
+                sensor_dag_ids=sensor_dag_ids,
+                datasets=datasets,
+                bq_table_id=bq_table_id,
             )
 
-            data_quality_dag = workflow.make_dag()
-
             # Run fake version of the dags that the workflow sensors are waiting for.
-            execution_date = pendulum.datetime(year=2023, month=1, day=1)
-            for dag_id in workflow.sensor_dag_ids:
-                dag = make_dummy_dag(dag_id, execution_date)
-                with env.create_dag_run(dag, execution_date):
+            logical_date = pendulum.datetime(year=2023, month=1, day=1)
+            for dag_id in sensor_dag_ids:
+                dag = make_dummy_dag(dag_id, logical_date)
+                with env.create_dag_run(dag, logical_date):
                     # Running all of a DAGs tasks sets the DAG to finished
                     ti = env.run_task("dummy_task")
                     self.assertEqual("success", ti.state)
@@ -196,29 +204,25 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
             # each of the test tables uploaded, but will miss the 20230101 shard due to the shard_limit parameter set.
 
             # Run end to end tests for DQC DAG
-            with env.create_dag_run(data_quality_dag, execution_date):
+            with env.create_dag_run(data_quality_dag, logical_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
-                for task_id in workflow.sensor_dag_ids:
-                    ti = env.run_task(f"dag_sensors.{task_id}_sensor")
+                for task_id in sensor_dag_ids:
+                    ti = env.run_task(f"sensors.{task_id}_sensor")
                     self.assertEqual("success", ti.state)
 
-                # Check dependencies
-                ti = env.run_task(workflow.check_dependencies.__name__)
-                self.assertEqual("success", ti.state)
-
                 # Create dataset
-                ti = env.run_task(workflow.create_dataset.__name__)
+                ti = env.run_task("create_dataset")
                 self.assertEqual("success", ti.state)
 
                 # Perform data quality check
-                for dataset_id, tables in workflow.datasets.items():
+                for dataset_id, tables in datasets.items():
                     for table in tables["tables"]:
                         task_id = f"{dataset_id}.{table['table_id']}"
                         ti = env.run_task(task_id)
                         self.assertEqual("success", ti.state)
 
                 # Check that DQC table has been created.
-                table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, workflow.bq_table_id)
+                table_id = make_bq_table_id(self.project_id, bq_dataset_id, bq_table_id)
                 self.assert_table_integrity(table_id, expected_rows=3)  # stop and look at table on BQ
 
             ### SECOND RUN ###
@@ -233,37 +237,33 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
             self.assert_table_integrity(test_tables[0]["full_table_id"], 16)
 
             # Run Dummy Dags
-            execution_date = pendulum.datetime(year=2023, month=2, day=1)
-            for dag_id in workflow.sensor_dag_ids:
-                dag = make_dummy_dag(dag_id, execution_date)
-                with env.create_dag_run(dag, execution_date):
+            logical_date = pendulum.datetime(year=2023, month=2, day=1)
+            for dag_id in sensor_dag_ids:
+                dag = make_dummy_dag(dag_id, logical_date)
+                with env.create_dag_run(dag, logical_date):
                     # Running all of a DAGs tasks sets the DAG to finished
                     ti = env.run_task("dummy_task")
                     self.assertEqual("success", ti.state)
 
             # Run end to end tests for DQC DAG
-            with env.create_dag_run(data_quality_dag, execution_date):
+            with env.create_dag_run(data_quality_dag, logical_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
-                for task_id in workflow.sensor_dag_ids:
-                    ti = env.run_task(f"dag_sensors.{task_id}_sensor")
+                for task_id in sensor_dag_ids:
+                    ti = env.run_task(f"sensors.{task_id}_sensor")
                     self.assertEqual("success", ti.state)
 
-                # Check dependencies
-                ti = env.run_task(workflow.check_dependencies.__name__)
-                self.assertEqual("success", ti.state)
-
                 # Create dataset
-                ti = env.run_task(workflow.create_dataset.__name__)
+                ti = env.run_task("create_dataset")
                 self.assertEqual("success", ti.state)
                 # Perform data quality check
-                for dataset_id, tables in workflow.datasets.items():
+                for dataset_id, tables in datasets.items():
                     for table in tables["tables"]:
                         task_id = f"{dataset_id}.{table['table_id']}"
                         ti = env.run_task(task_id)
                         self.assertEqual("success", ti.state)
 
                 # Check that DQC table has been created.
-                table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, workflow.bq_table_id)
+                table_id = make_bq_table_id(self.project_id, bq_dataset_id, bq_table_id)
                 self.assert_table_integrity(table_id, expected_rows=4)
 
             ### THIRD RUN ###
@@ -271,31 +271,27 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
             # no data quality checks done.
 
             # Run Dummy Dags
-            execution_date = pendulum.datetime(year=2023, month=3, day=1)
-            for dag_id in workflow.sensor_dag_ids:
-                dag = make_dummy_dag(dag_id, execution_date)
-                with env.create_dag_run(dag, execution_date):
+            logical_date = pendulum.datetime(year=2023, month=3, day=1)
+            for dag_id in sensor_dag_ids:
+                dag = make_dummy_dag(dag_id, logical_date)
+                with env.create_dag_run(dag, logical_date):
                     # Running all of a DAGs tasks sets the DAG to finished
                     ti = env.run_task("dummy_task")
                     self.assertEqual("success", ti.state)
 
             # Run end to end tests for Data Quality DAG
-            with env.create_dag_run(data_quality_dag, execution_date):
+            with env.create_dag_run(data_quality_dag, logical_date):
                 # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
-                for task_id in workflow.sensor_dag_ids:
-                    ti = env.run_task(f"dag_sensors.{task_id}_sensor")
+                for task_id in sensor_dag_ids:
+                    ti = env.run_task(f"sensors.{task_id}_sensor")
                     self.assertEqual("success", ti.state)
 
-                # Check dependencies
-                ti = env.run_task(workflow.check_dependencies.__name__)
-                self.assertEqual("success", ti.state)
-
                 # Create dataset
-                ti = env.run_task(workflow.create_dataset.__name__)
+                ti = env.run_task("create_dataset")
                 self.assertEqual("success", ti.state)
 
                 # Perform data quality check
-                for dataset_id, tables in workflow.datasets.items():
+                for dataset_id, tables in datasets.items():
                     for table in tables["tables"]:
                         task_id = f"{dataset_id}.{table['table_id']}"
                         ti = env.run_task(task_id)
@@ -303,7 +299,7 @@ class TestDataQualityWorkflow(ObservatoryTestCase):
 
                 # Check that the DQC table has no new records added for this third run.
                 # Check that DQC table has been created.
-                table_id = bq_table_id(self.project_id, workflow.bq_dataset_id, workflow.bq_table_id)
+                table_id = make_bq_table_id(self.project_id, bq_dataset_id, bq_table_id)
                 self.assert_table_integrity(table_id, expected_rows=4)
 
 
@@ -365,7 +361,7 @@ class TestDataQualityUtils(ObservatoryTestCase):
         )
 
         with env.create(task_logging=True):
-            full_table_id = bq_table_id(self.project_id, dataset_id, table_id)
+            full_table_id = make_bq_table_id(self.project_id, dataset_id, table_id)
 
             # Load the test table from memory to Bigquery.
             success = bq_load_from_memory(table_id=full_table_id, records=self.test_table)
@@ -413,8 +409,8 @@ class TestDataQualityUtils(ObservatoryTestCase):
         )
 
         with env.create(task_logging=True):
-            full_table_id = bq_table_id(self.project_id, dataset_id, table_id)
-            dqc_full_table_id = bq_table_id(self.project_id, dqc_dataset_id, dag_id)
+            full_table_id = make_bq_table_id(self.project_id, dataset_id, table_id)
+            dqc_full_table_id = make_bq_table_id(self.project_id, dqc_dataset_id, dag_id)
 
             # Load the test table from memory to Bigquery.
             success = bq_load_from_memory(table_id=full_table_id, records=self.test_table)
