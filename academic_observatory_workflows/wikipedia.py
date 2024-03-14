@@ -1,4 +1,4 @@
-# Copyright 2021-2022 Curtin University
+# Copyright 2021-2024 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,13 +17,14 @@
 from __future__ import annotations
 
 import logging
-import urllib.parse
 from concurrent.futures import as_completed, ThreadPoolExecutor
 from typing import List, Tuple
+from urllib.parse import unquote, urlparse
 
 import nltk
 import requests
 from airflow.exceptions import AirflowException
+
 from observatory.platform.files import get_chunks
 
 WIKI_MAX_TITLES = 20  # Set the number of titles for which wiki descriptions are retrieved at once, the API can return max 20 extracts.
@@ -33,7 +34,7 @@ def fetch_wikipedia_descriptions(wikipedia_urls: List[str]) -> List[Tuple[str, s
     """Get the wikipedia descriptions for each entity (institution or country).
 
     :param wikipedia_urls: a list of Wikipedia URLs.
-    :return: None.
+    :return: a list of tuples containing Wikipedia URL and Wikipedia description.
     """
 
     # Download 'punkt' resource, required when shortening wiki descriptions
@@ -64,75 +65,92 @@ def fetch_wikipedia_descriptions(wikipedia_urls: List[str]) -> List[Tuple[str, s
     logging.info(f"Finished downloading wikipedia descriptions")
     logging.info(f"Expected results: {n_wikipedia_urls}, actual num descriptions returned: {n_downloaded}")
     if n_wikipedia_urls != n_downloaded:
+        expected = set(wikipedia_urls)
+        actual = set([url for url, desc in results])
+        missing = expected - actual
+        new = actual - expected
+        logging.error(f"Num duplicate Wikipedia URLs: {len(wikipedia_urls) - len(expected)}")
+        logging.error(f"Missing Wikipedia descriptions for: {missing}")
+        logging.error(f"Unexpected Wikipedia descriptions for: {new}")
+
         raise Exception(f"Number of Wikipedia descriptions returned does not match the number of Wikipedia URLs sent")
 
     return results
 
 
-def fetch_wikipedia_descriptions_batch(wikipedia_urls: List) -> List[Tuple[str, str]]:
+def get_wikipedia_title(url: str) -> str:
+    """Get a Wikipedia title from a Wikipedia URL.
+
+    :param url: a Wikipedia URL.
+    :return: the title.
+    """
+
+    parsed = urlparse(url)
+    return parsed.path.split("/wiki/")[-1]
+
+
+def fetch_wikipedia_descriptions_batch(urls: List) -> List[Tuple[str, str]]:
     """Fetch the wikipedia descriptions for a set of Wikipedia URLs
 
-    :param wikipedia_urls: a list of Wikipedia URLs.
+    :param urls: a list of Wikipedia URLs.
     :return: List with tuples (id, wiki description)
     """
 
+    # Extract titles from URLs
+    # URLs may be quoted or unquoted, so unquote titles to prevent requests from double quoting them
     titles = []
-    title_url_index = {}
-    for url in wikipedia_urls:
-        # Extract title from URL
-        title = url.split("wikipedia.org/wiki/")[-1].split("#")[0]
-        title_url_index[urllib.parse.unquote(title)] = url
-
-        # URL encode title if it is not encoded yet
-        if title == urllib.parse.unquote(title):
-            titles.append(urllib.parse.quote(title))
-        # Append title directly if it is already encoded and not empty
-        else:
-            titles.append(title)
+    for url in urls:
+        title = get_wikipedia_title(url)
+        titles.append(unquote(title))
 
     # Confirm that there is a max of 20 titles, the limit for the wikipedia API
     assert len(titles) <= 20
 
     # Extract descriptions using the Wikipedia API
-    url = f"https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&titles={'%7C'.join(titles)}&redirects=1&exintro=1&explaintext=1"
-    response = requests.get(url)
+    params = {
+        "action": "query",
+        "format": "json",
+        "prop": "extracts",
+        "titles": "|".join(titles),
+        "redirects": "1",
+        "exintro": "1",
+        "explaintext": "1",
+    }
+    response = requests.get("https://en.wikipedia.org/w/api.php", params=params)
     if response.status_code != 200:
-        raise AirflowException(f"Unsuccessful retrieving wikipedia extracts, url: {url}")
-    response_json = response.json()
-    pages = response_json["query"]["pages"]
+        raise AirflowException(f"Unsuccessfully retrieved Wikipedia extracts, url: {response.url}")
+    response = response.json()
+    pages = response["query"]["pages"]
 
-    # Create mapping between redirected/normalized page title and original page title
+    # Create redirect index
     redirects = {}
-    for title in response_json["query"].get("redirects", []):
-        redirects[title["to"]] = title["from"]
+    for redirect in response["query"].get("redirects", []):
+        redirects[redirect["from"]] = redirect["to"]
+
+    # Create normalized index
     normalized = {}
-    for title in response_json["query"].get("normalized", []):
-        normalized[title["to"]] = title["from"]
+    for norm in response["query"].get("normalized", []):
+        normalized[norm["from"]] = norm["to"]
 
-    # Resolve redirects referring to each other to 1 redirect
-    for key, value in redirects.copy().items():
-        if value in redirects:
-            redirects[key] = redirects.pop(value)
-
-    # Create mapping between Wikipedia URL and decoded page title.
-    results = []
+    # Create description index
+    descriptions = {}
     for page_id, page in pages.items():
-        page_title = page["title"]
-
-        # Get page_title from redirected/normalized if it is present
-        page_title = redirects.get(page_title, page_title)
-        page_title = normalized.get(page_title, page_title)
-
-        # Link original url to description
-        wikipedia_url = title_url_index[urllib.parse.unquote(page_title)]
-
-        # Get description and clean up
         description = page.get("extract", "")
         if description:
+            # Cleanup description
             description = remove_text_between_brackets(description)
             description = shorten_text_full_sentences(description)
+        descriptions[page["title"]] = description
 
-        results.append((wikipedia_url, description))
+    # Get description for each original URL
+    results = []
+    for url in urls:
+        title = get_wikipedia_title(url)
+        title_unquoted = unquote(title)
+        title_norm = normalized.get(title_unquoted, title_unquoted)
+        title_redirect = redirects.get(title_norm, title_norm)
+        description = descriptions[title_redirect]
+        results.append((url, description))
 
     return results
 
