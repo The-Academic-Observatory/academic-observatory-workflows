@@ -65,6 +65,10 @@ class TestWikipedia(TestCase):
             "https://en.wikipedia.org/wiki/Office_of_Scientific_and_Technical_Information",
             "https://en.wikipedia.org/wiki/National_Oilwell_Varco#Awards_and_Accolades",
             "https://en.wikipedia.org/wiki/%C3%85land",
+            "https://en.wikipedia.org/wiki/Universiti_Teknologi_MARA_System",
+            "https://en.wikipedia.org/wiki/Universiti_Teknologi_MARA",
+            "https://en.wikipedia.org/wiki/Kellogg%27s",
+            "https://en.wikipedia.org/wiki/Kellogg's",
         ]
         path = os.path.join(FIXTURES_FOLDER, "expected_fetch_wiki_descriptions.json")
         with open(path, "r") as f:
