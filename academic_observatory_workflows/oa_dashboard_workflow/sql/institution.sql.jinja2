@@ -1,3 +1,4 @@
+{% include 'functions.sql.jinja2' with context %}
 {% include 'data.sql.jinja2' with context %}
 
 SELECT
@@ -19,18 +20,20 @@ SELECT
   country.alpha3 as country_code,
   country.wikipedia_name as country_name,
   (SELECT * from ror.types LIMIT 1) AS institution_type,
-  (SELECT MIN(year_struct.year) FROM UNNEST(years_agg.years) as year_struct) as start_year,
-  (SELECT MAX(year_struct.year) FROM UNNEST(years_agg.years) as year_struct) as end_year,
-  aggregate_data.stats as stats,
+  (SELECT MIN(publication_year) FROM UNNEST(years_agg.years)) as start_year,
+  (SELECT MAX(publication_year) FROM UNNEST(years_agg.years)) as end_year,
+  aggregate_data.n_citations,
+  aggregate_data.n_outputs,
+  aggregate_data.oa_status,
   years_agg.years,
   ror.acronyms,
-  repositories.repositories
+  entity_repositories.repositories
 FROM `{{ ror_table_id }}` as ror
 LEFT OUTER JOIN `{{ country_table_id }}` as country ON ror.country.country_code = country.alpha2
 LEFT JOIN aggregate_data ON aggregate_data.id = ror.id
 LEFT JOIN years_agg ON years_agg.id = ror.id
-LEFT JOIN repositories ON repositories.id = ror.id
-LEFT JOIN `{{ institution_ids_table_id }}` AS institution_ids ON removeRorPrefix(ror.id) = institution_ids.ror_id
+LEFT JOIN entity_repositories ON entity_repositories.id = ror.id
+LEFT JOIN `{{ institution_ids_table_id }}` AS institution_ids ON institution_ids.ror_id = ror.id
 WHERE ARRAY_LENGTH(years) > 0
-AND (stats.n_outputs >= {{ inclusion_threshold }} OR institution_ids.ror_id IS NOT NULL)
-ORDER BY stats.p_outputs_open DESC
+AND (n_outputs >= {{ inclusion_threshold }} OR institution_ids.ror_id IS NOT NULL)
+ORDER BY oa_status.open.percent DESC
