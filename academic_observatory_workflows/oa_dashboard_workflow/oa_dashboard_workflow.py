@@ -69,7 +69,7 @@ from academic_observatory_workflows.github import trigger_repository_dispatch
 from academic_observatory_workflows.oa_dashboard_workflow.institution_ids import INSTITUTION_IDS
 from academic_observatory_workflows.wikipedia import fetch_wikipedia_descriptions
 from academic_observatory_workflows.zenodo import make_draft_version, publish_new_version, Zenodo
-from doi_workflow.doi_workflow import ror_to_ror_hierarchy_index
+from academic_observatory_workflows.doi_workflow.doi_workflow import ror_to_ror_hierarchy_index
 
 INCLUSION_THRESHOLD = {"country": 5, "institution": 50}
 AGGREGATION_FIELD = {"country": "country_codes", "institution": "ancestor_ror_ids"}
@@ -280,7 +280,7 @@ class OaDashboardWorkflow(Workflow):
         conceptrecid: int,
         external_dag_id: str = "openalex",
         entity_types: List[str] = None,
-        bq_openalex_dataset_id: str = "observatory",
+        bq_openalex_dataset_id: str = "openalex",
         bq_ror_dataset_id: str = "ror",
         bq_settings_dataset_id: str = "settings",
         bq_oa_dashboard_dataset_id: str = "oa_dashboard",
@@ -429,11 +429,7 @@ class OaDashboardWorkflow(Workflow):
         """Create the ROR hierarchy table."""
 
         # Fetch latest ROR table
-        ror_table_id = bq_select_latest_table(
-            table_id=release.ror_table_id,
-            end_date=release.snapshot_date,
-            sharded=True,
-        )
+        ror_table_id = release.ror_table_id
         ror = [dict(row) for row in bq_run_query(f"SELECT * FROM {ror_table_id}")]
 
         # Create ROR hierarchy table
@@ -469,6 +465,7 @@ class OaDashboardWorkflow(Workflow):
                 country_table_id=release.country_table_id,
                 institution_ids_table_id=release.institution_ids_table_id,
                 # Fields
+                max_repositories=MAX_REPOSITORIES,
                 aggregation_field=AGGREGATION_FIELD[entity_type],
                 start_year=START_YEAR,
                 end_year=END_YEAR,
@@ -479,6 +476,7 @@ class OaDashboardWorkflow(Workflow):
 
         # Run queries, saving to BigQuery
         for (sql, dst_table_id) in queries:
+            print(sql)
             success = bq_create_table_from_query(sql=sql, table_id=dst_table_id)
             results.append(success)
 

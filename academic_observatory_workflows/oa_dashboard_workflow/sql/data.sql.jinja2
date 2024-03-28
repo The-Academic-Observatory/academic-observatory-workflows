@@ -165,10 +165,10 @@ works_temp AS (
     oa_calcs.repositories
   FROM
     `{{ openalex_works_table_id }}` AS works
-  WHERE
-    includeOutput(works.{{ aggregation_field }}, works.publication_year)
   LEFT JOIN affiliations ON affiliations.id = works.id
   LEFT JOIN oa_calcs ON oa_calcs.id = works.id
+  WHERE
+    includeOutput(affiliations.{{ aggregation_field }}, works.publication_year)
   ORDER BY works.publication_year DESC, works.id DESC
 ),
 
@@ -218,7 +218,7 @@ entity_repositories AS (
         ror_ids,
         country_code,
         home_repo,
-        CASE(n_outputs AS FLOAT64) as n_outputs
+        CAST(n_outputs AS FLOAT64) as n_outputs
       )
       ORDER BY n_outputs DESC, LOWER(removeDiacritics(display_name)) ASC
     ) AS repositories

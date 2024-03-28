@@ -14,7 +14,7 @@ CREATE TEMP FUNCTION removeDiacritics(input STRING)
 CREATE TEMP FUNCTION includeOutput(ids ARRAY<STRING>, publicationYear INT64)
 RETURNS BOOL
 AS (
-  ARRAY_LENGTH(ids) > 0 AND (publicationYear BETWEEN {{ start_year }} AND {{ end_year }})
+  ids IS NOT NULL AND ARRAY_LENGTH(ids) > 0 AND (publicationYear BETWEEN {{ start_year }} AND {{ end_year }})
 );
 
 CREATE TEMP FUNCTION removeRorPrefix(str STRING)
