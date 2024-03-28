@@ -22,11 +22,11 @@ SELECT
   (SELECT * from ror.types LIMIT 1) AS institution_type,
   (SELECT MIN(publication_year) FROM UNNEST(years_agg.years)) as start_year,
   (SELECT MAX(publication_year) FROM UNNEST(years_agg.years)) as end_year,
+  ror.acronyms,
   aggregate_data.n_citations,
   aggregate_data.n_outputs,
   aggregate_data.oa_status,
   years_agg.years,
-  ror.acronyms,
   entity_repositories.repositories
 FROM `{{ ror_table_id }}` as ror
 LEFT OUTER JOIN `{{ country_table_id }}` as country ON ror.country.country_code = country.alpha2

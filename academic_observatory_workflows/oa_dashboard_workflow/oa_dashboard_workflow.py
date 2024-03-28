@@ -39,6 +39,7 @@ from airflow.exceptions import AirflowException
 from airflow.sensors.external_task import ExternalTaskSensor
 from glom import Coalesce, glom, SKIP
 from jinja2 import Template
+
 from observatory.platform.airflow import get_airflow_connection_password
 from observatory.platform.bigquery import (
     bq_create_dataset,
@@ -62,15 +63,16 @@ from observatory.platform.workflows.workflow import (
     SnapshotRelease,
     Workflow,
 )
-
 from academic_observatory_workflows.clearbit import clearbit_download_logo
 from academic_observatory_workflows.config import project_path, Tag
 from academic_observatory_workflows.github import trigger_repository_dispatch
 from academic_observatory_workflows.oa_dashboard_workflow.institution_ids import INSTITUTION_IDS
 from academic_observatory_workflows.wikipedia import fetch_wikipedia_descriptions
 from academic_observatory_workflows.zenodo import make_draft_version, publish_new_version, Zenodo
+from doi_workflow.doi_workflow import ror_to_ror_hierarchy_index
 
 INCLUSION_THRESHOLD = {"country": 5, "institution": 50}
+AGGREGATION_FIELD = {"country": "country_codes", "institution": "ancestor_ror_ids"}
 MAX_REPOSITORIES = 200
 START_YEAR = 2000
 END_YEAR = pendulum.now().year - 1
@@ -117,7 +119,7 @@ class OaDashboardRelease(SnapshotRelease):
         snapshot_date: pendulum.DateTime,
         input_project_id: str,
         output_project_id: str,
-        bq_agg_dataset_id: str,
+        bq_openalex_dataset_id: str,
         bq_ror_dataset_id: str,
         bq_settings_dataset_id: str,
         bq_oa_dashboard_dataset_id: str,
@@ -129,7 +131,7 @@ class OaDashboardRelease(SnapshotRelease):
         :param snapshot_date: the release date.
         :param input_project_id: the ID of the Google Cloud project where data will be pulled from.
         :param output_project_id: the ID of the Google Cloud project where data will be written to.
-        :param bq_agg_dataset_id: the id of the BigQuery dataset where the Academic Observatory aggregated data lives.
+        :param bq_openalex_dataset_id: the id of the BigQuery dataset where the Academic Observatory aggregated data lives.
         :param bq_ror_dataset_id: the id of the BigQuery dataset containing the ROR table.
         :param bq_settings_dataset_id: the id of the BigQuery settings dataset, which contains the country table.
         :param bq_oa_dashboard_dataset_id: the id of the BigQuery dataset where the tables produced by this workflow will be created.
@@ -140,7 +142,7 @@ class OaDashboardRelease(SnapshotRelease):
         self.output_project_id = output_project_id
         self.bq_ror_dataset_id = bq_ror_dataset_id
         self.bq_settings_dataset_id = bq_settings_dataset_id
-        self.bq_agg_dataset_id = bq_agg_dataset_id
+        self.bq_openalex_dataset_id = bq_openalex_dataset_id
         self.bq_oa_dashboard_dataset_id = bq_oa_dashboard_dataset_id
 
     @property
@@ -170,20 +172,39 @@ class OaDashboardRelease(SnapshotRelease):
         )
 
     @functools.cached_property
+    def openalex_sources_table_id(self):
+        return bq_table_id(self.input_project_id, self.bq_openalex_dataset_id, "sources")
+
+    @functools.cached_property
+    def openalex_sources_table_id(self):
+        return bq_table_id(self.input_project_id, self.bq_openalex_dataset_id, "sources")
+
+    @functools.cached_property
+    def openalex_institutions_table_id(self):
+        return bq_table_id(self.input_project_id, self.bq_openalex_dataset_id, "institutions")
+
+    @functools.cached_property
+    def openalex_works_table_id(self):
+        return bq_table_id(self.input_project_id, self.bq_openalex_dataset_id, "works")
+
+    @functools.cached_property
+    def repository_table_id(self):
+        return bq_table_id(self.input_project_id, self.bq_settings_dataset_id, "repository")
+
+    @functools.cached_property
     def country_table_id(self):
         return bq_table_id(self.input_project_id, self.bq_settings_dataset_id, "country")
-
-    def observatory_agg_table_id(self, table_name: str):
-        return bq_select_latest_table(
-            table_id=bq_table_id(self.input_project_id, self.bq_agg_dataset_id, table_name),
-            end_date=self.snapshot_date,
-            sharded=True,
-        )
 
     @functools.cached_property
     def institution_ids_table_id(self):
         return bq_sharded_table_id(
             self.output_project_id, self.bq_oa_dashboard_dataset_id, "institution_ids", self.snapshot_date
+        )
+
+    @functools.cached_property
+    def ror_hierarchy_table_id(self):
+        return bq_sharded_table_id(
+            self.output_project_id, self.bq_oa_dashboard_dataset_id, "ror_hierarchy", self.snapshot_date
         )
 
     def oa_dashboard_table_id(self, table_name: str):
@@ -257,9 +278,9 @@ class OaDashboardWorkflow(Workflow):
         cloud_workspace: CloudWorkspace,
         data_bucket: str,
         conceptrecid: int,
-        doi_dag_id: str = "doi",
+        external_dag_id: str = "openalex",
         entity_types: List[str] = None,
-        bq_agg_dataset_id: str = "observatory",
+        bq_openalex_dataset_id: str = "observatory",
         bq_ror_dataset_id: str = "ror",
         bq_settings_dataset_id: str = "settings",
         bq_oa_dashboard_dataset_id: str = "oa_dashboard",
@@ -278,9 +299,9 @@ class OaDashboardWorkflow(Workflow):
         :param data_bucket: the Google Cloud Storage bucket where image data should be stored.
         :param conceptrecid: the Zenodo Concept Record ID for the COKI Open Access Dataset. The Concept Record ID is
         the last set of numbers from the Concept DOI.
-        :param doi_dag_id: the DAG id to wait for.
+        :param external_dag_id: the DAG id to wait for.
         :param entity_types: the table names.
-        :param bq_agg_dataset_id: the id of the BigQuery dataset where the Academic Observatory aggregated data lives.
+        :param bq_openalex_dataset_id: the id of the BigQuery dataset where the Academic Observatory aggregated data lives.
         :param bq_ror_dataset_id: the id of the BigQuery dataset containing the ROR table.
         :param bq_settings_dataset_id: the id of the BigQuery settings dataset, which contains the country table.
         :param bq_oa_dashboard_dataset_id: the id of the BigQuery dataset where the tables produced by this workflow will be created.
@@ -309,7 +330,7 @@ class OaDashboardWorkflow(Workflow):
         self.input_project_id = cloud_workspace.input_project_id
         self.output_project_id = cloud_workspace.output_project_id
         self.data_bucket = data_bucket
-        self.bq_agg_dataset_id = bq_agg_dataset_id
+        self.bq_openalex_dataset_id = bq_openalex_dataset_id
         self.bq_ror_dataset_id = bq_ror_dataset_id
         self.bq_settings_dataset_id = bq_settings_dataset_id
         self.bq_oa_dashboard_dataset_id = bq_oa_dashboard_dataset_id
@@ -324,11 +345,12 @@ class OaDashboardWorkflow(Workflow):
         self.zenodo: Optional[Zenodo] = None
 
         self.add_operator(
-            ExternalTaskSensor(task_id=f"{doi_dag_id}_sensor", external_dag_id=doi_dag_id, mode="reschedule")
+            ExternalTaskSensor(task_id=f"{external_dag_id}_sensor", external_dag_id=external_dag_id, mode="reschedule")
         )
         self.add_setup_task(self.check_dependencies)
         self.add_task(self.make_bq_datasets)
         self.add_task(self.upload_institution_ids)
+        self.add_task(self.create_ror_hierarchy_table)
         self.add_task(self.create_entity_tables)
         self.add_task(
             self.add_wiki_descriptions,
@@ -378,7 +400,7 @@ class OaDashboardWorkflow(Workflow):
             output_project_id=self.output_project_id,
             bq_ror_dataset_id=self.bq_ror_dataset_id,
             bq_settings_dataset_id=self.bq_settings_dataset_id,
-            bq_agg_dataset_id=self.bq_agg_dataset_id,
+            bq_openalex_dataset_id=self.bq_openalex_dataset_id,
             bq_oa_dashboard_dataset_id=self.bq_oa_dashboard_dataset_id,
         )
 
@@ -403,6 +425,29 @@ class OaDashboardWorkflow(Workflow):
         )
         set_task_state(success, self.upload_institution_ids.__name__, release)
 
+    def create_ror_hierarchy_table(self, release: OaDashboardRelease, **kwargs):
+        """Create the ROR hierarchy table."""
+
+        # Fetch latest ROR table
+        ror_table_id = bq_select_latest_table(
+            table_id=release.ror_table_id,
+            end_date=release.snapshot_date,
+            sharded=True,
+        )
+        ror = [dict(row) for row in bq_run_query(f"SELECT * FROM {ror_table_id}")]
+
+        # Create ROR hierarchy table
+        index = ror_to_ror_hierarchy_index(ror)
+
+        # Convert to list of dictionaries
+        records = []
+        for child_id, ancestor_ids in index.items():
+            records.append({"child_id": child_id, "ror_ids": [child_id] + list(ancestor_ids)})
+
+        # Upload to intermediate table
+        success = bq_load_from_memory(release.ror_hierarchy_table_id, records)
+        set_task_state(success, self.create_ror_hierarchy_table.__name__)
+
     def create_entity_tables(self, release: OaDashboardRelease, **kwargs):
         """Create the country and institution tables"""
 
@@ -413,12 +458,20 @@ class OaDashboardWorkflow(Workflow):
             template_path = project_path("oa_dashboard_workflow", "sql", f"{entity_type}.sql.jinja2")
             sql = render_template(
                 template_path,
-                agg_table_id=release.observatory_agg_table_id(entity_type),
-                start_year=START_YEAR,
-                end_year=END_YEAR,
+                # OpenAlex tables
+                openalex_sources_table_id=release.openalex_sources_table_id,
+                openalex_institutions_table_id=release.openalex_institutions_table_id,
+                openalex_works_table_id=release.openalex_works_table_id,
+                # Other tables
                 ror_table_id=release.ror_table_id,
+                repository_table_id=release.repository_table_id,
+                ror_hierarchy_table_id=release.ror_hierarchy_table_id,
                 country_table_id=release.country_table_id,
                 institution_ids_table_id=release.institution_ids_table_id,
+                # Fields
+                aggregation_field=AGGREGATION_FIELD[entity_type],
+                start_year=START_YEAR,
+                end_year=END_YEAR,
                 inclusion_threshold=INCLUSION_THRESHOLD[entity_type],
             )
             dst_table_id = release.oa_dashboard_table_id(entity_type)
@@ -745,18 +798,9 @@ def oa_dashboard_subset(item: Dict) -> Dict:
         "country_code": Coalesce("country_code", default=SKIP),
         "country_name": Coalesce("country_name", default=SKIP),
         "institution_type": Coalesce("institution_type", default=SKIP),
-        "acronyms": "acronyms",
-        "stats": {
-            "n_outputs": "stats.n_outputs",
-            "n_outputs_open": "stats.n_outputs_open",
-            "n_outputs_black": "stats.n_outputs_black",
-            "p_outputs_open": "stats.p_outputs_open",
-            "p_outputs_publisher_open_only": "stats.p_outputs_publisher_open_only",
-            "p_outputs_both": "stats.p_outputs_both",
-            "p_outputs_other_platform_open_only": "stats.p_outputs_other_platform_open_only",
-            "p_outputs_closed": "stats.p_outputs_closed",
-            "p_outputs_black": "stats.p_outputs_black",
-        },
+        "n_citations": "n_citations",
+        "n_outputs": "n_outputs",
+        "oa_status": "oa_status",
     }
 
     return glom(item, subset_spec)
@@ -774,8 +818,11 @@ def zenodo_subset(item: Dict):
         "start_year": "start_year",
         "end_year": "end_year",
         "acronyms": "acronyms",
-        "stats": "stats",
+        "n_citations": "n_citations",
+        "n_outputs": "n_outputs",
+        "oa_status": "oa_status",
         "years": "years",
+        "repositories": "repositories",
     }
 
     return glom(item, subset_spec)

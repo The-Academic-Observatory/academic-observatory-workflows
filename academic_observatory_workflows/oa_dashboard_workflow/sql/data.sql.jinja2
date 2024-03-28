@@ -223,7 +223,7 @@ entity_repositories AS (
       ORDER BY n_outputs DESC, LOWER(removeDiacritics(display_name)) ASC
     ) AS repositories
   FROM ranked_repos
-  WHERE repo_rank <= 200 OR home_repo
+  WHERE repo_rank <= {{ max_repositories }} OR home_repo
   GROUP BY agg_id
 ),
 
@@ -231,7 +231,7 @@ entity_repositories AS (
 aggregate_data AS (
   SELECT
     id,
-    {% include 'oa_calcs.sql.jinja2' with context %}
+    {% include 'aggregations.sql.jinja2' with context %}
 
   FROM works_temp as works, UNNEST(works.{{ aggregation_field }}) AS id
   GROUP BY id
@@ -247,7 +247,7 @@ years_agg as (
     SELECT
       id,
       publication_year,
-      {% include 'oa_calcs.sql.jinja2' with context %}
+      {% include 'aggregations.sql.jinja2' with context %}
 
     FROM works_temp as works, UNNEST(works.{{ aggregation_field }}) AS id
     GROUP BY id, publication_year
