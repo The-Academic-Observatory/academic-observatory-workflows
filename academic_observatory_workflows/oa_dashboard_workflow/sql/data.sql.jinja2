@@ -1,169 +1,257 @@
-CREATE TEMP FUNCTION calcPercent(numerator FLOAT64, denominator FLOAT64)
-RETURNS FLOAT64
-AS (
-  SAFE_DIVIDE(numerator * 100 , denominator)
-);
-
-CREATE TEMP FUNCTION removeRorPrefix(str STRING)
-RETURNS STRING
-AS (
-  REGEXP_REPLACE(str, r'^https?://ror\.org/', '')
-);
-
-CREATE TEMP FUNCTION
-  REMOVE_DIACRITICS(input STRING)
-  RETURNS STRING
-  LANGUAGE js AS """
-    return input.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-""";
-
 -- All numbers are FLOAT64 otherwise BigQuery won't export them as numbers in JSON
-WITH years as (
-  SELECT
-    agg.id as id,
-    CAST(agg.time_period AS FLOAT64) AS year,
-    DATE(agg.time_period, 12, 31) AS date,
-    STRUCT(
-      CAST(agg.citations.openalex.total_citations AS FLOAT64) AS n_citations,
-      CAST(agg.total_outputs AS FLOAT64) AS n_outputs,
 
-      -- N Outputs
-      CAST(agg.coki.oa.coki.open.total AS FLOAT64) AS n_outputs_open,
-      CAST(agg.coki.oa.coki.publisher.total AS FLOAT64) AS n_outputs_publisher_open,
-      CAST(agg.coki.oa.coki.publisher_only.total AS FLOAT64) AS n_outputs_publisher_open_only,
-      CAST(agg.coki.oa.coki.both.total AS FLOAT64) AS n_outputs_both,
-      CAST(agg.coki.oa.coki.other_platform.total AS FLOAT64) AS n_outputs_other_platform_open,
-      CAST(agg.coki.oa.coki.other_platform_only.total AS FLOAT64) AS n_outputs_other_platform_open_only,
-      CAST(agg.coki.oa.coki.closed.total AS FLOAT64) AS n_outputs_closed,
+WITH
 
-      CAST(agg.coki.oa.coki.publisher_categories.oa_journal.total AS FLOAT64) AS n_outputs_oa_journal,
-      CAST(agg.coki.oa.coki.publisher_categories.hybrid.total AS FLOAT64) AS n_outputs_hybrid,
-      CAST(agg.coki.oa.coki.publisher_categories.no_guarantees.total AS FLOAT64) AS n_outputs_no_guarantees,
-
-      CAST(agg.coki.oa.coki.other_platform_categories.preprint.total AS FLOAT64) AS n_outputs_preprint,
-      CAST(agg.coki.oa.coki.other_platform_categories.domain.total AS FLOAT64) AS n_outputs_domain,
-      CAST(agg.coki.oa.coki.other_platform_categories.institution.total AS FLOAT64) AS n_outputs_institution,
-      CAST(agg.coki.oa.coki.other_platform_categories.public.total AS FLOAT64) AS n_outputs_public,
-      CAST(agg.coki.oa.coki.other_platform_categories.aggregator.total + agg.coki.oa.coki.other_platform_categories.other_internet.total + agg.coki.oa.coki.other_platform_categories.unknown.total AS FLOAT64) AS n_outputs_other_internet,
-
-      CAST(agg.coki.oa.color.black.total_outputs AS FLOAT64) as n_outputs_black,
-
-      -- Percentages
-      -- Percentages from aggregate table are rounded so not usable
-      calcPercent(agg.coki.oa.coki.open.total, agg.total_outputs) AS p_outputs_open,
-      calcPercent(agg.coki.oa.coki.publisher.total, agg.total_outputs) AS p_outputs_publisher_open,
-      calcPercent(agg.coki.oa.coki.publisher_only.total, agg.total_outputs) AS p_outputs_publisher_open_only,
-      calcPercent(agg.coki.oa.coki.both.total, agg.total_outputs) AS p_outputs_both,
-      calcPercent(agg.coki.oa.coki.other_platform.total, agg.total_outputs) AS p_outputs_other_platform_open,
-      calcPercent(agg.coki.oa.coki.other_platform_only.total, agg.total_outputs) AS p_outputs_other_platform_open_only,
-      calcPercent(agg.coki.oa.coki.closed.total, agg.total_outputs) AS p_outputs_closed,
-
-      calcPercent(agg.coki.oa.coki.publisher_categories.oa_journal.total, agg.coki.oa.coki.publisher.total) AS p_outputs_oa_journal,
-      calcPercent(agg.coki.oa.coki.publisher_categories.hybrid.total, agg.coki.oa.coki.publisher.total) AS p_outputs_hybrid,
-      calcPercent(agg.coki.oa.coki.publisher_categories.no_guarantees.total, agg.coki.oa.coki.publisher.total) AS p_outputs_no_guarantees,
-
-      calcPercent(agg.coki.oa.coki.other_platform_categories.preprint.total, agg.coki.oa.coki.other_platform.total) AS p_outputs_preprint,
-      calcPercent(agg.coki.oa.coki.other_platform_categories.domain.total, agg.coki.oa.coki.other_platform.total) AS p_outputs_domain,
-      calcPercent(agg.coki.oa.coki.other_platform_categories.institution.total, agg.coki.oa.coki.other_platform.total) AS p_outputs_institution,
-      calcPercent(agg.coki.oa.coki.other_platform_categories.public.total, agg.coki.oa.coki.other_platform.total) AS p_outputs_public,
-      calcPercent(agg.coki.oa.coki.other_platform_categories.aggregator.total + agg.coki.oa.coki.other_platform_categories.other_internet.total + agg.coki.oa.coki.other_platform_categories.unknown.total, agg.coki.oa.coki.other_platform.total) AS p_outputs_other_internet,
-
-      calcPercent(agg.coki.oa.color.black.total_outputs, agg.total_outputs) AS p_outputs_black
-  ) as stats
-  FROM `{{ agg_table_id }}` as agg
-  WHERE agg.time_period >= {{ start_year }} AND agg.time_period <= {{ end_year }}
-  ORDER BY year DESC
-),
-
-aggregate_data as (
+repositories AS (
   SELECT
     id,
-    STRUCT(
-      -- output counts
-      SUM(stats.n_citations) as n_citations,
-      SUM(stats.n_outputs) as n_outputs,
-      SUM(stats.n_outputs_open) as n_outputs_open,
-      SUM(stats.n_outputs_publisher_open) as n_outputs_publisher_open,
-      SUM(stats.n_outputs_publisher_open_only) as n_outputs_publisher_open_only,
-      SUM(stats.n_outputs_both) as n_outputs_both,
-      SUM(stats.n_outputs_other_platform_open) as n_outputs_other_platform_open,
-      SUM(stats.n_outputs_other_platform_open_only) as n_outputs_other_platform_open_only,
-      SUM(stats.n_outputs_closed) as n_outputs_closed,
-      SUM(stats.n_outputs_oa_journal) as n_outputs_oa_journal,
-      SUM(stats.n_outputs_hybrid) as n_outputs_hybrid,
-      SUM(stats.n_outputs_no_guarantees) as n_outputs_no_guarantees,
-      SUM(stats.n_outputs_preprint) as n_outputs_preprint,
-      SUM(stats.n_outputs_domain) as n_outputs_domain,
-      SUM(stats.n_outputs_institution) as n_outputs_institution,
-      SUM(stats.n_outputs_public) as n_outputs_public,
-      SUM(stats.n_outputs_other_internet) as n_outputs_other_internet,
-      SUM(stats.n_outputs_black) as n_outputs_black,
-
-      -- percentages
-      calcPercent(SUM(stats.n_outputs_open), SUM(stats.n_outputs)) as p_outputs_open,
-      calcPercent(SUM(stats.n_outputs_publisher_open), SUM(stats.n_outputs)) as p_outputs_publisher_open,
-      calcPercent(SUM(stats.n_outputs_publisher_open_only), SUM(stats.n_outputs)) as p_outputs_publisher_open_only,
-      calcPercent(SUM(stats.n_outputs_both), SUM(stats.n_outputs)) as p_outputs_both,
-      calcPercent(SUM(stats.n_outputs_other_platform_open), SUM(stats.n_outputs)) as p_outputs_other_platform_open,
-      calcPercent(SUM(stats.n_outputs_other_platform_open_only), SUM(stats.n_outputs)) as p_outputs_other_platform_open_only,
-      calcPercent(SUM(stats.n_outputs_closed), SUM(stats.n_outputs)) as p_outputs_closed,
-      calcPercent(SUM(stats.n_outputs_oa_journal), SUM(stats.n_outputs_publisher_open)) as p_outputs_oa_journal,
-      calcPercent(SUM(stats.n_outputs_hybrid), SUM(stats.n_outputs_publisher_open)) as p_outputs_hybrid,
-      calcPercent(SUM(stats.n_outputs_no_guarantees), SUM(stats.n_outputs_publisher_open)) as p_outputs_no_guarantees,
-      calcPercent(SUM(stats.n_outputs_preprint), SUM(stats.n_outputs_other_platform_open)) as p_outputs_preprint,
-      calcPercent(SUM(stats.n_outputs_domain), SUM(stats.n_outputs_other_platform_open)) as p_outputs_domain,
-      calcPercent(SUM(stats.n_outputs_institution), SUM(stats.n_outputs_other_platform_open)) as p_outputs_institution,
-      calcPercent(SUM(stats.n_outputs_public), SUM(stats.n_outputs_other_platform_open)) as p_outputs_public,
-      calcPercent(SUM(stats.n_outputs_other_internet), SUM(stats.n_outputs_other_platform_open)) as p_outputs_other_internet,
-      calcPercent(SUM(stats.n_outputs_black), SUM(stats.n_outputs)) as p_outputs_black
-    ) as stats
-  FROM years
-  GROUP BY id
+    ANY_VALUE(display_name) AS display_name,
+    ANY_VALUE(category) AS category,
+    ARRAY_AGG(ror_id IGNORE NULLS) AS ror_ids,
+    ANY_VALUE(country_code) AS country_code,
+    MAX(works_count) AS works_count
+  FROM (
+    SELECT
+      sources.id,
+      sources.display_name,
+      CASE
+        WHEN repository.category IS NOT NULL THEN repository.category
+        WHEN sources.host_organization IS NOT NULL THEN "Institution"
+      ELSE "Unknown"
+      END AS category,
+      CASE
+        WHEN repository.category IS NOT NULL AND repository.category != "Institution" THEN NULL
+        WHEN repository.category = "Institution"
+      AND repository.ror_id IS NOT NULL THEN repository.ror_id
+        WHEN sources.host_organization IS NOT NULL THEN institutions.ror
+      ELSE NULL
+      END AS ror_id,
+      sources.country_code,
+      sources.works_count,
+    FROM
+      `{{ openalex_sources_table_id }}` AS sources
+    LEFT JOIN
+      `{{ openalex_institutions_table_id }}` AS institutions
+    ON
+      sources.host_organization = institutions.id
+    LEFT JOIN
+      `{{ repository_table_id }}` AS repository
+    ON
+      repository.id = sources.id
+    WHERE
+      sources.type = "repository"
+    ORDER BY
+      sources.works_count DESC )
+  GROUP BY
+    id
+  ORDER BY
+    works_count DESC
 ),
 
-years_agg as (
+work_repositories AS (
   SELECT
     id,
-    ARRAY_AGG(STRUCT(year, date, stats) ORDER BY year ASC) as years
-  FROM years
-  GROUP BY id
+    ARRAY_AGG(repositories) AS repositories,
+  FROM (
+    SELECT
+      works.id,
+      STRUCT(
+        repositories.id,
+        repositories.display_name,
+        repositories.category,
+        repositories.ror_ids,
+        repositories.country_code
+      ) AS repositories,
+    FROM
+      `{{ openalex_works_table_id }}` AS works,
+      UNNEST(works.locations) AS location
+    LEFT JOIN repositories ON repositories.id = location.source.id
+    WHERE
+      location.source.type = "repository")
+  GROUP BY
+    id
 ),
 
+affiliations AS (
+  SELECT
+    id,
+    ror_ids,
+    ARRAY(SELECT DISTINCT * FROM affiliations_temp.ancestor_ror_ids) as ancestor_ror_ids,
+    country_codes,
+  FROM (
+    SELECT
+      works.id,
+      ARRAY_AGG(DISTINCT institution.ror IGNORE NULLS) as ror_ids,
+      ARRAY_CONCAT_AGG(ror_hierarchy.ror_ids) as ancestor_ror_ids,
+      ARRAY_AGG(DISTINCT institution.country_code IGNORE NULLS) as country_codes
+    FROM
+      `{{ openalex_works_table_id }}` AS works,
+      UNNEST(authorships) AS author,
+      UNNEST(author.institutions) AS institution
+    LEFT JOIN `{{ ror_hierarchy_table_id }}` AS ror_hierarchy ON ror_hierarchy.child_id = institution.ror -- Could possibly replace with OpenAlex lineage field
+    GROUP BY works.id
+  ) AS affiliations_temp
+),
+
+publisher_types AS (
+  SELECT "journal" AS type UNION ALL
+  SELECT "book series" UNION ALL
+  SELECT "ebook platform" UNION ALL
+  SELECT "conference"
+),
+
+oa_calcs AS (
+  SELECT
+    id,
+
+    STRUCT(
+      open,
+      closed,
+      (oa_journal OR hybrid OR no_guarantees) AS publisher,
+      other_platform,
+      (oa_journal OR hybrid OR no_guarantees) AND NOT other_platform AS publisher_only,
+      (oa_journal OR hybrid OR no_guarantees) AND other_platform AS both,
+      other_platform_only,
+
+      STRUCT(
+        oa_journal,
+        hybrid,
+        no_guarantees
+      ) AS publisher_categories,
+
+      STRUCT(
+        COALESCE((SELECT COUNT(1) FROM UNNEST(repositories) AS repo WHERE repo.category IN ("Preprint")) > 0, FALSE) AS preprint,
+        COALESCE((SELECT COUNT(1) FROM UNNEST(repositories) AS repo WHERE repo.category IN ("Domain")) > 0, FALSE) AS domain,
+        COALESCE((SELECT COUNT(1) FROM UNNEST(repositories) AS repo WHERE repo.category IN ("Institution")) > 0, FALSE) AS institution,
+        COALESCE((SELECT COUNT(1) FROM UNNEST(repositories) AS repo WHERE repo.category IN ("Public")) > 0, FALSE) AS public,
+        COALESCE((SELECT COUNT(1) FROM UNNEST(repositories) AS repo WHERE repo.category IN ("Other Internet", "Aggregator", "Unknown")) > 0, FALSE) AS other_internet
+      ) AS other_platform_categories
+
+    ) AS oa_status,
+
+    repositories
+  FROM (
+    SELECT
+      works.id,
+      works.open_access.is_oa AS open,
+      NOT works.open_access.is_oa AS closed,
+      works.open_access.is_oa AND COALESCE(works.best_oa_location.source.is_in_doaj, FALSE) AS oa_journal,
+      works.open_access.is_oa AND (COALESCE(works.best_oa_location.source.type, "NULL") IN (SELECT type FROM publisher_types) AND works.best_oa_location.license IS NOT NULL AND NOT COALESCE(works.best_oa_location.source.is_in_doaj, FALSE)) AS hybrid,
+      works.open_access.is_oa AND (COALESCE(works.best_oa_location.source.type, "NULL") IN (SELECT type FROM publisher_types) AND works.best_oa_location.license IS NULL AND NOT COALESCE(works.best_oa_location.source.is_in_doaj, FALSE)) AS no_guarantees,
+
+      --
+      works.open_access.is_oa AND (SELECT COUNT(1) FROM UNNEST(works.locations) AS location WHERE location.is_oa AND location.source.type IN ("repository")) > 0 AS other_platform,
+      works.open_access.is_oa AND (SELECT COUNT(1) FROM UNNEST(works.locations) AS location WHERE location.is_oa AND location.source.type IN ("repository")) > 0 AND NOT (COALESCE(works.best_oa_location.source.is_in_doaj, FALSE) OR works.best_oa_location.source.type != "repository") AS other_platform_only,
+      -- works.best_oa_location.source.type != "repository" implies that source.type = NULL is a publisher
+
+      work_repositories.repositories
+    FROM
+      `{{ openalex_works_table_id }}` AS works
+    LEFT JOIN work_repositories ON work_repositories.id = works.id
+  )
+),
+
+works_temp AS (
+  SELECT
+    works.id,
+    -- works.title,
+    works.publication_year,
+    works.type,
+    affiliations.ror_ids,
+    affiliations.ancestor_ror_ids,
+    affiliations.country_codes,
+    works.cited_by_count as n_citations,
+    oa_calcs.oa_status,
+    oa_calcs.repositories
+  FROM
+    `{{ openalex_works_table_id }}` AS works
+  LEFT JOIN affiliations ON affiliations.id = works.id
+  LEFT JOIN oa_calcs ON oa_calcs.id = works.id
+  WHERE
+    includeOutput(affiliations.{{ aggregation_field }}, works.publication_year)
+  ORDER BY works.publication_year DESC, works.id DESC
+),
+
+-- Repositories
 agg_repos AS (
   SELECT
-    agg.id as agg_id,
-    repo.id,
-    SUM(repo.total_outputs) as total_outputs,
-    repo.category,
-    repo.home_repo
-  FROM `{{ agg_table_id }}` AS agg, UNNEST(agg.coki.repositories) AS repo
-  WHERE agg.time_period >= {{ start_year }} AND agg.time_period <= {{ end_year }}
-  GROUP BY agg.id, repo.id, repo.category, repo.home_repo
+    agg_id,
+    agg_repos_temp.id,
+    repositories.display_name,
+    repositories.category,
+    repositories.ror_ids,
+    repositories.country_code,
+    CASE
+      WHEN agg_id = repositories.country_code THEN TRUE -- Determine if home_repo for countries
+      WHEN agg_id IN UNNEST(ARRAY(SELECT * FROM repositories.ror_ids)) THEN TRUE -- Determine if home_repo for institutions
+      ELSE FALSE
+    END AS home_repo,
+    n_outputs,
+  FROM (
+    SELECT
+      agg_id,
+      repo.id,
+      COUNT(*) as n_outputs,
+    FROM works_temp as works,
+      UNNEST(works.{{ aggregation_field }}) AS agg_id,
+      UNNEST(repositories) AS repo
+    GROUP BY agg_id, id
+  ) as agg_repos_temp
+  LEFT JOIN repositories ON repositories.id = agg_repos_temp.id
 ),
 
 ranked_repos AS (
   SELECT
     *,
-    ROW_NUMBER() OVER (PARTITION BY agg_id ORDER BY home_repo DESC, total_outputs DESC, LOWER(REMOVE_DIACRITICS(id)) ASC) AS repo_rank
+    ROW_NUMBER() OVER (PARTITION BY agg_id ORDER BY home_repo DESC, n_outputs DESC, LOWER(removeDiacritics(id)) ASC) AS repo_rank
   FROM agg_repos
 ),
 
-repositories AS (
+entity_repositories AS (
   SELECT
     agg_id as id,
     ARRAY_AGG(
       STRUCT(
         id,
-        CAST(total_outputs AS FLOAT64) as total_outputs,
-        CASE
-          WHEN category IN ('Aggregator', 'Unknown') THEN 'Other Internet'
-          ELSE category
-        END AS category,
-        home_repo
+        display_name,
+        category,
+        ror_ids,
+        country_code,
+        home_repo,
+        CAST(n_outputs AS FLOAT64) as n_outputs
       )
-      ORDER BY total_outputs DESC, LOWER(REMOVE_DIACRITICS(id)) ASC
+      ORDER BY n_outputs DESC, LOWER(removeDiacritics(display_name)) ASC
     ) AS repositories
   FROM ranked_repos
-  WHERE repo_rank <= 200 OR home_repo
+  WHERE repo_rank <= {{ max_repositories }} OR home_repo
   GROUP BY agg_id
+),
+
+-- Aggregate across all time
+aggregate_data AS (
+  SELECT
+    id,
+    {% include 'aggregations.sql.jinja2' with context %}
+
+  FROM works_temp as works, UNNEST(works.{{ aggregation_field }}) AS id
+  GROUP BY id
+  ORDER BY n_outputs DESC
+),
+
+-- Aggregate for each publication year
+years_agg as (
+  SELECT
+    id,
+    ARRAY_AGG(STRUCT(publication_year, n_citations, n_outputs, oa_status) ORDER BY publication_year ASC) as years
+  FROM (
+    SELECT
+      id,
+      CAST(publication_year AS FLOAT64) AS publication_year,
+      DATE(publication_year, 12, 31) AS date,
+      {% include 'aggregations.sql.jinja2' with context %}
+
+    FROM works_temp as works, UNNEST(works.{{ aggregation_field }}) AS id
+    GROUP BY id, publication_year, date
+  )
+  GROUP BY id
 )

@@ -146,10 +146,14 @@ def fetch_wikipedia_descriptions_batch(urls: List) -> List[Tuple[str, str]]:
     results = []
     for url in urls:
         title = get_wikipedia_title(url)
-        title_unquoted = unquote(title)
-        title_norm = normalized.get(title_unquoted, title_unquoted)
-        title_redirect = redirects.get(title_norm, title_norm)
-        description = descriptions[title_redirect]
+        title = unquote(title)
+        title = normalized.get(title, title)
+
+        # Handle zero, one or many redirects
+        while title in redirects:
+            title = redirects[title]
+
+        description = descriptions[title]
         results.append((url, description))
 
     return results

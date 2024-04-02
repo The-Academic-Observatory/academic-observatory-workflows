@@ -1,0 +1,83 @@
+CAST(SUM(n_citations) AS FLOAT64) AS n_citations,
+CAST(COUNT(*) AS FLOAT64) AS n_outputs,
+STRUCT(
+  STRUCT(
+    CAST(SUM(CAST(oa_status.open AS INT64)) AS FLOAT64) as total,
+    calcPercent(SUM(CAST(oa_status.open AS INT64)), COUNT(*)) as percent
+  ) AS open,
+
+  STRUCT(
+    CAST(SUM(CAST(oa_status.closed AS INT64)) AS FLOAT64) as total,
+    calcPercent(SUM(CAST(oa_status.closed AS INT64)), COUNT(*)) as percent
+  ) AS closed,
+
+  STRUCT(
+    CAST(SUM(CAST(oa_status.publisher AS INT64)) AS FLOAT64) as total,
+    calcPercent(SUM(CAST(oa_status.publisher AS INT64)), COUNT(*)) as percent
+  ) AS publisher,
+
+  STRUCT(
+    CAST(SUM(CAST(oa_status.other_platform AS INT64)) AS FLOAT64) as total,
+    calcPercent(SUM(CAST(oa_status.other_platform AS INT64)), COUNT(*)) as percent
+  ) AS other_platform,
+
+  STRUCT(
+    CAST(SUM(CAST(oa_status.publisher_only AS INT64)) AS FLOAT64) as total,
+    calcPercent(SUM(CAST(oa_status.publisher_only AS INT64)), COUNT(*)) as percent
+  ) AS publisher_only,
+
+  STRUCT(
+    CAST(SUM(CAST(oa_status.both AS INT64)) AS FLOAT64) as total,
+    calcPercent(SUM(CAST(oa_status.both AS INT64)), COUNT(*)) as percent
+  ) AS both,
+
+  STRUCT(
+    CAST(SUM(CAST(oa_status.other_platform_only AS INT64)) AS FLOAT64) as total,
+    calcPercent(SUM(CAST(oa_status.other_platform_only AS INT64)), COUNT(*)) as percent
+  ) AS other_platform_only,
+
+  STRUCT(
+    STRUCT(
+      CAST(SUM(CAST(oa_status.publisher_categories.oa_journal AS INT64)) AS FLOAT64) as total,
+      calcPercent(SUM(CAST(oa_status.publisher_categories.oa_journal AS INT64)), SUM(CAST(oa_status.publisher AS INT64))) as percent
+    ) AS oa_journal,
+
+    STRUCT(
+      CAST(SUM(CAST(oa_status.publisher_categories.hybrid AS INT64)) AS FLOAT64) as total,
+      calcPercent(SUM(CAST(oa_status.publisher_categories.hybrid AS INT64)), SUM(CAST(oa_status.publisher AS INT64))) as percent
+    ) AS hybrid,
+
+    STRUCT(
+      CAST(SUM(CAST(oa_status.publisher_categories.no_guarantees AS INT64)) AS FLOAT64) as total,
+      calcPercent(SUM(CAST(oa_status.publisher_categories.no_guarantees AS INT64)), SUM(CAST(oa_status.publisher AS INT64))) as percent
+    ) AS no_guarantees
+  ) AS publisher_categories,
+
+  STRUCT(
+    STRUCT(
+      CAST(SUM(CAST(oa_status.other_platform_categories.preprint AS INT64)) AS FLOAT64) as total,
+      calcPercent(SUM(CAST(oa_status.other_platform_categories.preprint AS INT64)), SUM(CAST(oa_status.other_platform AS INT64))) as percent
+    ) AS preprint,
+
+    STRUCT(
+      CAST(SUM(CAST(oa_status.other_platform_categories.domain AS INT64)) AS FLOAT64) as total,
+      calcPercent(SUM(CAST(oa_status.other_platform_categories.domain AS INT64)), SUM(CAST(oa_status.other_platform AS INT64))) as percent
+    ) AS domain,
+
+    STRUCT(
+      CAST(SUM(CAST(oa_status.other_platform_categories.institution AS INT64)) AS FLOAT64) as total,
+      calcPercent(SUM(CAST(oa_status.other_platform_categories.institution AS INT64)), SUM(CAST(oa_status.other_platform AS INT64))) as percent
+    ) AS institution,
+
+    STRUCT(
+      CAST(SUM(CAST(oa_status.other_platform_categories.public AS INT64)) AS FLOAT64) as total,
+      calcPercent(SUM(CAST(oa_status.other_platform_categories.public AS INT64)), SUM(CAST(oa_status.other_platform AS INT64))) as percent
+    ) AS public,
+
+    STRUCT(
+      CAST(SUM(CAST(oa_status.other_platform_categories.other_internet AS INT64)) AS FLOAT64) as total,
+      calcPercent(SUM(CAST(oa_status.other_platform_categories.other_internet AS INT64)), SUM(CAST(oa_status.other_platform AS INT64))) as percent
+    ) AS other_internet
+  ) as other_platform_categories
+
+) AS oa_status

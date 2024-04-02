@@ -1,3 +1,4 @@
+{% include 'functions.sql.jinja2' with context %}
 {% include 'data.sql.jinja2' with context %}
 
 SELECT
@@ -15,19 +16,22 @@ SELECT
   REGEXP_REPLACE(country.wikipedia_url, r'^http://', 'https://') AS wikipedia_url,
   country.region as region,
   country.subregion as subregion,
-  (SELECT MIN(year_struct.year) FROM UNNEST(years_agg.years) as year_struct) as start_year,
-  (SELECT MAX(year_struct.year) FROM UNNEST(years_agg.years) as year_struct) as end_year,
-  aggregate_data.stats as stats,
+  (SELECT MIN(publication_year) FROM UNNEST(years_agg.years)) as start_year,
+  (SELECT MAX(publication_year) FROM UNNEST(years_agg.years)) as end_year,
+  aggregate_data.n_citations,
+  aggregate_data.n_outputs,
+  aggregate_data.oa_status,
   years_agg.years,
   CASE
     WHEN country.alpha3 = 'GBR' THEN ARRAY<STRING>[country.alpha3, country.alpha2, 'UK']
     ELSE ARRAY<STRING>[country.alpha3, country.alpha2]
   END as acronyms,
-  repositories.repositories
+  entity_repositories.repositories
 FROM `{{ country_table_id }}` as country
-LEFT JOIN aggregate_data ON aggregate_data.id = country.alpha3
-LEFT JOIN years_agg ON years_agg.id = country.alpha3
-LEFT JOIN repositories ON repositories.id = country.alpha3
-WHERE ARRAY_LENGTH(years) > 0
-AND stats.n_outputs >= {{ inclusion_threshold }}
-ORDER BY stats.p_outputs_open DESC
+LEFT JOIN aggregate_data ON aggregate_data.id = country.alpha2
+LEFT JOIN years_agg ON years_agg.id = country.alpha2
+LEFT JOIN entity_repositories ON entity_repositories.id = country.alpha2
+WHERE
+  ARRAY_LENGTH(years) > 0
+  AND n_outputs >= {{ inclusion_threshold }}
+ORDER BY oa_status.open.percent DESC
