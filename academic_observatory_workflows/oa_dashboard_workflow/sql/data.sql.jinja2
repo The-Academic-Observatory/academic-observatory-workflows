@@ -246,11 +246,12 @@ years_agg as (
   FROM (
     SELECT
       id,
-      publication_year,
+      CAST(publication_year AS FLOAT64) AS publication_year,
+      DATE(publication_year, 12, 31) AS date,
       {% include 'aggregations.sql.jinja2' with context %}
 
     FROM works_temp as works, UNNEST(works.{{ aggregation_field }}) AS id
-    GROUP BY id, publication_year
+    GROUP BY id, publication_year, date
   )
   GROUP BY id
 )

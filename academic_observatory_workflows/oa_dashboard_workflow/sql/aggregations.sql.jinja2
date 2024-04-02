@@ -22,6 +22,11 @@ STRUCT(
   ) AS other_platform,
 
   STRUCT(
+    CAST(SUM(CAST(oa_status.publisher_only AS INT64)) AS FLOAT64) as total,
+    calcPercent(SUM(CAST(oa_status.publisher_only AS INT64)), COUNT(*)) as percent
+  ) AS publisher_only,
+
+  STRUCT(
     CAST(SUM(CAST(oa_status.both AS INT64)) AS FLOAT64) as total,
     calcPercent(SUM(CAST(oa_status.both AS INT64)), COUNT(*)) as percent
   ) AS both,

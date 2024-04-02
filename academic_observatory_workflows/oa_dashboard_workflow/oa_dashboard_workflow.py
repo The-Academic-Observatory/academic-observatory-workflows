@@ -580,7 +580,7 @@ class OaDashboardWorkflow(Workflow):
             destination_uri = f"gs://{self.cloud_workspace.download_bucket}/{blob_prefix}/{entity_type}-data-*.jsonl.gz"
             table_id = release.oa_dashboard_table_id(entity_type)
             success = bq_query_to_gcs(
-                query=f"SELECT * FROM {table_id} ORDER BY stats.p_outputs_open DESC",  # Uses a query to export data to make sure it is in the correct order
+                query=f"SELECT * FROM {table_id} ORDER BY oa_status.open.percent DESC",  # Uses a query to export data to make sure it is in the correct order
                 project_id=self.output_project_id,
                 destination_uri=destination_uri,
             )
@@ -943,9 +943,9 @@ def make_entity_stats(entities: List[Dict]) -> EntityStats:
     :return: the entity stats object.
     """
 
-    p_outputs_open = np.array([entity["stats"]["p_outputs_open"] for entity in entities])
-    n_outputs = np.array([entity["stats"]["n_outputs"] for entity in entities])
-    n_outputs_open = np.array([entity["stats"]["n_outputs_open"] for entity in entities])
+    p_outputs_open = np.array([entity["oa_status"]["open"]["percent"] for entity in entities])
+    n_outputs = np.array([entity["n_outputs"] for entity in entities])
+    n_outputs_open = np.array([entity["oa_status"]["open"]["total"] for entity in entities])
 
     # Make median, min and max values
     stats_median = dict(p_outputs_open=statistics.median(p_outputs_open))
