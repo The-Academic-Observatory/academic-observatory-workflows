@@ -54,7 +54,7 @@ class TestS5Cmd(ObservatoryTestCase):
 
                 # Assert that the files were downloaded successfully
                 downloaded_files = list_files(tmp_dir)
-                self.assertEqual(returncode, 0)
+                self.assertEqual(0, returncode)
                 self.assertEqual(len(downloaded_files), len(uploaded_files))
                 self.assertEqual(set([os.path.basename(f) for f in downloaded_files]), set(uploaded_files))
 
