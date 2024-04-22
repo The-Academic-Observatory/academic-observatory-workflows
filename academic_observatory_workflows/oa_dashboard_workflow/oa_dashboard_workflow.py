@@ -35,6 +35,7 @@ import google.cloud.bigquery as bigquery
 import jsonlines
 import numpy as np
 import pendulum
+from airflow import DAG
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowException
 from airflow.models.baseoperator import chain
@@ -43,7 +44,7 @@ from glom import Coalesce, glom, SKIP
 from jinja2 import Template
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
-from academic_observatory_workflows.config import project_path, Tag
+from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.github import trigger_repository_dispatch
 from academic_observatory_workflows.oa_dashboard_workflow.institution_ids import INSTITUTION_IDS
 from academic_observatory_workflows.wikipedia import fetch_wikipedia_descriptions
@@ -241,7 +242,6 @@ def create_dag(
     bq_ror_dataset_id: str = "ror",
     bq_settings_dataset_id: str = "settings",
     bq_oa_dashboard_dataset_id: str = "oa_dashboard",
-    data_location: str = "us",
     version: str = "v10",
     zenodo_host: str = "https://zenodo.org",
     github_conn_id="oa_dashboard_github_token",
@@ -250,7 +250,7 @@ def create_dag(
     schedule: Optional[str] = "@weekly",
     max_active_runs: int = 1,
     retries: int = 3,
-):
+) -> DAG:
     """Create the OaDashboardWorkflow, which generates data files for the COKI Open Access Dashboard.
 
     :param dag_id: the DAG id.
@@ -272,6 +272,8 @@ def create_dag(
     :param zenodo_conn_id: the Zenodo Token Airflow Connection ID.
     :param start_date: the start date.
     :param schedule: the schedule interval.
+    :param max_active_runs: the maximum number of DAG runs that can be run at once.
+    :param retries: the number of times to retry a task.
 
     The figure below illustrates the data files produced by this workflow:
     .
@@ -360,7 +362,7 @@ def create_dag(
             bq_create_dataset(
                 project_id=cloud_workspace.output_project_id,
                 dataset_id=bq_oa_dashboard_dataset_id,
-                location=data_location,
+                location=cloud_workspace.data_location,
                 description="The COKI Open Access Dashboard dataset",
             )
 
@@ -401,7 +403,7 @@ def create_dag(
                 queries.append((sql, dst_table_id))
 
             # Run queries, saving to BigQuery
-            for (sql, dst_table_id) in queries:
+            for sql, dst_table_id in queries:
                 success = bq_create_table_from_query(sql=sql, table_id=dst_table_id)
                 results.append(success)
 

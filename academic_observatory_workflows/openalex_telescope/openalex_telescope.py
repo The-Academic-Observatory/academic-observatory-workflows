@@ -1,4 +1,4 @@
-# Copyright 2022-2023 Curtin University
+# Copyright 2022-2024 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import boto3
 import jsonlines
 import pendulum
+from airflow import DAG
 from airflow.decorators import dag, task, task_group
 from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.hooks.base import BaseHook
@@ -269,7 +270,7 @@ def create_dag(
     queue: str = "remote_queue",
     max_active_runs: int = 1,
     retries: int = 3,
-):
+) -> DAG:
     """Construct an OpenAlexTelescope instance.
 
     :param dag_id: the id of the DAG.
@@ -291,7 +292,9 @@ def create_dag(
     :param schedule: the Apache Airflow schedule interval. Whilst OpenAlex snapshots are released monthly,
     they are not released on any particular day of the month, so we instead simply run the workflow weekly on a
     Sunday as this will pickup new updates regularly. See here for past release dates: https://openalex.s3.amazonaws.com/RELEASE_NOTES.txt
-    :param queue:
+    :param queue: what Airflow queue this job runs on.
+    :param max_active_runs: the maximum number of DAG runs that can be run at once.
+    :param retries: the number of times to retry a task.
     """
 
     if entity_names is None:

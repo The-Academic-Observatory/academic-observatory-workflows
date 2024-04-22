@@ -1,4 +1,4 @@
-# Copyright 2020 Curtin University
+# Copyright 2020-2024 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -123,7 +123,6 @@ def create_dag(
     observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
     start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
     schedule: str = "@monthly",
-    catchup: bool = False,
     max_active_runs: int = 1,
     retries: int = 3,
 ):
@@ -143,7 +142,6 @@ def create_dag(
     :param observatory_api_conn_id: the Observatory API connection key.
     :param start_date: the start date of the DAG.
     :param schedule: the schedule interval of the DAG.
-    :param catchup: whether to catchup the DAG or not.
     :param max_active_runs: the maximum number of DAG runs that can be run at once.
     :param retries: the number of times to retry a task.
     """
@@ -152,7 +150,7 @@ def create_dag(
         dag_id=dag_id,
         start_date=start_date,
         schedule=schedule,
-        catchup=catchup,
+        catchup=False,
         max_active_runs=max_active_runs,
         tags=["academic-observatory"],
         default_args={

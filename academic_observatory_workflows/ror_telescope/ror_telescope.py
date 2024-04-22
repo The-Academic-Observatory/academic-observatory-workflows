@@ -26,10 +26,12 @@ from typing import Any, Dict, List
 from zipfile import BadZipFile, ZipFile
 
 import pendulum
+from airflow import DAG
 from airflow.decorators import dag, task, task_group
 from airflow.exceptions import AirflowException
 from google.cloud.bigquery import SourceFormat
 
+from academic_observatory_workflows.config import project_path
 from observatory.api.client.model.dataset_release import DatasetRelease
 from observatory.platform.airflow import on_failure_callback
 from observatory.platform.api import make_observatory_api
@@ -43,8 +45,6 @@ from observatory.platform.utils.http_download import download_file
 from observatory.platform.utils.url_utils import retry_get_url
 from observatory.platform.workflows.workflow import cleanup, set_task_state, SnapshotRelease
 
-from academic_observatory_workflows.config import project_path, Tag
-
 
 class RorRelease(SnapshotRelease):
     def __init__(
@@ -55,7 +55,7 @@ class RorRelease(SnapshotRelease):
         snapshot_date: pendulum.DateTime,
         url: str,
         checksum: str,
-        cloud_workspace: CloudWorkspace = None,
+        cloud_workspace: CloudWorkspace,
     ):
         """Construct a RorRelease.
 
@@ -64,6 +64,7 @@ class RorRelease(SnapshotRelease):
         :param snapshot_date: the release date.
         :param url: The url to the ror snapshot.
         :param checksum: the file checksum.
+        :param cloud_workspace: the cloud workspace settings.
         """
 
         super().__init__(dag_id=dag_id, run_id=run_id, snapshot_date=snapshot_date)
@@ -99,13 +100,11 @@ class RorRelease(SnapshotRelease):
             snapshot_date=self.snapshot_date.to_date_string(),
             url=self.url,
             checksum=self.checksum,
+            cloud_workspace=self.cloud_workspace.to_dict(),
         )
 
     @staticmethod
-    def from_dict(
-        dict_: Dict,
-        **kwargs,
-    ) -> RorRelease:
+    def from_dict(dict_: Dict) -> RorRelease:
         dag_id = dict_["dag_id"]
         snapshot_date = dict_["snapshot_date"]
         url = dict_["url"]
@@ -117,7 +116,7 @@ class RorRelease(SnapshotRelease):
             snapshot_date=pendulum.parse(snapshot_date),
             url=url,
             checksum=checksum,
-            **kwargs,
+            cloud_workspace=CloudWorkspace.from_dict(dict_["cloud_workspace"]),
         )
 
 
@@ -138,7 +137,7 @@ def create_dag(
     catchup: bool = True,
     max_active_runs: int = 1,
     retries: int = 3,
-):
+) -> DAG:
     """Construct a RorTelescope instance.
 
     :param dag_id: the id of the DAG.
@@ -154,6 +153,8 @@ def create_dag(
     :param start_date: the start date of the DAG.
     :param schedule: the schedule interval of the DAG.
     :param catchup: whether to catchup the DAG or not.
+    :param max_active_runs: the maximum number of DAG runs that can be run at once.
+    :param retries: the number of times to retry a task.
     """
 
     @dag(
@@ -186,6 +187,7 @@ def create_dag(
                         snapshot_date=record["snapshot_date"],
                         url=record["url"],
                         checksum=record["checksum"],
+                        cloud_workspace=cloud_workspace.to_dict(),
                     )
                 )
 
@@ -198,7 +200,7 @@ def create_dag(
                 """Task to download the ROR releases."""
 
                 # Download file from Zenodo
-                release = RorRelease.from_dict(release, cloud_workspace=cloud_workspace)
+                release = RorRelease.from_dict(release)
                 clean_dir(release.download_folder)
                 hash_algorithm, hash_checksum = release.checksum.split(":")
                 success, info = download_file(
@@ -225,7 +227,7 @@ def create_dag(
             def transform(release: dict, **context):
                 """Task to transform the ROR releases."""
 
-                release = RorRelease.from_dict(release, cloud_workspace=cloud_workspace)
+                release = RorRelease.from_dict(release)
 
                 # Download file
                 success = gcs_download_blob(
@@ -286,7 +288,7 @@ def create_dag(
             def bq_load(release: dict, **context) -> None:
                 """Load the data into BigQuery."""
 
-                release = RorRelease.from_dict(release, cloud_workspace=cloud_workspace)
+                release = RorRelease.from_dict(release)
                 bq_create_dataset(
                     project_id=cloud_workspace.output_project_id,
                     dataset_id=bq_dataset_id,
@@ -314,7 +316,7 @@ def create_dag(
             def add_dataset_releases(release: dict, **context) -> None:
                 """Adds release information to API."""
 
-                release = RorRelease.from_dict(release, cloud_workspace=cloud_workspace)
+                release = RorRelease.from_dict(release)
                 dataset_release = DatasetRelease(
                     dag_id=dag_id,
                     dataset_id=api_dataset_id,
@@ -330,16 +332,10 @@ def create_dag(
             def cleanup_workflow(release: dict, **context) -> None:
                 """Delete all files, folders and XComs associated with this release."""
 
-                release = RorRelease.from_dict(release, cloud_workspace=cloud_workspace)
+                release = RorRelease.from_dict(release)
                 cleanup(dag_id=dag_id, execution_date=context["logical_date"], workflow_folder=release.workflow_folder)
 
-            (
-                download(data)
-                >> transform(data)
-                >> bq_load(data)
-                >> add_dataset_releases(data)
-                >> cleanup_workflow(data)
-            )
+            (download(data) >> transform(data) >> bq_load(data) >> add_dataset_releases(data) >> cleanup_workflow(data))
 
         check_task = check_dependencies(airflow_conns=[observatory_api_conn_id])
         xcom_releases = fetch_releases()

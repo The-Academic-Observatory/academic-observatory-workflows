@@ -32,7 +32,7 @@ from typing import Dict, List, Tuple, Union
 
 import pendulum
 import xmltodict
-from airflow import AirflowException
+from airflow import AirflowException, DAG
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowSkipException
 from airflow.hooks.base import BaseHook
@@ -145,7 +145,7 @@ class OrcidRelease(ChangefileRelease):
         :param bq_delete_table_name: BigQuery table name for the ORCID delete table.
         :param start_date: Start date for the release.
         :param end_date: End date for the release.
-        :param prev_end_date: End date for the previous release. Used for making the snapshot table date.
+        :param prev_release_end: End date for the previous release. Used for making the snapshot table date.
         :param prev_latest_modified_record: Latest modified record for the previous release. Used to decide which records to update.
         :param is_first_run: Whether this is the first run of the DAG.
         """
@@ -245,7 +245,6 @@ def create_dag(
     bq_upsert_table_name: str = "orcid_upsert",
     bq_delete_table_name: str = "orcid_delete",
     dataset_description: str = "The ORCID dataset and supporting tables",
-    table_description: str = "The ORCID dataset",
     snapshot_expiry_days: int = 31,
     schema_file_path: str = project_path("orcid_telescope", "schema", "orcid.json"),
     delete_schema_file_path: str = project_path("orcid_telescope", "schema", "orcid_delete.json"),
@@ -259,8 +258,34 @@ def create_dag(
     queue: str = "remote_queue",
     max_active_runs: int = 1,
     retries: int = 3,
-):
-    """Construct an ORCID telescope instance"""
+) -> DAG:
+    """Construct an ORCID telescope instance.
+
+    :param dag_id: the id of the DAG.
+    :param cloud_workspace: the cloud workspace settings.
+    :param orcid_bucket: the Google Cloud Storage bucket where the ORCID files are stored.
+    :param orcid_summaries_prefix: the base folder containing the ORCID summaries.
+    :param bq_dataset_id: BigQuery dataset ID.
+    :param bq_main_table_name: BigQuery main table name for the ORCID table.
+    :param bq_upsert_table_name: BigQuery table name for the ORCID upsert table.
+    :param bq_delete_table_name: BigQuery table name for the ORCID delete table.
+    :param dataset_description: BigQuery dataset description.
+    :param snapshot_expiry_days: the number of days that a snapshot of each entity's main table will take to expire,
+    which is set to 31 days so there is some time to rollback after an update.
+    :param schema_file_path: the path to the schema file for the records produced by this workflow.
+    :param delete_schema_file_path: the path to the delete schema file for the records produced by this workflow.
+    :param transfer_attempts: the number of AWS to GCP transfer attempts.
+    :param max_workers: maximum processes to use when transforming files.
+    :param api_dataset_id: the Dataset ID to use when storing releases.
+    :param observatory_api_conn_id: the Observatory API Airflow Connection ID.
+    :param aws_orcid_conn_id: Airflow Connection ID for the AWS ORCID bucket.
+    :param start_date: the Apache Airflow DAG start date.
+    :param schedule: the Apache Airflow schedule interval.
+    :param queue: what Airflow queue this job runs on.
+    :param max_active_runs: the maximum number of DAG runs that can be run at once.
+    :param retries: the number of times to retry a task.
+    :return: an Airflow DAG.
+    """
 
     @dag(
         dag_id=dag_id,

@@ -28,6 +28,7 @@ from datetime import datetime
 import jsonlines
 import pendulum
 import requests
+from airflow import DAG
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
@@ -36,7 +37,7 @@ from bs4 import BeautifulSoup
 from google.cloud.bigquery import SourceFormat
 from natsort import natsorted
 
-from academic_observatory_workflows.config import project_path, Tag
+from academic_observatory_workflows.config import project_path
 from observatory.api.client.model.dataset_release import DatasetRelease
 from observatory.platform.airflow import on_failure_callback
 from observatory.platform.api import make_observatory_api
@@ -67,6 +68,8 @@ class CrossrefMetadataRelease(SnapshotRelease):
         :param dag_id: the DAG id.
         :param run_id: the DAG run id.
         :param snapshot_date: the release date.
+        :param cloud_workspace: the cloud workspace settings.
+        :param batch_size: the number of files to send to ProcessPoolExecutor at one time.
         """
 
         super().__init__(dag_id=dag_id, run_id=run_id, snapshot_date=snapshot_date)
@@ -122,7 +125,7 @@ def create_dag(
     queue: str = "remote_queue",
     max_active_runs: int = 1,
     retries: int = 3,
-):
+) -> DAG:
     """The Crossref Metadata telescope
 
     :param dag_id: the id of the DAG.

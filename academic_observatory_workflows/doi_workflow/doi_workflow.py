@@ -1,4 +1,4 @@
-# Copyright 2020-2022 Curtin University
+# Copyright 2020-2024 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Set
 
 import pendulum
 import requests
+from airflow import DAG
 from airflow.decorators import dag, task, task_group
 from airflow.exceptions import AirflowException
 from airflow.models.baseoperator import chain
@@ -247,10 +248,9 @@ def create_dag(
     start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 8, 30),
     schedule: Optional[str] = "@weekly",
     sensor_dag_ids: List[str] = None,
-    catchup: bool = False,
     max_active_runs: int = 1,
     retries: int = 3,
-):
+) -> DAG:
     """Create the DoiWorkflow.
     :param dag_id: the DAG ID.
     :param cloud_workspace: the cloud workspace settings.
@@ -260,9 +260,14 @@ def create_dag(
     :param bq_unpaywall_dataset_id: the BigQuery Unpaywall dataset id.
     :param bq_ror_dataset_id: the BigQuery ROR dataset id.
     :param api_dataset_id: the DOI dataset id.
+    :param sql_queries: a list of batches of SQLQuery objects.
     :param max_fetch_threads: maximum number of threads to use when fetching.
+    :param observatory_api_conn_id: the Observatory API connection key.
     :param start_date: the start date.
     :param schedule: the schedule interval.
+    :param sensor_dag_ids: a list of DAG IDs to wait for with sensors.
+    :param max_active_runs: the maximum number of DAG runs that can be run at once.
+    :param retries: the number of times to retry a task.
     """
 
     input_project_id = cloud_workspace.input_project_id
@@ -287,7 +292,7 @@ def create_dag(
         dag_id=dag_id,
         start_date=start_date,
         schedule=schedule,
-        catchup=catchup,
+        catchup=False,
         max_active_runs=max_active_runs,
         tags=["academic-observatory"],
         default_args={

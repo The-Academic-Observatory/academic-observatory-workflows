@@ -1,4 +1,4 @@
-# Copyright 2023 Curtin University
+# Copyright 2023-2024 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ from ftplib import error_reply, FTP
 from typing import Dict, List, Set, Tuple, Union
 
 import pendulum
-from airflow import AirflowException
+from airflow import AirflowException, DAG
 from airflow.decorators import dag, task, task_group
 from airflow.models.taskinstance import TaskInstance
 from airflow.operators.empty import EmptyOperator
@@ -92,7 +92,7 @@ class Datafile:
         :param baseline: Boolean for if this is from the bsaeline set of files. False is it is from the updatefiles set.
         :param path_on_ftp: Path of the file on Pubmed's FTP server.
         :param datafile_date: The date that the datafile_date was added to PubMed's FTP server.
-        :param DatafileRelease: The Datafile release, helps give download and transform paths to files.
+        :param datafile_release: The Datafile release, helps give download and transform paths to files.
         """
 
         self.filename = filename
@@ -250,6 +250,7 @@ class PubMedRelease(DatafileRelease):
         :param year_first_run: True if it's the first run of the workflow for the year, if this
         release is to download the baseline files of Pubmed.
         :param datafile_list: List of datafiles for this release.
+        :param baseline_upload_date: the modification date of the first file in the baseline upload, retrieved via FTP with the MDTM command.
         """
 
         super().__init__(
@@ -374,7 +375,7 @@ def create_dag(
     max_processes: int = 4,  # Limited to 4 due to RAM usage.
     max_active_runs: int = 1,
     retries: int = 3,
-):
+) -> DAG:
     """Construct an PubMed Telescope instance.
 
     https://pubmed.ncbi.nlm.nih.gov/
@@ -394,6 +395,8 @@ def create_dag(
     :param queue: The queue that the tasks should run on, "default" or "remote_queue".
     :param snapshot_expiry_days: How long until the backup snapshot (before this release's upserts and deletes) of the Pubmed table exist in BQ.
     :param max_processes: Max number of parallel processes.
+    :param max_active_runs: the maximum number of DAG runs that can be run at once.
+    :param retries: the number of times to retry a task.
     """
 
     main_table_id = f"{cloud_workspace.project_id}.{bq_dataset_id}.{bq_table_id}"
@@ -735,7 +738,9 @@ def create_dag(
                     file_paths=file_paths,
                 )
                 if not success:
-                    raise AirflowException("baseline.upload_transformed: failed to upload files to cloud storage bucket")
+                    raise AirflowException(
+                        "baseline.upload_transformed: failed to upload files to cloud storage bucket"
+                    )
 
             @task
             def bq_load(release: dict, **context):
@@ -817,7 +822,9 @@ def create_dag(
                     file_paths=datafiles_to_upload,
                 )
                 if not success:
-                    raise AirflowException("updatefiles.upload_downloaded: failed to upload files to cloud storage bucket")
+                    raise AirflowException(
+                        "updatefiles.upload_downloaded: failed to upload files to cloud storage bucket"
+                    )
 
             @task
             def transform(release: dict, **context):
@@ -911,7 +918,9 @@ def create_dag(
                     file_paths=file_paths,
                 )
                 if not success:
-                    raise AirflowException("updatefiles.upload_merged_upsert_records: failed to upload files to cloud storage bucket")
+                    raise AirflowException(
+                        "updatefiles.upload_merged_upsert_records: failed to upload files to cloud storage bucket"
+                    )
 
             @task
             def bq_load_upsert_table(release: dict, **context):

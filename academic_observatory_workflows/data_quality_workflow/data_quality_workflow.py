@@ -1,4 +1,4 @@
-# Copyright 2023 Curtin University
+# Copyright 2023-2024 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 import pendulum
+from airflow import DAG
 from airflow.decorators import dag, task, task_group
 from airflow.models.baseoperator import chain
 from airflow.sensors.external_task import ExternalTaskSensor
@@ -84,14 +85,12 @@ def create_dag(
     bq_dataset_id: str = "data_quality_checks",
     bq_dataset_description: str = "This dataset holds metadata about the tables that the Academic Observatory Worflows produce. If there are multiple shards tables, it will go back on the table and check if it hasn't done that table previously.",
     bq_table_id: str = "data_quality",
-    bq_table_description: str = "Data quality check for all tables produced by the Academic Observatory workflows.",
     schema_path: str = project_path("data_quality_workflow", "schema", "data_quality.json"),
     start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 1, 1),
     schedule: str = "@weekly",
-    catchup: bool = False,
     max_active_runs: int = 1,
     retries: int = 3,
-):
+) -> DAG:
     """Create the DataQualityCheck Workflow.
 
     This workflow creates metadata for all the tables defined in the "datasets" dictionary.
@@ -106,11 +105,11 @@ def create_dag(
     :param bq_dataset_id: The dataset_id of where the data quality records will be stored.
     :param bq_dataset_description: Description of the data quality check dataset.
     :param bq_table_id: The name of the table in Bigquery.
-    :param bq_table_description: The description of the table in Biguqery.
     :param schema_path: The path to the schema file for the records produced by this workflow.
     :param start_date: The start date of the workflow.
     :param schedule: Schedule of how often the workflow runs.
-    :param queue: Which queue this workflow will run.
+    :param max_active_runs: the maximum number of DAG runs that can be run at once.
+    :param retries: the number of times to retry a task.
     """
 
     project_id = cloud_workspace.project_id
@@ -127,7 +126,7 @@ def create_dag(
         dag_id=dag_id,
         start_date=start_date,
         schedule=schedule,
-        catchup=catchup,
+        catchup=False,
         max_active_runs=max_active_runs,
         tags=["data-quality"],
         default_args={

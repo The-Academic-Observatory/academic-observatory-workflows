@@ -26,13 +26,15 @@ import xml.etree.ElementTree as ET
 from typing import Dict, List, Tuple
 
 import pendulum
+from airflow import DAG
 from airflow.decorators import dag, task, task_group
 from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.models import Pool
 from google.cloud.bigquery import SourceFormat
 
-from academic_observatory_workflows.config import project_path, Tag
+from academic_observatory_workflows.config import project_path
 from observatory.api.client.model.dataset_release import DatasetRelease
+from observatory.platform.airflow import on_failure_callback
 from observatory.platform.api import make_observatory_api
 from observatory.platform.bigquery import (
     bq_create_dataset,
@@ -52,7 +54,6 @@ from observatory.platform.gcs import (
 from observatory.platform.observatory_config import CloudWorkspace
 from observatory.platform.refactor.tasks import check_dependencies
 from observatory.platform.utils.url_utils import retry_get_url
-from observatory.platform.airflow import on_failure_callback
 from observatory.platform.workflows.workflow import cleanup as cleanup_workflow, set_task_state, SnapshotRelease
 
 RELEASES_URL = "https://gitlab.com/api/v4/projects/crossref%2Fopen_funder_registry/releases"
@@ -66,7 +67,7 @@ class CrossrefFundrefRelease(SnapshotRelease):
         run_id: str,
         snapshot_date: pendulum.DateTime,
         url: str,
-        cloud_workspace: CloudWorkspace = None,
+        cloud_workspace: CloudWorkspace,
     ):
         """Construct a RorRelease.
 
@@ -74,6 +75,7 @@ class CrossrefFundrefRelease(SnapshotRelease):
         :param run_id: the DAG run id.
         :param snapshot_date: the release date.
         :param url: The url corresponding with this release date.
+        :param cloud_workspace: the cloud workspace settings.
         """
 
         super().__init__(dag_id=dag_id, run_id=run_id, snapshot_date=snapshot_date)
@@ -113,17 +115,21 @@ class CrossrefFundrefRelease(SnapshotRelease):
 
     def to_dict(self) -> Dict:
         return dict(
-            dag_id=self.dag_id, run_id=self.run_id, snapshot_date=self.snapshot_date.to_date_string(), url=self.url
+            dag_id=self.dag_id,
+            run_id=self.run_id,
+            snapshot_date=self.snapshot_date.to_date_string(),
+            url=self.url,
+            cloud_workspace=self.cloud_workspace.to_dict(),
         )
 
     @staticmethod
-    def from_dict(dict_: Dict, **kwargs) -> CrossrefFundrefRelease:
+    def from_dict(dict_: Dict) -> CrossrefFundrefRelease:
         return CrossrefFundrefRelease(
             dag_id=dict_["dag_id"],
             run_id=dict_["run_id"],
             snapshot_date=pendulum.parse(dict_["snapshot_date"]),
             url=dict_["url"],
-            **kwargs,
+            cloud_workspace=CloudWorkspace.from_dict(dict_["cloud_workspace"]),
         )
 
 
@@ -145,7 +151,7 @@ def create_dag(
     gitlab_pool_slots: int = 2,
     gitlab_pool_description: str = "A pool to limit the connections to Gitlab",
     retries: int = 3,
-):
+) -> DAG:
     """Construct a CrossrefFundrefTelescope instance.
 
     :param dag_id: the id of the DAG.
@@ -196,7 +202,9 @@ def create_dag(
             end_date = pendulum.instance(context["data_interval_end"])
             all_releases = list_releases(start_date, end_date)
             all_releases = [
-                CrossrefFundrefRelease.from_dict(dict(dag_id=dag_id, run_id=run_id, **release))
+                CrossrefFundrefRelease.from_dict(
+                    dict(dag_id=dag_id, run_id=run_id, cloud_workspace=cloud_workspace.to_dict(), **release)
+                )
                 for release in all_releases
             ]
             logging.info(f"Releases between start_date={start_date} and end_date={end_date}")
@@ -229,7 +237,7 @@ def create_dag(
             def download(release: dict, **context):
                 """Downloads release tar.gz file from url."""
 
-                release = CrossrefFundrefRelease.from_dict(release, cloud_workspace=cloud_workspace)
+                release = CrossrefFundrefRelease.from_dict(release)
                 clean_dir(release.release_folder)
                 logging.info(f"Downloading file: {release.download_file_path}, url: {release.url}")
 
@@ -275,7 +283,7 @@ def create_dag(
             def transform(release: dict, **context):
                 """Transforms release by storing file content in gzipped json format. Relationships between funders are added."""
 
-                release = CrossrefFundrefRelease.from_dict(release, cloud_workspace=cloud_workspace)
+                release = CrossrefFundrefRelease.from_dict(release)
                 clean_dir(release.release_folder)
 
                 # Download file
@@ -323,7 +331,7 @@ def create_dag(
             def bq_load(release: dict, **context):
                 """Load the data into BigQuery."""
 
-                release = CrossrefFundrefRelease.from_dict(release, cloud_workspace=cloud_workspace)
+                release = CrossrefFundrefRelease.from_dict(release)
                 bq_create_dataset(
                     project_id=cloud_workspace.output_project_id,
                     dataset_id=bq_dataset_id,
@@ -353,7 +361,7 @@ def create_dag(
             def add_dataset_releases(release: dict, **context):
                 """Adds release information to API."""
 
-                release = CrossrefFundrefRelease.from_dict(release, cloud_workspace=cloud_workspace)
+                release = CrossrefFundrefRelease.from_dict(release)
                 dataset_release = DatasetRelease(
                     dag_id=dag_id,
                     dataset_id=api_dataset_id,
@@ -369,7 +377,7 @@ def create_dag(
             def cleanup(release: dict, **context):
                 """Delete all files, folders and XComs associated with this release."""
 
-                release = CrossrefFundrefRelease.from_dict(release, cloud_workspace=cloud_workspace)
+                release = CrossrefFundrefRelease.from_dict(release)
                 cleanup_workflow(
                     dag_id=dag_id, execution_date=context["logical_date"], workflow_folder=release.workflow_folder
                 )

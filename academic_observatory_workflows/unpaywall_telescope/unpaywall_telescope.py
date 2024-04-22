@@ -1,4 +1,4 @@
-# Copyright 2020-2023 Curtin University
+# Copyright 2020-2024 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ from datetime import timedelta
 from typing import Dict, List
 
 import pendulum
+from airflow import DAG
 from airflow.decorators import dag, task, task_group
 from airflow.exceptions import AirflowException
 from airflow.operators.bash import BashOperator
@@ -32,6 +33,7 @@ from airflow.utils.trigger_rule import TriggerRule
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
 
+from academic_observatory_workflows.config import project_path
 from observatory.api.client.model.dataset_release import DatasetRelease
 from observatory.platform.airflow import (
     get_airflow_connection_password,
@@ -66,7 +68,6 @@ from observatory.platform.workflows.workflow import (
     Release,
     SnapshotRelease,
 )
-from academic_observatory_workflows.config import project_path
 
 # See https://unpaywall.org/products/data-feed for details of available APIs
 SNAPSHOT_URL = "https://api.unpaywall.org/feed/snapshot"
@@ -142,7 +143,7 @@ class UnpaywallRelease(Release):
         :param bq_table_name: the BigQuery table name.
         :param is_first_run: whether this is the first DAG run.
         :param snapshot_date: the date of the Unpaywall snapshot.
-        :param changefiles: changefiles.
+        :param changefiles: a list of Changefile objects.
         :param prev_end_date: the previous end date.
         """
 
@@ -251,7 +252,7 @@ def create_dag(
     schedule: str = "@daily",
     max_active_runs: int = 1,
     retries: int = 3,
-):
+) -> DAG:
     """The Unpaywall Data Feed Telescope.
 
     :param dag_id: the id of the DAG.
