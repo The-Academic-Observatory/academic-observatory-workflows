@@ -150,15 +150,7 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
                 ):
                     ti = env.run_task("fetch_releases")
                     self.assertEqual(State.SUCCESS, ti.state)
-                # expected_release_info = [
-                #     {
-                #         "dag_id": "crossref_fundref",
-                #         "run_id": "scheduled__2021-05-16T00:00:00+00:00",
-                #         "snapshot_date": "2021-05-19",
-                #         "url": url,
-                #         "cloud_workspace": env.cloud_workspace.to_dict()
-                #     }
-                # ]
+
                 actual_release_info = ti.xcom_pull(
                     key="return_value",
                     task_ids="fetch_releases",
