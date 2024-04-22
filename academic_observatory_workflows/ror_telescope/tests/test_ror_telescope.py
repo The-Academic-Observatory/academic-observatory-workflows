@@ -22,6 +22,14 @@ import pendulum
 import vcr
 from airflow.utils.state import State
 
+from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.ror_telescope.ror_telescope import (
+    create_dag,
+    is_lat_lng_valid,
+    list_ror_records,
+    RorRelease,
+    transform_ror,
+)
 from observatory.platform.api import get_dataset_releases
 from observatory.platform.bigquery import bq_sharded_table_id
 from observatory.platform.config import module_file_path
@@ -33,15 +41,6 @@ from observatory.platform.observatory_environment import (
     HttpServer,
     ObservatoryEnvironment,
     ObservatoryTestCase,
-)
-
-from academic_observatory_workflows.config import project_path
-from academic_observatory_workflows.ror_telescope.ror_telescope import (
-    create_dag,
-    is_lat_lng_valid,
-    list_ror_records,
-    RorRelease,
-    transform_ror,
 )
 
 FIXTURES_FOLDER = project_path("ror_telescope", "tests", "fixtures")
@@ -152,7 +151,14 @@ class TestRorTelescope(ObservatoryTestCase):
                     },
                 ]
                 releases = [
-                    RorRelease.from_dict(dict(dag_id=self.dag_id, run_id=dag_run.run_id, **data))
+                    RorRelease.from_dict(
+                        dict(
+                            dag_id=self.dag_id,
+                            run_id=dag_run.run_id,
+                            cloud_workspace=env.cloud_workspace.to_dict(),
+                            **data,
+                        )
+                    )
                     for data in ror_records
                 ]
                 m_list_ror_records.return_value = ror_records

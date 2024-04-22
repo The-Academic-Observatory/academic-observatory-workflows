@@ -109,6 +109,7 @@ class RorRelease(SnapshotRelease):
         snapshot_date = dict_["snapshot_date"]
         url = dict_["url"]
         checksum = dict_["checksum"]
+        cloud_workspace = dict_["cloud_workspace"]
 
         return RorRelease(
             dag_id=dag_id,
@@ -116,7 +117,7 @@ class RorRelease(SnapshotRelease):
             snapshot_date=pendulum.parse(snapshot_date),
             url=url,
             checksum=checksum,
-            cloud_workspace=CloudWorkspace.from_dict(dict_["cloud_workspace"]),
+            cloud_workspace=CloudWorkspace.from_dict(cloud_workspace),
         )
 
 

@@ -15,11 +15,12 @@
 # Author: Aniek Roelofs, James Diprose
 
 import os
+import re
 from typing import List
 from unittest.mock import patch
-import responses
-import re
+
 import pendulum
+import responses
 import vcr
 from airflow.utils.state import State
 
@@ -130,7 +131,11 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
                     "https://gitlab.com/crossref/open_funder_registry/-/archive/v1.34/open_funder_registry-v1.34.tar.gz"
                 )
                 release = CrossrefFundrefRelease(
-                    dag_id=self.dag_id, run_id=dag_run.run_id, snapshot_date=snapshot_date, url=url
+                    dag_id=self.dag_id,
+                    run_id=dag_run.run_id,
+                    snapshot_date=snapshot_date,
+                    url=url,
+                    cloud_workspace=env.cloud_workspace,
                 )
 
                 # Test that all dependencies are specified: no error should be thrown
@@ -145,20 +150,21 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
                 ):
                     ti = env.run_task("fetch_releases")
                     self.assertEqual(State.SUCCESS, ti.state)
-                expected_release_info = [
-                    {
-                        "dag_id": "crossref_fundref",
-                        "run_id": "scheduled__2021-05-16T00:00:00+00:00",
-                        "snapshot_date": "2021-05-19",
-                        "url": url,
-                    }
-                ]
+                # expected_release_info = [
+                #     {
+                #         "dag_id": "crossref_fundref",
+                #         "run_id": "scheduled__2021-05-16T00:00:00+00:00",
+                #         "snapshot_date": "2021-05-19",
+                #         "url": url,
+                #         "cloud_workspace": env.cloud_workspace.to_dict()
+                #     }
+                # ]
                 actual_release_info = ti.xcom_pull(
                     key="return_value",
                     task_ids="fetch_releases",
                     include_prior_dates=False,
                 )
-                self.assertEqual(expected_release_info, actual_release_info)
+                self.assertEqual([release.to_dict()], actual_release_info)
 
                 # Test download task
                 with responses.RequestsMock() as rs:
@@ -166,7 +172,7 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
                     with open(mock_file_path, "rb") as f:
                         mock_data = f.read()
                     rs.add(responses.GET, url, body=mock_data, status=200)
-                    rs.add_passthru(re.compile(r'https?://.*google(com|apis)\.com/.*'))
+                    rs.add_passthru(re.compile(r"https?://.*google(com|apis)\.com/.*"))
                     ti = env.run_task("process_release.download", map_index=0)
 
                 self.assertEqual(State.SUCCESS, ti.state)
@@ -211,6 +217,7 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
 
         :return: None.
         """
+
         cassette_path = os.path.join(FIXTURES_FOLDER, "list_fundref_releases.yaml")
         with vcr.use_cassette(cassette_path):
             releases = list_releases(pendulum.datetime(2014, 3, 1), pendulum.datetime(2020, 6, 1))

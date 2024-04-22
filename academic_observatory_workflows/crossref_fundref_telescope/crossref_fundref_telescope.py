@@ -174,7 +174,7 @@ def create_dag(
 
     # Create Gitlab pool to limit the number of connections to Gitlab, which is very quick to block requests if
     # there are too many at once.
-    Pool.create_or_update_pool(gitlab_pool_name, gitlab_pool_slots, gitlab_pool_description)
+    Pool.create_or_update_pool(gitlab_pool_name, gitlab_pool_slots, gitlab_pool_description, False)
 
     @dag(
         dag_id=dag_id,
