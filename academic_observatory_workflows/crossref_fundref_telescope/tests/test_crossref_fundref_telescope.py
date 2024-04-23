@@ -1,4 +1,4 @@
-# Copyright 2020 Curtin University
+# Copyright 2020-2024 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,25 +15,27 @@
 # Author: Aniek Roelofs, James Diprose
 
 import os
+import re
 from typing import List
 from unittest.mock import patch
 
-import httpretty
 import pendulum
+import responses
 import vcr
 from airflow.utils.state import State
-from observatory.platform.api import get_dataset_releases
-from observatory.platform.bigquery import bq_sharded_table_id
-from observatory.platform.gcs import gcs_blob_name_from_path
-from observatory.platform.observatory_config import Workflow
-from observatory.platform.observatory_environment import find_free_port, ObservatoryEnvironment, ObservatoryTestCase
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.crossref_fundref_telescope.crossref_fundref_telescope import (
+    create_dag,
     CrossrefFundrefRelease,
-    CrossrefFundrefTelescope,
     list_releases,
 )
+from observatory.platform.api import get_dataset_releases
+from observatory.platform.bigquery import bq_sharded_table_id
+from observatory.platform.config import module_file_path
+from observatory.platform.gcs import gcs_blob_name_from_path
+from observatory.platform.observatory_config import Workflow
+from observatory.platform.observatory_environment import find_free_port, ObservatoryEnvironment, ObservatoryTestCase
 
 FIXTURES_FOLDER = project_path("crossref_fundref_telescope", "tests", "fixtures")
 
@@ -60,25 +62,27 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
         """Test that the DAG has the correct structure."""
 
         # Mock create_pool to prevent querying non-existing airflow db
-        with patch("academic_observatory_workflows.crossref_fundref_telescope.crossref_fundref_telescope.create_pool"):
-            workflow = CrossrefFundrefTelescope(
+        with patch("academic_observatory_workflows.crossref_fundref_telescope.crossref_fundref_telescope.Pool"):
+            dag = create_dag(
                 dag_id=self.dag_id,
                 cloud_workspace=self.fake_cloud_workspace,
             )
-
-            dag = workflow.make_dag()
             self.assert_dag_structure(
                 {
-                    "check_dependencies": ["get_release_info"],
-                    "get_release_info": ["download"],
-                    "download": ["upload_downloaded"],
-                    "upload_downloaded": ["extract"],
-                    "extract": ["transform"],
-                    "transform": ["upload_transformed"],
-                    "upload_transformed": ["bq_load"],
-                    "bq_load": ["add_new_dataset_releases"],
-                    "add_new_dataset_releases": ["cleanup"],
-                    "cleanup": [],
+                    "check_dependencies": ["fetch_releases"],
+                    # fetch_release passes an XCom to all of these tasks
+                    "fetch_releases": [
+                        "process_release.download",
+                        "process_release.transform",
+                        "process_release.bq_load",
+                        "process_release.add_dataset_releases",
+                        "process_release.cleanup",
+                    ],
+                    "process_release.download": ["process_release.transform"],
+                    "process_release.transform": ["process_release.bq_load"],
+                    "process_release.bq_load": ["process_release.add_dataset_releases"],
+                    "process_release.add_dataset_releases": ["process_release.cleanup"],
+                    "process_release.cleanup": [],
                 },
                 dag,
             )
@@ -91,90 +95,89 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
                 Workflow(
                     dag_id=self.dag_id,
                     name="Crossref Fundref Telescope",
-                    class_name="academic_observatory_workflows.crossref_fundref_telescope.crossref_fundref_telescope.CrossrefFundrefTelescope",
+                    class_name="academic_observatory_workflows.crossref_fundref_telescope.crossref_fundref_telescope.create_dag",
                     cloud_workspace=self.fake_cloud_workspace,
                 )
             ]
         )
 
         with env.create():
-            self.assert_dag_load_from_config(self.dag_id)
+            dag_file = os.path.join(module_file_path("observatory.platform.dags"), "load_dags.py")
+            self.assert_dag_load(self.dag_id, dag_file)
 
     def test_telescope(self):
         """Test the CrossrefFundref workflow end to end."""
 
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
         bq_dataset_id = env.add_dataset()
+        bq_table_name = "crossref_fundref"
+        api_dataset_id = "crossref_fundref"
 
         with env.create():
             # Setup workflow inside env, so pool can be created
-            workflow = CrossrefFundrefTelescope(
+            dag = create_dag(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
                 bq_dataset_id=bq_dataset_id,
+                bq_table_name=bq_table_name,
+                api_dataset_id=api_dataset_id,
             )
-            dag = workflow.make_dag()
-            execution_date = pendulum.datetime(year=2021, month=5, day=16)
+            logical_date = pendulum.datetime(year=2021, month=5, day=16)
 
-            with env.create_dag_run(dag, execution_date) as dag_run:
+            with env.create_dag_run(dag, logical_date) as dag_run:
                 # Mocked and expected data
                 snapshot_date = pendulum.datetime(2021, 5, 19)
                 url = (
                     "https://gitlab.com/crossref/open_funder_registry/-/archive/v1.34/open_funder_registry-v1.34.tar.gz"
                 )
                 release = CrossrefFundrefRelease(
-                    dag_id=self.dag_id, run_id=dag_run.run_id, snapshot_date=snapshot_date, url=url
+                    dag_id=self.dag_id,
+                    run_id=dag_run.run_id,
+                    snapshot_date=snapshot_date,
+                    url=url,
+                    cloud_workspace=env.cloud_workspace,
                 )
-                expected_release_info = [{"date": "20210519", "url": url}]
 
                 # Test that all dependencies are specified: no error should be thrown
-                ti = env.run_task(workflow.check_dependencies.__name__)
+                ti = env.run_task("check_dependencies")
                 self.assertEqual(State.SUCCESS, ti.state)
 
-                # Test list releases task
+                # Test fetch releases task
                 with vcr.use_cassette(
                     os.path.join(FIXTURES_FOLDER, "get_release_info.yaml"),
                     ignore_hosts=["oauth2.googleapis.com", "bigquery.googleapis.com"],
                     ignore_localhost=True,
                 ):
-                    ti = env.run_task(workflow.get_release_info.__name__)
+                    ti = env.run_task("fetch_releases")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                 actual_release_info = ti.xcom_pull(
-                    key=CrossrefFundrefTelescope.RELEASE_INFO,
-                    task_ids=workflow.get_release_info.__name__,
+                    key="return_value",
+                    task_ids="fetch_releases",
                     include_prior_dates=False,
                 )
-                self.assertEqual(expected_release_info, actual_release_info)
+                self.assertEqual([release.to_dict()], actual_release_info)
 
                 # Test download task
-                with httpretty.enabled():
+                with responses.RequestsMock() as rs:
                     mock_file_path = os.path.join(FIXTURES_FOLDER, "crossref_fundref_v1.34.tar.gz")
-                    self.setup_mock_file_download(url, mock_file_path)
-                    ti = env.run_task(workflow.download.__name__)
-                    self.assertEqual(State.SUCCESS, ti.state)
-                self.assert_file_integrity(release.download_file_path, self.mock_download_hash, "gzip_crc")
+                    with open(mock_file_path, "rb") as f:
+                        mock_data = f.read()
+                    rs.add(responses.GET, url, body=mock_data, status=200)
+                    rs.add_passthru(re.compile(r"https?://.*google(com|apis)\.com/.*"))
+                    ti = env.run_task("process_release.download", map_index=0)
 
-                # Test that file uploaded
-                ti = env.run_task(workflow.upload_downloaded.__name__)
                 self.assertEqual(State.SUCCESS, ti.state)
+                self.assert_file_integrity(release.download_file_path, self.mock_download_hash, "gzip_crc")
                 self.assert_blob_integrity(
                     env.download_bucket, gcs_blob_name_from_path(release.download_file_path), release.download_file_path
                 )
 
-                # Test that file extracted
-                ti = env.run_task(workflow.extract.__name__)
+                # Test that file extracted, transformed and uploaded
+                ti = env.run_task("process_release.transform", map_index=0)
                 self.assertEqual(State.SUCCESS, ti.state)
                 self.assert_file_integrity(release.extract_file_path, self.mock_extract_hash, "md5")
-
-                # Test that file transformed
-                ti = env.run_task(workflow.transform.__name__)
-                self.assertEqual(State.SUCCESS, ti.state)
                 self.assert_file_integrity(release.transform_file_path, self.mock_transform_hash, "gzip_crc")
-
-                # Test that transformed file uploaded
-                ti = env.run_task(workflow.upload_transformed.__name__)
-                self.assertEqual(State.SUCCESS, ti.state)
                 self.assert_blob_integrity(
                     env.transform_bucket,
                     gcs_blob_name_from_path(release.transform_file_path),
@@ -182,24 +185,22 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
                 )
 
                 # Test that data loaded into BigQuery
-                ti = env.run_task(workflow.bq_load.__name__)
+                ti = env.run_task("process_release.bq_load", map_index=0)
                 self.assertEqual(State.SUCCESS, ti.state)
-                table_id = bq_sharded_table_id(
-                    self.project_id, workflow.bq_dataset_id, workflow.bq_table_name, release.snapshot_date
-                )
+                table_id = bq_sharded_table_id(self.project_id, bq_dataset_id, bq_table_name, release.snapshot_date)
                 expected_rows = 27949
                 self.assert_table_integrity(table_id, expected_rows)
 
                 # Test that DatasetRelease is added to database
-                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=api_dataset_id)
                 self.assertEqual(len(dataset_releases), 0)
-                ti = env.run_task(workflow.add_new_dataset_releases.__name__)
+                ti = env.run_task("process_release.add_dataset_releases", map_index=0)
                 self.assertEqual(State.SUCCESS, ti.state)
-                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=api_dataset_id)
                 self.assertEqual(len(dataset_releases), 1)
 
                 # Test that all workflow data deleted
-                ti = env.run_task(workflow.cleanup.__name__)
+                ti = env.run_task("process_release.cleanup", map_index=0)
                 self.assertEqual(State.SUCCESS, ti.state)
                 self.assert_cleanup(release.workflow_folder)
 
@@ -208,6 +209,7 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
 
         :return: None.
         """
+
         cassette_path = os.path.join(FIXTURES_FOLDER, "list_fundref_releases.yaml")
         with vcr.use_cassette(cassette_path):
             releases = list_releases(pendulum.datetime(2014, 3, 1), pendulum.datetime(2020, 6, 1))
@@ -216,4 +218,4 @@ class TestCrossrefFundrefTelescope(ObservatoryTestCase):
             for release in releases:
                 self.assertIsInstance(release, dict)
                 self.assertIsInstance(release["url"], str)
-                self.assertIsInstance(pendulum.parse(release["date"]), pendulum.DateTime)
+                self.assertIsInstance(pendulum.parse(release["snapshot_date"]), pendulum.DateTime)

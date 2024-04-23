@@ -25,7 +25,25 @@ from airflow.models.connection import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
 from deepdiff import DeepDiff
+
+import academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow
+from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow import (
+    clean_url,
+    create_dag,
+    data_file_pattern,
+    EntityHistograms,
+    EntityStats,
+    fetch_institution_logo,
+    Histogram,
+    make_entity_stats,
+    make_logo_url,
+    OaDashboardRelease,
+    yield_data_glob,
+)
+from academic_observatory_workflows.tests.test_zenodo import MockZenodo
 from observatory.platform.bigquery import bq_find_schema
+from observatory.platform.config import module_file_path
 from observatory.platform.files import load_jsonl, save_jsonl_gz
 from observatory.platform.gcs import gcs_upload_file
 from observatory.platform.observatory_config import Workflow
@@ -37,23 +55,6 @@ from observatory.platform.observatory_environment import (
     ObservatoryTestCase,
     Table,
 )
-
-import academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow
-from academic_observatory_workflows.config import project_path
-from academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow import (
-    clean_url,
-    data_file_pattern,
-    EntityHistograms,
-    EntityStats,
-    fetch_institution_logo,
-    Histogram,
-    make_entity_stats,
-    make_logo_url,
-    OaDashboardRelease,
-    OaDashboardWorkflow,
-    yield_data_glob,
-)
-from academic_observatory_workflows.tests.test_zenodo import MockZenodo
 
 academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow.INCLUSION_THRESHOLD = {
     "country": 0,
@@ -212,17 +213,33 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
 
         env = ObservatoryEnvironment(enable_api=False)
         with env.create():
-            dag = OaDashboardWorkflow(
+            dag = create_dag(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
                 data_bucket=self.data_bucket_name,
                 conceptrecid=self.conceptrecid,
-            ).make_dag()
+            )
             self.assert_dag_structure(
                 {
                     "doi_sensor": ["check_dependencies"],
-                    "check_dependencies": ["make_bq_datasets"],
-                    "make_bq_datasets": ["upload_institution_ids"],
+                    "check_dependencies": ["create_dataset"],
+                    "create_dataset": ["fetch_release"],
+                    "fetch_release": [
+                        "upload_institution_ids",
+                        "create_entity_tables",
+                        "add_wiki_descriptions_country",
+                        "add_wiki_descriptions_institution",
+                        "download_assets",
+                        "download_institution_logos",
+                        "export_tables",
+                        "download_data",
+                        "make_draft_zenodo_version",
+                        "build_datasets",
+                        "publish_zenodo_version",
+                        "upload_dataset",
+                        "repository_dispatch",
+                        "cleanup_workflow",
+                    ],
                     "upload_institution_ids": ["create_entity_tables"],
                     "create_entity_tables": ["add_wiki_descriptions_country"],
                     "add_wiki_descriptions_country": ["add_wiki_descriptions_institution"],
@@ -235,8 +252,8 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                     "build_datasets": ["publish_zenodo_version"],
                     "publish_zenodo_version": ["upload_dataset"],
                     "upload_dataset": ["repository_dispatch"],
-                    "repository_dispatch": ["cleanup"],
-                    "cleanup": [],
+                    "repository_dispatch": ["cleanup_workflow"],
+                    "cleanup_workflow": [],
                 },
                 dag,
             )
@@ -250,7 +267,7 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                 Workflow(
                     dag_id=self.dag_id,
                     name="Open Access Website Workflow",
-                    class_name="academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow.OaDashboardWorkflow",
+                    class_name="academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow.create_dag",
                     cloud_workspace=self.fake_cloud_workspace,
                     kwargs=dict(
                         data_bucket=self.data_bucket_name,
@@ -261,7 +278,8 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
         )
 
         with env.create():
-            self.assert_dag_load_from_config(self.dag_id)
+            dag_file = os.path.join(module_file_path("observatory.platform.dags"), "load_dags.py")
+            self.assert_dag_load(self.dag_id, dag_file)
 
         # Test required kwargs
         env = ObservatoryEnvironment(
@@ -269,7 +287,7 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                 Workflow(
                     dag_id=self.dag_id,
                     name="Open Access Website Workflow",
-                    class_name="academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow.OaDashboardWorkflow",
+                    class_name="academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow.create_dag",
                     cloud_workspace=self.fake_cloud_workspace,
                     kwargs=dict(),
                 )
@@ -277,8 +295,9 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
         )
 
         with env.create():
+            dag_file = os.path.join(module_file_path("observatory.platform.dags"), "load_dags.py")
             with self.assertRaises(AssertionError) as cm:
-                self.assert_dag_load_from_config(self.dag_id)
+                self.assert_dag_load(self.dag_id, dag_file)
             msg = cm.exception.args[0]
             self.assertTrue("missing 2 required keyword-only arguments" in msg)
             self.assertTrue("data_bucket" in msg)
@@ -341,7 +360,7 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
         """Test the telescope end to end."""
 
         mock_zenodo.return_value = MockZenodo()
-        execution_date = pendulum.datetime(2021, 11, 14)
+        logical_date = pendulum.datetime(2021, 11, 14)
         snapshot_date = pendulum.datetime(2021, 11, 21)
         env = ObservatoryEnvironment(project_id=self.project_id, data_location=self.data_location, enable_api=False)
         bq_dataset_id = env.add_dataset("data")
@@ -353,8 +372,8 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
 
         with env.create() as t:
             # Run fake DOI workflow to test sensor
-            dag = make_dummy_dag("doi", execution_date)
-            with env.create_dag_run(dag, execution_date):
+            dag = make_dummy_dag("doi", logical_date)
+            with env.create_dag_run(dag, logical_date):
                 # Running all of a DAGs tasks sets the DAG to finished
                 ti = env.run_task("dummy_task")
                 self.assertEqual(State.SUCCESS, ti.state)
@@ -374,7 +393,11 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                 gcs_upload_file(bucket_name=data_bucket, blob_name=file_name, file_path=file_path)
 
             # Setup workflow and connections
-            workflow = OaDashboardWorkflow(
+            github_conn_id = "oa_dashboard_github_token"
+            zenodo_conn_id = "oa_dashboard_zenodo_token"
+            entity_types = ["country", "institution"]
+            version = "v10"
+            dag = create_dag(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
                 data_bucket=data_bucket,
@@ -384,12 +407,11 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                 bq_settings_dataset_id=bq_dataset_id_settings,
                 bq_oa_dashboard_dataset_id=bq_dataset_id_oa_dashboard,
             )
-            dag = workflow.make_dag()
-            env.add_connection(Connection(conn_id=workflow.github_conn_id, uri=f"http://:{github_token}@"))
-            env.add_connection(Connection(conn_id=workflow.zenodo_conn_id, uri=f"http://:{zenodo_token}@"))
+            env.add_connection(Connection(conn_id=github_conn_id, uri=f"http://:{github_token}@"))
+            env.add_connection(Connection(conn_id=zenodo_conn_id, uri=f"http://:{zenodo_token}@"))
 
             # Run workflow
-            with env.create_dag_run(dag, execution_date) as dag_run:
+            with env.create_dag_run(dag, logical_date) as dag_run:
                 # Mocked and expected data
                 release = OaDashboardRelease(
                     dag_id=self.dag_id,
@@ -408,20 +430,24 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Check dependencies
-                ti = env.run_task(workflow.check_dependencies.__name__)
+                ti = env.run_task("check_dependencies")
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Make BQ datasets
-                ti = env.run_task(workflow.make_bq_datasets.__name__)
+                ti = env.run_task("create_dataset")
+                self.assertEqual(State.SUCCESS, ti.state)
+
+                # Fetch release
+                ti = env.run_task("fetch_release")
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Upload institution IDs
                 # These are the institutions that were in the previous version of the dashboard to include
-                ti = env.run_task(workflow.upload_institution_ids.__name__)
+                ti = env.run_task("upload_institution_ids")
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Create country and institution tables
-                ti = env.run_task(workflow.create_entity_tables.__name__)
+                ti = env.run_task("create_entity_tables")
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Fetch and add Wikipedia descriptions
@@ -431,29 +457,29 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Download cached assets
-                ti = env.run_task(workflow.download_assets.__name__)
+                ti = env.run_task("download_assets")
                 self.assertEqual(State.SUCCESS, ti.state)
                 for file_name in ["images.zip", "images-base.zip"]:
                     path = os.path.join(release.download_folder, file_name)
                     self.assertTrue(os.path.isfile(path))
 
                 # Download institution logos
-                ti = env.run_task(workflow.download_institution_logos.__name__)
+                ti = env.run_task("download_institution_logos")
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Export county and institution tables
-                ti = env.run_task(workflow.export_tables.__name__)
+                ti = env.run_task("export_tables")
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Download data
-                ti = env.run_task(workflow.download_data.__name__)
+                ti = env.run_task("download_data")
                 self.assertEqual(State.SUCCESS, ti.state)
                 for file_name in ["country-data-000000000000.jsonl.gz", "institution-data-000000000000.jsonl.gz"]:
                     path = os.path.join(release.download_folder, file_name)
                     self.assertTrue(os.path.isfile(path))
 
                 # Check that the data is as expected
-                for entity_type in workflow.entity_types:
+                for entity_type in entity_types:
                     file_path = os.path.join(FIXTURES_FOLDER, "expected", f"{entity_type}.json")
                     with open(file_path, "r") as f:
                         expected_data = json.load(f)
@@ -465,11 +491,11 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                     assert all_matched, "Rows in actual content do not match expected content"
 
                 # Make draft Zenodo version
-                ti = env.run_task(workflow.make_draft_zenodo_version.__name__)
+                ti = env.run_task("make_draft_zenodo_version")
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Preprocess data
-                ti = env.run_task(workflow.build_datasets.__name__)
+                ti = env.run_task("build_datasets")
                 self.assertEqual(State.SUCCESS, ti.state)
                 build_folder = os.path.join(release.transform_folder, "build")
                 expected_files = make_expected_build_files(build_folder)
@@ -485,26 +511,26 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                     self.assertTrue(os.path.isfile(latest_file))
 
                 # Publish Zenodo version
-                ti = env.run_task(workflow.publish_zenodo_version.__name__)
+                ti = env.run_task("publish_zenodo_version")
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Upload data to bucket
-                ti = env.run_task(workflow.upload_dataset.__name__)
+                ti = env.run_task("upload_dataset")
                 self.assertEqual(State.SUCCESS, ti.state)
-                blob_name = f"{workflow.version}/data.zip"
+                blob_name = f"{version}/data.zip"
                 self.assert_blob_exists(data_bucket, blob_name)
-                blob_name = f"{workflow.version}/images.zip"
+                blob_name = f"{version}/images.zip"
                 self.assert_blob_exists(data_bucket, blob_name)
 
                 # Trigger repository dispatch
-                ti = env.run_task(workflow.repository_dispatch.__name__)
+                ti = env.run_task("repository_dispatch")
                 self.assertEqual(State.SUCCESS, ti.state)
                 mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/develop")
                 mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/staging")
                 mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/production")
 
                 # Test that all workflow data deleted
-                ti = env.run_task(workflow.cleanup.__name__)
+                ti = env.run_task("cleanup_workflow")
                 self.assertEqual(State.SUCCESS, ti.state)
                 self.assert_cleanup(release.workflow_folder)
 

@@ -1,4 +1,4 @@
-# Copyright 2023 Curtin University
+# Copyright 2023-2024 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,36 +31,44 @@ from ftplib import error_reply, FTP
 from typing import Dict, List, Set, Tuple, Union
 
 import pendulum
-from airflow import AirflowException
+from airflow import AirflowException, DAG
+from airflow.decorators import dag, task, task_group
 from airflow.models.taskinstance import TaskInstance
 from airflow.operators.empty import EmptyOperator
+from airflow.utils.trigger_rule import TriggerRule
 from Bio import Entrez
-from Bio.Entrez.Parser import DictionaryElement, ListElement, OrderedListElement, StringElement, ValidationError
+from Bio.Entrez.Parser import (
+    DictionaryElement,
+    ListElement,
+    OrderedListElement,
+    StringElement,
+    ValidationError,
+)
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
+
+import observatory.platform.bigquery as bq
+from academic_observatory_workflows.config import project_path
 from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.platform.airflow import is_first_dag_run, PreviousDagRunSensor
-from observatory.platform.api import get_dataset_releases, get_latest_dataset_release, make_observatory_api
-from observatory.platform.bigquery import (
-    bq_create_dataset,
-    bq_delete_records,
-    bq_load_table,
-    bq_sharded_table_id,
-    bq_snapshot,
-    bq_upsert_records,
+from observatory.platform.airflow import (
+    is_first_dag_run,
+    on_failure_callback,
+    PreviousDagRunSensor,
+)
+from observatory.platform.api import (
+    get_dataset_releases,
+    get_latest_dataset_release,
+    make_observatory_api,
 )
 from observatory.platform.config import AirflowConns
 from observatory.platform.files import get_chunks, save_jsonl_gz, yield_jsonl
 from observatory.platform.gcs import gcs_blob_name_from_path, gcs_upload_files
 from observatory.platform.observatory_config import CloudWorkspace
+from observatory.platform.refactor.tasks import check_dependencies
 from observatory.platform.workflows.workflow import (
     ChangefileRelease as DatafileRelease,
     cleanup,
-    set_task_state,
-    Workflow,
 )
-
-from academic_observatory_workflows.config import project_path, Tag
 
 
 class Datafile:
@@ -84,7 +92,7 @@ class Datafile:
         :param baseline: Boolean for if this is from the bsaeline set of files. False is it is from the updatefiles set.
         :param path_on_ftp: Path of the file on Pubmed's FTP server.
         :param datafile_date: The date that the datafile_date was added to PubMed's FTP server.
-        :param DatafileRelease: The Datafile release, helps give download and transform paths to files.
+        :param datafile_release: The Datafile release, helps give download and transform paths to files.
         """
 
         self.filename = filename
@@ -93,7 +101,6 @@ class Datafile:
         self.path_on_ftp = path_on_ftp
         self.datafile_date = datafile_date
         self.datafile_release: DatafileRelease = datafile_release
-
         self.file_type = "jsonl.gz"
 
     def __eq__(self, other):
@@ -104,7 +111,6 @@ class Datafile:
                 and self.baseline == other.baseline
                 and self.path_on_ftp == other.path_on_ftp
                 and self.datafile_date == other.datafile_date
-                and self.datafile_release == other.datafile_release
             )
         return False
 
@@ -114,7 +120,6 @@ class Datafile:
         baseline = dict_["baseline"]
         path_on_ftp = dict_["path_on_ftp"]
         datafile_date = pendulum.parse(dict_["datafile_date"])
-        datafile_release = dict_["datafile_release"]
 
         return Datafile(
             filename=filename,
@@ -122,7 +127,6 @@ class Datafile:
             baseline=baseline,
             path_on_ftp=path_on_ftp,
             datafile_date=datafile_date,
-            datafile_release=datafile_release,
         )
 
     def to_dict(self) -> Dict:
@@ -132,7 +136,6 @@ class Datafile:
             baseline=self.baseline,
             path_on_ftp=self.path_on_ftp,
             datafile_date=self.datafile_date.isoformat(),
-            datafile_release=self.datafile_release,
         )
 
     @property
@@ -163,7 +166,6 @@ class Datafile:
 
 @dataclass
 class PMID:
-
     """Object to identify a particular PMID record by the PMID value and Version.
 
     :param value: The PMID value.
@@ -193,7 +195,6 @@ class PMID:
 
 @dataclass
 class PubmedUpdatefile:
-
     """Object to hold the list of upserts and deletes for a single Pubmed updatefile.
 
     :param name: Filename of the updatefile.
@@ -236,6 +237,7 @@ class PubMedRelease(DatafileRelease):
         end_date: pendulum.DateTime,
         year_first_run: bool,
         datafile_list: List[Datafile],
+        baseline_upload_date: pendulum.DateTime,
     ):
         """
         Construct a PubmedRelease.
@@ -248,6 +250,7 @@ class PubMedRelease(DatafileRelease):
         :param year_first_run: True if it's the first run of the workflow for the year, if this
         release is to download the baseline files of Pubmed.
         :param datafile_list: List of datafiles for this release.
+        :param baseline_upload_date: the modification date of the first file in the baseline upload, retrieved via FTP with the MDTM command.
         """
 
         super().__init__(
@@ -261,6 +264,7 @@ class PubMedRelease(DatafileRelease):
         self.cloud_workspace = cloud_workspace
         self.year_first_run = year_first_run
         self.datafile_list = datafile_list
+        self.baseline_upload_date = baseline_upload_date
 
         self.datafile_release = DatafileRelease(
             dag_id=dag_id,
@@ -321,802 +325,807 @@ class PubMedRelease(DatafileRelease):
     def merged_delete_file_path(self):
         # This is just a singular file, not multiple part files from each updatefile.
         assert self.datafile_release is not None, "release.merged_delete_file_path: self.datafile_release is None"
-        return os.path.join(self.datafile_release.transform_folder, f"delete_merged.{self.datafile_list[0].file_type}")
+        return os.path.join(
+            self.datafile_release.transform_folder,
+            f"delete_merged.{self.datafile_list[0].file_type}",
+        )
+
+    @staticmethod
+    def from_dict(dict_: dict) -> PubMedRelease:
+        return PubMedRelease(
+            dag_id=dict_["dag_id"],
+            run_id=dict_["run_id"],
+            cloud_workspace=CloudWorkspace.from_dict(dict_["cloud_workspace"]),
+            start_date=pendulum.from_timestamp(dict_["start_date"]),
+            end_date=pendulum.from_timestamp(dict_["end_date"]),
+            year_first_run=dict_["year_first_run"],
+            datafile_list=[Datafile.from_dict(datafile) for datafile in dict_["datafile_list"]],
+            baseline_upload_date=pendulum.from_timestamp(dict_["baseline_upload_date"]),
+        )
+
+    def to_dict(self) -> dict:
+        return dict(
+            dag_id=self.dag_id,
+            run_id=self.run_id,
+            cloud_workspace=self.cloud_workspace.to_dict(),
+            start_date=self.start_date.timestamp(),
+            end_date=self.end_date.timestamp(),
+            year_first_run=self.year_first_run,
+            datafile_list=[datafile.to_dict() for datafile in self.datafile_list],
+            baseline_upload_date=self.baseline_upload_date.timestamp(),
+        )
 
 
-class PubMedTelescope(Workflow):
+def create_dag(
+    *,
+    dag_id: str,
+    cloud_workspace: CloudWorkspace,
+    observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
+    bq_dataset_id: str = "pubmed",
+    bq_table_id: str = "pubmed",
+    bq_dataset_description: str = "Pubmed Medline database, only PubmedArticle records: https://pubmed.ncbi.nlm.nih.gov/about/",
+    start_date: pendulum.DateTime = pendulum.datetime(year=2022, month=12, day=8),
+    schedule: str = "@weekly",
+    ftp_server_url: str = "ftp.ncbi.nlm.nih.gov",
+    ftp_port: int = 21,
+    reset_ftp_counter: int = 40,
+    max_download_retry: int = 5,
+    queue: str = "remote_queue",
+    snapshot_expiry_days: int = 31,
+    max_processes: int = 4,  # Limited to 4 due to RAM usage.
+    max_active_runs: int = 1,
+    retries: int = 3,
+) -> DAG:
+    """Construct an PubMed Telescope instance.
 
-    """
-    PubMed Telescope
-
-    Please visit:
     https://pubmed.ncbi.nlm.nih.gov/
+
+    :param dag_id: the id of the DAG.
+    :param cloud_workspace: Cloud settings.
+    :param observatory_api_conn_id: Observatory API connection for Airflow.
+    :param bq_dataset_id: Dataset name for final tables.
+    :param bq_table_id: Table name of the final Pubmed table.
+    :param bq_dataset_description: Description of the Pubmed dataset.
+    :param start_date: The start date of the DAG.
+    :param schedule: How often the DAG should run.
+    :param ftp_server_url: Server address of Pubmed's FTP server.
+    :param ftp_port: Port for connectiong to Pubmed's FTP server.
+    :param reset_ftp_counter: Resets FTP connection after downloading x number of files.
+    :param max_download_retry: Maximum number of retries of a single Pubmed file from the FTP server before throwing an error.
+    :param queue: The queue that the tasks should run on, "default" or "remote_queue".
+    :param snapshot_expiry_days: How long until the backup snapshot (before this release's upserts and deletes) of the Pubmed table exist in BQ.
+    :param max_processes: Max number of parallel processes.
+    :param max_active_runs: the maximum number of DAG runs that can be run at once.
+    :param retries: the number of times to retry a task.
     """
 
-    def __init__(
-        self,
-        *,
-        dag_id: str,
-        cloud_workspace: CloudWorkspace,
-        observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
-        bq_dataset_id: str = "pubmed",
-        bq_table_id: str = "pubmed",
-        bq_dataset_description: str = "Pubmed Medline database, only PubmedArticle records: https://pubmed.ncbi.nlm.nih.gov/about/",
-        start_date: pendulum.DateTime = pendulum.datetime(year=2022, month=12, day=8),
-        schedule: str = "@weekly",
-        ftp_server_url: str = "ftp.ncbi.nlm.nih.gov",
-        ftp_port: int = 21,
-        reset_ftp_counter: int = 40,
-        max_download_retry: int = 5,
-        queue: str = "remote_queue",
-        snapshot_expiry_days: int = 31,
-        max_processes: int = 4,  # Limited to 4 due to RAM usage.
-    ):
-        """Construct an PubMed Telescope instance.
+    main_table_id = f"{cloud_workspace.project_id}.{bq_dataset_id}.{bq_table_id}"
+    upsert_table_id = f"{main_table_id}_upsert"
+    delete_table_id = f"{main_table_id}_delete"
+    baseline_table_description = """Pubmed's main table of PubmedArticle reocrds - Includes all the metadata associated with a journal article citation, both the metadata to describe the published article, i.e. <MedlineCitation>, and additional metadata often pertaining to the publication's history or processing at NLM, i.e. <PubMedData>."""
+    upsert_table_description = """PubmedArticle upserts - Includes all the metadata associated with a journal article citation, both the metadata to describe the published article, i.e. <MedlineCitation>, and additional metadata often pertaining to the publication's history or processing at NLM, i.e. <PubMedData>."""
+    delete_table_description = """PubmedArticle deletes - Indicates one or more <PubmedArticle> or <PubmedBookArticle> that have been deleted. PMIDs in DeleteCitation will typically have been found to be duplicate citations, or citations to content that was determined to be out-of-scope for PubMed. It is possible that a PMID would appear in DeleteCitation without having been distributed in a previous file. This would happen if the creation and deletion of the record take place on the same day."""
+    baseline_path = "/pubmed/baseline/"
+    updatefiles_path = "/pubmed/updatefiles/"
 
-        :param dag_id: the id of the DAG.
-        :param cloud_workspace: Cloud settings.
-        :param observatory_api_conn_id: Observatory API connection for Airflow.
-        :param bq_dataset_id: Dataset name for final tables.
-        :param bq_table_id: Table name of the final Pubmed table.
-        :param bq_dataset_description: Description of the Pubmed dataset.
-        :param start_date: The start date of the DAG.
-        :param schedule: How often the DAG should run.
-        :param ftp_server_url: Server address of Pubmed's FTP server.
-        :param ftp_port: Port for connectiong to Pubmed's FTP server.
-        :param reset_ftp_counter: Resets FTP connection after downloading x number of files.
-        :param max_download_retry: Maximum number of retries of a single Pubmed file from the FTP server before throwing an error.
-        :param queue: The queue that the tasks should run on, "default" or "remote_queue".
-        :param snapshot_expiry_days: How long until the backup snapshot (before this release's upserts and deletes) of the Pubmed table exist in BQ.
-        :param max_processes: Max number of parallel processes.
-        """
+    @dag(
+        dag_id=dag_id,
+        start_date=start_date,
+        schedule=schedule,
+        catchup=False,
+        max_active_runs=max_active_runs,
+        tags=["academic-observatory"],
+        default_args={
+            "owner": "airflow",
+            "on_failure_callback": on_failure_callback,
+            "retries": retries,
+            "queue": queue,
+        },
+    )
+    def pubmed():
+        @task
+        def fetch_release(**context) -> dict:
+            """
+            Get a list of all files to process for this release.
 
-        self.observatory_api_conn_id = observatory_api_conn_id
+            Determine if workflow needs to redownload the baseline files again because of a new yearly release.
+            """
 
-        super().__init__(
-            dag_id=dag_id,
-            start_date=start_date,
-            schedule=schedule,
-            catchup=False,
-            airflow_conns=[observatory_api_conn_id],
-            queue=queue,
-            tags=[Tag.academic_observatory],
-        )
+            dag_run = context["dag_run"]
+            is_first_run = is_first_dag_run(dag_run)
+            dataset_releases = get_dataset_releases(dag_id=dag_id, dataset_id=bq_dataset_id)
+            prev_release = get_latest_dataset_release(dataset_releases, "changefile_end_date")
 
-        # Databse settings
-        self.cloud_workspace = cloud_workspace
-        self.bq_dataset_id = bq_dataset_id
-        self.bq_table_id = bq_table_id
-        self.main_table_id = f"{cloud_workspace.project_id}.{bq_dataset_id}.{bq_table_id}"
-        self.upsert_table_id = f"{self.main_table_id}_upsert"
-        self.delete_table_id = f"{self.main_table_id}_delete"
-        self.bq_dataset_description = bq_dataset_description
-        self.snapshot_expiry_days = snapshot_expiry_days
+            # Open FTP connection to PubMed servers.
+            ftp_conn = FTP()
+            ftp_conn.connect(host=ftp_server_url, port=ftp_port)
+            ftp_conn.login()  # anonymous login (publicly available data)
 
-        # Descriptions of the Pubmed tables.
-        self.baseline_table_description = """Pubmed's main table of PubmedArticle reocrds - Includes all the metadata associated with a journal article citation, both the metadata to describe the published article, i.e. <MedlineCitation>, and additional metadata often pertaining to the publication's history or processing at NLM, i.e. <PubMedData>."""
-        self.upsert_table_description = """PubmedArticle upserts - Includes all the metadata associated with a journal article citation, both the metadata to describe the published article, i.e. <MedlineCitation>, and additional metadata often pertaining to the publication's history or processing at NLM, i.e. <PubMedData>."""
-        self.delete_table_description = """PubmedArticle deletes - Indicates one or more <PubmedArticle> or <PubmedBookArticle> that have been deleted. PMIDs in DeleteCitation will typically have been found to be duplicate citations, or citations to content that was determined to be out-of-scope for PubMed. It is possible that a PMID would appear in DeleteCitation without having been distributed in a previous file. This would happen if the creation and deletion of the record take place on the same day."""
+            # Change to the baseline directory.
+            ftp_conn.cwd(baseline_path)
 
-        # Workflow specific parameters.
-        self.ftp_server_url = ftp_server_url
-        self.ftp_port = ftp_port
-        self.baseline_path = "/pubmed/baseline/"
-        self.updatefiles_path = "/pubmed/updatefiles/"
-        self.max_download_retry = max_download_retry
-        self.reset_ftp_counter = reset_ftp_counter
-        self.max_processes = max_processes
+            # Get list of all baseline files.
+            baseline_list_ftp = ftp_conn.nlst()
 
-        # Wait for the previous DAG run to finish to make sure that
-        # datafiles are processed in the correct order
-        external_task_id = "dag_run_complete"
-        self.add_operator(
-            PreviousDagRunSensor(
-                dag_id=self.dag_id,
-                external_task_id=external_task_id,
-                execution_delta=timedelta(days=7),  # To match the @weekly schedule_interval
-            )
-        )
+            # Get upload date of the first baseline file.
+            baseline_list_ftp.sort()
+            baseline_first_file = [file for file in baseline_list_ftp if file.endswith("0001.xml.gz")][0]
+            baseline_upload = ftp_conn.sendcmd("MDTM {}".format(baseline_first_file))[4:]
+            baseline_upload_date = pendulum.from_format(baseline_upload, "YYYYMMDDHHmmss")
+            logging.info(f"baseline upload time: {baseline_first_file}, {baseline_upload_date}")
 
-        self.add_setup_task(self.check_dependencies)
-        self.add_setup_task(self.list_datafiles_for_release)
-
-        # Create a backup of the main table before applying any changes.
-        # Only run if it is not the first run of the year.
-        self.add_task(self.create_snapshot)
-
-        ### BASELINE ###
-
-        # Download and process the baseline files - skipped if no new baseline files are available.
-        self.add_task(self.download_baseline)
-        self.add_task(self.upload_downloaded_baseline)
-        self.add_task(self.transform_baseline)
-        self.add_task(self.upload_transformed_baseline)
-        self.add_task(self.bq_load_main_table)
-
-        ### UPDATEFILES ###
-
-        # Download and pull out the upsert and delete records from the updatefiles.
-        self.add_task(self.download_updatefiles)
-        self.add_task(self.upload_downloaded_updatefiles)
-        self.add_task(self.transform_updatefiles)
-
-        # Determine which upserts and deletes are necessary to keep for this release.
-        self.add_task(self.merge_upserts_and_deletes)
-
-        # Upload and apply upsert records.
-        self.add_task(self.upload_merged_upsert_records)
-        self.add_task(self.bq_load_upsert_table)
-        self.add_task(self.bq_upsert_records)
-
-        # Upload amd apply delete records.
-        self.add_task(self.upload_merged_delete_records)
-        self.add_task(self.bq_load_delete_table)
-        self.add_task(self.bq_delete_records)
-
-        self.add_task(self.add_new_dataset_release)
-        self.add_task(self.cleanup)
-
-        # The last task that the next DAG run's ExternalTaskSensor waits for.
-        self.add_operator(
-            EmptyOperator(
-                task_id=external_task_id,
-            )
-        )
-
-    def list_datafiles_for_release(self, **kwargs) -> bool:
-        """
-        Get a list of all files to process for this release.
-
-        Determine if workflow needs to redownload the baseline files again because of a new yearly release.
-        """
-
-        dag_run = kwargs["dag_run"]
-        is_first_run = is_first_dag_run(dag_run)
-        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=self.bq_dataset_id)
-        prev_release = get_latest_dataset_release(dataset_releases, "changefile_end_date")
-
-        # Open FTP connection to PubMed servers.
-        ftp_conn = FTP()
-        ftp_conn.connect(host=self.ftp_server_url, port=self.ftp_port)
-        ftp_conn.login()  # anonymous login (publicly available data)
-
-        # Change to the baseline directory.
-        ftp_conn.cwd(self.baseline_path)
-
-        # Get list of all baseline files.
-        baseline_list_ftp = ftp_conn.nlst()
-
-        # Get upload date of the first baseline file.
-        baseline_list_ftp.sort()
-        baseline_first_file = [file for file in baseline_list_ftp if file.endswith("0001.xml.gz")][0]
-        baseline_upload = ftp_conn.sendcmd("MDTM {}".format(baseline_first_file))[4:]
-        baseline_upload_date = pendulum.from_format(baseline_upload, "YYYYMMDDHHmmss")
-        logging.info(f"baseline upload time: {baseline_first_file}, {baseline_upload_date}")
-
-        # Make workflow re-download the baseline yearly data if the upload date does not match the date from the last release.
-        if is_first_run:
-            year_first_run = True
-        else:
-            prev_release_extra = prev_release.extra
-            last_baseline_upload_date = pendulum.from_timestamp(prev_release_extra["baseline_upload_date"])
-
-            logging.info(f"prev_release: {prev_release}")
-            logging.info(f"pre_release_extra: {prev_release_extra}")
-            logging.info(f"Last baseline upload date: {last_baseline_upload_date}")
-
-            if last_baseline_upload_date == baseline_upload_date:
-                year_first_run = False
-            else:
+            # Make workflow re-download the baseline yearly data if the upload date does not match the date from the last release.
+            if is_first_run:
                 year_first_run = True
+            else:
+                prev_release_extra = prev_release.extra
+                last_baseline_upload_date = pendulum.from_timestamp(prev_release_extra["baseline_upload_date"])
 
-        logging.info(f"Setting year_first_run to {year_first_run}")
+                logging.info(f"prev_release: {prev_release}")
+                logging.info(f"pre_release_extra: {prev_release_extra}")
+                logging.info(f"Last baseline upload date: {last_baseline_upload_date}")
 
-        # Grab list of baseline files from FTP server.
-        files_to_download = []
-        if year_first_run:
-            logging.info(f"This is the first run for the year for Pubmed. Grabbing list of 'baseline' files.")
+                if last_baseline_upload_date == baseline_upload_date:
+                    year_first_run = False
+                else:
+                    year_first_run = True
 
-            # Grab metadata and path of the file.
-            for file in baseline_list_ftp:
-                if file.endswith(".xml.gz"):  # Find all the xml.gz files available from the server.
+            logging.info(f"Setting year_first_run to {year_first_run}")
+
+            # Grab list of baseline files from FTP server.
+            files_to_download = []
+            if year_first_run:
+                logging.info(f"This is the first run for the year for Pubmed. Grabbing list of 'baseline' files.")
+
+                # Grab metadata and path of the file.
+                for file in baseline_list_ftp:
+                    if file.endswith(".xml.gz"):  # Find all the xml.gz files available from the server.
+                        filename = file
+                        file_index = int(re.findall("\d{4}", file)[0])
+                        path_on_ftp = baseline_path + file
+                        datafile = Datafile(
+                            filename=filename,
+                            file_index=file_index,
+                            baseline=True,
+                            path_on_ftp=path_on_ftp,
+                            datafile_date=baseline_upload_date,
+                        )
+                        files_to_download.append(datafile)
+
+            # Grab list of updatefiles from FTP server.
+
+            # Reset FTP connection, as it could have timed out.
+            ftp_conn.close()
+
+            ftp_conn = FTP()
+            ftp_conn.connect(host=ftp_server_url, port=ftp_port)
+            ftp_conn.login()  # anonymous login (publicly available data)
+
+            # Change to updatefiles directory
+            ftp_conn.cwd(updatefiles_path)
+
+            # Find all the .xml.gz files available
+            updatefiles_list = ftp_conn.nlst()
+            updatefiles_xml_gz = [file for file in updatefiles_list if file.endswith(".xml.gz")]
+
+            # Determine start date for the new data interval period for this run.
+            release_interval_end = pendulum.instance(context["data_interval_end"])
+            if baseline_upload_date > release_interval_end:
+                raise AirflowException(
+                    f"Baseline_upload_date: {baseline_upload_date} is after the release_interval_end: {release_interval_end}!"
+                )
+
+            logging.info(f"release_interval_end from workflow: {release_interval_end}")
+            if is_first_run:
+                assert (
+                    len(dataset_releases) == 0
+                ), "fetch_releases: there should be no DatasetReleases stored in the Observatory API on the first DAG run."
+
+                release_interval_start = baseline_upload_date
+
+            elif year_first_run:
+                assert (
+                    len(dataset_releases) >= 1
+                ), f"fetch_releases: there should be at least 1 DatasetRelease in the Observatory API after the first DAG run"
+
+                release_interval_start = baseline_upload_date
+            else:
+                assert (
+                    len(dataset_releases) >= 1
+                ), f"fetch_releases: there should be at least 1 DatasetRelease in the Observatory API after the first DAG run"
+
+                release_interval_start = pendulum.instance(prev_release.changefile_end_date)
+
+            logging.info(
+                f"Grabbing list of 'updatefiles' for this release: {release_interval_start} to {release_interval_end}"
+            )
+
+            for i, file in enumerate(updatefiles_xml_gz):
+                # Every self.reset_ftp_counter number of files that are found, reinistialise the FTP connection.
+                if i % reset_ftp_counter == 0 and i != 0:
+                    # Close exisiting FTP connection.
+                    ftp_conn.close()
+
+                    # Sleep for short time so that the server doesn't refuse the connection.
+                    time.sleep(random.randint(5, 10))
+
+                    # Open a new FTP connection
+                    ftp_conn = FTP()
+                    ftp_conn.connect(host=ftp_server_url, port=ftp_port)
+                    ftp_conn.login()  # anonymous login (publicly available data)
+                    ftp_conn.cwd(updatefiles_path)
+
+                    logging.info(
+                        f"FTP connection to Pubmed's servers has been reset after {reset_ftp_counter} files to avoid issues."
+                    )
+                # for file in updatefiles_xml_gz:
+                # Only return list of updatefiles that are within the required release period.
+                file_upload_ftp = ftp_conn.sendcmd("MDTM {}".format(file))[4:]
+                file_upload_date = pendulum.from_format(file_upload_ftp, "YYYYMMDDHHmmss")
+                if file_upload_date in pendulum.period(release_interval_start, release_interval_end):
+                    # Grab metadata and path of the file.
                     filename = file
                     file_index = int(re.findall("\d{4}", file)[0])
-                    path_on_ftp = self.baseline_path + file
+                    path_on_ftp = updatefiles_path + file
+                    datafile_date = file_upload_date
+
                     datafile = Datafile(
                         filename=filename,
                         file_index=file_index,
-                        baseline=True,
+                        baseline=False,
                         path_on_ftp=path_on_ftp,
-                        datafile_date=baseline_upload_date,
+                        datafile_date=datafile_date,
                     )
                     files_to_download.append(datafile)
 
-        # Grab list of updatefiles from FTP server.
-
-        # Reset FTP connection, as it could have timed out.
-        ftp_conn.close()
-
-        ftp_conn = FTP()
-        ftp_conn.connect(host=self.ftp_server_url, port=self.ftp_port)
-        ftp_conn.login()  # anonymous login (publicly available data)
-
-        # Change to updatefiles directory
-        ftp_conn.cwd(self.updatefiles_path)
-
-        # Find all the .xml.gz files available
-        updatefiles_list = ftp_conn.nlst()
-        updatefiles_xml_gz = [file for file in updatefiles_list if file.endswith(".xml.gz")]
-
-        # Determine start date for the new data interval period for this run.
-        release_interval_end = pendulum.instance(kwargs["data_interval_end"])
-        if baseline_upload_date > release_interval_end:
-            raise AirflowException(
-                f"Baseline_upload_date: {baseline_upload_date} is after the release_interval_end: {release_interval_end}!"
-            )
-
-        logging.info(f"release_interval_end from workflow: {release_interval_end}")
-        if is_first_run:
             assert (
-                len(dataset_releases) == 0
-            ), "fetch_releases: there should be no DatasetReleases stored in the Observatory API on the first DAG run."
+                files_to_download
+            ), f"List of files to download is empty. There should be at leaast 7 datafiles to download from Pubmed's FTP server."
 
-            release_interval_start = baseline_upload_date
+            # Sort from oldest to newest using the file index
+            files_to_download.sort(key=lambda c: c.file_index, reverse=False)
 
-        elif year_first_run:
-            assert (
-                len(dataset_releases) >= 1
-            ), f"fetch_releases: there should be at least 1 DatasetRelease in the Observatory API after the first DAG run"
+            # Check that all baseline/updatefiles pulled from the FTP server are not missing any between start_index and end_index.
+            # e.g. 10, 11, 13, 14 - will throw an error.
+            file_index_prev = files_to_download[0].file_index
+            logging.info(f"Starting datafile file_index: {file_index_prev}")
+            for datafile in files_to_download[1:]:
+                if datafile.file_index == file_index_prev + 1:
+                    file_index_prev = datafile.file_index
+                else:
+                    raise AirflowException(
+                        f"The updatefiles are not going to be sequential. Please investigate download {datafile.file_index} and {file_index_prev+1}"
+                    )
 
-            release_interval_start = baseline_upload_date
-        else:
-            assert (
-                len(dataset_releases) >= 1
-            ), f"fetch_releases: there should be at least 1 DatasetRelease in the Observatory API after the first DAG run"
+            # Make sure the first datafile.file_index for this release is only +1 ahead of the last release.
+            if not year_first_run:
+                assert (
+                    files_to_download[0].file_index == prev_release.sequence_end + 1
+                ), f"Last updatefile index is not n+1 from the previous release end. Latest release update index: {prev_release.sequence_end} vs current start: {files_to_download[0].file_index}"
+            else:
+                logging.info(
+                    f"First run of the Pubmed telescope for the year. No previous releases.file_index to check against."
+                )
 
-            release_interval_start = pendulum.instance(prev_release.changefile_end_date)
+            logging.info(f"List of files to download from the PubMed FTP server for release:")
+            for datafile in files_to_download:
+                logging.info(f"Filename: {datafile.filename}, is a baseline file: {datafile.baseline}")
 
-        logging.info(
-            f"Grabbing list of 'updatefiles' for this release: {release_interval_start} to {release_interval_end}"
-        )
+            # Close the connection to the FTP server.
+            ftp_conn.close()
 
-        for i, file in enumerate(updatefiles_xml_gz):
-            # Every self.reset_ftp_counter number of files that are found, reinistialise the FTP connection.
-            if i % self.reset_ftp_counter == 0 and i != 0:
-                # Close exisiting FTP connection.
-                ftp_conn.close()
+            return PubMedRelease(
+                dag_id=dag_id,
+                run_id=context["run_id"],
+                cloud_workspace=cloud_workspace,
+                start_date=release_interval_start,
+                end_date=release_interval_end,
+                year_first_run=year_first_run,
+                datafile_list=files_to_download,
+                baseline_upload_date=baseline_upload_date,
+            ).to_dict()
 
-                # Sleep for short time so that the server doesn't refuse the connection.
-                time.sleep(random.randint(5, 10))
+        @task.short_circuit
+        def short_circuit(release: dict | None, **context) -> bool:
+            # Don't skip this DAG run if:
+            # a) We are in the first run of the year
+            # b) We are not in the first run of the year and there are updatefiles
+            release = PubMedRelease.from_dict(release)
+            return release.year_first_run or ((not release.year_first_run) and len(release.updatefiles) > 0)
 
-                # Open a new FTP connection
-                ftp_conn = FTP()
-                ftp_conn.connect(host=self.ftp_server_url, port=self.ftp_port)
-                ftp_conn.login()  # anonymous login (publicly available data)
-                ftp_conn.cwd(self.updatefiles_path)
+        @task
+        def create_snapshot(release: dict, **context):
+            """Create a snapshot of main table as a backup just in case something happens when applying the upserts and deletes."""
+
+            release = PubMedRelease.from_dict(release)
+            if not release.year_first_run:
+                snapshot_table_id = bq.bq_sharded_table_id(
+                    cloud_workspace.project_id,
+                    bq_dataset_id,
+                    f"{bq_table_id}_snapshot",
+                    release.start_date,
+                )
+                expiry_date = pendulum.now().add(days=snapshot_expiry_days)
+                success = bq.bq_snapshot(
+                    src_table_id=main_table_id,
+                    dst_table_id=snapshot_table_id,
+                    expiry_date=expiry_date,
+                )
+                if not success:
+                    raise AirflowException("create_snapshot: failed to create snapshot")
+                logging.info(f"Created snapshot table: {snapshot_table_id}")
+            else:
+                logging.info("Not required to create a snapshot of the table for this run.")
+
+        @task.branch
+        def branch_baseline_or_updatefiles(release: dict, **context):
+            release = PubMedRelease.from_dict(release)
+            if release.year_first_run:
+                return "baseline.download"
+            return "updatefiles.download"
+
+        @task_group
+        def baseline(xcom: dict, **context):
+            @task
+            def download(release: dict, **context):
+                """
+                Download files from PubMed's FTP server for this release.
+
+                Unable to do this in parallel because their FTP server is not able to handle many requests at once.
+                """
+
+                release = PubMedRelease.from_dict(release)
+                success = download_datafiles(
+                    datafile_list=release.baseline_files,
+                    ftp_server_url=ftp_server_url,
+                    ftp_port=ftp_port,
+                    reset_ftp_counter=reset_ftp_counter,
+                    max_download_retry=max_download_retry,
+                )
+                if not success:
+                    raise AirflowException("baseline.download: failed to download datafiles")
+
+            @task
+            def upload_downloaded(release: dict, **context):
+                """Upload downloaded baseline files to GCS."""
+
+                # Grab list of files to upload.
+                release = PubMedRelease.from_dict(release)
+                file_paths = [datafile.download_file_path for datafile in release.baseline_files]
+
+                success = gcs_upload_files(
+                    bucket_name=cloud_workspace.download_bucket,
+                    file_paths=file_paths,
+                )
+                if not success:
+                    raise AirflowException("baseline.upload_downloaded: failed to upload files to cloud storage bucket")
+
+            @task
+            def transform(release: dict, **context):
+                """
+                Transform the *.xml.gz files downloaded from PubMed into usable json files for BigQuery import.
+                """
+
+                release = PubMedRelease.from_dict(release)
+
+                # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
+                for i, chunk in enumerate(get_chunks(input_list=release.baseline_files, chunk_size=max_processes)):
+                    with ProcessPoolExecutor(max_workers=max_processes) as executor:
+                        logging.info(f"In chunk {i} and processing files: {chunk}")
+
+                        futures = []
+                        datafile: Datafile
+                        for datafile in chunk:
+                            input_path = datafile.download_file_path
+                            upsert_path = datafile.transform_baseline_file_path
+                            futures.append(executor.submit(transform_pubmed, input_path, upsert_path))
+
+                        # Make sure that all datafiles have been properly transformed.
+                        for future in as_completed(futures):
+                            filename = future.result()
+
+                            assert filename, f"Unable to transform baseline file: {filename}"
+
+            @task
+            def upload_transformed(release: dict, **context):
+                """Upload transformed baseline files to GCS."""
+
+                release = PubMedRelease.from_dict(release)
+                file_paths = [datafile.transform_baseline_file_path for datafile in release.baseline_files]
+
+                success = gcs_upload_files(
+                    bucket_name=cloud_workspace.transform_bucket,
+                    file_paths=file_paths,
+                )
+                if not success:
+                    raise AirflowException(
+                        "baseline.upload_transformed: failed to upload files to cloud storage bucket"
+                    )
+
+            @task
+            def bq_load(release: dict, **context):
+                """Ingest the baseline table from GCS to BQ using a file pattern."""
+
+                release = PubMedRelease.from_dict(release)
+
+                # Create the dataset if not already present.
+                bq.bq_create_dataset(
+                    project_id=cloud_workspace.project_id,
+                    dataset_id=bq_dataset_id,
+                    location=cloud_workspace.data_location,
+                    description=bq_dataset_description,
+                )
+
+                baseline_transform_blob_pattern = release.transfer_blob_pattern("baseline")
 
                 logging.info(
-                    f"FTP connection to Pubmed's servers has been reset after {self.reset_ftp_counter} files to avoid issues."
-                )
-            # for file in updatefiles_xml_gz:
-            # Only return list of updatefiles that are within the required release period.
-            file_upload_ftp = ftp_conn.sendcmd("MDTM {}".format(file))[4:]
-            file_upload_date = pendulum.from_format(file_upload_ftp, "YYYYMMDDHHmmss")
-            if file_upload_date in pendulum.period(release_interval_start, release_interval_end):
-                # Grab metadata and path of the file.
-                filename = file
-                file_index = int(re.findall("\d{4}", file)[0])
-                path_on_ftp = self.updatefiles_path + file
-                datafile_date = file_upload_date
-
-                datafile = Datafile(
-                    filename=filename,
-                    file_index=file_index,
-                    baseline=False,
-                    path_on_ftp=path_on_ftp,
-                    datafile_date=datafile_date,
-                )
-                files_to_download.append(datafile)
-
-        assert (
-            files_to_download
-        ), f"List of files to download is empty. There should be at leaast 7 datafiles to download from Pubmed's FTP server."
-
-        # Sort from oldest to newest using the file index
-        files_to_download.sort(key=lambda c: c.file_index, reverse=False)
-
-        # Check that all baseline/updatefiles pulled from the FTP server are not missing any between start_index and end_index.
-        # e.g. 10, 11, 13, 14 - will throw an error.
-        file_index_prev = files_to_download[0].file_index
-        logging.info(f"Starting datafile file_index: {file_index_prev}")
-        for datafile in files_to_download[1:]:
-            if datafile.file_index == file_index_prev + 1:
-                file_index_prev = datafile.file_index
-            else:
-                raise AirflowException(
-                    f"The updatefiles are not going to be sequential. Please investigate download {datafile.file_index} and {file_index_prev+1}"
+                    f"Creating a load job for all of the baseline files with pattern: {baseline_transform_blob_pattern} "
                 )
 
-        # Make sure the first datafile.file_index for this release is only +1 ahead of the last release.
-        if not year_first_run:
-            assert (
-                files_to_download[0].file_index == prev_release.sequence_end + 1
-            ), f"Last updatefile index is not n+1 from the previous release end. Latest release update index: {prev_release.sequence_end} vs current start: {files_to_download[0].file_index}"
-        else:
-            logging.info(
-                f"First run of the Pubmed telescope for the year. No previous releases.file_index to check against."
-            )
-
-        logging.info(f"List of files to download from the PubMed FTP server for release:")
-        for datafile in files_to_download:
-            logging.info(f"Filename: {datafile.filename}, is a baseline file: {datafile.baseline}")
-
-        # Close the connection to the FTP server.
-        ftp_conn.close()
-
-        # Push release data to Xcom for next step.
-        release_metadata = {
-            "files_to_download": [datafile.to_dict() for datafile in files_to_download],
-            "release_interval_start": release_interval_start.timestamp(),
-            "release_interval_end": release_interval_end.timestamp(),
-            "baseline_upload_date": baseline_upload_date.timestamp(),
-            "year_first_run": year_first_run,
-        }
-        ti: TaskInstance = kwargs["ti"]
-        ti.xcom_push(key="release_metadata", value=release_metadata)
-
-        # Return True so downstream tasks aren't skipped.
-        return True
-
-    def make_release(self, **kwargs) -> PubMedRelease:
-        """
-        Make a Release instance. Gets the list of releases available from the release check (setup task).
-
-        :param kwargs: the context passed from the Airflow Operator.
-        See https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
-        to this argument.
-        :return PubMedRelease.
-        """
-
-        ti: TaskInstance = kwargs["ti"]
-        release_metadata = ti.xcom_pull(
-            key="release_metadata", task_ids=self.list_datafiles_for_release.__name__, include_prior_dates=False
-        )
-
-        run_id = kwargs["run_id"]
-        release = PubMedRelease(
-            dag_id=self.dag_id,
-            run_id=run_id,
-            cloud_workspace=self.cloud_workspace,
-            start_date=pendulum.from_timestamp(release_metadata["release_interval_start"]),
-            end_date=pendulum.from_timestamp(release_metadata["release_interval_end"]),
-            year_first_run=release_metadata["year_first_run"],
-            datafile_list=[Datafile.from_dict(datafile) for datafile in release_metadata["files_to_download"]],
-        )
-
-        return release
-
-    def create_snapshot(self, release: PubMedRelease, **kwargs):
-        """Create a snapshot of main table as a backup just in case something happens when applying the upserts and deletes."""
-
-        if not release.year_first_run:
-            snapshot_table_id = bq_sharded_table_id(
-                self.cloud_workspace.project_id, self.bq_dataset_id, f"{self.bq_table_id}_snapshot", release.start_date
-            )
-            expiry_date = pendulum.now().add(days=self.snapshot_expiry_days)
-            success = bq_snapshot(
-                src_table_id=self.main_table_id, dst_table_id=snapshot_table_id, expiry_date=expiry_date
-            )
-            logging.info(f"Created snapshot table: {snapshot_table_id}")
-            set_task_state(success, kwargs["ti"].task_id, release=release)
-        else:
-            logging.info("Not required to create a snapshot of the table for this run.")
-
-    def download_baseline(self, release: PubMedRelease, **kwargs):
-        """
-        Download files from PubMed's FTP server for this release.
-
-        Unable to do this in parallel because their FTP server is not able to handle many requests at once.
-        """
-
-        if not release.year_first_run:
-            logging.info("download_baseline: skipping as this is only run when there is a new baseline dump available.")
-            return
-
-        success = download_datafiles(
-            datafile_list=release.baseline_files,
-            ftp_server_url=self.ftp_server_url,
-            ftp_port=self.ftp_port,
-            reset_ftp_counter=self.reset_ftp_counter,
-            max_download_retry=self.max_download_retry,
-        )
-
-        set_task_state(success, kwargs["ti"].task_id, release=release)
-
-    def upload_downloaded_baseline(self, release: PubMedRelease, **kwargs):
-        """Upload downloaded baseline files to GCS."""
-
-        if not release.year_first_run:
-            logging.info(
-                "upload_downloaded_baseline: skipping as this is only run when there is a new baseline dump available."
-            )
-            return
-
-        # Grab list of files to upload.
-        file_paths = [datafile.download_file_path for datafile in release.baseline_files]
-
-        success = gcs_upload_files(
-            bucket_name=self.cloud_workspace.download_bucket,
-            file_paths=file_paths,
-        )
-
-        set_task_state(success, kwargs["ti"].task_id, release=release)
-
-    def transform_baseline(self, release: PubMedRelease, **kwargs):
-        """
-        Transform the *.xml.gz files downloaded from PubMed into usable json files for BigQuery import.
-        """
-
-        if not release.year_first_run:
-            logging.info(
-                "transform_baseline: skipping as this is only run when there is a new baseline dump available."
-            )
-            return
-
-        # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
-        for i, chunk in enumerate(get_chunks(input_list=release.baseline_files, chunk_size=self.max_processes)):
-            with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
-                logging.info(f"In chunk {i} and processing files: {chunk}")
-
-                futures = []
-                datafile: Datafile
-                for datafile in chunk:
-                    input_path = datafile.download_file_path
-                    upsert_path = datafile.transform_baseline_file_path
-                    futures.append(executor.submit(transform_pubmed, input_path, upsert_path))
-
-                # Make sure that all datafiles have been properly transformed.
-                for future in as_completed(futures):
-                    filename = future.result()
-
-                    assert filename, f"Unable to transform baseline file: {filename}"
-
-    def upload_transformed_baseline(self, release: PubMedRelease, **kwargs):
-        """Upload transformed baseline files to GCS."""
-
-        if not release.year_first_run:
-            logging.info(
-                "upload_transformed_baseline: skipping as this is only run when there is a new baseline dump available."
-            )
-            return
-
-        file_paths = [datafile.transform_baseline_file_path for datafile in release.baseline_files]
-
-        success = gcs_upload_files(
-            bucket_name=self.cloud_workspace.transform_bucket,
-            file_paths=file_paths,
-        )
-
-        set_task_state(success, kwargs["ti"].task_id, release=release)
-
-    def bq_load_main_table(self, release: PubMedRelease, **kwargs):
-        """Ingest the baseline table from GCS to BQ using a file pattern."""
-
-        if not release.year_first_run:
-            logging.info(
-                "bq_load_main_table: skipping as this is only run when there is a new baseline dump available."
-            )
-            return
-
-        # Create the dataset if not already present.
-        bq_create_dataset(
-            project_id=self.cloud_workspace.project_id,
-            dataset_id=self.bq_dataset_id,
-            location=self.cloud_workspace.data_location,
-            description=self.bq_dataset_description,
-        )
-
-        baseline_transform_blob_pattern = release.transfer_blob_pattern("baseline")
-
-        logging.info(
-            f"Creating a load job for all of the baseline files with pattern: {baseline_transform_blob_pattern} "
-        )
-
-        success = bq_load_table(
-            uri=baseline_transform_blob_pattern,
-            table_id=self.main_table_id,
-            source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
-            schema_file_path=release.schema_file_path(record_type="pubmed"),
-            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-            table_description=self.baseline_table_description,
-            ignore_unknown_values=True,
-        )
-
-        set_task_state(success, kwargs["ti"].task_id, release=release)
-
-    def download_updatefiles(self, release: PubMedRelease, **kwargs):
-        """
-        Download the updatefiles from PubMed's FTP server for this release.
-
-        Unable to do this in parallel due to limitations of their FTP server.
-        """
-
-        if not release.updatefiles:
-            logging.info("download_updatefiles: skipping as there are no updatefiles for this release.")
-            return
-
-        success = download_datafiles(
-            datafile_list=release.updatefiles,
-            ftp_server_url=self.ftp_server_url,
-            ftp_port=self.ftp_port,
-            reset_ftp_counter=self.reset_ftp_counter,
-            max_download_retry=self.max_download_retry,
-        )
-
-        set_task_state(success, kwargs["ti"].task_id, release=release)
-
-    def upload_downloaded_updatefiles(self, release: PubMedRelease, **kwargs):
-        """Upload downloaded updatefiles files to GCS."""
-
-        if not release.updatefiles:
-            logging.info("upload_downloaded_updatefiles: skipping as there are no updatefiles for this release.")
-            return
-
-        datafiles_to_upload = [datafile.download_file_path for datafile in release.updatefiles]
-
-        success = gcs_upload_files(
-            bucket_name=self.cloud_workspace.download_bucket,
-            file_paths=datafiles_to_upload,
-        )
-
-        set_task_state(success, kwargs["ti"].task_id, release=release)
-
-    def transform_updatefiles(self, release: PubMedRelease, **kwargs):
-        """
-        Transform the *.xml.gz files downloaded from PubMed's FTP server into usable json-like files for BigQuery import.
-
-        This is a multithreaded and pulls the PubmedArticle records from the downloaded XML files.
-        """
-
-        if not release.updatefiles:
-            logging.info("transform_updatefiles: skipping as there are no updatefiles for this release.")
-            return
-
-        # Object to store all of the upserts and delete keys that are present in each file.
-        updatefiles: List[PubmedUpdatefile] = []
-
-        # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
-        for i, chunk in enumerate(get_chunks(input_list=release.updatefiles, chunk_size=self.max_processes)):
-            with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
-                logging.info(f"In chunk {i} and processing files: {chunk}")
-
-                futures = []
-                datafile: Datafile
-                for datafile in chunk:
-                    input_path = datafile.download_file_path
-                    upsert_path = datafile.transform_upsert_file_path
-
-                    futures.append(executor.submit(transform_pubmed, input_path, upsert_path))
-
-                for future in as_completed(futures):
-                    updatefiles.append(future.result())
-
-        assert len(release.updatefiles) == len(
-            updatefiles
-        ), f"Number of updatefiles does not match the number of non baseline datafiles: {len(release.updatefiles)} vs {len(updatefiles)}"
-
-        ti: TaskInstance = kwargs["ti"]
-        updatefile_list = [updatefile.to_dict() for updatefile in updatefiles]
-        ti.xcom_push(key="updatefile_list", value=updatefile_list)
-
-    def merge_upserts_and_deletes(self, release: PubMedRelease, **kwargs):
-        """Merge the upserts and deletes for this release period."""
-
-        if not release.updatefiles:
-            logging.info("merge_upserts_and_deletes: skipping as there are no updatefiles for this release.")
-            return
-
-        ti: TaskInstance = kwargs["ti"]
-        updatefile_list: list = ti.xcom_pull(key="updatefile_list")
-        updatefiles = [PubmedUpdatefile.from_dict(updatefile) for updatefile in updatefile_list]
-
-        # Merge records and return a list of what upserts to pull from the transformed updatefiles.
-        upsert_index, deletes = merge_upserts_and_deletes(updatefiles)
-
-        logging.info(
-            f"Number of records for this release: {len(upsert_index.keys())} upserts and {len(deletes)} deletes."
-        )
-
-        # Save deletes
-        data = [delete.to_dict() for delete in deletes]
-        save_jsonl_gz(release.merged_delete_file_path, data)
-
-        # Save final upserts
-        for i, chunk in enumerate(get_chunks(input_list=release.updatefiles, chunk_size=self.max_processes)):
-            with ProcessPoolExecutor(max_workers=self.max_processes) as executor:
-                logging.info(f"In chunk {i} and processing files: {chunk}")
-
-                futures = []
-                datafile: Datafile
-                for datafile in chunk:
-                    filename = os.path.basename(datafile.download_file_path)
-
-                    futures.append(
-                        executor.submit(
-                            save_pubmed_merged_upserts,
-                            filename,
-                            upsert_index,
-                            datafile.transform_upsert_file_path,
-                            datafile.merged_upsert_file_path,
-                        )
+                success = bq.bq_load_table(
+                    uri=baseline_transform_blob_pattern,
+                    table_id=main_table_id,
+                    source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
+                    schema_file_path=release.schema_file_path(record_type="pubmed"),
+                    write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+                    table_description=baseline_table_description,
+                    ignore_unknown_values=True,
+                )
+                if not success:
+                    raise AirflowException("baseline.bq_load: failed to load data into BigQuery")
+
+            task_download = download(xcom)
+            task_upload_downloaded = upload_downloaded(xcom)
+            task_transform = transform(xcom)
+            task_upload_transformed = upload_transformed(xcom)
+            task_bq_load = bq_load(xcom)
+
+            (task_download >> task_upload_downloaded >> task_transform >> task_upload_transformed >> task_bq_load)
+
+        @task.branch
+        def branch_updatefiles_or_dataset_release(release: dict, **context):
+            release = PubMedRelease.from_dict(release)
+            if release.updatefiles:
+                return "updatefiles.download"
+            return "add_dataset_releases"
+
+        @task_group
+        def updatefiles(xcom: dict, **context):
+            @task(trigger_rule=TriggerRule.ALL_DONE)
+            def download(release: dict, **context):
+                """
+                Download the updatefiles from PubMed's FTP server for this release.
+
+                Unable to do this in parallel due to limitations of their FTP server.
+                """
+
+                release = PubMedRelease.from_dict(release)
+                success = download_datafiles(
+                    datafile_list=release.updatefiles,
+                    ftp_server_url=ftp_server_url,
+                    ftp_port=ftp_port,
+                    reset_ftp_counter=reset_ftp_counter,
+                    max_download_retry=max_download_retry,
+                )
+                if not success:
+                    raise AirflowException("updatefiles.download: failed to download datafiles")
+
+            @task
+            def upload_downloaded(release: dict, **context):
+                """Upload downloaded updatefiles files to GCS."""
+
+                release = PubMedRelease.from_dict(release)
+                datafiles_to_upload = [datafile.download_file_path for datafile in release.updatefiles]
+
+                success = gcs_upload_files(
+                    bucket_name=cloud_workspace.download_bucket,
+                    file_paths=datafiles_to_upload,
+                )
+                if not success:
+                    raise AirflowException(
+                        "updatefiles.upload_downloaded: failed to upload files to cloud storage bucket"
                     )
-                for future in as_completed(futures):
-                    logging.info(f"Finished writing out upserts to file: {future.result()}")
 
-    ########## UPSERT RECORDS ##########
+            @task
+            def transform(release: dict, **context):
+                """
+                Transform the *.xml.gz files downloaded from PubMed's FTP server into usable json-like files for BigQuery import.
 
-    def upload_merged_upsert_records(self, release: PubMedRelease, **kwargs):
-        """Upload the merged upsert records to GCS."""
+                This is a multithreaded and pulls the PubmedArticle records from the downloaded XML files.
+                """
 
-        if not release.updatefiles:
-            logging.info("upload_merged_upsert_records: skipping as there are no updatefiles for this release.")
-            return
+                release = PubMedRelease.from_dict(release)
 
-        file_paths = [datafile.merged_upsert_file_path for datafile in release.updatefiles]
+                # Object to store all of the upserts and delete keys that are present in each file.
+                updatefiles: List[PubmedUpdatefile] = []
 
-        success = gcs_upload_files(
-            bucket_name=self.cloud_workspace.transform_bucket,
-            file_paths=file_paths,
+                # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
+                for i, chunk in enumerate(get_chunks(input_list=release.updatefiles, chunk_size=max_processes)):
+                    with ProcessPoolExecutor(max_workers=max_processes) as executor:
+                        logging.info(f"In chunk {i} and processing files: {chunk}")
+
+                        futures = []
+                        datafile: Datafile
+                        for datafile in chunk:
+                            input_path = datafile.download_file_path
+                            upsert_path = datafile.transform_upsert_file_path
+
+                            futures.append(executor.submit(transform_pubmed, input_path, upsert_path))
+
+                        for future in as_completed(futures):
+                            updatefiles.append(future.result())
+
+                assert len(release.updatefiles) == len(
+                    updatefiles
+                ), f"Number of updatefiles does not match the number of non baseline datafiles: {len(release.updatefiles)} vs {len(updatefiles)}"
+
+                ti: TaskInstance = context["ti"]
+                updatefile_list = [updatefile.to_dict() for updatefile in updatefiles]
+                ti.xcom_push(key="updatefile_list", value=updatefile_list)
+
+            @task
+            def merge_upserts_deletes(release: dict, **context):
+                """Merge the upserts and deletes for this release period."""
+
+                release = PubMedRelease.from_dict(release)
+                ti: TaskInstance = context["ti"]
+                updatefile_list: list = ti.xcom_pull(key="updatefile_list")
+                updatefiles = [PubmedUpdatefile.from_dict(updatefile) for updatefile in updatefile_list]
+
+                # Merge records and return a list of what upserts to pull from the transformed updatefiles.
+                upsert_index, deletes = merge_upserts_and_deletes(updatefiles)
+
+                logging.info(
+                    f"Number of records for this release: {len(upsert_index.keys())} upserts and {len(deletes)} deletes."
+                )
+
+                # Save deletes
+                data = [delete.to_dict() for delete in deletes]
+                save_jsonl_gz(release.merged_delete_file_path, data)
+
+                # Save final upserts
+                for i, chunk in enumerate(get_chunks(input_list=release.updatefiles, chunk_size=max_processes)):
+                    with ProcessPoolExecutor(max_workers=max_processes) as executor:
+                        logging.info(f"In chunk {i} and processing files: {chunk}")
+
+                        futures = []
+                        datafile: Datafile
+                        for datafile in chunk:
+                            filename = os.path.basename(datafile.download_file_path)
+
+                            futures.append(
+                                executor.submit(
+                                    save_pubmed_merged_upserts,
+                                    filename,
+                                    upsert_index,
+                                    datafile.transform_upsert_file_path,
+                                    datafile.merged_upsert_file_path,
+                                )
+                            )
+                        for future in as_completed(futures):
+                            logging.info(f"Finished writing out upserts to file: {future.result()}")
+
+            ########## UPSERT RECORDS ##########
+
+            @task
+            def upload_merged_upsert_records(release: dict, **context):
+                """Upload the merged upsert records to GCS."""
+
+                release = PubMedRelease.from_dict(release)
+                file_paths = [datafile.merged_upsert_file_path for datafile in release.updatefiles]
+                success = gcs_upload_files(
+                    bucket_name=cloud_workspace.transform_bucket,
+                    file_paths=file_paths,
+                )
+                if not success:
+                    raise AirflowException(
+                        "updatefiles.upload_merged_upsert_records: failed to upload files to cloud storage bucket"
+                    )
+
+            @task
+            def bq_load_upsert_table(release: dict, **context):
+                """Ingest the upsert records from GCS to BQ using a glob pattern."""
+
+                release = PubMedRelease.from_dict(release)
+                logging.info(f"Uploading to table - {upsert_table_id}")
+
+                success = bq.bq_load_table(
+                    uri=release.merged_upsert_uri_blob_pattern,
+                    table_id=upsert_table_id,
+                    source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
+                    schema_file_path=release.schema_file_path(record_type="pubmed"),
+                    write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+                    table_description=upsert_table_description,
+                    ignore_unknown_values=True,
+                )
+
+                assert success, f"Unable to tranfer to table - {upsert_table_id}"
+                if not success:
+                    raise AirflowException("updatefiles.bq_load_upsert_table: failed to load upsert table")
+
+                expiry_date = pendulum.now().add(days=7)
+                bq_update_table_expiration(upsert_table_id, expiration_date=expiry_date)
+
+            @task
+            def bq_upsert_records(release: dict, **context):
+                """
+                Upsert records into the main table.
+
+                Has to match on both the PMID value and the Version number, as there could be multiple different versions in
+                the main table.
+                """
+
+                keys_to_match_on = [
+                    "MedlineCitation.PMID.value",
+                    "MedlineCitation.PMID.Version",
+                ]
+
+                bq.bq_upsert_records(
+                    main_table_id=main_table_id,
+                    upsert_table_id=upsert_table_id,
+                    primary_key=keys_to_match_on,
+                )
+
+            ########## DELETE RECORDS ##########
+
+            @task
+            def upload_merged_delete_records(release: dict, **context):
+                """Upload the merged delete records to GCS."""
+
+                release = PubMedRelease.from_dict(release)
+                file_paths = [release.merged_delete_file_path]
+
+                success = gcs_upload_files(
+                    bucket_name=cloud_workspace.transform_bucket,
+                    file_paths=file_paths,
+                )
+                if not success:
+                    raise AirflowException("")
+
+            @task
+            def bq_load_delete_table(release: dict, **context):
+                """Ingest delete records from GCS to BQ."""
+
+                release = PubMedRelease.from_dict(release)
+                logging.info(f"Uploading to table - {delete_table_id}")
+
+                success = bq.bq_load_table(
+                    uri=release.merged_delete_transfer_uri,
+                    table_id=delete_table_id,
+                    source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
+                    schema_file_path=release.schema_file_path(record_type="delete"),
+                    write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+                    table_description=delete_table_description,
+                    ignore_unknown_values=True,
+                )
+
+                assert success, f"Unable to tranfer to table - {delete_table_id}"
+                if not success:
+                    raise AirflowException("")
+
+                expiry_date = pendulum.now().add(days=7)
+                bq_update_table_expiration(delete_table_id, expiration_date=expiry_date)
+
+            @task
+            def bq_delete_records(release: dict, **context):
+                """
+                Removed records from the main table that are specified in delete table.
+
+                Has to match on both the PMID value and the Version number, as there could be multiple different versions in
+                the main table.
+                """
+
+                release = PubMedRelease.from_dict(release)
+                main_table_keys_to_match_on = [
+                    "MedlineCitation.PMID.value",
+                    "MedlineCitation.PMID.Version",
+                ]
+                delete_table_keys_to_match_on = ["value", "Version"]
+
+                bq.bq_delete_records(
+                    main_table_id=main_table_id,
+                    delete_table_id=delete_table_id,
+                    main_table_primary_key=main_table_keys_to_match_on,
+                    delete_table_primary_key=delete_table_keys_to_match_on,
+                )
+
+            task_download = download(xcom)
+            task_upload_downloaded = upload_downloaded(xcom)
+            task_transform = transform(xcom)
+            task_merge_upserts_deletes = merge_upserts_deletes(xcom)
+            task_upload_merged_upsert_records = upload_merged_upsert_records(xcom)
+            task_bq_load_upsert_table = bq_load_upsert_table(xcom)
+            task_bq_upsert_records = bq_upsert_records(xcom)
+            task_upload_merged_delete_records = upload_merged_delete_records(xcom)
+            task_bq_load_delete_table = bq_load_delete_table(xcom)
+            task_bq_delete_records = bq_delete_records(xcom)
+
+            (
+                task_download
+                >> task_upload_downloaded
+                >> task_transform
+                >> task_merge_upserts_deletes
+                >> task_upload_merged_upsert_records
+                >> task_bq_load_upsert_table
+                >> task_bq_upsert_records
+                >> task_upload_merged_delete_records
+                >> task_bq_load_delete_table
+                >> task_bq_delete_records
+            )
+
+        @task(trigger_rule=TriggerRule.ALL_DONE)
+        def add_dataset_releases(release: dict, **context):
+            """Adds release information to the API."""
+
+            release = PubMedRelease.from_dict(release)
+            logging.info(f"add_dataset_releases: creating dataset release for Pubmed Articles.")
+            dataset_release = DatasetRelease(
+                dag_id=dag_id,
+                dataset_id=bq_dataset_id,
+                dag_run_id=release.run_id,
+                data_interval_start=release.start_date,
+                data_interval_end=release.end_date,
+                sequence_start=release.datafile_list[0].file_index,
+                sequence_end=release.datafile_list[-1].file_index,
+                changefile_start_date=release.start_date,
+                changefile_end_date=release.end_date,
+                extra={"baseline_upload_date": release.baseline_upload_date.timestamp()},
+            )
+            logging.info(f"add_dataset_releases: dataset_release={dataset_release}")
+            api = make_observatory_api(observatory_api_conn_id=observatory_api_conn_id)
+            api.post_dataset_release(dataset_release)
+
+        @task
+        def cleanup_workflow(release: dict, **context):
+            """
+            Cleanup files from this workflow run.
+
+            Delete local download files, tranform files and current task instance.
+            """
+
+            release = PubMedRelease.from_dict(release)
+            logging.info(f"Deleting local files from - {release.workflow_folder}")
+            cleanup(dag_id=dag_id, execution_date=context["logical_date"], workflow_folder=release.workflow_folder)
+
+        external_task_id = "dag_run_complete"
+        sensor = PreviousDagRunSensor(
+            dag_id=dag_id,
+            external_task_id=external_task_id,
+            execution_delta=timedelta(days=7),  # To match the @weekly schedule_interval
+        )
+        task_check_dependencies = check_dependencies(airflow_conns=[observatory_api_conn_id])
+        xcom_release = fetch_release()
+        task_shortcircuit = short_circuit(xcom_release)
+        task_create_snapshot = create_snapshot(xcom_release)
+        task_branch_baseline_or_updatefiles = branch_baseline_or_updatefiles(xcom_release)
+        task_baseline = baseline(xcom_release)
+        task_branch_updatefiles_or_dataset_release = branch_updatefiles_or_dataset_release(xcom_release)
+        task_updatefiles = updatefiles(xcom_release)
+        task_add_dataset_releases = add_dataset_releases(xcom_release)
+        task_cleanup_workflow = cleanup_workflow(xcom_release)
+        task_dag_run_complete = EmptyOperator(
+            task_id=external_task_id,
         )
 
-        set_task_state(success, kwargs["ti"].task_id, release=release)
-
-    def bq_load_upsert_table(self, release: PubMedRelease, **kwargs):
-        """Ingest the upsert records from GCS to BQ using a glob pattern."""
-
-        if not release.updatefiles:
-            logging.info("bq_load_upsert_table: skipping as there are no updatefiles for this release.")
-            return
-
-        logging.info(f"Uploading to table - {self.upsert_table_id}")
-
-        success = bq_load_table(
-            uri=release.merged_upsert_uri_blob_pattern,
-            table_id=self.upsert_table_id,
-            source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
-            schema_file_path=release.schema_file_path(record_type="pubmed"),
-            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-            table_description=self.upsert_table_description,
-            ignore_unknown_values=True,
+        (
+            sensor
+            >> task_check_dependencies
+            >> xcom_release
+            >> task_shortcircuit
+            >> task_create_snapshot
+            >> task_branch_baseline_or_updatefiles
+            >> task_baseline
+            >> task_branch_updatefiles_or_dataset_release
+            >> task_updatefiles
+            >> task_add_dataset_releases
+            >> task_cleanup_workflow
+            >> task_dag_run_complete
         )
 
-        assert success, f"Unable to tranfer to table - {self.upsert_table_id}"
+        task_branch_baseline_or_updatefiles >> task_updatefiles
+        task_branch_updatefiles_or_dataset_release >> task_add_dataset_releases
 
-        expiry_date = pendulum.now().add(days=7)
-        bq_update_table_expiration(self.upsert_table_id, expiration_date=expiry_date)
-
-        set_task_state(success, kwargs["ti"].task_id, release=release)
-
-    def bq_upsert_records(self, release: PubMedRelease, **kwargs):
-        """
-        Upsert records into the main table.
-
-        Has to match on both the PMID value and the Version number, as there could be multiple different versions in
-        the main table.
-        """
-
-        if not release.updatefiles:
-            logging.info("bq_upsert_records: skipping as there are no updatefiles for this release.")
-            return
-
-        keys_to_match_on = ["MedlineCitation.PMID.value", "MedlineCitation.PMID.Version"]
-
-        bq_upsert_records(
-            main_table_id=self.main_table_id,
-            upsert_table_id=self.upsert_table_id,
-            primary_key=keys_to_match_on,
-        )
-
-    ########## DELETE RECORDS ##########
-
-    def upload_merged_delete_records(self, release: PubMedRelease, **kwargs):
-        """Upload the merged delete records to GCS."""
-
-        if not release.updatefiles:
-            logging.info("upload_merged_delete_records: skipping as there are no updatefiles for this release.")
-            return
-
-        file_paths = [release.merged_delete_file_path]
-
-        success = gcs_upload_files(
-            bucket_name=self.cloud_workspace.transform_bucket,
-            file_paths=file_paths,
-        )
-
-        set_task_state(success, kwargs["ti"].task_id, release=release)
-
-    def bq_load_delete_table(self, release: PubMedRelease, **kwargs):
-        """Ingest delete records from GCS to BQ."""
-
-        if not release.updatefiles:
-            logging.info("bq_load_delete_table: skipping as there are no updatefiles for this release.")
-            return
-
-        logging.info(f"Uploading to table - {self.delete_table_id}")
-
-        success = bq_load_table(
-            uri=release.merged_delete_transfer_uri,
-            table_id=self.delete_table_id,
-            source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
-            schema_file_path=release.schema_file_path(record_type="delete"),
-            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-            table_description=self.delete_table_description,
-            ignore_unknown_values=True,
-        )
-
-        assert success, f"Unable to tranfer to table - {self.delete_table_id}"
-
-        expiry_date = pendulum.now().add(days=7)
-        bq_update_table_expiration(self.delete_table_id, expiration_date=expiry_date)
-
-        set_task_state(success, kwargs["ti"].task_id, release=release)
-
-    def bq_delete_records(self, release: PubMedRelease, **kwargs):
-        """
-        Removed records from the main table that are specified in delete table.
-
-        Has to match on both the PMID value and the Version number, as there could be multiple different versions in
-        the main table.
-        """
-
-        if not release.updatefiles:
-            logging.info("bq_delete_records: skipping as there are no updatefiles for this release.")
-            return
-
-        main_table_keys_to_match_on = ["MedlineCitation.PMID.value", "MedlineCitation.PMID.Version"]
-        delete_table_keys_to_match_on = ["value", "Version"]
-
-        bq_delete_records(
-            main_table_id=self.main_table_id,
-            delete_table_id=self.delete_table_id,
-            main_table_primary_key=main_table_keys_to_match_on,
-            delete_table_primary_key=delete_table_keys_to_match_on,
-        )
-
-    def add_new_dataset_release(self, release: PubMedRelease, **kwargs):
-        """Adds release information to the API."""
-
-        ti: TaskInstance = kwargs["ti"]
-        release_metadata = ti.xcom_pull(
-            key="release_metadata", task_ids=self.list_datafiles_for_release.__name__, include_prior_dates=False
-        )
-
-        logging.info(f"add_new_dataset_releases: creating dataset release for Pubmed Articles.")
-        dataset_release = DatasetRelease(
-            dag_id=self.dag_id,
-            dataset_id=self.bq_dataset_id,
-            dag_run_id=release.run_id,
-            data_interval_start=release.start_date,
-            data_interval_end=release.end_date,
-            sequence_start=release.datafile_list[0].file_index,
-            sequence_end=release.datafile_list[-1].file_index,
-            changefile_start_date=release.start_date,
-            changefile_end_date=release.end_date,
-            extra={"baseline_upload_date": release_metadata["baseline_upload_date"]},
-        )
-        logging.info(f"add_new_dataset_releases: dataset_release={dataset_release}")
-        api = make_observatory_api(observatory_api_conn_id=self.observatory_api_conn_id)
-        api.post_dataset_release(dataset_release)
-
-    def cleanup(self, release: PubMedRelease, **kwargs):
-        """
-        Cleanup files from this workflow run.
-
-        Delete local download files, tranform files and current task instance.
-        """
-
-        logging.info(f"Deleting local files from - {release.workflow_folder}")
-        cleanup(dag_id=self.dag_id, execution_date=kwargs["logical_date"], workflow_folder=release.workflow_folder)
+    return pubmed()
 
 
 def download_datafiles(
@@ -1341,7 +1350,9 @@ def save_pubmed_merged_upserts(
     return output_path
 
 
-def merge_upserts_and_deletes(updatefiles: List[PubmedUpdatefile]) -> Tuple[Dict[PMID, str], Set[PMID]]:
+def merge_upserts_and_deletes(
+    updatefiles: List[PubmedUpdatefile],
+) -> Tuple[Dict[PMID, str], Set[PMID]]:
     """Merge the Pubmed upserts and deletes and return them as a list of PMID value-Version pairs so that they can be
     easily pulled from file.
 
@@ -1566,7 +1577,6 @@ def change_pubmed_list_structure(
 
 
 class PubMedCustomEncoder(json.JSONEncoder):
-
     """
     Custom encoder for json dump for it to write a dictionary field as a string of text for a
     select number of key values in the Pubmed data.

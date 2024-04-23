@@ -22,22 +22,23 @@ import pendulum
 from airflow.models import Connection
 from airflow.utils.state import State
 from click.testing import CliRunner
-from observatory.platform.api import get_dataset_releases
-from observatory.platform.bigquery import bq_sharded_table_id
-from observatory.platform.files import is_gzip, list_files, load_jsonl
-from observatory.platform.gcs import gcs_blob_name_from_path
-from observatory.platform.observatory_config import Workflow
-from observatory.platform.observatory_environment import find_free_port, ObservatoryEnvironment, ObservatoryTestCase
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.crossref_metadata_telescope.crossref_metadata_telescope import (
     check_release_exists,
+    create_dag,
     CrossrefMetadataRelease,
-    CrossrefMetadataTelescope,
     make_snapshot_url,
     transform_file,
     transform_item,
 )
+from observatory.platform.api import get_dataset_releases
+from observatory.platform.bigquery import bq_sharded_table_id
+from observatory.platform.config import module_file_path
+from observatory.platform.files import is_gzip, list_files, load_jsonl
+from observatory.platform.gcs import gcs_blob_name_from_path
+from observatory.platform.observatory_config import Workflow
+from observatory.platform.observatory_environment import find_free_port, ObservatoryEnvironment, ObservatoryTestCase
 
 FIXTURES_FOLDER = project_path("crossref_metadata_telescope", "tests", "fixtures")
 
@@ -61,24 +62,32 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
     def test_dag_structure(self):
         """Test that the DAG has the correct structure."""
 
-        workflow = CrossrefMetadataTelescope(
+        dag = create_dag(
             dag_id=self.dag_id,
             cloud_workspace=self.fake_cloud_workspace,
         )
-
-        dag = workflow.make_dag()
         self.assert_dag_structure(
             {
-                "check_dependencies": ["check_release_exists"],
-                "check_release_exists": ["download"],
+                "check_dependencies": ["fetch_release"],
+                # fetch_release passes an XCom to all of these tasks
+                "fetch_release": [
+                    "download",
+                    "upload_downloaded",
+                    "extract",
+                    "transform",
+                    "upload_transformed",
+                    "bq_load",
+                    "add_dataset_release",
+                    "cleanup_workflow",
+                ],
                 "download": ["upload_downloaded"],
                 "upload_downloaded": ["extract"],
                 "extract": ["transform"],
                 "transform": ["upload_transformed"],
                 "upload_transformed": ["bq_load"],
-                "bq_load": ["add_new_dataset_releases"],
-                "add_new_dataset_releases": ["cleanup"],
-                "cleanup": [],
+                "bq_load": ["add_dataset_release"],
+                "add_dataset_release": ["cleanup_workflow"],
+                "cleanup_workflow": [],
             },
             dag,
         )
@@ -90,69 +99,79 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
             workflows=[
                 Workflow(
                     dag_id=self.dag_id,
-                    name="Crossref Fundref Telescope",
-                    class_name="academic_observatory_workflows.crossref_metadata_telescope.crossref_metadata_telescope.CrossrefMetadataTelescope",
+                    name="Crossref Metadata Telescope",
+                    class_name="academic_observatory_workflows.crossref_metadata_telescope.crossref_metadata_telescope.create_dag",
                     cloud_workspace=self.fake_cloud_workspace,
                 )
             ]
         )
 
         with env.create():
-            self.assert_dag_load_from_config(self.dag_id)
+            dag_file = os.path.join(module_file_path("observatory.platform.dags"), "load_dags.py")
+            self.assert_dag_load(self.dag_id, dag_file)
 
     def test_telescope(self):
         """Test the Crossref Metadata telescope end to end."""
 
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
         bq_dataset_id = env.add_dataset()
+        crossref_metadata_conn_id = "crossref_metadata"
+        bq_table_name = "crossref_metadata"
+        api_dataset_id = "crossref_metadata"
+        batch_size = 20
 
         with env.create():
             # Setup Workflow
             # Execution date is always the 7th of the month and the start of the data interval
             # The DAG run for execution date of 2023-01-07 actually runs on 2023-02-07
-            workflow = CrossrefMetadataTelescope(
+            dag = create_dag(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
                 bq_dataset_id=bq_dataset_id,
+                crossref_metadata_conn_id=crossref_metadata_conn_id,
+                bq_table_name=bq_table_name,
+                api_dataset_id=api_dataset_id,
+                batch_size=batch_size,
             )
-            dag = workflow.make_dag()
-            execution_date = pendulum.datetime(year=2023, month=1, day=7)
+            logical_date = pendulum.datetime(year=2023, month=1, day=7)
 
             # Add Crossref Metadata connection
-            env.add_connection(Connection(conn_id=workflow.crossref_metadata_conn_id, uri="http://:crossref-token@"))
+            env.add_connection(Connection(conn_id=crossref_metadata_conn_id, uri="http://:crossref-token@"))
 
-            with env.create_dag_run(dag, execution_date) as dag_run:
+            with env.create_dag_run(dag, logical_date) as dag_run:
                 # Mocked and expected data
                 # Snapshot date is the end of the execution date month
-                snapshot_date = execution_date.end_of("month")
+                snapshot_date = logical_date.end_of("month")
                 release = CrossrefMetadataRelease(
                     dag_id=self.dag_id,
                     run_id=dag_run.run_id,
                     snapshot_date=snapshot_date,
+                    cloud_workspace=env.cloud_workspace,
+                    batch_size=batch_size,
                 )
 
                 # Test that all dependencies are specified: no error should be thrown
-                ti = env.run_task(workflow.check_dependencies.__name__)
+                ti = env.run_task("check_dependencies")
                 self.assertEqual(State.SUCCESS, ti.state)
 
                 # Test check release exists task, next tasks should not be skipped
-                url = make_snapshot_url(execution_date)
+                url = make_snapshot_url(logical_date)
                 with httpretty.enabled():
                     httpretty.register_uri(httpretty.HEAD, url, body="", status=302)
-                    ti = env.run_task(workflow.check_release_exists.__name__)
+                    ti = env.run_task("fetch_release")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                 # Test download task
                 with httpretty.enabled():
                     self.setup_mock_file_download(url, self.download_path)
-                    ti = env.run_task(workflow.download.__name__)
+                    ti = env.run_task("download")
                     self.assertEqual(State.SUCCESS, ti.state)
                 expected_file_hash = "047770ae386f3376c08e3975d7f06016"
                 self.assert_file_integrity(release.download_file_path, expected_file_hash, "md5")
                 self.assertTrue(is_gzip(release.download_file_path))
 
                 # Test that file uploaded
-                ti = env.run_task(workflow.upload_downloaded.__name__)
+                ti = env.run_task("upload_downloaded")
                 self.assertEqual(State.SUCCESS, ti.state)
                 self.assert_blob_integrity(
                     env.download_bucket, gcs_blob_name_from_path(release.download_file_path), release.download_file_path
@@ -168,7 +187,7 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
                     self.assertFalse(is_gzip(file_path))
 
                 # Test that files transformed
-                ti = env.run_task(workflow.transform.__name__)
+                ti = env.run_task("transform")
                 self.assertEqual(State.SUCCESS, ti.state)
                 file_paths = list_files(release.transform_folder, release.transform_files_regex)
                 self.assertEqual(5, len(file_paths))
@@ -176,30 +195,28 @@ class TestCrossrefMetadataTelescope(ObservatoryTestCase):
                     self.assertTrue(os.path.isfile(file_path))
 
                 # Test that transformed files uploaded
-                ti = env.run_task(workflow.upload_transformed.__name__)
+                ti = env.run_task("upload_transformed")
                 self.assertEqual(State.SUCCESS, ti.state)
                 for file_path in list_files(release.transform_folder, release.transform_files_regex):
                     self.assert_blob_integrity(env.transform_bucket, gcs_blob_name_from_path(file_path), file_path)
 
                 # Test that data loaded into BigQuery
-                ti = env.run_task(workflow.bq_load.__name__)
+                ti = env.run_task("bq_load")
                 self.assertEqual(State.SUCCESS, ti.state)
-                table_id = bq_sharded_table_id(
-                    self.project_id, workflow.bq_dataset_id, workflow.bq_table_name, release.snapshot_date
-                )
+                table_id = bq_sharded_table_id(self.project_id, bq_dataset_id, bq_table_name, release.snapshot_date)
                 expected_rows = 20
                 self.assert_table_integrity(table_id, expected_rows)
 
                 # Test that DatasetRelease is added to database
-                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=api_dataset_id)
                 self.assertEqual(len(dataset_releases), 0)
-                ti = env.run_task(workflow.add_new_dataset_releases.__name__)
+                ti = env.run_task("add_dataset_release")
                 self.assertEqual(State.SUCCESS, ti.state)
-                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.api_dataset_id)
+                dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=api_dataset_id)
                 self.assertEqual(len(dataset_releases), 1)
 
                 # Test that all workflow data deleted
-                ti = env.run_task(workflow.cleanup.__name__)
+                ti = env.run_task("cleanup_workflow")
                 self.assertEqual(State.SUCCESS, ti.state)
                 self.assert_cleanup(release.workflow_folder)
 

@@ -1,4 +1,4 @@
-# Copyright 2020-2022 Curtin University
+# Copyright 2020-2024 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,14 +21,19 @@ import json
 import logging
 from concurrent.futures import as_completed, ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Dict, List, Optional, Set
 
 import pendulum
 import requests
+from airflow import DAG
+from airflow.decorators import dag, task, task_group
 from airflow.exceptions import AirflowException
+from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
+
+from academic_observatory_workflows.config import project_path
 from observatory.api.client.model.dataset_release import DatasetRelease
+from observatory.platform.airflow import on_failure_callback
 from observatory.platform.api import make_observatory_api
 from observatory.platform.bigquery import (
     bq_copy_table,
@@ -45,14 +50,13 @@ from observatory.platform.bigquery import (
 )
 from observatory.platform.config import AirflowConns
 from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.utils.dag_run_sensor import DagRunSensor
+from observatory.platform.refactor.sensors import DagCompleteSensor
+from observatory.platform.refactor.tasks import check_dependencies
 from observatory.platform.utils.jinja2_utils import (
     render_template,
 )
 from observatory.platform.utils.url_utils import retry_get_url
-from observatory.platform.workflows.workflow import make_snapshot_date, set_task_state, SnapshotRelease, Workflow
-
-from academic_observatory_workflows.config import project_path, Tag
+from observatory.platform.workflows.workflow import make_snapshot_date, set_task_state, SnapshotRelease
 
 MAX_QUERIES = 100
 
@@ -99,6 +103,552 @@ class Aggregation:
     relate_to_publishers: bool = False
 
 
+SENSOR_DAG_IDS = [
+    "crossref_metadata",
+    "crossref_fundref",
+    "geonames",
+    "ror",
+    "open_citations",
+    "unpaywall",
+    "orcid",
+    "crossref_events",
+    "openalex",
+    "pubmed",
+]
+
+AGGREGATIONS = [
+    Aggregation(
+        "country",
+        "countries",
+        relate_to_journals=True,
+        relate_to_funders=True,
+        relate_to_publishers=True,
+    ),
+    Aggregation(
+        "funder",
+        "funders",
+        relate_to_institutions=True,
+        relate_to_countries=True,
+        relate_to_groups=True,
+        relate_to_funders=True,
+        relate_to_publishers=True,
+    ),
+    Aggregation(
+        "group",
+        "groupings",
+        relate_to_institutions=True,
+        relate_to_journals=True,
+        relate_to_funders=True,
+        relate_to_publishers=True,
+    ),
+    Aggregation(
+        "institution",
+        "institutions",
+        relate_to_institutions=True,
+        relate_to_countries=True,
+        relate_to_journals=True,
+        relate_to_funders=True,
+        relate_to_publishers=True,
+    ),
+    Aggregation(
+        "author",
+        "authors",
+        relate_to_institutions=True,
+        relate_to_countries=True,
+        relate_to_groups=True,
+        relate_to_journals=True,
+        relate_to_funders=True,
+        relate_to_publishers=True,
+    ),
+    Aggregation(
+        "journal",
+        "journals",
+        relate_to_institutions=True,
+        relate_to_countries=True,
+        relate_to_groups=True,
+        relate_to_journals=True,
+        relate_to_funders=True,
+    ),
+    Aggregation(
+        "publisher",
+        "publishers",
+        relate_to_institutions=True,
+        relate_to_countries=True,
+        relate_to_groups=False,
+        relate_to_funders=False,
+    ),
+    Aggregation(
+        "region",
+        "regions",
+        relate_to_funders=True,
+        relate_to_publishers=True,
+    ),
+    Aggregation(
+        "subregion",
+        "subregions",
+        relate_to_funders=True,
+        relate_to_publishers=True,
+    ),
+]
+
+
+class DOIRelease(SnapshotRelease):
+    def __init__(
+        self,
+        *,
+        dag_id: str,
+        run_id: str,
+        snapshot_date: pendulum.DateTime,
+    ):
+        """Construct a DOIRelease instance.
+
+        :param dag_id: The DAG ID.
+        :param run_id: The DAG run ID.
+        :param snapshot_date: Release date.
+        """
+
+        super().__init__(
+            dag_id=dag_id,
+            run_id=run_id,
+            snapshot_date=snapshot_date,
+        )
+
+    @staticmethod
+    def from_dict(dict_: dict):
+        dag_id = dict_["dag_id"]
+        run_id = dict_["run_id"]
+        snapshot_date = pendulum.parse(dict_["snapshot_date"])
+        return DOIRelease(
+            dag_id=dag_id,
+            run_id=run_id,
+            snapshot_date=snapshot_date,
+        )
+
+    def to_dict(self) -> dict:
+        return dict(
+            dag_id=self.dag_id,
+            run_id=self.run_id,
+            snapshot_date=self.snapshot_date.to_datetime_string(),
+        )
+
+
+def create_dag(
+    *,
+    dag_id: str,
+    cloud_workspace: CloudWorkspace,
+    bq_intermediate_dataset_id: str = "observatory_intermediate",
+    bq_dashboards_dataset_id: str = "coki_dashboards",
+    bq_observatory_dataset_id: str = "observatory",
+    bq_unpaywall_dataset_id: str = "unpaywall",
+    bq_ror_dataset_id: str = "ror",
+    api_dataset_id: str = "doi",
+    sql_queries: List[List[SQLQuery]] = None,
+    max_fetch_threads: int = 4,
+    observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
+    start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 8, 30),
+    schedule: Optional[str] = "@weekly",
+    sensor_dag_ids: List[str] = None,
+    max_active_runs: int = 1,
+    retries: int = 3,
+) -> DAG:
+    """Create the DoiWorkflow.
+    :param dag_id: the DAG ID.
+    :param cloud_workspace: the cloud workspace settings.
+    :param bq_intermediate_dataset_id: the BigQuery intermediate dataset id.
+    :param bq_dashboards_dataset_id: the BigQuery dashboards dataset id.
+    :param bq_observatory_dataset_id: the BigQuery observatory dataset id.
+    :param bq_unpaywall_dataset_id: the BigQuery Unpaywall dataset id.
+    :param bq_ror_dataset_id: the BigQuery ROR dataset id.
+    :param api_dataset_id: the DOI dataset id.
+    :param sql_queries: a list of batches of SQLQuery objects.
+    :param max_fetch_threads: maximum number of threads to use when fetching.
+    :param observatory_api_conn_id: the Observatory API connection key.
+    :param start_date: the start date.
+    :param schedule: the schedule interval.
+    :param sensor_dag_ids: a list of DAG IDs to wait for with sensors.
+    :param max_active_runs: the maximum number of DAG runs that can be run at once.
+    :param retries: the number of times to retry a task.
+    """
+
+    input_project_id = cloud_workspace.input_project_id
+    output_project_id = cloud_workspace.output_project_id
+    data_location = cloud_workspace.data_location
+
+    if sensor_dag_ids is None:
+        sensor_dag_ids = SENSOR_DAG_IDS
+
+    if sql_queries is None:
+        sql_queries = make_sql_queries(
+            input_project_id, output_project_id, dataset_id_observatory=bq_observatory_dataset_id
+        )
+
+    input_table_task_ids = []
+    for batch in sql_queries:
+        for sql_query in batch:
+            task_id = sql_query.name
+            input_table_task_ids.append(task_id)
+
+    @dag(
+        dag_id=dag_id,
+        start_date=start_date,
+        schedule=schedule,
+        catchup=False,
+        max_active_runs=max_active_runs,
+        tags=["academic-observatory"],
+        default_args={
+            "owner": "airflow",
+            "on_failure_callback": on_failure_callback,
+            "retries": retries,
+        },
+    )
+    def doi():
+        @task_group(group_id="sensors")
+        def make_sensors():
+            """Create the sensor tasks for the DAG."""
+
+            tasks = []
+            for ext_dag_id in sensor_dag_ids:
+                sensor = DagCompleteSensor(
+                    task_id=f"{ext_dag_id}_sensor",
+                    external_dag_id=ext_dag_id,
+                )
+                tasks.append(sensor)
+            chain(tasks)
+
+        @task
+        def fetch_release(**context) -> dict:
+            """Fetch a release instance."""
+
+            snapshot_date = make_snapshot_date(**context)
+            return DOIRelease(
+                dag_id=dag_id,
+                run_id=context["run_id"],
+                snapshot_date=snapshot_date,
+            ).to_dict()
+
+        @task
+        def create_datasets(release: dict, **context):
+            """Create required BigQuery datasets."""
+
+            datasets = [
+                (bq_intermediate_dataset_id, "Intermediate processing dataset for the Academic Observatory."),
+                (bq_dashboards_dataset_id, "The latest data for display in the COKI dashboards."),
+                (bq_observatory_dataset_id, "The Academic Observatory dataset."),
+            ]
+
+            for dataset_id, description in datasets:
+                bq_create_dataset(
+                    project_id=output_project_id,
+                    dataset_id=dataset_id,
+                    location=data_location,
+                    description=description,
+                )
+
+        @task
+        def create_repo_institution_to_ror_table(release: dict, **context):
+            """Create the repository_institution_to_ror_table."""
+
+            # Fetch unique Unpaywall repository institution names
+            template_path = project_path("doi_workflow", "sql", "create_openaccess_repo_names.sql.jinja2")
+            sql = render_template(template_path, project_id=input_project_id, dataset_id=bq_unpaywall_dataset_id)
+            records = bq_run_query(sql)
+
+            # Fetch affiliation strings
+            results = []
+            key = "repository_institution"
+            repository_institutions = [dict(record)[key] for record in records]
+            with ThreadPoolExecutor(max_workers=max_fetch_threads) as executor:
+                futures = []
+                for repo_inst in repository_institutions:
+                    futures.append(executor.submit(fetch_ror_affiliations, repo_inst))
+                for future in as_completed(futures):
+                    data = future.result()
+                    results.append(data)
+            results.sort(key=lambda r: r[key])
+
+            # Load the BigQuery table
+            release = DOIRelease.from_dict(release)
+            table_id = bq_sharded_table_id(
+                output_project_id,
+                bq_intermediate_dataset_id,
+                "repository_institution_to_ror",
+                release.snapshot_date,
+            )
+            success = bq_load_from_memory(table_id, results)
+            set_task_state(success, "create_repo_institution_to_ror_table")
+
+        @task
+        def create_ror_hierarchy_table(release: dict, **context):
+            """Create the ROR hierarchy table."""
+
+            # Fetch latest ROR table
+            release = DOIRelease.from_dict(release)
+            ror_table_name = "ror"
+            ror_table_id = bq_select_latest_table(
+                table_id=bq_table_id(input_project_id, bq_ror_dataset_id, ror_table_name),
+                end_date=release.snapshot_date,
+                sharded=True,
+            )
+            ror = [dict(row) for row in bq_run_query(f"SELECT * FROM {ror_table_id}")]
+
+            # Create ROR hierarchy table
+            index = ror_to_ror_hierarchy_index(ror)
+
+            # Convert to list of dictionaries
+            records = []
+            for child_id, ancestor_ids in index.items():
+                records.append({"child_id": child_id, "ror_ids": [child_id] + list(ancestor_ids)})
+
+            # Upload to intermediate table
+            table_id = bq_sharded_table_id(
+                output_project_id, bq_intermediate_dataset_id, "ror_hierarchy", release.snapshot_date
+            )
+            success = bq_load_from_memory(table_id, records)
+            set_task_state(success, "create_ror_hierarchy_table")
+
+        @task_group(group_id="intermediate_tables")
+        def create_intermediate_tables(release: dict, **context):
+            """Create intermediate table tasks."""
+
+            tasks = []
+            for i, batch in enumerate(sql_queries):
+                parallel = []
+                for sql_query in batch:
+                    task_id = sql_query.name
+                    t = create_intermediate_table.override(task_id=task_id)(
+                        release,
+                        sql_query=sql_query,
+                    )
+                    parallel.append(t)
+
+                merge = EmptyOperator(
+                    task_id=f"merge_{i}",
+                )
+                tasks.append(parallel)
+                tasks.append(merge)
+
+            chain(*tasks)
+
+        @task_group(group_id="aggregate_tables")
+        def create_aggregate_tables(release: dict, **context):
+            """Create aggregate table tasks."""
+
+            tasks = []
+            for agg in AGGREGATIONS:
+                task_id = agg.table_name
+                t = create_aggregate_table.override(task_id=task_id)(
+                    release,
+                    aggregation=agg,
+                )
+                tasks.append(t)
+            chain(tasks)
+
+        @task
+        def create_intermediate_table(release: dict, **context):
+            """Create an intermediate table."""
+
+            release = DOIRelease.from_dict(release)
+            sql_query: SQLQuery = context["sql_query"]
+            task_id = sql_query.name
+            print(f"create_intermediate_table: {task_id}")
+
+            input_tables = []
+            for k, table in sql_query.inputs.items():
+                # Add release_date so that table_id can be computed
+                if table.sharded:
+                    table.snapshot_date = get_snapshot_date(
+                        table.project_id, table.dataset_id, table.table_name, release.snapshot_date
+                    )
+
+                # Only add input tables when the table_name is not None as there is the odd Table instance
+                # that is just used to specify the project id and dataset id in the SQL queries
+                if table.table_name is not None:
+                    input_tables.append(f"{table.project_id}.{table.dataset_id}.{table.table_id}")
+
+            # Create processed table
+            template_path = project_path("doi_workflow", "sql", f"{sql_query.name}.sql.jinja2")
+            sql = render_template(
+                template_path,
+                snapshot_date=release.snapshot_date,
+                **sql_query.inputs,
+            )
+            table_id = bq_sharded_table_id(
+                output_project_id,
+                sql_query.output_table.dataset_id,
+                sql_query.output_table.table_name,
+                release.snapshot_date,
+            )
+            success = bq_create_table_from_query(
+                sql=sql,
+                table_id=table_id,
+                clustering_fields=sql_query.output_clustering_fields,
+            )
+
+            # Publish XComs with full table paths
+            ti = context["ti"]
+            ti.xcom_push(key="input_tables", value=json.dumps(input_tables))
+
+            set_task_state(success, task_id)
+
+        @task
+        def create_aggregate_table(release: dict, **context):
+            """Runs the aggregate table query."""
+
+            release = DOIRelease.from_dict(release)
+            agg: Aggregation = context["aggregation"]
+            task_id = agg.table_name
+            template_path = project_path("doi_workflow", "sql", "create_aggregate.sql.jinja2")
+            sql = render_template(
+                template_path,
+                project_id=output_project_id,
+                dataset_id=bq_observatory_dataset_id,
+                snapshot_date=release.snapshot_date,
+                aggregation_field=agg.aggregation_field,
+                group_by_time_field=agg.group_by_time_field,
+                relate_to_institutions=agg.relate_to_institutions,
+                relate_to_countries=agg.relate_to_countries,
+                relate_to_groups=agg.relate_to_groups,
+                relate_to_members=agg.relate_to_members,
+                relate_to_journals=agg.relate_to_journals,
+                relate_to_funders=agg.relate_to_funders,
+                relate_to_publishers=agg.relate_to_publishers,
+            )
+
+            table_id = bq_sharded_table_id(
+                output_project_id, bq_observatory_dataset_id, agg.table_name, release.snapshot_date
+            )
+            success = bq_create_table_from_query(
+                sql=sql,
+                table_id=table_id,
+                clustering_fields=["id"],
+            )
+
+            set_task_state(success, task_id)
+
+        @task
+        def update_table_descriptions(release: dict, **context):
+            """Update descriptions for tables."""
+
+            # Create list of input tables that were used to create our datasets
+            release = DOIRelease.from_dict(release)
+            ti = context["ti"]
+            results = ti.xcom_pull(task_ids=input_table_task_ids, key="input_tables")
+            input_tables = set()
+            for task_input_tables in results:
+                for input_table in json.loads(task_input_tables):
+                    input_tables.add(input_table)
+            input_tables = list(input_tables)
+            input_tables.sort()
+
+            # Update descriptions
+            description = f"The DOI table.\n\nInput sources:\n"
+            description += "".join([f"  - {input_table}\n" for input_table in input_tables])
+            table_id = bq_sharded_table_id(output_project_id, bq_observatory_dataset_id, "doi", release.snapshot_date)
+            bq_update_table_description(
+                table_id=table_id,
+                description=description,
+            )
+
+            table_names = [agg.table_name for agg in AGGREGATIONS]
+            for table_name in table_names:
+                description = f"The DOI table aggregated by {table_name}.\n\nInput sources:\n"
+                description += "".join([f"  - {input_table}\n" for input_table in input_tables])
+                table_id = bq_sharded_table_id(
+                    output_project_id, bq_observatory_dataset_id, table_name, release.snapshot_date
+                )
+                bq_update_table_description(
+                    table_id=table_id,
+                    description=description,
+                )
+
+        @task
+        def copy_to_dashboards(release: dict, **context):
+            """Copy tables to dashboards dataset."""
+
+            release = DOIRelease.from_dict(release)
+            results = []
+            table_names = [agg.table_name for agg in AGGREGATIONS]
+            for table_id in table_names:
+                src_table_id = bq_sharded_table_id(
+                    output_project_id, bq_observatory_dataset_id, table_id, release.snapshot_date
+                )
+                dst_table_id = bq_table_id(output_project_id, bq_dashboards_dataset_id, table_id)
+                success = bq_copy_table(src_table_id=src_table_id, dst_table_id=dst_table_id)
+                if not success:
+                    logging.error(f"Issue copying table: {src_table_id} to {dst_table_id}")
+
+                results.append(success)
+
+            success = all(results)
+            set_task_state(success, "copy_to_dashboards")
+
+        @task
+        def create_dashboard_views(release: dict, **context):
+            """Create views for dashboards dataset."""
+
+            # Create processed dataset
+            template_path = project_path("doi_workflow", "sql", "comparison_view.sql.jinja2")
+
+            # Create views
+            table_names = ["country", "funder", "group", "institution", "publisher", "subregion"]
+            for table_name in table_names:
+                view_name = f"{table_name}_comparison"
+                query = render_template(
+                    template_path,
+                    project_id=output_project_id,
+                    dataset_id=bq_dashboards_dataset_id,
+                    table_id=table_name,
+                )
+                view_id = bq_table_id(output_project_id, bq_dashboards_dataset_id, view_name)
+                bq_create_view(view_id=view_id, query=query)
+
+        @task
+        def add_dataset_release(release: dict, **context):
+            """Adds release information to API."""
+
+            release = DOIRelease.from_dict(release)
+            dataset_release = DatasetRelease(
+                dag_id=dag_id,
+                dataset_id=api_dataset_id,
+                dag_run_id=release.run_id,
+                snapshot_date=release.snapshot_date,
+                data_interval_start=context["data_interval_start"],
+                data_interval_end=context["data_interval_end"],
+            )
+            api = make_observatory_api(observatory_api_conn_id=observatory_api_conn_id)
+            api.post_dataset_release(dataset_release)
+
+        sensor_task_group = make_sensors()
+        task_check_dependencies = check_dependencies(airflow_conns=[observatory_api_conn_id])
+        xcom_release = fetch_release()
+        create_datasets_task = create_datasets(xcom_release)
+        create_repo_institution_to_ror_table_task = create_repo_institution_to_ror_table(xcom_release)
+        create_ror_hierarchy_table_task = create_ror_hierarchy_table(xcom_release)
+        create_intermediate_tables_task_group = create_intermediate_tables(xcom_release)
+        create_aggregate_tables_task_group = create_aggregate_tables(xcom_release)
+        update_table_descriptions_task = update_table_descriptions(xcom_release)
+        copy_to_dashboards_task = copy_to_dashboards(xcom_release)
+        create_dashboard_views_task = create_dashboard_views(xcom_release)
+        add_dataset_release_task = add_dataset_release(xcom_release)
+
+        (
+            sensor_task_group
+            >> task_check_dependencies
+            >> xcom_release
+            >> create_datasets_task
+            >> create_repo_institution_to_ror_table_task
+            >> create_ror_hierarchy_table_task
+            >> create_intermediate_tables_task_group
+            >> create_aggregate_tables_task_group
+            >> update_table_descriptions_task
+            >> copy_to_dashboards_task
+            >> create_dashboard_views_task
+            >> add_dataset_release_task
+        )
+
+    return doi()
+
+
 def make_sql_queries(
     input_project_id: str,
     output_project_id: str,
@@ -119,7 +669,7 @@ def make_sql_queries(
     return [
         [
             SQLQuery(
-                "create_crossref_metadata",
+                "crossref_metadata",
                 inputs={
                     "crossref_metadata": Table(
                         input_project_id, dataset_id_crossref_metadata, "crossref_metadata", sharded=True
@@ -131,13 +681,13 @@ def make_sql_queries(
         ],
         [
             SQLQuery(
-                "create_crossref_events",
+                "crossref_events",
                 inputs={"crossref_events": Table(input_project_id, dataset_id_crossref_events, "crossref_events")},
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "crossref_events"),
                 output_clustering_fields=["doi"],
             ),
             SQLQuery(
-                "create_crossref_fundref",
+                "crossref_fundref",
                 inputs={
                     "crossref_fundref": Table(
                         input_project_id, dataset_id_crossref_fundref, "crossref_fundref", sharded=True
@@ -150,7 +700,7 @@ def make_sql_queries(
                 output_clustering_fields=["doi"],
             ),
             SQLQuery(
-                "create_ror",
+                "ror",
                 inputs={
                     "ror": Table(input_project_id, dataset_id_ror, "ror", sharded=True),
                     "country": Table(input_project_id, dataset_id_settings, "country"),
@@ -158,13 +708,13 @@ def make_sql_queries(
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "ror"),
             ),
             SQLQuery(
-                "create_orcid",
+                "orcid",
                 inputs={"orcid": Table(input_project_id, dataset_id_orcid, "orcid")},
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "orcid"),
                 output_clustering_fields=["doi"],
             ),
             SQLQuery(
-                "create_open_citations",
+                "open_citations",
                 inputs={
                     "open_citations": Table(input_project_id, dataset_id_open_citations, "open_citations", sharded=True)
                 },
@@ -172,7 +722,7 @@ def make_sql_queries(
                 output_clustering_fields=["doi"],
             ),
             SQLQuery(
-                "create_openaccess",
+                "openaccess",
                 inputs={
                     "scihub": Table(input_project_id, dataset_id_scihub, "scihub", sharded=True),
                     "unpaywall": Table(input_project_id, dataset_id_unpaywall, "unpaywall", sharded=False),
@@ -192,13 +742,13 @@ def make_sql_queries(
                 output_clustering_fields=["doi"],
             ),
             SQLQuery(
-                "create_openalex",
+                "openalex",
                 inputs={"openalex": Table(input_project_id, dataset_id_openalex, "works", sharded=False)},
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "openalex"),
                 output_clustering_fields=["doi"],
             ),
             SQLQuery(
-                "create_pubmed",
+                "pubmed",
                 inputs={"pubmed": Table(input_project_id, dataset_id_pubmed, "pubmed", sharded=False)},
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "pubmed"),
                 output_clustering_fields=["doi"],
@@ -206,7 +756,7 @@ def make_sql_queries(
         ],
         [
             SQLQuery(
-                "create_doi",
+                "doi",
                 inputs={
                     "openalex": Table(output_project_id, dataset_id_observatory_intermediate, "openalex", sharded=True),
                     "ror_hierarchy": Table(
@@ -352,499 +902,3 @@ def ror_to_ror_hierarchy_index(ror: List[Dict]) -> Dict:
         ancestor_index[ror_id] = ancestors
 
     return ancestor_index
-
-
-class DoiWorkflow(Workflow):
-    SENSOR_DAG_IDS = [
-        "crossref_metadata",
-        "crossref_fundref",
-        "geonames",
-        "ror",
-        "open_citations",
-        "unpaywall",
-        "orcid",
-        "crossref_events",
-        "openalex",
-        "pubmed",
-    ]
-
-    AGGREGATIONS = [
-        Aggregation(
-            "country",
-            "countries",
-            relate_to_journals=True,
-            relate_to_funders=True,
-            relate_to_publishers=True,
-        ),
-        Aggregation(
-            "funder",
-            "funders",
-            relate_to_institutions=True,
-            relate_to_countries=True,
-            relate_to_groups=True,
-            relate_to_funders=True,
-            relate_to_publishers=True,
-        ),
-        Aggregation(
-            "group",
-            "groupings",
-            relate_to_institutions=True,
-            relate_to_journals=True,
-            relate_to_funders=True,
-            relate_to_publishers=True,
-        ),
-        Aggregation(
-            "institution",
-            "institutions",
-            relate_to_institutions=True,
-            relate_to_countries=True,
-            relate_to_journals=True,
-            relate_to_funders=True,
-            relate_to_publishers=True,
-        ),
-        Aggregation(
-            "author",
-            "authors",
-            relate_to_institutions=True,
-            relate_to_countries=True,
-            relate_to_groups=True,
-            relate_to_journals=True,
-            relate_to_funders=True,
-            relate_to_publishers=True,
-        ),
-        Aggregation(
-            "journal",
-            "journals",
-            relate_to_institutions=True,
-            relate_to_countries=True,
-            relate_to_groups=True,
-            relate_to_journals=True,
-            relate_to_funders=True,
-        ),
-        Aggregation(
-            "publisher",
-            "publishers",
-            relate_to_institutions=True,
-            relate_to_countries=True,
-            relate_to_groups=False,
-            relate_to_funders=False,
-        ),
-        Aggregation(
-            "region",
-            "regions",
-            relate_to_funders=True,
-            relate_to_publishers=True,
-        ),
-        Aggregation(
-            "subregion",
-            "subregions",
-            relate_to_funders=True,
-            relate_to_publishers=True,
-        ),
-    ]
-
-    def __init__(
-        self,
-        *,
-        dag_id: str,
-        cloud_workspace: CloudWorkspace,
-        bq_intermediate_dataset_id: str = "observatory_intermediate",
-        bq_dashboards_dataset_id: str = "coki_dashboards",
-        bq_observatory_dataset_id: str = "observatory",
-        bq_unpaywall_dataset_id: str = "unpaywall",
-        bq_ror_dataset_id: str = "ror",
-        api_dataset_id: str = "doi",
-        sql_queries: List[List[SQLQuery]] = None,
-        max_fetch_threads: int = 4,
-        observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
-        start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 8, 30),
-        schedule: Optional[str] = "@weekly",
-        sensor_dag_ids: List[str] = None,
-    ):
-        """Create the DoiWorkflow.
-        :param dag_id: the DAG ID.
-        :param cloud_workspace: the cloud workspace settings.
-        :param bq_intermediate_dataset_id: the BigQuery intermediate dataset id.
-        :param bq_dashboards_dataset_id: the BigQuery dashboards dataset id.
-        :param bq_observatory_dataset_id: the BigQuery observatory dataset id.
-        :param bq_unpaywall_dataset_id: the BigQuery Unpaywall dataset id.
-        :param bq_ror_dataset_id: the BigQuery ROR dataset id.
-        :param api_dataset_id: the DOI dataset id.
-        :param max_fetch_threads: maximum number of threads to use when fetching.
-        :param start_date: the start date.
-        :param schedule: the schedule interval.
-        """
-
-        super().__init__(
-            dag_id=dag_id,
-            start_date=start_date,
-            schedule=schedule,
-            catchup=False,
-            airflow_conns=[observatory_api_conn_id],
-            tags=[Tag.academic_observatory],
-        )
-
-        self.input_project_id = cloud_workspace.input_project_id
-        self.output_project_id = cloud_workspace.output_project_id
-        self.data_location = cloud_workspace.data_location
-
-        self.sensor_dag_ids = sensor_dag_ids
-        if sensor_dag_ids is None:
-            self.sensor_dag_ids = DoiWorkflow.SENSOR_DAG_IDS
-
-        self.bq_intermediate_dataset_id = bq_intermediate_dataset_id
-        self.bq_dashboards_dataset_id = bq_dashboards_dataset_id
-        self.bq_observatory_dataset_id = bq_observatory_dataset_id
-        self.bq_unpaywall_dataset_id = bq_unpaywall_dataset_id
-        self.bq_ror_dataset_id = bq_ror_dataset_id
-        self.api_dataset_id = api_dataset_id
-        self.max_fetch_threads = max_fetch_threads
-        self.observatory_api_conn_id = observatory_api_conn_id
-        self.input_table_id_tasks = []
-
-        if sql_queries is None:
-            self.sql_queries = make_sql_queries(
-                self.input_project_id, self.output_project_id, dataset_id_observatory=bq_observatory_dataset_id
-            )
-        else:
-            self.sql_queries = sql_queries
-
-        self.create_tasks()
-
-    def create_tasks(self):
-        # Add sensors
-        with self.parallel_tasks():
-            for ext_dag_id in self.sensor_dag_ids:
-                sensor = DagRunSensor(
-                    task_id=f"{ext_dag_id}_sensor",
-                    external_dag_id=ext_dag_id,
-                    mode="reschedule",
-                    duration=timedelta(days=7),  # Look back up to 7 days from execution date
-                    poke_interval=int(timedelta(hours=1).total_seconds()),  # Check at this interval if dag run is ready
-                    timeout=int(timedelta(days=2).total_seconds()),  # Sensor will fail after 2 days of waiting
-                )
-                self.add_operator(sensor)
-
-        # Setup tasks
-        self.add_setup_task(self.check_dependencies)
-
-        # Create datasets
-        self.add_task(self.create_datasets)
-
-        # Create repository institution to ror table
-        self.add_task(self.create_repo_institution_to_ror_table)
-        self.add_task(self.create_ror_hierarchy_table)
-
-        # Create tasks for running SQL queries
-        self.input_table_task_ids = []
-        for i, batch in enumerate(self.sql_queries):
-            with self.parallel_tasks():
-                for sql_query in batch:
-                    task_id = sql_query.name
-                    self.add_task(
-                        self.create_intermediate_table,
-                        op_kwargs={"sql_query": sql_query, "task_id": task_id},
-                        task_id=task_id,
-                    )
-                    self.input_table_task_ids.append(task_id)
-            self.add_operator(
-                EmptyOperator(
-                    task_id=f"merge_{i}",
-                )
-            )
-
-        # Create final tables
-        with self.parallel_tasks():
-            for agg in self.AGGREGATIONS:
-                task_id = f"create_{agg.table_name}"
-                self.add_task(
-                    self.create_aggregate_table, op_kwargs={"aggregation": agg, "task_id": task_id}, task_id=task_id
-                )
-
-        # Copy tables and create views
-        self.add_task(self.update_table_descriptions)
-        self.add_task(self.copy_to_dashboards)
-        self.add_task(self.create_dashboard_views)
-        self.add_task(self.add_new_dataset_releases)
-
-    def make_release(self, **kwargs) -> SnapshotRelease:
-        """Make a release instance. The release is passed as an argument to the function (TelescopeFunction) that is
-        called in 'task_callable'.
-
-        :param kwargs: the context passed from the PythonOperator. See
-        https://airflow.apache.org/docs/stable/macros-ref.html for a list of the keyword arguments that are passed
-        to this argument.
-        :return: A release instance or list of release instances
-        """
-
-        snapshot_date = make_snapshot_date(**kwargs)
-        return SnapshotRelease(
-            dag_id=self.dag_id,
-            run_id=kwargs["run_id"],
-            snapshot_date=snapshot_date,
-        )
-
-    def create_datasets(self, release: SnapshotRelease, **kwargs):
-        """Create required BigQuery datasets."""
-
-        datasets = [
-            (self.bq_intermediate_dataset_id, "Intermediate processing dataset for the Academic Observatory."),
-            (self.bq_dashboards_dataset_id, "The latest data for display in the COKI dashboards."),
-            (self.bq_observatory_dataset_id, "The Academic Observatory dataset."),
-        ]
-
-        for dataset_id, description in datasets:
-            bq_create_dataset(
-                project_id=self.output_project_id,
-                dataset_id=dataset_id,
-                location=self.data_location,
-                description=description,
-            )
-
-    def create_repo_institution_to_ror_table(self, release: SnapshotRelease, **kwargs):
-        """Create the repository_institution_to_ror_table."""
-
-        # Fetch unique Unpaywall repository institution names
-        template_path = project_path("doi_workflow", "sql", "create_openaccess_repo_names.sql.jinja2")
-        sql = render_template(template_path, project_id=self.input_project_id, dataset_id=self.bq_unpaywall_dataset_id)
-        records = bq_run_query(sql)
-
-        # Fetch affiliation strings
-        results = []
-        key = "repository_institution"
-        repository_institutions = [dict(record)[key] for record in records]
-        with ThreadPoolExecutor(max_workers=self.max_fetch_threads) as executor:
-            futures = []
-            for repo_inst in repository_institutions:
-                futures.append(executor.submit(fetch_ror_affiliations, repo_inst))
-            for future in as_completed(futures):
-                data = future.result()
-                results.append(data)
-        results.sort(key=lambda r: r[key])
-
-        # Load the BigQuery table
-        table_id = bq_sharded_table_id(
-            self.output_project_id,
-            self.bq_intermediate_dataset_id,
-            "repository_institution_to_ror",
-            release.snapshot_date,
-        )
-        success = bq_load_from_memory(table_id, results)
-        set_task_state(success, self.create_repo_institution_to_ror_table.__name__)
-
-    def create_ror_hierarchy_table(self, release: SnapshotRelease, **kwargs):
-        """Create the ROR hierarchy table."""
-
-        # Fetch latest ROR table
-        ror_table_name = "ror"
-        ror_table_id = bq_select_latest_table(
-            table_id=bq_table_id(self.input_project_id, self.bq_ror_dataset_id, ror_table_name),
-            end_date=release.snapshot_date,
-            sharded=True,
-        )
-        ror = [dict(row) for row in bq_run_query(f"SELECT * FROM {ror_table_id}")]
-
-        # Create ROR hierarchy table
-        index = ror_to_ror_hierarchy_index(ror)
-
-        # Convert to list of dictionaries
-        records = []
-        for child_id, ancestor_ids in index.items():
-            records.append({"child_id": child_id, "ror_ids": [child_id] + list(ancestor_ids)})
-
-        # Upload to intermediate table
-        table_id = bq_sharded_table_id(
-            self.output_project_id, self.bq_intermediate_dataset_id, "ror_hierarchy", release.snapshot_date
-        )
-        success = bq_load_from_memory(table_id, records)
-        set_task_state(success, self.create_ror_hierarchy_table.__name__)
-
-    def create_intermediate_table(self, release: SnapshotRelease, **kwargs):
-        """Create an intermediate table."""
-
-        task_id = kwargs["task_id"]
-        print(f"create_intermediate_table: {task_id}")
-        sql_query: SQLQuery = kwargs["sql_query"]
-
-        input_tables = []
-        for k, table in sql_query.inputs.items():
-            # Add release_date so that table_id can be computed
-            if table.sharded:
-                table.snapshot_date = get_snapshot_date(
-                    table.project_id, table.dataset_id, table.table_name, release.snapshot_date
-                )
-
-            # Only add input tables when the table_name is not None as there is the odd Table instance
-            # that is just used to specify the project id and dataset id in the SQL queries
-            if table.table_name is not None:
-                input_tables.append(f"{table.project_id}.{table.dataset_id}.{table.table_id}")
-
-        # Create processed table
-        template_path = project_path("doi_workflow", "sql", f"{sql_query.name}.sql.jinja2")
-        sql = render_template(
-            template_path,
-            snapshot_date=release.snapshot_date,
-            **sql_query.inputs,
-        )
-        table_id = bq_sharded_table_id(
-            self.output_project_id,
-            sql_query.output_table.dataset_id,
-            sql_query.output_table.table_name,
-            release.snapshot_date,
-        )
-        success = bq_create_table_from_query(
-            sql=sql,
-            table_id=table_id,
-            clustering_fields=sql_query.output_clustering_fields,
-        )
-
-        # Publish XComs with full table paths
-        ti = kwargs["ti"]
-        ti.xcom_push(key="input_tables", value=json.dumps(input_tables))
-
-        set_task_state(success, task_id)
-
-    def create_aggregate_table(self, release: SnapshotRelease, **kwargs):
-        """Runs the aggregate table query."""
-
-        agg: Aggregation = kwargs["aggregation"]
-        template_path = project_path("doi_workflow", "sql", "create_aggregate.sql.jinja2")
-        sql = render_template(
-            template_path,
-            project_id=self.output_project_id,
-            dataset_id=self.bq_observatory_dataset_id,
-            snapshot_date=release.snapshot_date,
-            aggregation_field=agg.aggregation_field,
-            group_by_time_field=agg.group_by_time_field,
-            relate_to_institutions=agg.relate_to_institutions,
-            relate_to_countries=agg.relate_to_countries,
-            relate_to_groups=agg.relate_to_groups,
-            relate_to_members=agg.relate_to_members,
-            relate_to_journals=agg.relate_to_journals,
-            relate_to_funders=agg.relate_to_funders,
-            relate_to_publishers=agg.relate_to_publishers,
-        )
-
-        table_id = bq_sharded_table_id(
-            self.output_project_id, self.bq_observatory_dataset_id, agg.table_name, release.snapshot_date
-        )
-        success = bq_create_table_from_query(
-            sql=sql,
-            table_id=table_id,
-            clustering_fields=["id"],
-        )
-
-        set_task_state(success, kwargs["task_id"])
-
-    def update_table_descriptions(self, release: SnapshotRelease, **kwargs):
-        """Update descriptions for tables."""
-
-        # Create list of input tables that were used to create our datasets
-        ti = kwargs["ti"]
-        results = ti.xcom_pull(task_ids=self.input_table_task_ids, key="input_tables")
-        input_tables = set()
-        for task_input_tables in results:
-            for input_table in json.loads(task_input_tables):
-                input_tables.add(input_table)
-        input_tables = list(input_tables)
-        input_tables.sort()
-
-        # Update descriptions
-        description = f"The DOI table.\n\nInput sources:\n"
-        description += "".join([f"  - {input_table}\n" for input_table in input_tables])
-        table_id = bq_sharded_table_id(
-            self.output_project_id, self.bq_observatory_dataset_id, "doi", release.snapshot_date
-        )
-        bq_update_table_description(
-            table_id=table_id,
-            description=description,
-        )
-
-        table_names = [agg.table_name for agg in self.AGGREGATIONS]
-        for table_name in table_names:
-            description = f"The DOI table aggregated by {table_name}.\n\nInput sources:\n"
-            description += "".join([f"  - {input_table}\n" for input_table in input_tables])
-            table_id = bq_sharded_table_id(
-                self.output_project_id, self.bq_observatory_dataset_id, table_name, release.snapshot_date
-            )
-            bq_update_table_description(
-                table_id=table_id,
-                description=description,
-            )
-
-    def copy_to_dashboards(self, release: SnapshotRelease, **kwargs):
-        """Copy tables to dashboards dataset."""
-
-        results = []
-        table_names = [agg.table_name for agg in DoiWorkflow.AGGREGATIONS]
-        for table_id in table_names:
-            src_table_id = bq_sharded_table_id(
-                self.output_project_id, self.bq_observatory_dataset_id, table_id, release.snapshot_date
-            )
-            dst_table_id = bq_table_id(self.output_project_id, self.bq_dashboards_dataset_id, table_id)
-            success = bq_copy_table(src_table_id=src_table_id, dst_table_id=dst_table_id)
-            if not success:
-                logging.error(f"Issue copying table: {src_table_id} to {dst_table_id}")
-
-            results.append(success)
-
-        success = all(results)
-        set_task_state(success, self.copy_to_dashboards.__name__)
-
-    def create_dashboard_views(self, release: SnapshotRelease, **kwargs):
-        """Create views for dashboards dataset."""
-
-        # Create processed dataset
-        template_path = project_path("doi_workflow", "sql", "comparison_view.sql.jinja2")
-
-        # Create views
-        table_names = ["country", "funder", "group", "institution", "publisher", "subregion"]
-        for table_name in table_names:
-            view_name = f"{table_name}_comparison"
-            query = render_template(
-                template_path,
-                project_id=self.output_project_id,
-                dataset_id=self.bq_dashboards_dataset_id,
-                table_id=table_name,
-            )
-            view_id = bq_table_id(self.output_project_id, self.bq_dashboards_dataset_id, view_name)
-            bq_create_view(view_id=view_id, query=query)
-
-    def add_new_dataset_releases(self, release: SnapshotRelease, **kwargs):
-        """Adds release information to API."""
-
-        dataset_release = DatasetRelease(
-            dag_id=self.dag_id,
-            dataset_id=self.api_dataset_id,
-            dag_run_id=release.run_id,
-            snapshot_date=release.snapshot_date,
-            data_interval_start=kwargs["data_interval_start"],
-            data_interval_end=kwargs["data_interval_end"],
-        )
-        api = make_observatory_api(observatory_api_conn_id=self.observatory_api_conn_id)
-        api.post_dataset_release(dataset_release)
-
-    def remove_aggregations(
-        self, input_aggregations: List[Aggregation], aggregations_to_remove: Set[str]
-    ) -> List[Aggregation]:
-        """Remove a set of aggregations from a given list. Removal is based on mathcing the table_name
-        string in the Aggregation object.
-
-        When removing items from the Aggregation list, you will need to reflect the same changes in
-        unit test for the DOI Workflow DAG structure.
-
-        This function actually works in reverse and builds a list of aggregations if it does not match to the
-        table_name in the "aggregations_to_remove" set. This is to get around a strange memory bug that refuses
-        to modify the AGGREGATIONS list with .remove()
-
-        :param input_aggregations: List of Aggregations to have elements removed.
-        :param aggregations_to_remove: Set of aggregations to remove, matching on "table_name" in the Aggregation class.
-        :return aggregations_removed: Return a list of Aggregations with the desired items removed.
-        """
-
-        aggregations_removed = []
-        for agg in input_aggregations:
-            if agg.table_name not in aggregations_to_remove:
-                aggregations_removed.append(agg)
-
-        return aggregations_removed

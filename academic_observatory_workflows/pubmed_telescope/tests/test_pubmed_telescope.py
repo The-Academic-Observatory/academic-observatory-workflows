@@ -27,22 +27,12 @@ import pendulum
 from airflow.utils.state import State
 from Bio.Entrez.Parser import DictionaryElement, ListElement, StringElement
 from click.testing import CliRunner
-from observatory.platform.api import get_dataset_releases
-from observatory.platform.bigquery import bq_run_query, bq_sharded_table_id
-from observatory.platform.gcs import gcs_blob_name_from_path
-from observatory.platform.observatory_config import Workflow
-from observatory.platform.observatory_environment import (
-    find_free_port,
-    FtpServer,
-    ObservatoryEnvironment,
-    ObservatoryTestCase,
-)
-from observatory.platform.workflows.workflow import ChangefileRelease
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.pubmed_telescope.pubmed_telescope import (
     add_attributes,
     change_pubmed_list_structure,
+    create_dag,
     Datafile,
     download_datafiles,
     load_datafile,
@@ -52,12 +42,23 @@ from academic_observatory_workflows.pubmed_telescope.pubmed_telescope import (
     PMID,
     PubMedCustomEncoder,
     PubMedRelease,
-    PubMedTelescope,
     PubmedUpdatefile,
     save_pubmed_jsonl,
     save_pubmed_merged_upserts,
     transform_pubmed,
 )
+from observatory.platform.api import get_dataset_releases
+from observatory.platform.bigquery import bq_run_query, bq_sharded_table_id
+from observatory.platform.config import module_file_path
+from observatory.platform.gcs import gcs_blob_name_from_path
+from observatory.platform.observatory_config import Workflow
+from observatory.platform.observatory_environment import (
+    find_free_port,
+    FtpServer,
+    ObservatoryEnvironment,
+    ObservatoryTestCase,
+)
+from observatory.platform.workflows.workflow import ChangefileRelease
 
 FIXTURES_FOLDER = project_path("pubmed_telescope", "tests", "fixtures")
 
@@ -102,7 +103,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 "pubmed/updatefiles/pubmed22n0005.xml.gz": pendulum.datetime(year=2021, month=12, day=30),
             },
             # Execution_date is a week before the workflow's actual run date.
-            "execution_date": pendulum.datetime(year=2021, month=12, day=5),
+            "logical_date": pendulum.datetime(year=2021, month=12, day=5),
             "release_interval_start": pendulum.datetime(year=2021, month=12, day=2),
             "release_interval_end": pendulum.datetime(year=2021, month=12, day=12),
             "baseline_upload_date": pendulum.datetime(year=2021, month=12, day=2),
@@ -163,7 +164,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 "pubmed/updatefiles/pubmed22n0005.xml.gz": pendulum.datetime(year=2021, month=12, day=14),
             },
             # Execution_date is a week before the workflow's actual run date.
-            "execution_date": pendulum.datetime(year=2021, month=12, day=12),
+            "logical_date": pendulum.datetime(year=2021, month=12, day=12),
             "release_interval_start": pendulum.datetime(year=2021, month=12, day=12),
             "release_interval_end": pendulum.datetime(year=2021, month=12, day=19),
             "baseline_upload_date": pendulum.datetime(year=2021, month=12, day=2),
@@ -206,7 +207,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 "pubmed/updatefiles/pubmed22n0005.xml.gz": pendulum.datetime(year=2022, month=12, day=21),
             },
             # Execution_date is a week before the workflow's actual run date.
-            "execution_date": pendulum.datetime(year=2022, month=12, day=4),
+            "logical_date": pendulum.datetime(year=2022, month=12, day=4),
             "release_interval_start": pendulum.datetime(year=2022, month=12, day=8),
             "release_interval_end": pendulum.datetime(year=2022, month=12, day=11),
             "baseline_upload_date": pendulum.datetime(year=2022, month=12, day=8),
@@ -254,34 +255,59 @@ class TestPubMedTelescope(ObservatoryTestCase):
     def test_dag_structure(self):
         """Test PubMed DAG structure."""
 
-        dag = PubMedTelescope(
+        dag = create_dag(
             dag_id=self.dag_id,
             cloud_workspace=self.fake_cloud_workspace,
-        ).make_dag()
+        )
 
         self.assert_dag_structure(
             {
                 "wait_for_prev_dag_run": ["check_dependencies"],
-                "check_dependencies": ["list_datafiles_for_release"],
-                "list_datafiles_for_release": ["create_snapshot"],
-                "create_snapshot": ["download_baseline"],
-                "download_baseline": ["upload_downloaded_baseline"],
-                "upload_downloaded_baseline": ["transform_baseline"],
-                "transform_baseline": ["upload_transformed_baseline"],
-                "upload_transformed_baseline": ["bq_load_main_table"],
-                "bq_load_main_table": ["download_updatefiles"],
-                "download_updatefiles": ["upload_downloaded_updatefiles"],
-                "upload_downloaded_updatefiles": ["transform_updatefiles"],
-                "transform_updatefiles": ["merge_upserts_and_deletes"],
-                "merge_upserts_and_deletes": ["upload_merged_upsert_records"],
-                "upload_merged_upsert_records": ["bq_load_upsert_table"],
-                "bq_load_upsert_table": ["bq_upsert_records"],
-                "bq_upsert_records": ["upload_merged_delete_records"],
-                "upload_merged_delete_records": ["bq_load_delete_table"],
-                "bq_load_delete_table": ["bq_delete_records"],
-                "bq_delete_records": ["add_new_dataset_release"],
-                "add_new_dataset_release": ["cleanup"],
-                "cleanup": ["dag_run_complete"],
+                "check_dependencies": ["fetch_release"],
+                "fetch_release": [
+                    "short_circuit",
+                    "create_snapshot",
+                    "branch_baseline_or_updatefiles",
+                    "baseline.download",
+                    "baseline.upload_downloaded",
+                    "baseline.transform",
+                    "baseline.upload_transformed",
+                    "baseline.bq_load",
+                    "branch_updatefiles_or_dataset_release",
+                    "updatefiles.download",
+                    "updatefiles.upload_downloaded",
+                    "updatefiles.transform",
+                    "updatefiles.merge_upserts_deletes",
+                    "updatefiles.upload_merged_upsert_records",
+                    "updatefiles.bq_load_upsert_table",
+                    "updatefiles.bq_upsert_records",
+                    "updatefiles.upload_merged_delete_records",
+                    "updatefiles.bq_load_delete_table",
+                    "updatefiles.bq_delete_records",
+                    "add_dataset_releases",
+                    "cleanup_workflow",
+                ],
+                "short_circuit": ["create_snapshot"],
+                "create_snapshot": ["branch_baseline_or_updatefiles"],
+                "branch_baseline_or_updatefiles": ["baseline.download", "updatefiles.download"],
+                "baseline.download": ["baseline.upload_downloaded"],
+                "baseline.upload_downloaded": ["baseline.transform"],
+                "baseline.transform": ["baseline.upload_transformed"],
+                "baseline.upload_transformed": ["baseline.bq_load"],
+                "baseline.bq_load": ["branch_updatefiles_or_dataset_release"],
+                "branch_updatefiles_or_dataset_release": ["updatefiles.download", "add_dataset_releases"],
+                "updatefiles.download": ["updatefiles.upload_downloaded"],
+                "updatefiles.upload_downloaded": ["updatefiles.transform"],
+                "updatefiles.transform": ["updatefiles.merge_upserts_deletes"],
+                "updatefiles.merge_upserts_deletes": ["updatefiles.upload_merged_upsert_records"],
+                "updatefiles.upload_merged_upsert_records": ["updatefiles.bq_load_upsert_table"],
+                "updatefiles.bq_load_upsert_table": ["updatefiles.bq_upsert_records"],
+                "updatefiles.bq_upsert_records": ["updatefiles.upload_merged_delete_records"],
+                "updatefiles.upload_merged_delete_records": ["updatefiles.bq_load_delete_table"],
+                "updatefiles.bq_load_delete_table": ["updatefiles.bq_delete_records"],
+                "updatefiles.bq_delete_records": ["add_dataset_releases"],
+                "add_dataset_releases": ["cleanup_workflow"],
+                "cleanup_workflow": ["dag_run_complete"],
                 "dag_run_complete": [],
             },
             dag,
@@ -295,14 +321,15 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 Workflow(
                     dag_id=self.dag_id,
                     name="PubMed Telescope",
-                    class_name="academic_observatory_workflows.pubmed_telescope.pubmed_telescope.PubMedTelescope",
+                    class_name="academic_observatory_workflows.pubmed_telescope.pubmed_telescope.create_dag",
                     cloud_workspace=self.fake_cloud_workspace,
                 )
             ]
         )
 
         with env.create():
-            self.assert_dag_load_from_config(self.dag_id)
+            dag_file = os.path.join(module_file_path("observatory.platform.dags"), "load_dags.py")
+            self.assert_dag_load(self.dag_id, dag_file)
 
     def test_telescope(self):
         """Test the PubMed Telescope end to end"""
@@ -316,7 +343,11 @@ class TestPubMedTelescope(ObservatoryTestCase):
         with ftp_server.create():
             with env.create(task_logging=True):
                 # Initialise the telescope workflow.
-                workflow = PubMedTelescope(
+                bq_table_id = "pubmed"
+                main_table_id = f"{env.cloud_workspace.project_id}.{bq_dataset_id}.{bq_table_id}"
+                upsert_table_id = f"{main_table_id}_upsert"
+                delete_table_id = f"{main_table_id}_delete"
+                dag = create_dag(
                     dag_id=self.dag_id,
                     cloud_workspace=env.cloud_workspace,
                     bq_dataset_id=bq_dataset_id,
@@ -324,7 +355,6 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ftp_port=self.ftp_port,
                     max_processes=1,
                 )
-                dag = workflow.make_dag()
 
                 #####################
                 ##### FIRST RUN #####
@@ -332,7 +362,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 # Initial intake of the Pubmed dataset.
 
                 run = self.first_run
-                with env.create_dag_run(dag, run["execution_date"]) as dag_run:
+                with env.create_dag_run(dag, run["logical_date"]) as dag_run:
                     # Before the tests start, we need to manually change the modified dates of the datafiles
                     # on the locally hosted FTP server so that the workflow can grab the correct updatefiles.
 
@@ -347,7 +377,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         ftp_conn.sendcmd(ftp_command)
                     ftp_conn.close()
 
-                    logging.info(f"Start date this workflow run {run['execution_date']}")
+                    logging.info(f"Start date this workflow run {run['logical_date']}")
 
                     ### Wait for the previous DAG run to finish ###
                     ti = env.run_task("wait_for_prev_dag_run")
@@ -360,59 +390,43 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ### List datafiles for release ###
 
                     # Fetch datafiles
-                    task_id = workflow.list_datafiles_for_release.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("fetch_release")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Pull list of datafiles for this run from the Xcom
-                    release_metadata = ti.xcom_pull(
-                        key="release_metadata",
-                        task_ids=task_id,
-                        include_prior_dates=False,
+                    release = PubMedRelease.from_dict(
+                        ti.xcom_pull(
+                            key="return_value",
+                            task_ids="fetch_release",
+                            include_prior_dates=False,
+                        )
                     )
 
                     # Check that dates and bools for workflow are correct from the release metadata dictionary.
-                    self.assertEqual(
-                        run["release_interval_start"],
-                        pendulum.from_timestamp(release_metadata["release_interval_start"]),
-                    )
-                    self.assertEqual(
-                        run["release_interval_end"], pendulum.from_timestamp(release_metadata["release_interval_end"])
-                    )
-                    self.assertEqual(
-                        run["baseline_upload_date"], pendulum.from_timestamp(release_metadata["baseline_upload_date"])
-                    )
-                    self.assertEqual(run["year_first_run"], release_metadata["year_first_run"])
+                    self.assertEqual(run["release_interval_start"], release.start_date)
+                    self.assertEqual(run["release_interval_end"], release.end_date)
+                    self.assertEqual(run["baseline_upload_date"], release.baseline_upload_date)
+                    self.assertEqual(run["year_first_run"], release.year_first_run)
 
                     # Make sure list of datafiles were built correctly for the workflow run.
-                    datafiles_to_download = [
-                        Datafile.from_dict(datafile) for datafile in release_metadata["files_to_download"]
-                    ]
-                    self.assertEqual(len(datafiles_to_download), len(run["datafiles"]))
+                    self.assertEqual(len(run["datafiles"]), len(release.datafile_list))
                     for i in range(len(run["datafiles"])):
-                        self.assertTrue(datafiles_to_download[i].__eq__(run["datafiles"][i]))
+                        self.assertEqual(run["datafiles"][i], release.datafile_list[i])
 
-                    # Create the release
-                    release = PubMedRelease(
-                        dag_id=self.dag_id,
-                        run_id=dag_run.run_id,
-                        cloud_workspace=workflow.cloud_workspace,
-                        start_date=run["release_interval_start"],
-                        end_date=run["release_interval_end"],
-                        year_first_run=run["year_first_run"],
-                        datafile_list=run["datafiles"],
-                    )
+                    ti = env.run_task("short_circuit")
+                    self.assertEqual(State.SUCCESS, ti.state)
 
                     ### Create Snapshot ###
-                    task_id = workflow.create_snapshot.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("create_snapshot")
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    ti = env.run_task("branch_baseline_or_updatefiles")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     ##### BASELINE #####
 
                     ### Download baseline ###
-                    task_id = workflow.download_baseline.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("baseline.download")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Loop through downloaded baseline files, check that they exist and that hashes match.
@@ -425,8 +439,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                             self.assertEqual(md5hash, run["md5hash_download"][datafile.filename])
 
                     ### Upload downloaded baseline ###
-                    task_id = workflow.upload_downloaded_baseline.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("baseline.upload_downloaded")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     for datafile in release.baseline_files:
@@ -437,16 +450,14 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         )
 
                     ### Transform baseline ###
-                    task_id = workflow.transform_baseline.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("baseline.transform")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     for datafile in release.baseline_files:
                         self.assertTrue(os.path.exists(datafile.transform_baseline_file_path))
 
                     ### Upload transformed baseline ###
-                    task_id = workflow.upload_transformed_baseline.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("baseline.upload_transformed")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Get list of transformed files for upload.
@@ -461,20 +472,19 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         )
 
                     ###  BQ load main table ###
-                    task_id = workflow.bq_load_main_table.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("baseline.bq_load")
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    full_table_id = (
-                        f"{workflow.cloud_workspace.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}"
-                    )
+                    full_table_id = f"{env.cloud_workspace.project_id}.{bq_dataset_id}.{bq_table_id}"
                     self.assert_table_integrity(full_table_id, 4)
+
+                    ti = env.run_task("branch_updatefiles_or_dataset_release")
+                    self.assertEqual(State.SUCCESS, ti.state)
 
                     ##### UPDATEFILES #####
 
                     ### Download updatefiles ###
-                    task_id = workflow.download_updatefiles.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.download")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Loop through downloaded baseline files, check that they exist and that hashes match.
@@ -487,8 +497,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                             self.assertEqual(md5hash, run["md5hash_download"][datafile.filename])
 
                     ### Upload downloaded updatefiles ###
-                    task_id = workflow.upload_downloaded_updatefiles.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.upload_downloaded")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     for datafile in release.updatefiles:
@@ -499,8 +508,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         )
 
                     ### Transform updatefiles ###
-                    task_id = workflow.transform_updatefiles.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.transform")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # This step pulls out the upserts from the updatefiles and writes them as *.jsonl
@@ -508,8 +516,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         self.assertTrue(os.path.exists(datafile.transform_upsert_file_path))
 
                     ### Merge upserts and deletes ###
-                    task_id = workflow.merge_upserts_and_deletes.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.merge_upserts_deletes")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Check that the merged upserts and deletes have been written to disk.
@@ -522,8 +529,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     file_paths = [datafile.merged_upsert_file_path for datafile in release.updatefiles]
 
                     ### Upload merged upsert records ###
-                    task_id = workflow.upload_merged_upsert_records.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.upload_merged_upsert_records")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Check that they exist in the cloud.
@@ -536,22 +542,19 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         )
 
                     ###  BQ load upsert table ###
-                    task_id = workflow.bq_load_upsert_table.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.bq_load_upsert_table")
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    self.assert_table_integrity(workflow.upsert_table_id, 4)
+                    self.assert_table_integrity(upsert_table_id, 4)
 
                     ###  BQ upsert records ###
-                    task_id = workflow.bq_upsert_records.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.bq_upsert_records")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     ##### DELETES #####
 
                     ### Upload merged delete records ###
-                    task_id = workflow.upload_merged_delete_records.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.upload_merged_delete_records")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Only one delete file for all updatefiles.
@@ -567,15 +570,13 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     )
 
                     ###  BQ load delete table
-                    task_id = workflow.bq_load_delete_table.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.bq_load_delete_table")
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    self.assert_table_integrity(workflow.delete_table_id, 2)
+                    self.assert_table_integrity(delete_table_id, 2)
 
                     ###  BQ delete records ###
-                    task_id = workflow.bq_delete_records.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.bq_delete_records")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Check that upserts and deletes were applied properly.
@@ -587,22 +588,21 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     )
                     self.assertEqual(result, run["PMID_list"])
 
-                    ### add_new_dataset_release ###
-                    task_id = workflow.add_new_dataset_release.__name__
+                    ### add_dataset_release ###
                     # Assert that the dataset has been added to the observatory-api
                     # Get dataset releases before task run
-                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.bq_dataset_id)
+                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=bq_dataset_id)
                     self.assertEqual(len(dataset_releases), 0)
                     # Run task
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("add_dataset_releases")
                     self.assertEqual(State.SUCCESS, ti.state)
                     # Check after task run.
-                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.bq_dataset_id)
+                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=bq_dataset_id)
                     self.assertEqual(len(dataset_releases), 1)
 
                     ### cleanup ###
                     # Test that all workflow data was deleted
-                    ti = env.run_task(workflow.cleanup.__name__)
+                    ti = env.run_task("cleanup_workflow")
                     self.assertEqual(State.SUCCESS, ti.state)
                     self.assert_cleanup(release.workflow_folder)
 
@@ -616,7 +616,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 # This run is to make sure that it can apply a sequential update.
 
                 run = self.second_run
-                with env.create_dag_run(dag, run["execution_date"]) as dag_run:
+                with env.create_dag_run(dag, run["logical_date"]) as dag_run:
                     # Before the tests start, we need to manually change the modified dates of the datafiles
                     # on the locally hosted FTP server so that the workflow can grab the correct updatefiles.
 
@@ -631,7 +631,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         ftp_conn.sendcmd(ftp_command)
                     ftp_conn.close()
 
-                    logging.info(f"Start date this workflow run {run['execution_date']}")
+                    logging.info(f"Start date this workflow run {run['logical_date']}")
 
                     ### Wait for the previous DAG run to finish ###
                     ti = env.run_task("wait_for_prev_dag_run")
@@ -644,90 +644,75 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ### List datafiles for release ###
 
                     # Fetch datafiles
-                    task_id = workflow.list_datafiles_for_release.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("fetch_release")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Pull list of datafiles for this run from the Xcom
-                    release_metadata = ti.xcom_pull(
-                        key="release_metadata",
-                        task_ids=task_id,
-                        include_prior_dates=False,
+                    release = PubMedRelease.from_dict(
+                        ti.xcom_pull(
+                            key="return_value",
+                            task_ids="fetch_release",
+                            include_prior_dates=False,
+                        )
                     )
 
                     # Check that dates and bools for workflow are correct from the release metadata dictionary.
-                    self.assertEqual(
-                        run["release_interval_start"],
-                        pendulum.from_timestamp(release_metadata["release_interval_start"]),
-                    )
-                    self.assertEqual(
-                        run["release_interval_end"], pendulum.from_timestamp(release_metadata["release_interval_end"])
-                    )
-                    self.assertEqual(
-                        run["baseline_upload_date"], pendulum.from_timestamp(release_metadata["baseline_upload_date"])
-                    )
-                    self.assertEqual(run["year_first_run"], release_metadata["year_first_run"])
+                    self.assertEqual(run["release_interval_start"], release.start_date)
+                    self.assertEqual(run["release_interval_end"], release.end_date)
+                    self.assertEqual(run["baseline_upload_date"], release.baseline_upload_date)
+                    self.assertEqual(run["year_first_run"], release.year_first_run)
 
                     # Make sure list of datafiles were built correctly for the workflow run.
-                    datafiles_to_download = [
-                        Datafile.from_dict(datafile) for datafile in release_metadata["files_to_download"]
-                    ]
-                    self.assertEqual(len(datafiles_to_download), len(run["datafiles"]))
+                    self.assertEqual(len(run["datafiles"]), len(release.datafile_list))
                     for i in range(len(run["datafiles"])):
-                        self.assertTrue(datafiles_to_download[i].__eq__(run["datafiles"][i]))
-
-                    # Create the release
-                    release = PubMedRelease(
-                        dag_id=self.dag_id,
-                        run_id=dag_run.run_id,
-                        cloud_workspace=workflow.cloud_workspace,
-                        start_date=run["release_interval_start"],
-                        end_date=run["release_interval_end"],
-                        year_first_run=run["year_first_run"],
-                        datafile_list=run["datafiles"],
-                    )
+                        self.assertEqual(run["datafiles"][i], release.datafile_list[i])
 
                     ### Create Snapshot ###
-                    task_id = workflow.create_snapshot.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("short_circuit")
+                    self.assertEqual(State.SUCCESS, ti.state)
+
+                    ### Create Snapshot ###
+                    ti = env.run_task("create_snapshot")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Check that that snapshot table exists.
                     snapshot_table_id = bq_sharded_table_id(
-                        workflow.cloud_workspace.project_id,
-                        workflow.bq_dataset_id,
-                        f"{workflow.bq_table_id}_snapshot",
+                        env.cloud_workspace.project_id,
+                        bq_dataset_id,
+                        f"{bq_table_id}_snapshot",
                         release.start_date,
                     )
                     self.assert_table_integrity(snapshot_table_id, 5)
+
+                    ti = env.run_task("branch_baseline_or_updatefiles")
+                    self.assertEqual(State.SUCCESS, ti.state)
 
                     ##### BASELINE #####
 
                     # No new baseline files should be downloaded as it's already been done for this year.
                     self.assertEqual(len(release.baseline_files), 0)
 
+                    ti = env.run_task("baseline.download")
+                    self.assertEqual(State.SKIPPED, ti.state)
                     task_ids = [
-                        "download_baseline",
-                        "upload_downloaded_baseline",
-                        "transform_baseline",
-                        "upload_transformed_baseline",
-                        "bq_load_main_table",
+                        "baseline.upload_downloaded",
+                        "baseline.transform",
+                        "baseline.upload_transformed",
+                        "baseline.bq_load",
+                        "branch_updatefiles_or_dataset_release",
                     ]
-
                     for task_id in task_ids:
-                        ti = env.run_task(task_id)
-                        self.assertEqual(State.SUCCESS, ti.state)
+                        print(task_id)
+                        ti = env.skip_task(task_id)
+                        self.assertEqual(State.SKIPPED, ti.state)
 
-                    full_table_id = (
-                        f"{workflow.cloud_workspace.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}"
-                    )
+                    full_table_id = f"{env.cloud_workspace.project_id}.{bq_dataset_id}.{bq_table_id}"
                     self.assert_table_integrity(full_table_id, 5)
 
                     ##### UPDATEFILES #####
 
                     ### Download updatefiles ###
-                    task_id = workflow.download_updatefiles.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.download")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Loop through downloaded baseline files, check that they exist and that hashes match.
@@ -740,8 +725,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                             self.assertEqual(md5hash, run["md5hash_download"][datafile.filename])
 
                     ### Upload downloaded updatefiles ###
-                    task_id = workflow.upload_downloaded_updatefiles.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.upload_downloaded")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     for datafile in release.updatefiles:
@@ -752,8 +736,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         )
 
                     ### Transform updatefiles ###
-                    task_id = workflow.transform_updatefiles.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.transform")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # This step pulls out the upserts and delete records from the files
@@ -761,8 +744,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         self.assertTrue(os.path.exists(datafile.transform_upsert_file_path))
 
                     ### Merge upserts and deletes  ###
-                    task_id = workflow.merge_upserts_and_deletes.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.merge_upserts_deletes")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Check that the merged upserts and deletes have been written to disk.
@@ -773,8 +755,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ##### UPSERTS #####
 
                     ### Upload merged upsert records ###
-                    task_id = workflow.upload_merged_upsert_records.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.upload_merged_upsert_records")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     file_paths = [datafile.merged_upsert_file_path for datafile in release.updatefiles]
@@ -789,15 +770,13 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         )
 
                     ###  BQ load upsert table ###
-                    task_id = workflow.bq_load_upsert_table.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.bq_load_upsert_table")
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    self.assert_table_integrity(workflow.upsert_table_id, 2)
+                    self.assert_table_integrity(upsert_table_id, 2)
 
                     ###  BQ upsert records ###
-                    task_id = workflow.bq_upsert_records.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.bq_upsert_records")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     ##### DELETES #####
@@ -805,8 +784,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     file = release.merged_delete_file_path
 
                     ### Upload merged delete records ###
-                    task_id = workflow.upload_merged_delete_records.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.upload_merged_delete_records")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Check that it exists in the cloud.
@@ -818,15 +796,13 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     )
 
                     ###  BQ load delete table ###
-                    task_id = workflow.bq_load_delete_table.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.bq_load_delete_table")
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    self.assert_table_integrity(workflow.delete_table_id, 1)
+                    self.assert_table_integrity(delete_table_id, 1)
 
                     ###  BQ delete records ###
-                    task_id = workflow.bq_delete_records.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("updatefiles.bq_delete_records")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Check that upserts and deletes were applied properly.
@@ -838,22 +814,21 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     )
                     self.assertEqual(result, run["PMID_list"])
 
-                    ### add_new_dataset_release ###
-                    task_id = workflow.add_new_dataset_release.__name__
+                    ### add_dataset_release ###
                     # Assert that the dataset has been added to the observatory-api
                     # Get dataset releases before task run
-                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.bq_dataset_id)
+                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=bq_dataset_id)
                     self.assertEqual(len(dataset_releases), 1)
                     # Run task
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("add_dataset_releases")
                     self.assertEqual(State.SUCCESS, ti.state)
                     # Check after task run.
-                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.bq_dataset_id)
+                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=bq_dataset_id)
                     self.assertEqual(len(dataset_releases), 2)
 
                     ### cleanup ###
                     # Test that all workflow data was deleted
-                    ti = env.run_task(workflow.cleanup.__name__)
+                    ti = env.run_task("cleanup_workflow")
                     self.assertEqual(State.SUCCESS, ti.state)
                     self.assert_cleanup(release.workflow_folder)
 
@@ -866,7 +841,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
 
                 # This run only needs to confirm that the first year run bool works and it downloads the new baseline dataset.
                 run = self.third_run
-                with env.create_dag_run(dag, run["execution_date"]) as dag_run:
+                with env.create_dag_run(dag, run["logical_date"]) as dag_run:
                     # Before the tests start, we need to manually change the modified dates of the datafiles
                     # on the locally hosted FTP server so that the workflow can grab the correct updatefiles.
 
@@ -881,7 +856,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         ftp_conn.sendcmd(ftp_command)
                     ftp_conn.close()
 
-                    logging.info(f"Start date this workflow run {run['execution_date']}")
+                    logging.info(f"Start date this workflow run {run['logical_date']}")
 
                     # Forcing this to SUCCESS because we are skipping a year between releases.
                     ### Check Dependancies ###
@@ -892,64 +867,43 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     ### List datafiles for release ###
 
                     # Fetch datafiles
-                    task_id = workflow.list_datafiles_for_release.__name__
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("fetch_release")
                     self.assertEqual(State.SUCCESS, ti.state)
 
                     # Pull list of datafiles for this run from the Xcom
-                    release_metadata = ti.xcom_pull(
-                        key="release_metadata",
-                        task_ids=task_id,
-                        include_prior_dates=False,
+                    release = PubMedRelease.from_dict(
+                        ti.xcom_pull(
+                            key="return_value",
+                            task_ids="fetch_release",
+                            include_prior_dates=False,
+                        )
                     )
 
                     # Check that dates and bools for workflow are correct from the release metadata dictionary.
-                    self.assertEqual(
-                        run["release_interval_start"],
-                        pendulum.from_timestamp(release_metadata["release_interval_start"]),
-                    )
-                    self.assertEqual(
-                        run["release_interval_end"], pendulum.from_timestamp(release_metadata["release_interval_end"])
-                    )
-                    self.assertEqual(
-                        run["baseline_upload_date"], pendulum.from_timestamp(release_metadata["baseline_upload_date"])
-                    )
-                    self.assertEqual(run["year_first_run"], release_metadata["year_first_run"])
+                    self.assertEqual(run["release_interval_start"], release.start_date)
+                    self.assertEqual(run["release_interval_end"], release.end_date)
+                    self.assertEqual(run["baseline_upload_date"], release.baseline_upload_date)
+                    self.assertEqual(run["year_first_run"], release.year_first_run)
 
                     # Make sure list of datafiles were built correctly for the workflow run.
-                    datafiles_to_download = [
-                        Datafile.from_dict(datafile) for datafile in release_metadata["files_to_download"]
-                    ]
-                    self.assertEqual(len(datafiles_to_download), len(run["datafiles"]))
+                    self.assertEqual(len(run["datafiles"]), len(release.datafile_list))
                     for i in range(len(run["datafiles"])):
-                        self.assertTrue(datafiles_to_download[i].__eq__(run["datafiles"][i]))
-
-                    # Create the release
-                    release = PubMedRelease(
-                        dag_id=self.dag_id,
-                        run_id=dag_run.run_id,
-                        cloud_workspace=workflow.cloud_workspace,
-                        start_date=run["release_interval_start"],
-                        end_date=run["release_interval_end"],
-                        year_first_run=run["year_first_run"],
-                        datafile_list=run["datafiles"],
-                    )
+                        self.assertEqual(run["datafiles"][i], release.datafile_list[i])
 
                     ##### BASELINE #####
 
                     self.assertEqual(len(release.baseline_files), 2)
 
                     task_ids = [
+                        "short_circuit",
                         "create_snapshot",
-                        "download_baseline",
-                        "upload_downloaded_baseline",
-                        "transform_baseline",
-                        "upload_transformed_baseline",
-                        "bq_load_main_table",
-                        "download_updatefiles",
-                        "upload_downloaded_updatefiles",
-                        "transform_updatefiles",
-                        "merge_upserts_and_deletes",
+                        "branch_baseline_or_updatefiles",
+                        "baseline.download",
+                        "baseline.upload_downloaded",
+                        "baseline.transform",
+                        "baseline.upload_transformed",
+                        "baseline.bq_load",
+                        "branch_updatefiles_or_dataset_release",
                     ]
 
                     for task_id in task_ids:
@@ -957,30 +911,22 @@ class TestPubMedTelescope(ObservatoryTestCase):
                         ti = env.run_task(task_id)
                         self.assertEqual(State.SUCCESS, ti.state)
 
-                    full_table_id = (
-                        f"{workflow.cloud_workspace.project_id}.{workflow.bq_dataset_id}.{workflow.bq_table_id}"
-                    )
+                    full_table_id = f"{env.cloud_workspace.project_id}.{bq_dataset_id}.{bq_table_id}"
                     self.assert_table_integrity(full_table_id, 4)
 
                     ##### UPSERTS #####
 
                     task_ids = [
-                        "upload_merged_upsert_records",
-                        "bq_load_upsert_table",
-                        "bq_upsert_records",
-                    ]
-
-                    for task_id in task_ids:
-                        logging.info(f"Running task: {task_id}")
-                        ti = env.run_task(task_id)
-                        self.assertEqual(State.SUCCESS, ti.state)
-
-                    ##### DELETES #####
-
-                    task_ids = [
-                        "upload_merged_delete_records",
-                        "bq_load_delete_table",
-                        "bq_delete_records",
+                        "updatefiles.download",
+                        "updatefiles.upload_downloaded",
+                        "updatefiles.transform",
+                        "updatefiles.merge_upserts_deletes",
+                        "updatefiles.upload_merged_upsert_records",
+                        "updatefiles.bq_load_upsert_table",
+                        "updatefiles.bq_upsert_records",
+                        "updatefiles.upload_merged_delete_records",
+                        "updatefiles.bq_load_delete_table",
+                        "updatefiles.bq_delete_records",
                     ]
 
                     for task_id in task_ids:
@@ -997,22 +943,21 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     )
                     self.assertEqual(result, run["PMID_list"])
 
-                    ### add_new_dataset_release ###
-                    task_id = workflow.add_new_dataset_release.__name__
+                    ### add_dataset_release ###
                     # Assert that the dataset has been added to the observatory-api
                     # Get dataset releases before task run
-                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.bq_dataset_id)
+                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=bq_dataset_id)
                     self.assertEqual(len(dataset_releases), 2)
                     # Run task
-                    ti = env.run_task(task_id)
+                    ti = env.run_task("add_dataset_releases")
                     self.assertEqual(State.SUCCESS, ti.state)
                     # Check after task run.
-                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=workflow.bq_dataset_id)
+                    dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=bq_dataset_id)
                     self.assertEqual(len(dataset_releases), 3)
 
                     ### cleanup ###
                     # Test that all workflow data deleted
-                    ti = env.run_task(workflow.cleanup.__name__)
+                    ti = env.run_task("cleanup_workflow")
                     self.assertEqual(State.SUCCESS, ti.state)
                     self.assert_cleanup(release.workflow_folder)
 
