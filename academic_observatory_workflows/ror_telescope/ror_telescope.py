@@ -71,7 +71,7 @@ class RorRelease(SnapshotRelease):
         self.url = url
         self.checksum = checksum
         self.download_file_name = "ror.zip"
-        self.extract_file_regex = r".*\.json$"
+        self.extract_file_regex = r"^\S+-ror-data\.json$"
         self.transform_file_name = "ror.jsonl.gz"
         self.download_file_path = os.path.join(self.download_folder, self.download_file_name)
         self.transform_file_path = os.path.join(self.transform_folder, self.transform_file_name)
