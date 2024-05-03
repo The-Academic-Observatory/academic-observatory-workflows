@@ -3,6 +3,7 @@
     "name": "abstract_inverted_index",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "The abstract of the work, as an inverted index, which encodes information about the abstract's words and their positions within the text. Like Microsoft Academic Graph, OpenAlex doesn't include plaintext abstracts due to legal constraints.",
     "fields": [
       {
         "name": "keys",
@@ -16,13 +17,13 @@
         "mode": "REPEATED",
         "description": "Custom field created by COKI. Originally each word in the abstract was a key and the indices of where this word occurred inside the abstract the corresponding value."
       }
-    ],
-    "description": "The abstract of the work, as an inverted index, which encodes information about the abstract's words and their positions within the text. Like Microsoft Academic Graph, OpenAlex doesn't include plaintext abstracts due to legal constraints."
+    ]
   },
   {
     "name": "apc_list",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "Objects containing information about the APC (article processing charge) for this work. This value is the APC list price\u2013the price as listed by the journal\u2019s publisher. That\u2019s not always the price actually paid, because publishers may offer various discounts to authors. Unfortunately we don\u2019t always know this discounted price, but when we do you can find it in apc_paid. Currently our only source for this data is DOAJ, and so doaj is the only value for apc_list.provenance, but we\u2019ll add other sources over time.",
     "fields": [
       {
         "name": "currency",
@@ -30,38 +31,27 @@
         "mode": "NULLABLE"
       },
       {
-        "name": "price",
-        "type": "INTEGER",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "price_usd",
-        "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": "APC converted to USD"
-      },
-      {
-        "mode": "NULLABLE",
-        "name": "value",
-        "type": "INTEGER"
-      },
-      {
-        "mode": "NULLABLE",
-        "name": "value_usd",
-        "type": "INTEGER"
-      },
-      {
         "name": "provenance",
         "type": "STRING",
         "mode": "NULLABLE"
+      },
+      {
+        "name": "value",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "value_usd",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
       }
-    ],
-    "description": "Objects containing information about the APC (article processing charge) for this work. This value is the APC list price\u2013the price as listed by the journal\u2019s publisher. That\u2019s not always the price actually paid, because publishers may offer various discounts to authors. Unfortunately we don\u2019t always know this discounted price, but when we do you can find it in apc_paid. Currently our only source for this data is DOAJ, and so doaj is the only value for apc_list.provenance, but we\u2019ll add other sources over time."
+    ]
   },
   {
     "name": "apc_paid",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "Object: Information about the paid APC (article processing charge) for this work. You can find the listed APC price (when we know it) for a given work using apc_list. However, authors don\u2019t always pay the listed price; often they get a discounted price from publishers. So it\u2019s useful to know the APC actually paid by authors, as distinct from the list price. This is our effort to provide this. Our best source for the actually paid price is the OpenAPC project. Where available, we use that data, and so apc_paid.provenance is openapc. Where OpenAPC data is unavailable (and unfortunately this is common) we make our best guess by assuming the author paid the APC list price, and apc_paid.provenance will be set to wherever we got the list price from.",
     "fields": [
       {
         "name": "currency",
@@ -69,53 +59,38 @@
         "mode": "NULLABLE"
       },
       {
-        "name": "price",
-        "type": "INTEGER",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "price_usd",
-        "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": "APC converted to USD"
-      },
-      {
-        "mode": "NULLABLE",
-        "name": "value",
-        "type": "INTEGER"
-      },
-      {
-        "mode": "NULLABLE",
-        "name": "value_usd",
-        "type": "INTEGER"
-      },
-      {
         "name": "provenance",
         "type": "STRING",
         "mode": "NULLABLE"
+      },
+      {
+        "name": "value",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "value_usd",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
       }
-    ],
-    "description": "Object: Information about the paid APC (article processing charge) for this work. You can find the listed APC price (when we know it) for a given work using apc_list. However, authors don\u2019t always pay the listed price; often they get a discounted price from publishers. So it\u2019s useful to know the APC actually paid by authors, as distinct from the list price. This is our effort to provide this. Our best source for the actually paid price is the OpenAPC project. Where available, we use that data, and so apc_paid.provenance is openapc. Where OpenAPC data is unavailable (and unfortunately this is common) we make our best guess by assuming the author paid the APC list price, and apc_paid.provenance will be set to wherever we got the list price from."
+    ]
   },
   {
-    "mode": "NULLABLE",
     "name": "authors_count",
-    "type": "INTEGER"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "authorships_truncated",
-    "type": "BOOLEAN"
+    "type": "INTEGER",
+    "mode": "NULLABLE"
   },
   {
     "name": "authorships",
     "type": "RECORD",
     "mode": "REPEATED",
+    "description": "List of Authorship objects, each representing an author and their institution.",
     "fields": [
       {
         "name": "author",
         "type": "RECORD",
         "mode": "NULLABLE",
+        "description": "An author of this work, as a dehydrated Author object.",
         "fields": [
           {
             "name": "display_name",
@@ -135,8 +110,7 @@
             "mode": "NULLABLE",
             "description": "The ORCID for this author. ORCID global and unique ID for authors."
           }
-        ],
-        "description": "An author of this work, as a dehydrated Author object."
+        ]
       },
       {
         "name": "author_position",
@@ -145,20 +119,31 @@
         "description": "A summarized description of this author's position in the work's author list. Possible values are first, middle, and last. It's not strictly necessary, because author order is already implicitly recorded by the list order of Authorship objects; however it's useful in some contexts to have this as a categorical value."
       },
       {
-        "mode": "REPEATED",
         "name": "countries",
-        "type": "STRING"
+        "type": "STRING",
+        "mode": "REPEATED"
+      },
+      {
+        "name": "country_ids",
+        "type": "STRING",
+        "mode": "REPEATED"
       },
       {
         "name": "institutions",
         "type": "RECORD",
         "mode": "REPEATED",
+        "description": "The institutional affiliations this author claimed in the context of this work, as dehydrated Institution objects.",
         "fields": [
           {
             "name": "country_code",
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The country where this institution is located, represented as an ISO two-letter country code."
+          },
+          {
+            "name": "country_id",
+            "type": "STRING",
+            "mode": "NULLABLE"
           },
           {
             "name": "display_name",
@@ -189,9 +174,13 @@
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The institution's primary type, using the ROR \"type\" controlled vocabulary. Possible values are: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, and Other."
+          },
+          {
+            "name": "type_id",
+            "type": "STRING",
+            "mode": "NULLABLE"
           }
-        ],
-        "description": "The institutional affiliations this author claimed in the context of this work, as dehydrated Institution objects."
+        ]
       },
       {
         "name": "is_corresponding",
@@ -215,23 +204,28 @@
         "mode": "NULLABLE",
         "description": "This author's name as it originally came to us (on a webpage or in an API), as a raw unformatted string."
       }
-    ],
-    "description": "List of Authorship objects, each representing an author and their institution."
+    ]
+  },
+  {
+    "name": "authorships_truncated",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE"
   },
   {
     "name": "best_oa_location",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "A Location object with the best available open access location for this work.",
     "fields": [
       {
-        "mode": "NULLABLE",
         "name": "doi",
-        "type": "STRING"
+        "type": "STRING",
+        "mode": "NULLABLE"
       },
       {
-        "mode": "NULLABLE",
         "name": "is_accepted",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "mode": "NULLABLE"
       },
       {
         "name": "is_oa",
@@ -240,9 +234,9 @@
         "description": "True if this work is Open Access (OA)."
       },
       {
-        "mode": "NULLABLE",
         "name": "is_published",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "mode": "NULLABLE"
       },
       {
         "name": "landing_page_url",
@@ -257,6 +251,11 @@
         "description": "The location's publishing license. This can be a Create Commons license such as cc0 or cc-by, a publisher-specific license, or null which means we are not able to determine a license for this location."
       },
       {
+        "name": "license_id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
         "name": "pdf_url",
         "type": "STRING",
         "mode": "NULLABLE",
@@ -266,22 +265,13 @@
         "name": "source",
         "type": "RECORD",
         "mode": "NULLABLE",
+        "description": "Information about the source of this location, as a DehydratedSource object.",
         "fields": [
           {
             "name": "display_name",
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The name of the source."
-          },
-          {
-            "mode": "REPEATED",
-            "name": "host_institution_lineage",
-            "type": "STRING"
-          },
-          {
-            "mode": "REPEATED",
-            "name": "host_institution_lineage_names",
-            "type": "STRING"
           },
           {
             "name": "host_organization",
@@ -343,29 +333,18 @@
             "description": "The publisher name."
           },
           {
-            "name": "publisher_id",
-            "type": "STRING",
-            "mode": "NULLABLE",
-            "description": "The OpenAlex ID of the publisher."
-          },
-          {
-            "mode": "REPEATED",
-            "name": "publisher_lineage",
-            "type": "STRING"
-          },
-          {
-            "mode": "REPEATED",
-            "name": "publisher_lineage_names",
-            "type": "STRING"
-          },
-          {
             "name": "type",
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The type of source."
+          },
+          {
+            "name": "type_id",
+            "type": "STRING",
+            "mode": "NULLABLE",
+            "description": "The type of source."
           }
-        ],
-        "description": "Information about the source of this location, as a DehydratedSource object."
+        ]
       },
       {
         "name": "version",
@@ -373,13 +352,13 @@
         "mode": "NULLABLE",
         "description": "The version of the work, based on the DRIVER Guidelines versioning scheme."
       }
-    ],
-    "description": "A Location object with the best available open access location for this work."
+    ]
   },
   {
     "name": "biblio",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "Old-timey bibliographic info for this work. This is mostly useful only in citation/reference contexts. These are all strings because sometimes you'll get fun values like \"Spring\" and \"Inside cover.\"",
     "fields": [
       {
         "name": "first_page",
@@ -401,8 +380,7 @@
         "type": "STRING",
         "mode": "NULLABLE"
       }
-    ],
-    "description": "Old-timey bibliographic info for this work. This is mostly useful only in citation/reference contexts. These are all strings because sometimes you'll get fun values like \"Spring\" and \"Inside cover.\""
+    ]
   },
   {
     "name": "cited_by_api_url",
@@ -416,9 +394,27 @@
     "description": "The number of citations to this work. These are the times that other works have cited this work: Other works \u279e This work."
   },
   {
+    "name": "cited_by_percentile_year",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "max",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "min",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      }
+    ]
+  },
+  {
     "name": "concepts",
     "type": "RECORD",
     "mode": "REPEATED",
+    "description": "List of dehydrated Concept objects. \nEach Concept object in the list also has one additional property",
     "fields": [
       {
         "name": "display_name",
@@ -450,13 +446,12 @@
         "mode": "NULLABLE",
         "description": "The Wikidata ID for this concept. "
       }
-    ],
-    "description": "List of dehydrated Concept objects. \nEach Concept object in the list also has one additional property"
+    ]
   },
   {
-    "mode": "NULLABLE",
     "name": "concepts_count",
-    "type": "INTEGER"
+    "type": "INTEGER",
+    "mode": "NULLABLE"
   },
   {
     "name": "corresponding_author_ids",
@@ -480,6 +475,7 @@
     "name": "counts_by_year",
     "type": "RECORD",
     "mode": "REPEATED",
+    "description": "Works.cited_by_count for each of the last ten years, binned by year. To put it another way: each year, you can see how many times this work was cited.",
     "fields": [
       {
         "name": "cited_by_count",
@@ -488,25 +484,23 @@
         "description": "The number of times this work is cited in this year."
       },
       {
-        "name": "oa_works_count",
-        "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
-      },
-      {
         "name": "year",
         "type": "INTEGER",
         "mode": "NULLABLE",
         "description": "The year."
       }
-    ],
-    "description": "Works.cited_by_count for each of the last ten years, binned by year. To put it another way: each year, you can see how many times this work was cited."
+    ]
   },
   {
     "name": "created_date",
     "type": "DATE",
     "mode": "NULLABLE",
     "description": "The date this Work object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
+  },
+  {
+    "name": "datasets",
+    "type": "STRING",
+    "mode": "REPEATED"
   },
   {
     "name": "display_name",
@@ -521,19 +515,20 @@
     "description": "The DOI for the work. This is the Canonical External ID for works.\nOccasionally, a work has more than one DOI--for example, there might be one DOI for a preprint version hosted on bioRxiv, and another DOI for the published version. However, this field always has just one DOI, the DOI for the published work."
   },
   {
-    "mode": "NULLABLE",
     "name": "doi_registration_agency",
-    "type": "STRING"
+    "type": "STRING",
+    "mode": "NULLABLE"
   },
   {
-    "mode": "NULLABLE",
     "name": "fulltext_origin",
-    "type": "STRING"
+    "type": "STRING",
+    "mode": "NULLABLE"
   },
   {
     "name": "grants",
     "type": "RECORD",
     "mode": "REPEATED",
+    "description": "List of grant objects, which include the Funder and the award ID, if available. Our grants data comes from Crossref, and is currently fairly limited.",
     "fields": [
       {
         "name": "award_id",
@@ -550,13 +545,12 @@
         "type": "STRING",
         "mode": "NULLABLE"
       }
-    ],
-    "description": "List of grant objects, which include the Funder and the award ID, if available. Our grants data comes from Crossref, and is currently fairly limited."
+    ]
   },
   {
-    "mode": "NULLABLE",
     "name": "has_fulltext",
-    "type": "BOOLEAN"
+    "type": "BOOLEAN",
+    "mode": "NULLABLE"
   },
   {
     "name": "id",
@@ -568,11 +562,12 @@
     "name": "ids",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "All the persistent identifiers (PIDs) that we know about for this work, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible.",
     "fields": [
       {
-        "mode": "NULLABLE",
         "name": "arxiv_id",
-        "type": "STRING"
+        "type": "STRING",
+        "mode": "NULLABLE"
       },
       {
         "name": "doi",
@@ -604,8 +599,12 @@
         "mode": "NULLABLE",
         "description": "The Pubmed Identifier"
       }
-    ],
-    "description": "All the persistent identifiers (PIDs) that we know about for this work, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible."
+    ]
+  },
+  {
+    "name": "indexed_in",
+    "type": "STRING",
+    "mode": "REPEATED"
   },
   {
     "name": "institutions_distinct_count",
@@ -626,10 +625,47 @@
     "description": "True if we know this work has been retracted. This field has high precision but low recall. In other words, if is_retracted is  true, the article is definitely retracted. But if is_retracted is False,  it still might be retracted, but we just don't know. This is because unfortunately, the open sources for retraction data aren't currently very comprehensive, and the more comprehensive ones aren't sufficiently open for us to use here."
   },
   {
+    "name": "is_review",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "keywords",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "keyword",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "score",
+        "type": "FLOAT",
+        "mode": "NULLABLE"
+      }
+    ]
+  },
+  {
     "name": "language",
     "type": "STRING",
     "mode": "NULLABLE",
     "description": "The language of the work in ISO 639-1 format. The language is automatically detected using the information we have about the work. We use the langdetect software library on the words in the work's abstract, or the title if we do not have the abstract. The source code for this procedure is here. Keep in mind that this method is not perfect, and that in some cases the language of the title or abstract could be different from the body of the work."
+  },
+  {
+    "name": "language_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
   },
   {
     "name": "license",
@@ -641,11 +677,12 @@
     "name": "locations",
     "type": "RECORD",
     "mode": "REPEATED",
+    "description": "A list of Location objects describing all unique places where this work lives.",
     "fields": [
       {
-        "mode": "NULLABLE",
         "name": "doi",
-        "type": "STRING"
+        "type": "STRING",
+        "mode": "NULLABLE"
       },
       {
         "name": "is_accepted",
@@ -678,6 +715,11 @@
         "description": "The location's publishing license. This can be a Create Commons license such as cc0 or cc-by, a publisher-specific license, or null which means we are not able to determine a license for this location."
       },
       {
+        "name": "license_id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
         "name": "pdf_url",
         "type": "STRING",
         "mode": "NULLABLE",
@@ -693,16 +735,6 @@
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The name of the source."
-          },
-          {
-            "mode": "REPEATED",
-            "name": "host_institution_lineage",
-            "type": "STRING"
-          },
-          {
-            "mode": "REPEATED",
-            "name": "host_institution_lineage_names",
-            "type": "STRING"
           },
           {
             "name": "host_organization",
@@ -764,26 +796,15 @@
             "description": "The publisher name."
           },
           {
-            "name": "publisher_id",
-            "type": "STRING",
-            "mode": "NULLABLE",
-            "description": "The OpenAlex ID of the publisher."
-          },
-          {
-            "mode": "REPEATED",
-            "name": "publisher_lineage",
-            "type": "STRING"
-          },
-          {
-            "mode": "REPEATED",
-            "name": "publisher_lineage_names",
-            "type": "STRING"
-          },
-          {
             "name": "type",
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The type of source."
+          },
+          {
+            "name": "type_id",
+            "type": "STRING",
+            "mode": "NULLABLE"
           }
         ]
       },
@@ -793,8 +814,7 @@
         "mode": "NULLABLE",
         "description": "The version of the work, based on the DRIVER Guidelines versioning scheme. Possible values are: publishedVersion: The document\u2019s version of record. This is the most authoritative version.\nacceptedVersion: The document after having completed peer review and being officially accepted for publication. It will lack publisher formatting, but the content should be interchangeable with the that of the publishedVersion.\nsubmittedVersion: the document as submitted to the publisher by the authors, but before peer-review. Its content may differ significantly from that of the accepted article."
       }
-    ],
-    "description": "A list of Location objects describing all unique places where this work lives."
+    ]
   },
   {
     "name": "locations_count",
@@ -806,6 +826,7 @@
     "name": "mesh",
     "type": "RECORD",
     "mode": "REPEATED",
+    "description": "List of MeSH tag objects. Only works found in PubMed have MeSH tags; for all other works, this is an empty list.",
     "fields": [
       {
         "name": "descriptor_name",
@@ -832,13 +853,13 @@
         "type": "STRING",
         "mode": "NULLABLE"
       }
-    ],
-    "description": "List of MeSH tag objects. Only works found in PubMed have MeSH tags; for all other works, this is an empty list."
+    ]
   },
   {
     "name": "open_access",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "Information about the access status of this work, as an OpenAccess object.",
     "fields": [
       {
         "name": "any_repository_has_fulltext",
@@ -863,23 +884,23 @@
         "mode": "NULLABLE",
         "description": "The best Open Access (OA) URL for this work. Although there are many ways to define OA, in this context an OA URL is one where you can read the fulltext of this work without needing to pay money or log in. The \"best\" such URL is the one closest to the version of record. This URL might be a direct link to a PDF, or it might be to a landing page that links to the free PDF"
       }
-    ],
-    "description": "Information about the access status of this work, as an OpenAccess object."
+    ]
   },
   {
     "name": "primary_location",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "A Location object with the primary location of this work.",
     "fields": [
       {
-        "mode": "NULLABLE",
         "name": "doi",
-        "type": "STRING"
+        "type": "STRING",
+        "mode": "NULLABLE"
       },
       {
-        "mode": "NULLABLE",
         "name": "is_accepted",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "mode": "NULLABLE"
       },
       {
         "name": "is_oa",
@@ -888,9 +909,9 @@
         "description": "True if this work is Open Access (OA)."
       },
       {
-        "mode": "NULLABLE",
         "name": "is_published",
-        "type": "BOOLEAN"
+        "type": "BOOLEAN",
+        "mode": "NULLABLE"
       },
       {
         "name": "landing_page_url",
@@ -903,6 +924,11 @@
         "type": "STRING",
         "mode": "NULLABLE",
         "description": "The location's publishing license. This can be a Create Commons license such as cc0 or cc-by, a publisher-specific license, or null which means we are not able to determine a license for this location."
+      },
+      {
+        "name": "license_id",
+        "type": "STRING",
+        "mode": "NULLABLE"
       },
       {
         "name": "pdf_url",
@@ -920,16 +946,6 @@
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The name of the source."
-          },
-          {
-            "mode": "REPEATED",
-            "name": "host_institution_lineage",
-            "type": "STRING"
-          },
-          {
-            "mode": "REPEATED",
-            "name": "host_institution_lineage_names",
-            "type": "STRING"
           },
           {
             "name": "host_organization",
@@ -991,26 +1007,15 @@
             "description": "The publisher name."
           },
           {
-            "name": "publisher_id",
-            "type": "STRING",
-            "mode": "NULLABLE",
-            "description": "The OpenAlex ID of the publisher."
-          },
-          {
-            "mode": "REPEATED",
-            "name": "publisher_lineage",
-            "type": "STRING"
-          },
-          {
-            "mode": "REPEATED",
-            "name": "publisher_lineage_names",
-            "type": "STRING"
-          },
-          {
             "name": "type",
             "type": "STRING",
             "mode": "NULLABLE",
             "description": "The type of source."
+          },
+          {
+            "name": "type_id",
+            "type": "STRING",
+            "mode": "NULLABLE"
           }
         ]
       },
@@ -1020,8 +1025,80 @@
         "mode": "NULLABLE",
         "description": "The version of the work, based on the DRIVER Guidelines versioning scheme. Possible values are:.\npublishedVersion: The document\u2019s version of record. This is the most authoritative version.\nacceptedVersion: The document after having completed peer review and being officially accepted for publication. It will lack publisher formatting, but the content should be interchangeable with the that of the publishedVersion.\nsubmittedVersion: the document as submitted to the publisher by the authors, but before peer-review. Its content may differ significantly from that of the accepted article."
       }
-    ],
-    "description": "A Location object with the primary location of this work."
+    ]
+  },
+  {
+    "name": "primary_topic",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "domain",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "field",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "score",
+        "type": "FLOAT",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "subfield",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      }
+    ]
   },
   {
     "name": "publication_date",
@@ -1042,9 +1119,9 @@
     "description": "OpenAlex IDs for works that this work cites. These are citations that go from this work out to another work: This work \u279e Other works."
   },
   {
-    "mode": "NULLABLE",
     "name": "referenced_works_count",
-    "type": "INTEGER"
+    "type": "INTEGER",
+    "mode": "NULLABLE"
   },
   {
     "name": "related_works",
@@ -1060,50 +1137,12 @@
       {
         "name": "2yr_cited_by_count",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
-      },
-      {
-        "name": "2yr_h_index",
-        "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
-      },
-      {
-        "name": "2yr_i10_index",
-        "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
-      },
-      {
-        "name": "2yr_mean_citedness",
-        "type": "FLOAT",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "cited_by_count",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
-      },
-      {
-        "name": "h_index",
-        "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
-      },
-      {
-        "name": "i10_index",
-        "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
-      },
-      {
-        "name": "oa_percent",
-        "type": "FLOAT",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       }
     ]
   },
@@ -1138,6 +1177,84 @@
     "description": "The title of this work."
   },
   {
+    "name": "topics",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "domain",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "field",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "score",
+        "type": "FLOAT",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "subfield",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "topics_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
     "name": "type",
     "type": "STRING",
     "mode": "NULLABLE",
@@ -1150,9 +1267,14 @@
     "description": "Legacy type information, using Crossref's \"type\" controlled vocabulary."
   },
   {
-    "mode": "NULLABLE",
+    "name": "type_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
     "name": "updated",
-    "type": "TIMESTAMP"
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE"
   },
   {
     "name": "updated_date",
@@ -1161,49 +1283,8 @@
     "description": "The last time anything in this Work object changed, expressed as an ISO 8601 date string. This date is updated for any change at all, including increases in various counts."
   },
   {
-    "name": "url",
+    "name": "versions",
     "type": "STRING",
-    "mode": "NULLABLE",
-    "description": "The URL where you can access this work."
-  },
-  {
-    "name": "version",
-    "type": "STRING",
-    "mode": "NULLABLE",
-    "description": "The version of the work, based on the DRIVER Guidelines versioning scheme. Possible values are: publishedVersion, acceptedVersion or submittedVersion."
-  },
-  {
-    "name": "keywords",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "mode": "NULLABLE",
-        "name": "keyword",
-        "type": "STRING"
-      },
-      {
-        "mode": "NULLABLE",
-        "name": "score",
-        "type": "FLOAT"
-      }
-    ]
-  },
-  {
-    "name": "cited_by_percentile_year",
-    "type": "RECORD",
-    "mode": "NULLABLE",
-    "fields": [
-      {
-        "name": "min",
-        "type": "FLOAT",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "max",
-        "type": "FLOAT",
-        "mode": "NULLABLE"
-      }
-    ]
+    "mode": "REPEATED"
   }
 ]

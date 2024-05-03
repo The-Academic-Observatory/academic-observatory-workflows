@@ -15,21 +15,19 @@
     "name": "apc_prices",
     "type": "RECORD",
     "mode": "REPEATED",
+    "description": "List of objects, each with price (Integer) and currency (String). Article processing charge information, taken directly from DOAJ.",
     "fields": [
       {
         "name": "currency",
         "type": "STRING",
-        "mode": "NULLABLE",
-        "description": "Currency."
+        "mode": "NULLABLE"
       },
       {
         "name": "price",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": "Price."
+        "mode": "NULLABLE"
       }
-    ],
-    "description": "List of objects, each with price (Integer) and currency (String). Article processing charge information, taken directly from DOAJ."
+    ]
   },
   {
     "name": "apc_usd",
@@ -50,9 +48,15 @@
     "description": "The country that this source is associated with, represented as an ISO two-letter country code."
   },
   {
+    "name": "country_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
     "name": "counts_by_year",
     "type": "RECORD",
     "mode": "REPEATED",
+    "description": "works_count and cited_by_count for each of the last ten years, binned by year. To put it another way: each year, you can see how many new works this source started hosting, and how many times any work in this source got cited. If the source was founded less than ten years ago, there will naturally be fewer than ten years in this list. Years with zero citations and zero works have been removed so you will need to add those in if you need them.",
     "fields": [
       {
         "name": "cited_by_count",
@@ -63,8 +67,7 @@
       {
         "name": "oa_works_count",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "works_count",
@@ -78,8 +81,7 @@
         "mode": "NULLABLE",
         "description": "The year."
       }
-    ],
-    "description": "works_count and cited_by_count for each of the last ten years, binned by year. To put it another way: each year, you can see how many new works this source started hosting, and how many times any work in this source got cited. If the source was founded less than ten years ago, there will naturally be fewer than ten years in this list. Years with zero citations and zero works have been removed so you will need to add those in if you need them."
+    ]
   },
   {
     "name": "created_date",
@@ -133,6 +135,7 @@
     "name": "ids",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "All the external identifiers that we know about for this source. IDs are expressed as URIs whenever possible.",
     "fields": [
       {
         "name": "fatcat",
@@ -170,8 +173,7 @@
         "mode": "NULLABLE",
         "description": "this source's Wikidata ID"
       }
-    ],
-    "description": "All the external identifiers that we know about for this source. IDs are expressed as URIs whenever possible."
+    ]
   },
   {
     "name": "is_in_doaj",
@@ -204,15 +206,10 @@
     "description": "The name of this source's publisher. Publisher is a tricky category, as journals often change publishers, publishers merge, publishers have subsidiaries (\"imprints\"), and of course no one is consistent in their naming. In the future, we plan to roll out support for a more structured publisher field, but for now it's just a string."
   },
   {
-    "name": "publisher_id",
-    "type": "STRING",
-    "mode": "NULLABLE",
-    "description": ""
-  },
-  {
     "name": "societies",
     "type": "RECORD",
     "mode": "REPEATED",
+    "description": "Societies on whose behalf the source is published and maintained, obtained from our crowdsourced list. Thanks!",
     "fields": [
       {
         "name": "organization",
@@ -226,82 +223,149 @@
         "mode": "NULLABLE",
         "description": "The society URL."
       }
-    ],
-    "description": "Societies on whose behalf the source is published and maintained, obtained from our crowdsourced list. Thanks!"
+    ]
   },
   {
     "name": "summary_stats",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "Citation metrics for this source.",
     "fields": [
       {
         "name": "2yr_cited_by_count",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "2yr_h_index",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "2yr_i10_index",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "2yr_mean_citedness",
         "type": "FLOAT",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "2yr_works_count",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "cited_by_count",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "h_index",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "i10_index",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "oa_percent",
         "type": "FLOAT",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "works_count",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       }
-    ],
-    "description": "Citation metrics for this source."
+    ]
+  },
+  {
+    "name": "topics",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "count",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "domain",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "field",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "subfield",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      }
+    ]
   },
   {
     "name": "type",
     "type": "STRING",
     "mode": "NULLABLE",
     "description": "The type of source, which will be one of the following from the Type column: journal, repository, conference, ebook platform."
+  },
+  {
+    "name": "type_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
   },
   {
     "name": "updated_date",
@@ -325,6 +389,7 @@
     "name": "x_concepts",
     "type": "RECORD",
     "mode": "REPEATED",
+    "description": "The \"x\" in x_concepts is because it's experimental and subject to removal with very little warning. We plan to replace it with a custom link to the Concepts API endpoint. The Concepts most frequently applied to works hosted by this source. Each is represented as a dehydrated Concept object, with one additional attribute:",
     "fields": [
       {
         "name": "display_name",
@@ -356,7 +421,6 @@
         "mode": "NULLABLE",
         "description": "The Wikidata ID for this concept."
       }
-    ],
-    "description": "The \"x\" in x_concepts is because it's experimental and subject to removal with very little warning. We plan to replace it with a custom link to the Concepts API endpoint. The Concepts most frequently applied to works hosted by this source. Each is represented as a dehydrated Concept object, with one additional attribute:"
+    ]
   }
 ]
