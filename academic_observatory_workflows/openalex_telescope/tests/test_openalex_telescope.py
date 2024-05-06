@@ -1067,12 +1067,12 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         # Assert content
                         table_id = bq_table_id(self.project_id, bq_dataset_id, entity.entity_name)
                         print(f"Assert content run 1 {entity.entity_name}: {table_id}")
-                        # expected_data = load_and_parse_json(
-                        #     os.path.join(FIXTURES_FOLDER, "2023-04-02", "expected", f"{entity.entity_name}.json"),
-                        #     date_fields={"created_date", "publication_date"},
-                        #     timestamp_fields={"updated_date"},
-                        # )
-                        # self.assert_table_content(table_id, expected_data, "id")
+                        expected_data = load_and_parse_json(
+                            os.path.join(FIXTURES_FOLDER, "2023-04-02", "expected", f"{entity.entity_name}.json"),
+                            date_fields={"created_date", "publication_date"},
+                            timestamp_fields={"updated_date"},
+                        )
+                        self.assert_table_content(table_id, expected_data, "id")
 
                         # Check that there is zero dataset release per entity before add_dataset_release and 1 after
                         dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity.entity_name)
@@ -1381,12 +1381,12 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         # Assert content
                         table_id = bq_table_id(self.project_id, bq_dataset_id, entity.entity_name)
                         print(f"Assert content run 2 {entity.entity_name}: {table_id}")
-                        # expected_data = load_and_parse_json(
-                        #     os.path.join(FIXTURES_FOLDER, "2023-04-16", "expected", f"{entity.entity_name}.json"),
-                        #     date_fields={"created_date", "publication_date"},
-                        #     timestamp_fields={"updated_date"},
-                        # )
-                        # self.assert_table_content(table_id, expected_data, "id")
+                        expected_data = load_and_parse_json(
+                            os.path.join(FIXTURES_FOLDER, "2023-04-16", "expected", f"{entity.entity_name}.json"),
+                            date_fields={"created_date", "publication_date"},
+                            timestamp_fields={"updated_date"},
+                        )
+                        self.assert_table_content(table_id, expected_data, "id")
 
                         # Check that there is zero dataset release per entity before add_dataset_release and 1 after
                         dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity.entity_name)
