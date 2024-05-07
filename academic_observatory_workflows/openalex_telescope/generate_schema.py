@@ -13,8 +13,34 @@ from academic_observatory_workflows.openalex_telescope.openalex_telescope import
     merge_schema_maps,
     transform_file,
 )
-from observatory.platform.cli.cli import sort_schema
 from observatory.platform.files import list_files
+
+
+def sort_schema(input_file: Path):
+    def sort_schema_func(schema):
+        # Sort schema entries by name and sort the fields of each entry by key_order
+        key_order = ["name", "type", "mode", "description", "fields"]
+        sorted_schema = [
+            {k: field[k] for k in key_order if k in field} for field in sorted(schema, key=lambda x: x["name"])
+        ]
+
+        # Sort the fields recursively
+        for field in sorted_schema:
+            if field.get("type") == "RECORD" and "fields" in field:
+                field["fields"] = sort_schema_func(field["fields"])
+
+        return sorted_schema
+
+    # Load the JSON schema from a string
+    with open(input_file, mode="r") as f:
+        data = json.load(f)
+
+    # Sort the schema
+    sorted_json_schema = sort_schema_func(data)
+
+    # Save the schema
+    with open(input_file, mode="w") as f:
+        json.dump(sorted_json_schema, f, indent=2)
 
 
 def generate_schema(entity_name: str, input_folder: Path, output_folder: Path, max_workers: int):
