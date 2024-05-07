@@ -81,11 +81,6 @@
     ]
   },
   {
-    "name": "updated",
-    "type": "TIMESTAMP",
-    "mode": "NULLABLE"
-  },
-  {
     "name": "updated_date",
     "type": "TIMESTAMP",
     "mode": "NULLABLE"

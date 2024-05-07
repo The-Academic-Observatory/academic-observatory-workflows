@@ -1297,7 +1297,6 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             file_path = os.path.join(entity.transform_folder, entry.object_key)
                             self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
 
-                        now = pendulum.now().date()
                         ti = env.run_task(f"{entity.entity_name}.bq_load_table")
                         self.assertEqual(State.SUCCESS, ti.state)
                         expected_row_count = {
@@ -1318,10 +1317,8 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         self.assertIsNone(get_table_expiry(entity.bq_main_table_id))
                         table_expiry = get_table_expiry(entity.bq_upsert_table_id)
                         self.assertIsNotNone(table_expiry)
-                        self.assertEqual(
-                            now,
-                            pendulum.instance(table_expiry).subtract(days=temp_table_expiry_days).date(),
-                        )
+                        diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_days()
+                        self.assertAlmostEqual(temp_table_expiry_days, diff, places=1)
                         ti = env.run_task(f"{entity.entity_name}.bq_upsert_records")
                         self.assertEqual(State.SUCCESS, ti.state)
                         expected_row_count = {
@@ -1340,18 +1337,14 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         expected_rows = expected_row_count[entity.entity_name]
                         self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
 
-                        now = pendulum.now().date()
                         ti = env.run_task(f"{entity.entity_name}.bq_load_delete_table")
                         if entity.has_merged_ids:
                             self.assertEqual(State.SUCCESS, ti.state)
                             self.assert_table_integrity(entity.bq_delete_table_id, 1)
-
                             table_expiry = get_table_expiry(entity.bq_delete_table_id)
                             self.assertIsNotNone(table_expiry)
-                            self.assertEqual(
-                                now,
-                                pendulum.instance(table_expiry).subtract(days=temp_table_expiry_days).date(),
-                            )
+                            diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_days()
+                            self.assertAlmostEqual(temp_table_expiry_days, diff, places=1)
                         else:
                             self.assertEqual(State.SKIPPED, ti.state)
                             with self.assertRaises(NotFound):

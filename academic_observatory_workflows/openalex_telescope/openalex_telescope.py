@@ -556,8 +556,10 @@ def create_dag(
 
                 # These will all get executed as different tasks, so only use many processes for works which is the largest
                 mp = 1
-                if entity.entity_name == "works":
-                    mp = max_processes
+                if entity.entity_name == "authors":
+                    mp = 4
+                elif entity.entity_name == "works":
+                    mp = max(1, max_processes - 4)
                 logging.info(
                     f"{task_id}: transforming files for OpenAlexEntity({entity.entity_name}), no. workers: {mp}"
                 )
