@@ -660,7 +660,19 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             dag_id=self.dag_id,
             cloud_workspace=self.fake_cloud_workspace,
         )
-        entity_names = ["authors", "concepts", "funders", "institutions", "publishers", "sources", "works"]
+        entity_names = [
+            "authors",
+            "concepts",
+            "funders",
+            "institutions",
+            "publishers",
+            "sources",
+            "works",
+            "domains",
+            "fields",
+            "subfields",
+            "topics",
+        ]
         task_ids = [
             "bq_snapshot",
             "aws_to_gcs_transfer",
@@ -778,6 +790,59 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 "works.bq_load_delete_table": ["works.bq_delete_records"],
                 "works.bq_delete_records": ["works.add_dataset_release"],
                 "works.add_dataset_release": ["cleanup_workflow"],
+                # Domains
+                "domains.bq_snapshot": ["domains.aws_to_gcs_transfer"],
+                "domains.aws_to_gcs_transfer": ["domains.download"],
+                "domains.download": ["domains.transform"],
+                "domains.transform": ["domains.upload_schema"],
+                "domains.upload_schema": ["domains.compare_schemas"],
+                "domains.compare_schemas": ["domains.upload_files"],
+                "domains.upload_files": ["domains.bq_load_table"],
+                "domains.bq_load_table": ["domains.bq_upsert_records"],
+                "domains.bq_upsert_records": ["domains.bq_load_delete_table"],
+                "domains.bq_load_delete_table": ["domains.bq_delete_records"],
+                "domains.bq_delete_records": ["domains.add_dataset_release"],
+                "domains.add_dataset_release": ["cleanup_workflow"],
+                # Fields
+                "fields.bq_snapshot": ["fields.aws_to_gcs_transfer"],
+                "fields.aws_to_gcs_transfer": ["fields.download"],
+                "fields.download": ["fields.transform"],
+                "fields.transform": ["fields.upload_schema"],
+                "fields.upload_schema": ["fields.compare_schemas"],
+                "fields.compare_schemas": ["fields.upload_files"],
+                "fields.upload_files": ["fields.bq_load_table"],
+                "fields.bq_load_table": ["fields.bq_upsert_records"],
+                "fields.bq_upsert_records": ["fields.bq_load_delete_table"],
+                "fields.bq_load_delete_table": ["fields.bq_delete_records"],
+                "fields.bq_delete_records": ["fields.add_dataset_release"],
+                "fields.add_dataset_release": ["cleanup_workflow"],
+                # Subfields
+                "subfields.bq_snapshot": ["subfields.aws_to_gcs_transfer"],
+                "subfields.aws_to_gcs_transfer": ["subfields.download"],
+                "subfields.download": ["subfields.transform"],
+                "subfields.transform": ["subfields.upload_schema"],
+                "subfields.upload_schema": ["subfields.compare_schemas"],
+                "subfields.compare_schemas": ["subfields.upload_files"],
+                "subfields.upload_files": ["subfields.bq_load_table"],
+                "subfields.bq_load_table": ["subfields.bq_upsert_records"],
+                "subfields.bq_upsert_records": ["subfields.bq_load_delete_table"],
+                "subfields.bq_load_delete_table": ["subfields.bq_delete_records"],
+                "subfields.bq_delete_records": ["subfields.add_dataset_release"],
+                "subfields.add_dataset_release": ["cleanup_workflow"],
+                # Topics
+                "topics.bq_snapshot": ["topics.aws_to_gcs_transfer"],
+                "topics.aws_to_gcs_transfer": ["topics.download"],
+                "topics.download": ["topics.transform"],
+                "topics.transform": ["topics.upload_schema"],
+                "topics.upload_schema": ["topics.compare_schemas"],
+                "topics.compare_schemas": ["topics.upload_files"],
+                "topics.upload_files": ["topics.bq_load_table"],
+                "topics.bq_load_table": ["topics.bq_upsert_records"],
+                "topics.bq_upsert_records": ["topics.bq_load_delete_table"],
+                "topics.bq_load_delete_table": ["topics.bq_delete_records"],
+                "topics.bq_delete_records": ["topics.add_dataset_release"],
+                "topics.add_dataset_release": ["cleanup_workflow"],
+                # Cleanup
                 "cleanup_workflow": ["dag_run_complete"],
                 "dag_run_complete": [],
             },
@@ -809,8 +874,21 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
         bq_dataset_id = env.add_dataset()
         temp_table_expiry_days = 7
+        temp_table_expiry_mins = temp_table_expiry_days * 24 * 60
         schema_folder = project_path("openalex_telescope", "schema")
-        entity_names = ["authors", "concepts", "funders", "institutions", "publishers", "sources", "works"]
+        entity_names = [
+            "authors",
+            "concepts",
+            "funders",
+            "institutions",
+            "publishers",
+            "sources",
+            "works",
+            "domains",
+            "fields",
+            "subfields",
+            "topics",
+        ]
         aws_conn_id = "aws_openalex"
         conn_aws = Connection(
             conn_id=aws_conn_id,
@@ -895,7 +973,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         task_ids="fetch_entities",
                         include_prior_dates=False,
                     )
-                    self.assertEqual(7, len(entity_index))
+                    self.assertEqual(11, len(entity_index))
                     expected_entity_index = {entity.entity_name: entity.to_dict() for entity in expected_entities}
                     self.assertEqual(expected_entity_index, entity_index)
 
@@ -953,14 +1031,29 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             file_path = os.path.join(entity.transform_folder, entry.object_key)
                             self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
 
+                        expected_row_count = {
+                            "authors": 4,
+                            "concepts": 4,
+                            "institutions": 4,
+                            "publishers": 4,
+                            "sources": 4,
+                            "works": 4,
+                            "funders": 4,
+                            "domains": 1,
+                            "fields": 1,
+                            "subfields": 1,
+                            "topics": 2,
+                        }
+                        expected_rows = expected_row_count[entity.entity_name]
+
                         ti = env.run_task(f"{entity.entity_name}.bq_load_table")
                         self.assertEqual(State.SUCCESS, ti.state)
-                        self.assert_table_integrity(entity.bq_main_table_id, 4)
+                        self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
                         self.assertIsNone(get_table_expiry(entity.bq_main_table_id))
 
                         ti = env.run_task(f"{entity.entity_name}.bq_upsert_records")
                         self.assertEqual(State.SKIPPED, ti.state)
-                        self.assert_table_integrity(entity.bq_main_table_id, 4)
+                        self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
 
                         # These two don't do anything on the first run
                         ti = env.run_task(f"{entity.entity_name}.bq_load_delete_table")
@@ -970,7 +1063,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
                         ti = env.run_task(f"{entity.entity_name}.bq_delete_records")
                         self.assertEqual(State.SKIPPED, ti.state)
-                        self.assert_table_integrity(entity.bq_main_table_id, 4)
+                        self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
 
                         # Assert content
                         table_id = bq_table_id(self.project_id, bq_dataset_id, entity.entity_name)
@@ -1035,7 +1128,8 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
                     # Check that tables all still have the same number of rows
                     for entity in expected_entities:
-                        self.assert_table_integrity(entity.bq_main_table_id, 4)
+                        expected_rows = expected_row_count[entity.entity_name]
+                        self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
 
                     # Check that only 1 dataset release exists for each entity
                     for entity_name in entity_names:
@@ -1121,7 +1215,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         task_ids="fetch_entities",
                         include_prior_dates=False,
                     )
-                    self.assertEqual(7, len(entity_index))
+                    self.assertEqual(11, len(entity_index))
                     expected_entity_index = {entity.entity_name: entity.to_dict() for entity in expected_entities}
                     self.assertEqual(expected_entity_index, entity_index)
 
@@ -1149,7 +1243,21 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             ),
                             entity.bq_snapshot_table_id,
                         )
-                        self.assert_table_integrity(entity.bq_snapshot_table_id, 4)
+                        expected_row_count = {
+                            "authors": 4,
+                            "concepts": 4,
+                            "institutions": 4,
+                            "publishers": 4,
+                            "sources": 4,
+                            "works": 4,
+                            "funders": 4,
+                            "domains": 1,
+                            "fields": 1,
+                            "subfields": 1,
+                            "topics": 2,
+                        }
+                        expected_rows = expected_row_count[entity.entity_name]
+                        self.assert_table_integrity(entity.bq_snapshot_table_id, expected_rows)
 
                         # Transfer from AWS to GCP
                         ti = env.run_task(f"{entity.entity_name}.aws_to_gcs_transfer")
@@ -1192,7 +1300,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
 
                         ti = env.run_task(f"{entity.entity_name}.bq_load_table")
                         self.assertEqual(State.SUCCESS, ti.state)
-                        expected_row_index = {
+                        expected_row_count = {
                             "authors": 3,
                             "concepts": 2,
                             "institutions": 3,
@@ -1200,32 +1308,46 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             "sources": 3,
                             "works": 3,
                             "funders": 2,
+                            "domains": 1,
+                            "fields": 1,
+                            "subfields": 1,
+                            "topics": 1,
                         }
-                        expected_rows = expected_row_index[entity.entity_name]
+                        expected_rows = expected_row_count[entity.entity_name]
                         self.assert_table_integrity(entity.bq_upsert_table_id, expected_rows)
                         self.assertIsNone(get_table_expiry(entity.bq_main_table_id))
                         table_expiry = get_table_expiry(entity.bq_upsert_table_id)
                         self.assertIsNotNone(table_expiry)
-                        self.assertEqual(
-                            pendulum.now().date(),
-                            pendulum.instance(table_expiry).subtract(days=temp_table_expiry_days).date(),
-                        )
-
+                        diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_minutes()
+                        self.assertGreater(diff, temp_table_expiry_mins - 15)
+                        self.assertLess(diff, temp_table_expiry_mins + 15)
                         ti = env.run_task(f"{entity.entity_name}.bq_upsert_records")
                         self.assertEqual(State.SUCCESS, ti.state)
-                        self.assert_table_integrity(entity.bq_main_table_id, 5)
+                        expected_row_count = {
+                            "authors": 5,
+                            "concepts": 5,
+                            "institutions": 5,
+                            "publishers": 5,
+                            "sources": 5,
+                            "works": 5,
+                            "funders": 5,
+                            "domains": 1,
+                            "fields": 2,
+                            "subfields": 2,
+                            "topics": 3,
+                        }
+                        expected_rows = expected_row_count[entity.entity_name]
+                        self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
 
                         ti = env.run_task(f"{entity.entity_name}.bq_load_delete_table")
                         if entity.has_merged_ids:
                             self.assertEqual(State.SUCCESS, ti.state)
                             self.assert_table_integrity(entity.bq_delete_table_id, 1)
-
                             table_expiry = get_table_expiry(entity.bq_delete_table_id)
                             self.assertIsNotNone(table_expiry)
-                            self.assertEqual(
-                                pendulum.now().date(),
-                                pendulum.instance(table_expiry).subtract(days=temp_table_expiry_days).date(),
-                            )
+                            diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_minutes()
+                            self.assertGreater(diff, temp_table_expiry_mins - 15)
+                            self.assertLess(diff, temp_table_expiry_mins + 15)
                         else:
                             self.assertEqual(State.SKIPPED, ti.state)
                             with self.assertRaises(NotFound):
@@ -1236,7 +1358,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             self.assertEqual(State.SUCCESS, ti.state)
                         else:
                             self.assertEqual(State.SKIPPED, ti.state)
-                        expected_row_index = {
+                        expected_row_count = {
                             "authors": 4,
                             "concepts": 5,
                             "institutions": 4,
@@ -1244,8 +1366,12 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             "sources": 4,
                             "works": 4,
                             "funders": 5,
+                            "domains": 1,
+                            "fields": 2,
+                            "subfields": 2,
+                            "topics": 3,
                         }
-                        expected_rows = expected_row_index[entity.entity_name]
+                        expected_rows = expected_row_count[entity.entity_name]
                         self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
 
                         # Assert content

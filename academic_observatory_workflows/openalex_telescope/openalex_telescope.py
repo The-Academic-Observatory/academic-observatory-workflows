@@ -298,7 +298,19 @@ def create_dag(
     """
 
     if entity_names is None:
-        entity_names = ["authors", "concepts", "funders", "institutions", "publishers", "sources", "works"]
+        entity_names = [
+            "authors",
+            "concepts",
+            "funders",
+            "institutions",
+            "publishers",
+            "sources",
+            "works",
+            "domains",
+            "fields",
+            "subfields",
+            "topics",
+        ]
 
     @dag(
         dag_id=dag_id,
@@ -544,8 +556,10 @@ def create_dag(
 
                 # These will all get executed as different tasks, so only use many processes for works which is the largest
                 mp = 1
-                if entity.entity_name == "works":
-                    mp = max_processes
+                if entity.entity_name == "authors":
+                    mp = 4
+                elif entity.entity_name == "works":
+                    mp = max(1, max_processes - 4)
                 logging.info(
                     f"{task_id}: transforming files for OpenAlexEntity({entity.entity_name}), no. workers: {mp}"
                 )
@@ -560,12 +574,10 @@ def create_dag(
                         output_path = os.path.join(entity.transform_folder, entry.object_key)
                         futures.append(executor.submit(transform_file, input_path, output_path))
                     for future in as_completed(futures):
-                        schema_map, schema_error = future.result()
+                        input_path, schema_map, schema_error = future.result()
 
                         if schema_error:
-                            logging.info(
-                                f"Error generating schema from transformed data, please investigate: {schema_error}"
-                            )
+                            logging.info(f"Error generating schema for file {input_path}: {schema_error}")
 
                         # Merge the schemas from each process. Each data file could have more fields than others.
                         merged_schema_map = merge_schema_maps(to_add=schema_map, old=merged_schema_map)
@@ -1121,7 +1133,13 @@ def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict
 
     logging.info(f"Finished transform, saved to {transform_path}")
 
-    return schema_map, schema_generator.error_logs
+    return download_path, schema_map, schema_generator.error_logs
+
+
+def clean_array_field(obj: dict, field: str):
+    if field in obj:
+        value = obj.get(field) or []
+        obj[field] = [x for x in value if x is not None]
 
 
 def transform_object(obj: dict):
@@ -1136,21 +1154,14 @@ def transform_object(obj: dict):
 
     # Remove nulls from arrays
     # And handle null value
-    field = "corresponding_institution_ids"
-    if field in obj:
-        value = obj.get(field, [])
-        if value is None:
-            value = []
-        obj[field] = [x for x in value if x is not None]
+    array_fields = ["corresponding_institution_ids", "corresponding_author_ids", "societies", "alternate_titles"]
+    for field in array_fields:
+        clean_array_field(obj, field)
 
-    # Remove nulls from arrays
-    # And handle null value
-    field = "corresponding_author_ids"
-    if field in obj:
-        value = obj.get(field, [])
-        if value is None:
-            value = []
-        obj[field] = [x for x in value if x is not None]
+    # Remove nulls from authors affiliations[].years
+    for affiliation in obj.get("affiliations", []):
+        if "years" in affiliation:
+            affiliation["years"] = [x for x in affiliation["years"] if x is not None]
 
     field = "abstract_inverted_index"
     if field in obj:

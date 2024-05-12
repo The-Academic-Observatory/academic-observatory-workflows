@@ -11,6 +11,11 @@
         "description": "The country where this institution is located, represented as an ISO two-letter country code."
       },
       {
+        "name": "country_id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
         "name": "display_name",
         "type": "STRING",
         "mode": "NULLABLE",
@@ -39,6 +44,11 @@
         "type": "STRING",
         "mode": "NULLABLE",
         "description": "The institution's primary type, using the ROR \"type\" controlled vocabulary. Possible values are: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, and Other."
+      },
+      {
+        "name": "type_id",
+        "type": "STRING",
+        "mode": "NULLABLE"
       }
     ]
   },
@@ -58,6 +68,7 @@
     "name": "counts_by_year",
     "type": "RECORD",
     "mode": "REPEATED",
+    "description": "works_count and cited_by_count for each of the last ten years, binned by year. To put it another way: each year, you can see how many new works this venue started hosting, and how many times any work in this venue got cited.",
     "fields": [
       {
         "name": "cited_by_count",
@@ -68,8 +79,7 @@
       {
         "name": "oa_works_count",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "works_count",
@@ -83,8 +93,7 @@
         "mode": "NULLABLE",
         "description": "The year."
       }
-    ],
-    "description": "works_count and cited_by_count for each of the last ten years, binned by year. To put it another way: each year, you can see how many new works this venue started hosting, and how many times any work in this venue got cited."
+    ]
   },
   {
     "name": "created_date",
@@ -114,6 +123,7 @@
     "name": "geo",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "A bunch of stuff we know about the location of this institution",
     "fields": [
       {
         "name": "city",
@@ -142,14 +152,12 @@
       {
         "name": "latitude",
         "type": "FLOAT",
-        "mode": "NULLABLE",
-        "description": "Does what it says."
+        "mode": "NULLABLE"
       },
       {
         "name": "longitude",
         "type": "FLOAT",
-        "mode": "NULLABLE",
-        "description": "Does what it says."
+        "mode": "NULLABLE"
       },
       {
         "name": "region",
@@ -157,8 +165,7 @@
         "mode": "NULLABLE",
         "description": "The sub-national region (state, province) where this institution lives."
       }
-    ],
-    "description": "A bunch of stuff we know about the location of this institution"
+    ]
   },
   {
     "name": "homepage_url",
@@ -176,6 +183,7 @@
     "name": "ids",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "All the persistent identifiers (PIDs) that we know about for this institution, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible. They're all strings except for mag, which is a long integer.",
     "fields": [
       {
         "name": "grid",
@@ -213,8 +221,7 @@
         "mode": "NULLABLE",
         "description": "this institution's Wikipedia page URL"
       }
-    ],
-    "description": "All the persistent identifiers (PIDs) that we know about for this institution, as key: value pairs, where key is the PID namespace, and value is the PID. IDs are expressed as URIs where possible. They're all strings except for mag, which is a long integer."
+    ]
   },
   {
     "name": "image_thumbnail_url",
@@ -232,10 +239,12 @@
     "name": "international",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "Translation of the display_name and description into multiple languages.",
     "fields": [
       {
         "name": "display_name",
         "type": "RECORD",
+        "description": "The institution's display name in different languages. Derived from the wikipedia page for the institution in the given language.",
         "fields": [
           {
             "name": "keys",
@@ -249,11 +258,9 @@
             "mode": "REPEATED",
             "description": "The translated display_names in each language."
           }
-        ],
-        "description": "The institution's display name in different languages. Derived from the wikipedia page for the institution in the given language."
+        ]
       }
-    ],
-    "description": "Translation of the display_name and description into multiple languages."
+    ]
   },
   {
     "name": "lineage",
@@ -304,6 +311,16 @@
         "description": "The OpenAlex ID of the repository."
       },
       {
+        "name": "is_in_doaj",
+        "type": "BOOLEAN",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "is_oa",
+        "type": "BOOLEAN",
+        "mode": "NULLABLE"
+      },
+      {
         "name": "issn",
         "type": "STRING",
         "mode": "REPEATED"
@@ -325,6 +342,11 @@
       },
       {
         "name": "type",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "type_id",
         "type": "STRING",
         "mode": "NULLABLE"
       }
@@ -362,75 +384,143 @@
     "name": "summary_stats",
     "type": "RECORD",
     "mode": "NULLABLE",
+    "description": "Citation metrics for this institutions.",
     "fields": [
       {
         "name": "2yr_cited_by_count",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "2yr_h_index",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "2yr_i10_index",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "2yr_mean_citedness",
         "type": "FLOAT",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "2yr_works_count",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "cited_by_count",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "h_index",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "i10_index",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "oa_percent",
         "type": "FLOAT",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       },
       {
         "name": "works_count",
         "type": "INTEGER",
-        "mode": "NULLABLE",
-        "description": ""
+        "mode": "NULLABLE"
       }
-    ],
-    "description": "Citation metrics for this institutions."
+    ]
+  },
+  {
+    "name": "topics",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      {
+        "name": "count",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "domain",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "field",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "subfield",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "display_name",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      }
+    ]
   },
   {
     "name": "type",
     "type": "STRING",
     "mode": "NULLABLE",
     "description": "The institution's primary type, using the ROR \"type\" controlled vocabulary. Possible values are: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, and Other."
+  },
+  {
+    "name": "type_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
   },
   {
     "name": "updated_date",
@@ -454,6 +544,7 @@
     "name": "x_concepts",
     "type": "RECORD",
     "mode": "REPEATED",
+    "description": "The \"x\" in x_concepts is because it's experimental and subject to removal with very little warning. We plan to replace it with a custom link to the Concepts API endpoint. The Concepts most frequently applied to works affiliated with this institution. Each is represented as a dehydrated Concept object, with one additional attribute",
     "fields": [
       {
         "name": "display_name",
@@ -485,7 +576,6 @@
         "mode": "NULLABLE",
         "description": "The Wikidata ID for this concept. "
       }
-    ],
-    "description": "The \"x\" in x_concepts is because it's experimental and subject to removal with very little warning. We plan to replace it with a custom link to the Concepts API endpoint. The Concepts most frequently applied to works affiliated with this institution. Each is represented as a dehydrated Concept object, with one additional attribute"
+    ]
   }
 ]
