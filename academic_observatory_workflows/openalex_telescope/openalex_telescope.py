@@ -1158,6 +1158,11 @@ def transform_object(obj: dict):
     for field in array_fields:
         clean_array_field(obj, field)
 
+    # Remove nulls from authors affiliations[].years
+    for affiliation in obj.get("affiliations", []):
+        if "years" in affiliation:
+            affiliation["years"] = [x for x in affiliation["years"] if x is not None]
+
     field = "abstract_inverted_index"
     if field in obj:
         if not isinstance(obj.get(field), dict):

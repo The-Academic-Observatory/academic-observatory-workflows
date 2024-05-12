@@ -400,12 +400,12 @@
     "fields": [
       {
         "name": "max",
-        "type": "INTEGER",
+        "type": "FLOAT",
         "mode": "NULLABLE"
       },
       {
         "name": "min",
-        "type": "INTEGER",
+        "type": "FLOAT",
         "mode": "NULLABLE"
       }
     ]
