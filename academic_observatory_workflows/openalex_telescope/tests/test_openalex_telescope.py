@@ -874,6 +874,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
         bq_dataset_id = env.add_dataset()
         temp_table_expiry_days = 7
+        temp_table_expiry_mins = temp_table_expiry_days * 24 * 60
         schema_folder = project_path("openalex_telescope", "schema")
         entity_names = [
             "authors",
@@ -1317,8 +1318,9 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         self.assertIsNone(get_table_expiry(entity.bq_main_table_id))
                         table_expiry = get_table_expiry(entity.bq_upsert_table_id)
                         self.assertIsNotNone(table_expiry)
-                        diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_days()
-                        self.assertAlmostEqual(temp_table_expiry_days, diff, places=1)
+                        diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_minutes()
+                        self.assertGreater(diff, temp_table_expiry_mins - 15)
+                        self.assertLess(diff, temp_table_expiry_mins + 15)
                         ti = env.run_task(f"{entity.entity_name}.bq_upsert_records")
                         self.assertEqual(State.SUCCESS, ti.state)
                         expected_row_count = {
@@ -1343,8 +1345,9 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             self.assert_table_integrity(entity.bq_delete_table_id, 1)
                             table_expiry = get_table_expiry(entity.bq_delete_table_id)
                             self.assertIsNotNone(table_expiry)
-                            diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_days()
-                            self.assertAlmostEqual(temp_table_expiry_days, diff, places=1)
+                            diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_minutes()
+                            self.assertGreater(diff, temp_table_expiry_mins - 15)
+                            self.assertLess(diff, temp_table_expiry_mins + 15)
                         else:
                             self.assertEqual(State.SKIPPED, ti.state)
                             with self.assertRaises(NotFound):
