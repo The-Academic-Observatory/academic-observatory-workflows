@@ -246,7 +246,7 @@ def create_dag(
     max_fetch_threads: int = 4,
     observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
     start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 8, 30),
-    schedule: Optional[str] = "@weekly",
+    schedule: Optional[str] = "0 0 7 * *",
     sensor_dag_ids: List[str] = None,
     max_active_runs: int = 1,
     retries: int = 3,

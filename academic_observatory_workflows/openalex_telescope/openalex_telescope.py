@@ -266,7 +266,7 @@ def create_dag(
     observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
     slack_conn_id: Optional[str] = AirflowConns.SLACK,
     start_date: pendulum.DateTime = pendulum.datetime(2021, 12, 1),
-    schedule: str = "@weekly",
+    schedule: str = "0 0 7 * *",
     queue: str = "remote_queue",
     max_active_runs: int = 1,
     retries: int = 3,

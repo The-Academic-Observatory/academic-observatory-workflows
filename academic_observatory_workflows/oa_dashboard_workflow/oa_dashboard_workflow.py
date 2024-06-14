@@ -247,7 +247,7 @@ def create_dag(
     github_conn_id="oa_dashboard_github_token",
     zenodo_conn_id="oa_dashboard_zenodo_token",
     start_date: Optional[pendulum.DateTime] = pendulum.datetime(2021, 5, 2),
-    schedule: Optional[str] = "@weekly",
+    schedule: Optional[str] = "0 0 7 * *",
     max_active_runs: int = 1,
     retries: int = 3,
 ) -> DAG:

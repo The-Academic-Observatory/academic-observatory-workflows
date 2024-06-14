@@ -365,7 +365,7 @@ def create_dag(
     bq_table_id: str = "pubmed",
     bq_dataset_description: str = "Pubmed Medline database, only PubmedArticle records: https://pubmed.ncbi.nlm.nih.gov/about/",
     start_date: pendulum.DateTime = pendulum.datetime(year=2022, month=12, day=8),
-    schedule: str = "@weekly",
+    schedule: str = "0 0 7 * *",
     ftp_server_url: str = "ftp.ncbi.nlm.nih.gov",
     ftp_port: int = 21,
     reset_ftp_counter: int = 40,
