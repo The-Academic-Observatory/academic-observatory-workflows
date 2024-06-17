@@ -33,6 +33,23 @@ from bigquery_schema_generator.generate_schema import SchemaGenerator
 from click.testing import CliRunner
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
+
+from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.openalex_telescope.openalex_telescope import (
+    bq_compare_schemas,
+    create_dag,
+    fetch_manifest,
+    fetch_merged_ids,
+    flatten_schema,
+    Manifest,
+    ManifestEntry,
+    merge_schema_maps,
+    MergedId,
+    Meta,
+    OpenAlexEntity,
+    s3_uri_parts,
+    transform_object,
+)
 from observatory.platform.api import get_dataset_releases
 from observatory.platform.bigquery import bq_sharded_table_id, bq_table_id
 from observatory.platform.config import AirflowConns, module_file_path
@@ -45,23 +62,6 @@ from observatory.platform.observatory_environment import (
     load_and_parse_json,
     ObservatoryEnvironment,
     ObservatoryTestCase,
-)
-
-from academic_observatory_workflows.config import project_path
-from academic_observatory_workflows.openalex_telescope.openalex_telescope import (
-    bq_compare_schemas,
-    fetch_manifest,
-    fetch_merged_ids,
-    flatten_schema,
-    Manifest,
-    ManifestEntry,
-    merge_schema_maps,
-    MergedId,
-    Meta,
-    OpenAlexEntity,
-    create_dag,
-    s3_uri_parts,
-    transform_object,
 )
 
 FIXTURES_FOLDER = project_path("openalex_telescope", "tests", "fixtures")
@@ -693,12 +693,10 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 "check_dependencies": ["fetch_entities"],
                 "fetch_entities": [
                     "short_circuit",
-                    "branch",
                     *[f"{entity_name}.{task_id}" for entity_name in entity_names for task_id in task_ids],
                 ],
                 "short_circuit": ["create_dataset"],
-                "create_dataset": ["branch"],
-                "branch": [f"{entity_name}.bq_snapshot" for entity_name in entity_names],
+                "create_dataset": [f"{entity_name}.bq_snapshot" for entity_name in entity_names],
                 # Author group
                 "authors.bq_snapshot": ["authors.aws_to_gcs_transfer"],
                 "authors.aws_to_gcs_transfer": ["authors.download"],
@@ -983,10 +981,6 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     ti = env.run_task("create_dataset")
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Branch operator
-                    ti = env.run_task("branch")
-                    self.assertEqual(State.SUCCESS, ti.state)
-
                     # Task groups
                     entity: OpenAlexEntity
                     for entity in expected_entities:
@@ -1102,7 +1096,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         ti = env.run_task(task_id)
                         self.assertEqual(State.SUCCESS, ti.state)
 
-                    task_ids = ["create_dataset", "branch"]
+                    task_ids = ["create_dataset"]
                     for entity_name in entity_names:
                         for task_id in [
                             "bq_snapshot",
@@ -1178,22 +1172,28 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 is_first_run = False
                 expected_entities = []
                 for entity_name in entity_names:
-                    expected_entities.append(
-                        OpenAlexEntity(
-                            dag_id=self.dag_id,
-                            run_id="scheduled__2023-04-16T00:00:00+00:00",
-                            cloud_workspace=env.cloud_workspace,
-                            entity_name=entity_name,
-                            bq_dataset_id=bq_dataset_id,
-                            schema_folder=schema_folder,
-                            start_date=data_interval_start,
-                            end_date=data_interval_start,
-                            manifest=manifest_index[entity_name],
-                            merged_ids=merged_ids_index.get(entity_name, []),
-                            is_first_run=is_first_run,
-                            prev_end_date=prev_end_date,
+                    if entity_name == "domains":
+                        expected_entities.append((entity_name, None))
+                    else:
+                        expected_entities.append(
+                            (
+                                entity_name,
+                                OpenAlexEntity(
+                                    dag_id=self.dag_id,
+                                    run_id="scheduled__2023-04-16T00:00:00+00:00",
+                                    cloud_workspace=env.cloud_workspace,
+                                    entity_name=entity_name,
+                                    bq_dataset_id=bq_dataset_id,
+                                    schema_folder=schema_folder,
+                                    start_date=data_interval_start,
+                                    end_date=data_interval_start,
+                                    manifest=manifest_index[entity_name],
+                                    merged_ids=merged_ids_index.get(entity_name, []),
+                                    is_first_run=is_first_run,
+                                    prev_end_date=prev_end_date,
+                                )
+                            )
                         )
-                    )
 
                 # Third run: changefiles
                 with env.create_dag_run(dag, data_interval_start) as dag_run:
@@ -1215,8 +1215,11 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                         task_ids="fetch_entities",
                         include_prior_dates=False,
                     )
-                    self.assertEqual(11, len(entity_index))
-                    expected_entity_index = {entity.entity_name: entity.to_dict() for entity in expected_entities}
+                    self.assertEqual(10, len(entity_index))
+                    expected_entity_index = {}
+                    for entity_name, entity in expected_entities:
+                        if entity is not None:
+                            expected_entity_index[entity_name] = entity.to_dict()
                     self.assertEqual(expected_entity_index, entity_index)
 
                     ti = env.run_task("short_circuit")
@@ -1225,122 +1228,147 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     ti = env.run_task("create_dataset")
                     self.assertEqual(State.SUCCESS, ti.state)
 
-                    # Branch operator
-                    ti = env.run_task("branch")
-                    self.assertEqual(State.SUCCESS, ti.state)
-
                     # Task groups
-                    for entity in expected_entities:
-                        print(f"Executing tasks for task group: {entity.entity_name}")
-                        ti = env.run_task(f"{entity.entity_name}.bq_snapshot")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        self.assertEqual(
-                            bq_sharded_table_id(
-                                self.project_id,
-                                bq_dataset_id,
-                                f"{entity.entity_name}_snapshot",
-                                prev_end_date,
-                            ),
-                            entity.bq_snapshot_table_id,
-                        )
-                        expected_row_count = {
-                            "authors": 4,
-                            "concepts": 4,
-                            "institutions": 4,
-                            "publishers": 4,
-                            "sources": 4,
-                            "works": 4,
-                            "funders": 4,
-                            "domains": 1,
-                            "fields": 1,
-                            "subfields": 1,
-                            "topics": 2,
-                        }
-                        expected_rows = expected_row_count[entity.entity_name]
-                        self.assert_table_integrity(entity.bq_snapshot_table_id, expected_rows)
+                    for entity_name, entity in expected_entities:
+                        print(f"Executing tasks for task group: {entity_name}")
+                        if entity is None:
+                            self.assertEqual(State.SKIPPED, ti.state)
+                        else:
+                            ti = env.run_task(f"{entity_name}.bq_snapshot")
+                            self.assertEqual(State.SUCCESS, ti.state)
+                            self.assertEqual(
+                                bq_sharded_table_id(
+                                    self.project_id,
+                                    bq_dataset_id,
+                                    f"{entity_name}_snapshot",
+                                    prev_end_date,
+                                ),
+                                entity.bq_snapshot_table_id,
+                            )
+                            expected_row_count = {
+                                "authors": 4,
+                                "concepts": 4,
+                                "institutions": 4,
+                                "publishers": 4,
+                                "sources": 4,
+                                "works": 4,
+                                "funders": 4,
+                                "domains": 1,
+                                "fields": 1,
+                                "subfields": 1,
+                                "topics": 2,
+                            }
+                            expected_rows = expected_row_count[entity_name]
+                            self.assert_table_integrity(entity.bq_snapshot_table_id, expected_rows)
 
                         # Transfer from AWS to GCP
-                        ti = env.run_task(f"{entity.entity_name}.aws_to_gcs_transfer")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        base_folder = gcs_blob_name_from_path(entity.download_folder)
-                        for entry in entity.current_entries:
-                            actual_path = os.path.join(base_folder, entry.object_key)
-                            self.assert_blob_exists(env.download_bucket, actual_path)
-                        for merged_id in entity.current_merged_ids:
-                            actual_path = os.path.join(base_folder, merged_id.object_key)
-                            self.assert_blob_exists(env.download_bucket, actual_path)
+                        ti = env.run_task(f"{entity_name}.aws_to_gcs_transfer")
+                        if entity is None:
+                            self.assertEqual(State.SKIPPED, ti.state)
+                        else:
+                            self.assertEqual(State.SUCCESS, ti.state)
+                            base_folder = gcs_blob_name_from_path(entity.download_folder)
+                            for entry in entity.current_entries:
+                                actual_path = os.path.join(base_folder, entry.object_key)
+                                self.assert_blob_exists(env.download_bucket, actual_path)
+                            for merged_id in entity.current_merged_ids:
+                                actual_path = os.path.join(base_folder, merged_id.object_key)
+                                self.assert_blob_exists(env.download_bucket, actual_path)
 
-                        ti = env.run_task(f"{entity.entity_name}.download")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        for entry in entity.current_entries:
-                            file_path = os.path.join(entity.download_folder, entry.object_key)
-                            self.assertTrue(os.path.isfile(file_path))
+                        ti = env.run_task(f"{entity_name}.download")
+                        if entity is None:
+                            self.assertEqual(State.SKIPPED, ti.state)
+                        else:
+                            self.assertEqual(State.SUCCESS, ti.state)
+                            for entry in entity.current_entries:
+                                file_path = os.path.join(entity.download_folder, entry.object_key)
+                                self.assertTrue(os.path.isfile(file_path))
 
-                        ti = env.run_task(f"{entity.entity_name}.transform")
+                        ti = env.run_task(f"{entity_name}.transform")
                         self.assertEqual(State.SUCCESS, ti.state)
-                        for entry in entity.current_entries:
-                            file_path = os.path.join(entity.transform_folder, entry.object_key)
-                            self.assertTrue(os.path.isfile(file_path))
-                            self.assertTrue(os.path.isfile(entity.generated_schema_path))
+                        if entity is None:
+                            self.assertEqual(State.SKIPPED, ti.state)
+                        else:
+                            for entry in entity.current_entries:
+                                file_path = os.path.join(entity.transform_folder, entry.object_key)
+                                self.assertTrue(os.path.isfile(file_path))
+                                self.assertTrue(os.path.isfile(entity.generated_schema_path))
 
-                        ti = env.run_task(f"{entity.entity_name}.upload_schema")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        self.assert_blob_exists(
-                            env.transform_bucket, gcs_blob_name_from_path(entity.generated_schema_path)
-                        )
+                        ti = env.run_task(f"{entity_name}.upload_schema")
+                        if entity is None:
+                            self.assertEqual(State.SKIPPED, ti.state)
+                        else:
+                            self.assertEqual(State.SUCCESS, ti.state)
+                            self.assert_blob_exists(
+                                env.transform_bucket, gcs_blob_name_from_path(entity.generated_schema_path)
+                            )
 
-                        ti = env.run_task(f"{entity.entity_name}.compare_schemas")
-                        self.assertEqual(State.SUCCESS, ti.state)
+                        ti = env.run_task(f"{entity_name}.compare_schemas")
+                        if entity is None:
+                            self.assertEqual(State.SKIPPED, ti.state)
+                        else:
+                            self.assertEqual(State.SUCCESS, ti.state)
 
-                        ti = env.run_task(f"{entity.entity_name}.upload_files")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        for entry in entity.current_entries:
-                            file_path = os.path.join(entity.transform_folder, entry.object_key)
-                            self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
+                        ti = env.run_task(f"{entity_name}.upload_files")
+                        if entity is None:
+                            self.assertEqual(State.SKIPPED, ti.state)
+                        else:
+                            self.assertEqual(State.SUCCESS, ti.state)
+                            for entry in entity.current_entries:
+                                file_path = os.path.join(entity.transform_folder, entry.object_key)
+                                self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
 
-                        ti = env.run_task(f"{entity.entity_name}.bq_load_table")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        expected_row_count = {
-                            "authors": 3,
-                            "concepts": 2,
-                            "institutions": 3,
-                            "publishers": 2,
-                            "sources": 3,
-                            "works": 3,
-                            "funders": 2,
-                            "domains": 1,
-                            "fields": 1,
-                            "subfields": 1,
-                            "topics": 1,
-                        }
-                        expected_rows = expected_row_count[entity.entity_name]
-                        self.assert_table_integrity(entity.bq_upsert_table_id, expected_rows)
-                        self.assertIsNone(get_table_expiry(entity.bq_main_table_id))
-                        table_expiry = get_table_expiry(entity.bq_upsert_table_id)
-                        self.assertIsNotNone(table_expiry)
-                        diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_minutes()
-                        self.assertGreater(diff, temp_table_expiry_mins - 15)
-                        self.assertLess(diff, temp_table_expiry_mins + 15)
-                        ti = env.run_task(f"{entity.entity_name}.bq_upsert_records")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        expected_row_count = {
-                            "authors": 5,
-                            "concepts": 5,
-                            "institutions": 5,
-                            "publishers": 5,
-                            "sources": 5,
-                            "works": 5,
-                            "funders": 5,
-                            "domains": 1,
-                            "fields": 2,
-                            "subfields": 2,
-                            "topics": 3,
-                        }
-                        expected_rows = expected_row_count[entity.entity_name]
-                        self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
+                        ti = env.run_task(f"{entity_name}.bq_load_table")
+                        if entity is None:
+                            self.assertEqual(State.SKIPPED, ti.state)
+                        else:
+                            self.assertEqual(State.SUCCESS, ti.state)
+                            expected_row_count = {
+                                "authors": 3,
+                                "concepts": 2,
+                                "institutions": 3,
+                                "publishers": 2,
+                                "sources": 3,
+                                "works": 3,
+                                "funders": 2,
+                                "domains": 1,
+                                "fields": 1,
+                                "subfields": 1,
+                                "topics": 1,
+                            }
+                            expected_rows = expected_row_count[entity_name]
+                            self.assert_table_integrity(entity.bq_upsert_table_id, expected_rows)
+                            self.assertIsNone(get_table_expiry(entity.bq_main_table_id))
+                            table_expiry = get_table_expiry(entity.bq_upsert_table_id)
+                            self.assertIsNotNone(table_expiry)
+                            diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_minutes()
+                            self.assertGreater(diff, temp_table_expiry_mins - 15)
+                            self.assertLess(diff, temp_table_expiry_mins + 15)
+                            ti = env.run_task(f"{entity_name}.bq_upsert_records")
+                            self.assertEqual(State.SUCCESS, ti.state)
+                            expected_row_count = {
+                                "authors": 5,
+                                "concepts": 5,
+                                "institutions": 5,
+                                "publishers": 5,
+                                "sources": 5,
+                                "works": 5,
+                                "funders": 5,
+                                "domains": 1,
+                                "fields": 2,
+                                "subfields": 2,
+                                "topics": 3,
+                            }
+                            expected_rows = expected_row_count[entity_name]
+                            self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
 
-                        ti = env.run_task(f"{entity.entity_name}.bq_load_delete_table")
-                        if entity.has_merged_ids:
+                        ti = env.run_task(f"{entity_name}.bq_load_delete_table")
+                        if entity is None or not entity.has_merged_ids:
+                            self.assertEqual(State.SKIPPED, ti.state)
+                            if entity is not None:
+                                with self.assertRaises(NotFound):
+                                    self.bigquery_client.get_table(entity.bq_delete_table_id)
+                        else:
                             self.assertEqual(State.SUCCESS, ti.state)
                             self.assert_table_integrity(entity.bq_delete_table_id, 1)
                             table_expiry = get_table_expiry(entity.bq_delete_table_id)
@@ -1348,50 +1376,49 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_minutes()
                             self.assertGreater(diff, temp_table_expiry_mins - 15)
                             self.assertLess(diff, temp_table_expiry_mins + 15)
-                        else:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                            with self.assertRaises(NotFound):
-                                self.bigquery_client.get_table(entity.bq_delete_table_id)
 
-                        ti = env.run_task(f"{entity.entity_name}.bq_delete_records")
-                        if entity.has_merged_ids:
+                        ti = env.run_task(f"{entity_name}.bq_delete_records")
+                        if entity is None or not entity.has_merged_ids:
+                            self.assertEqual(State.SKIPPED, ti.state)
+                        else:
                             self.assertEqual(State.SUCCESS, ti.state)
-                        else:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                        expected_row_count = {
-                            "authors": 4,
-                            "concepts": 5,
-                            "institutions": 4,
-                            "publishers": 5,
-                            "sources": 4,
-                            "works": 4,
-                            "funders": 5,
-                            "domains": 1,
-                            "fields": 2,
-                            "subfields": 2,
-                            "topics": 3,
-                        }
-                        expected_rows = expected_row_count[entity.entity_name]
-                        self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
+                            expected_row_count = {
+                                "authors": 4,
+                                "concepts": 5,
+                                "institutions": 4,
+                                "publishers": 5,
+                                "sources": 4,
+                                "works": 4,
+                                "funders": 5,
+                                "domains": 1,
+                                "fields": 2,
+                                "subfields": 2,
+                                "topics": 3,
+                            }
+                            expected_rows = expected_row_count[entity_name]
+                            self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
 
-                        # Assert content
-                        table_id = bq_table_id(self.project_id, bq_dataset_id, entity.entity_name)
-                        print(f"Assert content run 2 {entity.entity_name}: {table_id}")
-                        expected_data = load_and_parse_json(
-                            os.path.join(FIXTURES_FOLDER, "2023-04-16", "expected", f"{entity.entity_name}.json"),
-                            date_fields={"created_date", "publication_date"},
-                            timestamp_fields={"updated_date"},
-                        )
-                        self.assert_table_content(table_id, expected_data, "id")
+                            # Assert content
+                            table_id = bq_table_id(self.project_id, bq_dataset_id, entity_name)
+                            print(f"Assert content run 2 {entity_name}: {table_id}")
+                            expected_data = load_and_parse_json(
+                                os.path.join(FIXTURES_FOLDER, "2023-04-16", "expected", f"{entity_name}.json"),
+                                date_fields={"created_date", "publication_date"},
+                                timestamp_fields={"updated_date"},
+                            )
+                            self.assert_table_content(table_id, expected_data, "id")
 
                         # Check that there is zero dataset release per entity before add_dataset_release and 1 after
-                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity.entity_name)
+                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
                         self.assertEqual(len(dataset_releases), 1)
 
-                        ti = env.run_task(f"{entity.entity_name}.add_dataset_release")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity.entity_name)
-                        self.assertEqual(len(dataset_releases), 2)
+                        ti = env.run_task(f"{entity_name}.add_dataset_release")
+                        if entity is None:
+                            self.assertEqual(State.SKIPPED, ti.state)
+                        else:
+                            self.assertEqual(State.SUCCESS, ti.state)
+                            dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
+                            self.assertEqual(len(dataset_releases), 2)
 
                     # Test that all workflow data deleted
                     ti = env.run_task("cleanup_workflow")

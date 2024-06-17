@@ -69,7 +69,7 @@ from observatory.platform.workflows.workflow import (
 )
 
 TEMP_TABLE_DESCRIPTION = "Temporary table for internal use. Do not use."
-UPSERT_BYTE_LIMIT = int(2.5 * 2**40)
+UPSERT_BYTE_LIMIT = int(3 * 2**40)
 
 
 class OpenAlexEntity(ChangefileRelease):
@@ -412,12 +412,6 @@ def create_dag(
                 description=dataset_description,
             )
 
-        @task.branch
-        def branch(entity_index: dict, **context):
-            """Determine which entity branches to follow"""
-
-            return [f"{entity_name}.bq_snapshot" for entity_name in entity_index.keys()]
-
         @task_group
         def process_entity(entity_index: dict, entity_name: str):
             @task
@@ -427,7 +421,11 @@ def create_dag(
 
                 task_id = get_task_id(**context)
                 entity = get_entity(entity_index, entity_name)
-                if entity.is_first_run:
+
+                if entity is None:
+                    raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+
+                elif entity.is_first_run:
                     raise AirflowSkipException(make_first_run_message(task_id))
 
                 expiry_date = pendulum.now().add(days=snapshot_expiry_days)
@@ -447,12 +445,17 @@ def create_dag(
                 # Add a description to the snapshot table
                 bq.bq_update_table_description(table_id=entity.bq_snapshot_table_id, description=TEMP_TABLE_DESCRIPTION)
 
-            @task(trigger_rule=TriggerRule.ALL_DONE)
+            @task(trigger_rule=TriggerRule.NONE_FAILED)
             def aws_to_gcs_transfer(entity_index: dict, entity_name: str, **context):
                 """Transfer files from AWS bucket to Google Cloud bucket"""
 
                 # Make GCS Transfer Manifest for files that we need for this release
+                task_id = get_task_id(**context)
                 entity = get_entity(entity_index, entity_name)
+
+                if entity is None:
+                    raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+
                 object_paths = []
                 for entry in entity.current_entries:
                     object_paths.append(entry.object_key)
@@ -515,7 +518,7 @@ def create_dag(
                 else:
                     raise AirflowException(f"aws_to_gcs_transfer: {' ,'.join(msgs)}")
 
-            @task(trigger_rule=TriggerRule.NONE_FAILED)
+            @task
             def download(entity_index: dict, entity_name: str, **context):
                 """Download files for an entity from the bucket.
 
@@ -523,7 +526,12 @@ def create_dag(
                 than the Google Cloud Python library.
                 """
 
+                task_id = get_task_id(**context)
                 entity = get_entity(entity_index, entity_name)
+
+                if entity is None:
+                    raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+
                 output_folder = f"{entity.download_folder}/data/{entity.entity_name}/"
                 bucket_path = f"{entity.gcs_openalex_data_uri}data/{entity.entity_name}/*"
                 op = BashOperator(
@@ -547,6 +555,9 @@ def create_dag(
 
                 task_id = get_task_id(**context)
                 entity = get_entity(entity_index, entity_name)
+
+                if entity is None:
+                    raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
 
                 # Cleanup in case we re-run task
                 output_folder = os.path.join(entity.transform_folder, "data", entity.entity_name)
@@ -596,6 +607,9 @@ def create_dag(
                 task_id = get_task_id(**context)
                 entity = get_entity(entity_index, entity_name)
 
+                if entity is None:
+                    raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+
                 success = gcs_upload_files(
                     bucket_name=cloud_workspace.transform_bucket, file_paths=[entity.generated_schema_path]
                 )
@@ -606,11 +620,11 @@ def create_dag(
             def compare_schemas(entity_index: dict, entity_name: str, **context):
                 """Compare the generated schema against the expected schema for each entity."""
 
-                ti: TaskInstance = context["ti"]
-                execution_date = context["execution_date"]
-
                 task_id = get_task_id(**context)
                 entity = get_entity(entity_index, entity_name)
+
+                if entity is None:
+                    raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
 
                 logging.info(f"Loading schemas from file: generated: {entity.generated_schema_path}")
                 logging.info(f"Expected: {entity.schema_file_path}")
@@ -627,6 +641,8 @@ def create_dag(
                 if not match:
                     logging.info("Generated schema and expected do not match! - Sending a notification via Slack")
                     slack_msg = f"Found differences in the OpenAlex entity {entity.entity_name} data structure for the data dump vs pre-defined Bigquery schema. Please investigate."
+                    ti: TaskInstance = context["ti"]
+                    execution_date = context["execution_date"]
                     send_slack_msg(
                         ti=ti, execution_date=execution_date, comments=slack_msg, slack_conn_id=slack_conn_id
                     )
@@ -638,6 +654,9 @@ def create_dag(
 
                 task_id = get_task_id(**context)
                 entity = get_entity(entity_index, entity_name)
+
+                if entity is None:
+                    raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
 
                 # Make files to upload
                 file_paths = []
@@ -656,6 +675,9 @@ def create_dag(
 
                 task_id = get_task_id(**context)
                 entity = get_entity(entity_index, entity_name)
+
+                if entity is None:
+                    raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
 
                 table_name = "main"
                 table_id = entity.bq_main_table_id
@@ -696,7 +718,10 @@ def create_dag(
                 task_id = get_task_id(**context)
                 entity = get_entity(entity_index, entity_name)
 
-                if entity.is_first_run:
+                if entity is None:
+                    raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+
+                elif entity.is_first_run:
                     raise AirflowSkipException(make_first_run_message(task_id))
 
                 # Upsert records from upsert table to main table
@@ -717,7 +742,10 @@ def create_dag(
                 task_id = get_task_id(**context)
                 entity = get_entity(entity_index, entity_name)
 
-                if entity.is_first_run:
+                if entity is None:
+                    raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+
+                elif entity.is_first_run:
                     raise AirflowSkipException(make_first_run_message(task_id))
 
                 elif not entity.has_merged_ids:
@@ -752,7 +780,10 @@ def create_dag(
                 task_id = get_task_id(**context)
                 entity = get_entity(entity_index, entity_name)
 
-                if entity.is_first_run:
+                if entity is None:
+                    raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+
+                elif entity.is_first_run:
                     raise AirflowSkipException(make_first_run_message(task_id))
 
                 elif not entity.has_merged_ids:
@@ -775,6 +806,10 @@ def create_dag(
 
                 task_id = get_task_id(**context)
                 entity = get_entity(entity_index, entity_name)
+
+                if entity is None:
+                    raise AirflowSkipException(make_no_updated_data_msg(task_id, entity_name))
+
                 logging.info(f"{task_id}: creating dataset release for OpenAlexEntity({entity.entity_name})")
                 dataset_release = DatasetRelease(
                     dag_id=dag_id,
@@ -832,7 +867,6 @@ def create_dag(
         xcom_entity_index = fetch_entities()
         task_short_circuit = short_circuit(xcom_entity_index)
         task_create_dataset = create_dataset()
-        task_branch = branch(xcom_entity_index)
 
         # Process each entity
         # We don't use .expand because we want each entity to be a first class citizen in the graph UI
@@ -854,7 +888,6 @@ def create_dag(
             >> xcom_entity_index
             >> task_short_circuit
             >> task_create_dataset
-            >> task_branch
             >> process_entities
             >> task_cleanup_workflow
             >> task_dag_run_complete
@@ -863,9 +896,9 @@ def create_dag(
     return openalex()
 
 
-def get_entity(entity_index: dict, entity_name: str) -> OpenAlexEntity:
+def get_entity(entity_index: dict, entity_name: str) -> Optional[OpenAlexEntity]:
     if entity_name not in entity_index:
-        raise AirflowException(f"get_entity: cannot find key {entity_name} in entity_index")
+        return None
 
     return OpenAlexEntity.from_dict(entity_index[entity_name])
 
