@@ -1231,10 +1231,10 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                     # Task groups
                     for entity_name, entity in expected_entities:
                         print(f"Executing tasks for task group: {entity_name}")
+                        ti = env.run_task(f"{entity_name}.bq_snapshot")
                         if entity is None:
                             self.assertEqual(State.SKIPPED, ti.state)
                         else:
-                            ti = env.run_task(f"{entity_name}.bq_snapshot")
                             self.assertEqual(State.SUCCESS, ti.state)
                             self.assertEqual(
                                 bq_sharded_table_id(
@@ -1285,10 +1285,10 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                                 self.assertTrue(os.path.isfile(file_path))
 
                         ti = env.run_task(f"{entity_name}.transform")
-                        self.assertEqual(State.SUCCESS, ti.state)
                         if entity is None:
                             self.assertEqual(State.SKIPPED, ti.state)
                         else:
+                            self.assertEqual(State.SUCCESS, ti.state)
                             for entry in entity.current_entries:
                                 file_path = os.path.join(entity.transform_folder, entry.object_key)
                                 self.assertTrue(os.path.isfile(file_path))
