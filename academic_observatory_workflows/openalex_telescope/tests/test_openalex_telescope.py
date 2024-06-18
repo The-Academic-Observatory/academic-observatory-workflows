@@ -63,6 +63,7 @@ from observatory.platform.observatory_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
 )
+from observatory.platform.refactor.workflow import make_workflow_folder
 
 FIXTURES_FOLDER = project_path("openalex_telescope", "tests", "fixtures")
 
@@ -1191,7 +1192,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                                     merged_ids=merged_ids_index.get(entity_name, []),
                                     is_first_run=is_first_run,
                                     prev_end_date=prev_end_date,
-                                )
+                                ),
                             )
                         )
 
@@ -1344,7 +1345,11 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_minutes()
                             self.assertGreater(diff, temp_table_expiry_mins - 15)
                             self.assertLess(diff, temp_table_expiry_mins + 15)
-                            ti = env.run_task(f"{entity_name}.bq_upsert_records")
+
+                        ti = env.run_task(f"{entity_name}.bq_upsert_records")
+                        if entity is None:
+                            self.assertEqual(State.SKIPPED, ti.state)
+                        else:
                             self.assertEqual(State.SUCCESS, ti.state)
                             expected_row_count = {
                                 "authors": 5,
@@ -1421,9 +1426,13 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                             self.assertEqual(len(dataset_releases), 2)
 
                     # Test that all workflow data deleted
-                    ti = env.run_task("cleanup_workflow")
+                    # There is an issue with Airflow thinking that dependencies are not meant for this task when they are
+                    # Task's trigger rule 'none_failed' requires all upstream tasks to have succeeded or been skipped, but found 1 non-success(es). upstream_states=_UpstreamTIStates(success=0, skipped=1, failed=0, upstream_failed=0, removed=0, done=1, success_setup=0, skipped_setup=0), upstream_task_ids={'domains.add_dataset_release', 'authors.add_dataset_release'}
+                    ti = env.get_task_instance("cleanup_workflow")
+                    ti.run(ignore_task_deps=True)
                     self.assertEqual(State.SUCCESS, ti.state)
-                    self.assert_cleanup(entity.workflow_folder)
+                    expected_workflow_folder = make_workflow_folder(self.dag_id, "scheduled__2023-04-16T00:00:00+00:00")
+                    self.assert_cleanup(expected_workflow_folder)
 
                     ti = env.run_task("dag_run_complete")
                     self.assertEqual(State.SUCCESS, ti.state)

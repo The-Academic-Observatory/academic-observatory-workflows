@@ -327,7 +327,6 @@ def create_dag(
         },
     )
     def openalex():
-
         @task
         def fetch_entities(**context) -> dict:
             """Fetch OpenAlex releases.
@@ -518,7 +517,7 @@ def create_dag(
                 else:
                     raise AirflowException(f"aws_to_gcs_transfer: {' ,'.join(msgs)}")
 
-            @task
+            @task(trigger_rule=TriggerRule.NONE_FAILED)
             def download(entity_index: dict, entity_name: str, **context):
                 """Download files for an entity from the bucket.
 
@@ -547,7 +546,7 @@ def create_dag(
                 )
                 op.execute(context)
 
-            @task
+            @task(trigger_rule=TriggerRule.NONE_FAILED)
             def transform(entity_index: dict, entity_name: str, **context):
                 """Transform all files for the Work, Concept and Institution entities. Transforms one file per process.
 
@@ -600,7 +599,7 @@ def create_dag(
                 with open(entity.generated_schema_path, mode="w") as f_out:
                     json.dump(merged_schema, f_out, indent=2)
 
-            @task
+            @task(trigger_rule=TriggerRule.NONE_FAILED)
             def upload_schema(entity_index: dict, entity_name: str, **context):
                 """Upload the generated schema from the transform step to GCS."""
 
@@ -616,7 +615,7 @@ def create_dag(
                 if not success:
                     raise AirflowException("")
 
-            @task
+            @task(trigger_rule=TriggerRule.NONE_FAILED)
             def compare_schemas(entity_index: dict, entity_name: str, **context):
                 """Compare the generated schema against the expected schema for each entity."""
 
@@ -647,7 +646,7 @@ def create_dag(
                         ti=ti, execution_date=execution_date, comments=slack_msg, slack_conn_id=slack_conn_id
                     )
 
-            @task
+            @task(trigger_rule=TriggerRule.NONE_FAILED)
             def upload_files(entity_index: dict, entity_name: str, **context):
                 """Upload the transformed data to Cloud Storage.
                 :raises AirflowException: Raised if the files to be uploaded are not found."""
@@ -669,7 +668,7 @@ def create_dag(
                 if not success:
                     raise AirflowException("")
 
-            @task
+            @task(trigger_rule=TriggerRule.NONE_FAILED)
             def bq_load_table(entity_index: dict, entity_name: str, **context):
                 """Load the main or upsert table for an entity."""
 
@@ -711,7 +710,7 @@ def create_dag(
                     logging.info(f"Setting expiry time of {temp_table_expiry_days} days on {table_id}")
                     bq_set_table_expiry(table_id=table_id, days=temp_table_expiry_days)
 
-            @task
+            @task(trigger_rule=TriggerRule.NONE_FAILED)
             def bq_upsert_records(entity_index: dict, entity_name: str, **context):
                 """Upsert the records from each upserts table into the main table."""
 
