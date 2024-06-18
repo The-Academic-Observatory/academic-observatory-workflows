@@ -177,12 +177,12 @@ AGGREGATIONS = [
         relate_to_groups=False,
         relate_to_funders=False,
     ),
-    Aggregation(
-        "region",
-        "regions",
-        relate_to_funders=True,
-        relate_to_publishers=True,
-    ),
+    # Aggregation(
+    #     "region",
+    #     "regions",
+    #     relate_to_funders=True,
+    #     relate_to_publishers=True,
+    # ),
     Aggregation(
         "subregion",
         "subregions",
