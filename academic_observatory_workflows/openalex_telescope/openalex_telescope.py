@@ -615,7 +615,7 @@ def create_dag(
                     bucket_name=cloud_workspace.transform_bucket, file_paths=[entity.generated_schema_path]
                 )
                 if not success:
-                    raise AirflowException("")
+                    raise AirflowException("upload_schema: error uploading schema")
 
             @task(trigger_rule=TriggerRule.NONE_FAILED)
             def compare_schemas(entity_index: dict, entity_name: str, **context):
@@ -668,7 +668,7 @@ def create_dag(
                 # Upload files
                 success = gcs_upload_files(bucket_name=cloud_workspace.transform_bucket, file_paths=file_paths)
                 if not success:
-                    raise AirflowException("")
+                    raise AirflowException("upload_files: error uploading files to cloud storage")
 
             @task(trigger_rule=TriggerRule.NONE_FAILED)
             def bq_load_table(entity_index: dict, entity_name: str, **context):
