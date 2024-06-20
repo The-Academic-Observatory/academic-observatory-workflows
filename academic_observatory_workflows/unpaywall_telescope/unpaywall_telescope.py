@@ -608,14 +608,13 @@ def create_dag(
                     "transform: find and replace the 'authenticated-orcid' string in the jsonl to 'authenticated_orcid'"
                 )
                 for changefile in release.changefiles:
-                    with open(changefile.extract_file_path, "r") as file_in:
-                        with open(changefile.transform_file_path, "w") as file_out:
-                            for line in file_in:
-                                if line.strip() != "null":
-                                    output = re.sub(
-                                        pattern="authenticated-orcid", repl="authenticated_orcid", string=line
-                                    )
-                                    file_out.write(output)
+                    with open(changefile.extract_file_path, "r") as f_in, open(
+                        changefile.transform_file_path, "w"
+                    ) as f_out:
+                        for line in f_in:
+                            if line.strip() != "null":
+                                output = re.sub(pattern="authenticated-orcid", repl="authenticated_orcid", string=line)
+                                f_out.write(output)
 
                 logging.info(
                     "transform: Merge change files, make sure that we process them from the oldest changefile to the newest"

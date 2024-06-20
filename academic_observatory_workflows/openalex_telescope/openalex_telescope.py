@@ -253,6 +253,7 @@ def create_dag(
     dag_id: str,
     cloud_workspace: CloudWorkspace,
     bq_dataset_id: str = "openalex",
+    bq_upsert_byte_limit: int = UPSERT_BYTE_LIMIT,
     entity_names: List[str] = None,
     schema_folder: str = project_path("openalex_telescope", "schema"),
     dataset_description: str = "The OpenAlex dataset: https://docs.openalex.org/",
@@ -276,6 +277,7 @@ def create_dag(
     :param dag_id: the id of the DAG.
     :param cloud_workspace: the cloud workspace settings.
     :param bq_dataset_id: the BigQuery dataset id.
+    :param bq_upsert_byte_limit: the BigQuery byte limit for a single query when upserting data, in bytes.
     :param entity_names: the names of the OpenAlex entities to process.
     :param schema_folder: the SQL schema path.
     :param dataset_description: description for the BigQuery dataset.
@@ -731,7 +733,7 @@ def create_dag(
                     main_table_id=entity.bq_main_table_id,
                     upsert_table_id=entity.bq_upsert_table_id,
                     primary_key=primary_key,
-                    bytes_budget=UPSERT_BYTE_LIMIT,
+                    bytes_budget=bq_upsert_byte_limit,
                 )
 
             @task(trigger_rule=TriggerRule.NONE_FAILED)
