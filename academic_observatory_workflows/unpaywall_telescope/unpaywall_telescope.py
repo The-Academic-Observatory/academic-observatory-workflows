@@ -160,7 +160,7 @@ class UnpaywallRelease(Release):
 
         # The first changefile is the oldest and the last one is the newest
         # the start and end date of the Unpaywall changefiles processed in this release.
-        changefiles = sorted(changefiles, key=lambda c: c.changefile_date, reverse=True)
+        changefiles = sorted(changefiles, key=lambda c: c.changefile_date, reverse=False)
         start_date = changefiles[0].changefile_date
         end_date = changefiles[-1].changefile_date
 
@@ -608,12 +608,13 @@ def create_dag(
                     "transform: find and replace the 'authenticated-orcid' string in the jsonl to 'authenticated_orcid'"
                 )
                 for changefile in release.changefiles:
-                    find_replace_file(
-                        src=changefile.extract_file_path,
-                        dst=changefile.transform_file_path,
-                        pattern="authenticated-orcid",
-                        replacement="authenticated_orcid",
-                    )
+                    with open(changefile.extract_file_path, "r") as f_in, open(
+                        changefile.transform_file_path, "w"
+                    ) as f_out:
+                        for line in f_in:
+                            if line.strip() != "null":
+                                output = re.sub(pattern="authenticated-orcid", repl="authenticated_orcid", string=line)
+                                f_out.write(output)
 
                 logging.info(
                     "transform: Merge change files, make sure that we process them from the oldest changefile to the newest"

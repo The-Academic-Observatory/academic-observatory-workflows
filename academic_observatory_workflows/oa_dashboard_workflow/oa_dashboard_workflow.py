@@ -411,46 +411,41 @@ def create_dag(
             if not state:
                 raise AirflowException("OaDashboardWorkflow.query failed")
 
-        wiki_tasks = []
-        for entity_type in entity_types:
+        @task
+        def add_wiki_descriptions(release: dict, entity_type: str, **context):
+            """Download wiki descriptions and update indexes."""
 
-            @task(task_id=f"add_wiki_descriptions_{entity_type}")
-            def add_wiki_descriptions(release: dict, **context):
-                """Download wiki descriptions and update indexes."""
+            logging.info(f"add_wiki_descriptions: {entity_type}")
+            release = OaDashboardRelease.from_dict(release)
 
-                logging.info(f"add_wiki_descriptions: {entity_type}")
-                release = OaDashboardRelease.from_dict(release)
+            # Get entities to fetch descriptions for
+            results = bq_run_query(
+                f"SELECT DISTINCT wikipedia_url FROM {release.oa_dashboard_table_id(entity_type)} WHERE wikipedia_url IS NOT NULL AND TRIM(wikipedia_url) != ''"
+            )
+            wikipedia_urls = [result["wikipedia_url"] for result in results]
 
-                # Get entities to fetch descriptions for
-                results = bq_run_query(
-                    f"SELECT DISTINCT wikipedia_url FROM {release.oa_dashboard_table_id(entity_type)} WHERE wikipedia_url IS NOT NULL AND TRIM(wikipedia_url) != ''"
-                )
-                wikipedia_urls = [result["wikipedia_url"] for result in results]
+            # Fetch Wikipedia descriptions
+            results = fetch_wikipedia_descriptions(wikipedia_urls)
 
-                # Fetch Wikipedia descriptions
-                results = fetch_wikipedia_descriptions(wikipedia_urls)
+            # Upload to BigQuery
+            data = [{"url": wikipedia_url, "text": description} for wikipedia_url, description in results]
+            desc_table_id = release.descriptions_table_id(entity_type)
+            success = bq_load_from_memory(
+                desc_table_id,
+                data,
+                schema_file_path=project_path("oa_dashboard_workflow", "schema", "descriptions.json"),
+            )
+            if not success:
+                raise AirflowException(f"Uploading data to {desc_table_id} table failed")
 
-                # Upload to BigQuery
-                data = [{"url": wikipedia_url, "text": description} for wikipedia_url, description in results]
-                desc_table_id = release.descriptions_table_id(entity_type)
-                success = bq_load_from_memory(
-                    desc_table_id,
-                    data,
-                    schema_file_path=project_path("oa_dashboard_workflow", "schema", "descriptions.json"),
-                )
-                if not success:
-                    raise AirflowException(f"Uploading data to {desc_table_id} table failed")
-
-                # Update entity table
-                template_path = project_path("oa_dashboard_workflow", "sql", "update_descriptions.sql.jinja2")
-                sql = render_template(
-                    template_path,
-                    entity_table_id=release.oa_dashboard_table_id(entity_type),
-                    descriptions_table_id=desc_table_id,
-                )
-                bq_run_query(sql)
-
-            wiki_tasks.append(add_wiki_descriptions)
+            # Update entity table
+            template_path = project_path("oa_dashboard_workflow", "sql", "update_descriptions.sql.jinja2")
+            sql = render_template(
+                template_path,
+                entity_table_id=release.oa_dashboard_table_id(entity_type),
+                descriptions_table_id=desc_table_id,
+            )
+            bq_run_query(sql)
 
         @task
         def download_assets(release: dict, **context):
@@ -641,7 +636,15 @@ def create_dag(
         xcom_release = fetch_release()
         task_upload_institution_ids = upload_institution_ids(xcom_release)
         task_create_entity_tables = create_entity_tables(xcom_release)
-        tasks_wiki = [func(xcom_release) for func in wiki_tasks]
+
+        tasks_wiki = []
+        for entity_type in entity_types:
+            tasks_wiki.append(
+                add_wiki_descriptions.override(task_id=f"add_wiki_descriptions_{entity_type}")(
+                    xcom_release, entity_type
+                )
+            )
+
         task_download_assets = download_assets(xcom_release)
         task_download_institution_logos = download_institution_logos(xcom_release)
         task_export_tables = export_tables(xcom_release)
