@@ -42,12 +42,12 @@ from academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow 
     yield_data_glob,
 )
 from academic_observatory_workflows.tests.test_zenodo import MockZenodo
-from observatory.platform.bigquery import bq_find_schema
-from observatory.platform.config import module_file_path
-from observatory.platform.files import load_jsonl, save_jsonl_gz
-from observatory.platform.gcs import gcs_upload_file
-from observatory.platform.observatory_config import Workflow
-from observatory.platform.observatory_environment import (
+from observatory_platform.google.bigquery import bq_find_schema
+from observatory_platform.config import module_file_path
+from observatory_platform.files import load_jsonl, save_jsonl_gz
+from observatory_platform.google.gcs import gcs_upload_file
+from observatory_platform.airflow.workflow import Workflow
+from observatory_platform.sandbox.sandbox_environment import (
     bq_load_tables,
     log_diff,
     make_dummy_dag,

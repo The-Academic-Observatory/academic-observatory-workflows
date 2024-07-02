@@ -32,16 +32,16 @@ from academic_observatory_workflows.data_quality_workflow.data_quality_workflow 
     is_in_dqc_table,
     Table,
 )
-from observatory.platform.bigquery import (
+from observatory_platform.google.bigquery import (
     bq_load_from_memory,
     bq_select_columns,
     bq_table_id as make_bq_table_id,
     bq_upsert_records,
 )
-from observatory.platform.config import module_file_path
-from observatory.platform.files import load_jsonl
-from observatory.platform.observatory_config import Workflow
-from observatory.platform.observatory_environment import (
+from observatory_platform.config import module_file_path
+from observatory_platform.files import load_jsonl
+from observatory_platform.airflow.workflow import Workflow
+from observatory_platform.sandbox.sandbox_environment import (
     find_free_port,
     make_dummy_dag,
     ObservatoryEnvironment,
