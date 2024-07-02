@@ -1,13 +1,2 @@
-xmltodict>=0.12.0,<1
-backoff>=2,<3
-ratelimit>=2.2.0,<3
-wos>=0.2.5,<1
-pandas>=1.3,<3
-beautifulsoup4>=4.9.3,<5
-boto3>=1.15.0,<2
-nltk>=3,<4
-Deprecated>=1,<2
-limits>=3,<4
-biopython>=1.81,<2
-glom>=23.0.0,<24
-bigquery-schema-generator>=1.5.1
+# Astro Runtime includes the following pre-installed providers packages: https://docs.astronomer.io/astro/runtime-image-architecture#provider-packages
+apache-airflow-providers-cncf-kubernetes>=7.4.0
