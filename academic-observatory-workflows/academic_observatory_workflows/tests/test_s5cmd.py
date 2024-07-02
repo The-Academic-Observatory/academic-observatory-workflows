@@ -5,9 +5,9 @@ import unittest
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 from google.auth import default
-from observatory.platform.files import list_files
-from observatory.platform.gcs import gcs_blob_uri, gcs_hmac_key, gcs_list_blobs, gcs_upload_files
-from observatory.platform.observatory_environment import ObservatoryEnvironment, ObservatoryTestCase
+from observatory_platform.files import list_files
+from observatory_platform.google.gcs import gcs_blob_uri, gcs_hmac_key, gcs_list_blobs, gcs_upload_files
+from observatory_platform.sandbox.sandbox_environment import ObservatoryEnvironment, ObservatoryTestCase
 
 from academic_observatory_workflows.s5cmd import S5Cmd, S5CmdCpConfig
 

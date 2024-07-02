@@ -25,7 +25,7 @@ import nltk
 import requests
 from airflow.exceptions import AirflowException
 
-from observatory.platform.files import get_chunks
+from observatory_platform.files import get_chunks
 
 WIKI_MAX_TITLES = 20  # Set the number of titles for which wiki descriptions are retrieved at once, the API can return max 20 extracts.
 

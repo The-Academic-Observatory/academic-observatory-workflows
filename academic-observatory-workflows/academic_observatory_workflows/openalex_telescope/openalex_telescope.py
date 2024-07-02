@@ -46,22 +46,22 @@ from google.cloud.bigquery import SourceFormat
 import observatory.platform.bigquery as bq
 from academic_observatory_workflows.config import project_path
 from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.platform.airflow import is_first_dag_run, on_failure_callback, PreviousDagRunSensor, send_slack_msg
-from observatory.platform.api import get_dataset_releases, get_latest_dataset_release, make_observatory_api
-from observatory.platform.config import AirflowConns
-from observatory.platform.files import clean_dir
-from observatory.platform.gcs import (
+from observatory_platform.airflow import is_first_dag_run, on_failure_callback, PreviousDagRunSensor, send_slack_msg
+from observatory_platform.dataset_api import get_dataset_releases, get_latest_dataset_release, make_observatory_api
+from observatory_platform.config import AirflowConns
+from observatory_platform.files import clean_dir
+from observatory_platform.google.gcs import (
     gcs_blob_name_from_path,
     gcs_blob_uri,
     gcs_create_aws_transfer,
     gcs_upload_files,
     gcs_upload_transfer_manifest,
 )
-from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.observatory_environment import log_diff
-from observatory.platform.refactor.tasks import check_dependencies
-from observatory.platform.refactor.workflow import make_workflow_folder
-from observatory.platform.workflows.workflow import (
+from observatory_platform.airflow.workflow import CloudWorkspace
+from observatory_platform.sandbox.sandbox_environment import log_diff
+from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.refactor.workflow import make_workflow_folder
+from observatory_platform.workflows.workflow import (
     ChangefileRelease,
     cleanup,
     DATE_TIME_FORMAT,

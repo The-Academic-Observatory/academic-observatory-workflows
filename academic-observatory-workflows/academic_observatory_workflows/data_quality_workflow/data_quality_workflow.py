@@ -31,8 +31,8 @@ from google.cloud import bigquery
 from google.cloud.bigquery import Table as BQTable
 
 from academic_observatory_workflows.config import project_path
-from observatory.platform.airflow import on_failure_callback
-from observatory.platform.bigquery import (
+from observatory_platform.airflow import on_failure_callback
+from observatory_platform.google.bigquery import (
     bq_create_dataset,
     bq_get_table,
     bq_load_from_memory,
@@ -43,8 +43,8 @@ from observatory.platform.bigquery import (
     bq_table_id as make_bq_table_id,
     bq_table_id_parts,
 )
-from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.workflows.workflow import set_task_state
+from observatory_platform.airflow.workflow import CloudWorkspace
+from observatory_platform.workflows.workflow import set_task_state
 
 
 @dataclass

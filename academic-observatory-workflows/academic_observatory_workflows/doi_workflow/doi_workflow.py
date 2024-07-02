@@ -33,9 +33,9 @@ from airflow.operators.empty import EmptyOperator
 
 from academic_observatory_workflows.config import project_path
 from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.platform.airflow import on_failure_callback
-from observatory.platform.api import make_observatory_api
-from observatory.platform.bigquery import (
+from observatory_platform.airflow import on_failure_callback
+from observatory_platform.dataset_api import make_observatory_api
+from observatory_platform.google.bigquery import (
     bq_copy_table,
     bq_create_dataset,
     bq_create_table_from_query,
@@ -48,15 +48,15 @@ from observatory.platform.bigquery import (
     bq_table_id,
     bq_update_table_description,
 )
-from observatory.platform.config import AirflowConns
-from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.refactor.sensors import DagCompleteSensor
-from observatory.platform.refactor.tasks import check_dependencies
-from observatory.platform.utils.jinja2_utils import (
+from observatory_platform.config import AirflowConns
+from observatory_platform.airflow.workflow import CloudWorkspace
+from observatory_platform.refactor.sensors import DagCompleteSensor
+from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.utils.jinja2_utils import (
     render_template,
 )
-from observatory.platform.utils.url_utils import retry_get_url
-from observatory.platform.workflows.workflow import make_snapshot_date, set_task_state, SnapshotRelease
+from observatory_platform.url_utils import retry_get_url
+from observatory_platform.workflows.workflow import make_snapshot_date, set_task_state, SnapshotRelease
 
 MAX_QUERIES = 100
 
