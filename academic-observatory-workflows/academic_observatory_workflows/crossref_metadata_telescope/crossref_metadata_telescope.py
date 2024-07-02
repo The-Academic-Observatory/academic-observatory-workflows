@@ -39,16 +39,16 @@ from natsort import natsorted
 
 from academic_observatory_workflows.config import project_path
 from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.platform.airflow import on_failure_callback
-from observatory.platform.api import make_observatory_api
-from observatory.platform.bigquery import bq_create_dataset, bq_find_schema, bq_load_table, bq_sharded_table_id
-from observatory.platform.config import AirflowConns
-from observatory.platform.files import clean_dir, get_chunks, list_files
-from observatory.platform.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
-from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.refactor.tasks import check_dependencies
-from observatory.platform.utils.url_utils import retry_get_url, retry_session
-from observatory.platform.workflows.workflow import cleanup, set_task_state, SnapshotRelease
+from observatory_platform.airflow import on_failure_callback
+from observatory_platform.dataset_api import make_observatory_api
+from observatory_platform.google.bigquery import bq_create_dataset, bq_find_schema, bq_load_table, bq_sharded_table_id
+from observatory_platform.config import AirflowConns
+from observatory_platform.files import clean_dir, get_chunks, list_files
+from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
+from observatory_platform.airflow.workflow import CloudWorkspace
+from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.url_utils import retry_get_url, retry_session
+from observatory_platform.workflows.workflow import cleanup, set_task_state, SnapshotRelease
 
 SNAPSHOT_URL = "https://api.crossref.org/snapshots/monthly/{year}/{month:02d}/all.json.tar.gz"
 

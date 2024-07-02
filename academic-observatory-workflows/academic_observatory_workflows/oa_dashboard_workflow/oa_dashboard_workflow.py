@@ -49,8 +49,8 @@ from academic_observatory_workflows.github import trigger_repository_dispatch
 from academic_observatory_workflows.oa_dashboard_workflow.institution_ids import INSTITUTION_IDS
 from academic_observatory_workflows.wikipedia import fetch_wikipedia_descriptions
 from academic_observatory_workflows.zenodo import make_draft_version, publish_new_version, Zenodo
-from observatory.platform.airflow import get_airflow_connection_password, on_failure_callback
-from observatory.platform.bigquery import (
+from observatory_platform.airflow import get_airflow_connection_password, on_failure_callback
+from observatory_platform.google.bigquery import (
     bq_create_dataset,
     bq_create_table_from_query,
     bq_load_from_memory,
@@ -59,12 +59,17 @@ from observatory.platform.bigquery import (
     bq_sharded_table_id,
     bq_table_id,
 )
-from observatory.platform.files import yield_jsonl
-from observatory.platform.gcs import gcs_blob_name_from_path, gcs_download_blob, gcs_download_blobs, gcs_upload_file
-from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.refactor.tasks import check_dependencies
-from observatory.platform.utils.jinja2_utils import render_template
-from observatory.platform.workflows.workflow import (
+from observatory_platform.files import yield_jsonl
+from observatory_platform.google.gcs import (
+    gcs_blob_name_from_path,
+    gcs_download_blob,
+    gcs_download_blobs,
+    gcs_upload_file,
+)
+from observatory_platform.airflow.workflow import CloudWorkspace
+from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.utils.jinja2_utils import render_template
+from observatory_platform.workflows.workflow import (
     cleanup,
     make_snapshot_date,
     set_task_state,

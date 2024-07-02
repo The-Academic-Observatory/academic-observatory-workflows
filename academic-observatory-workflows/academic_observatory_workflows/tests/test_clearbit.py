@@ -20,7 +20,7 @@ import unittest
 
 import vcr
 from click.testing import CliRunner
-from observatory.platform.files import get_file_hash
+from observatory_platform.files import get_file_hash
 
 from academic_observatory_workflows.clearbit import clearbit_download_logo
 from academic_observatory_workflows.config import project_path

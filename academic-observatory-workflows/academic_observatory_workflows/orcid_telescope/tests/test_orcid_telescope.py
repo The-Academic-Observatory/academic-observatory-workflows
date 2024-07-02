@@ -44,11 +44,11 @@ from academic_observatory_workflows.orcid_telescope.orcid_telescope import (
     OrcidRelease,
     transform_orcid_record,
 )
-from observatory.platform.api import get_dataset_releases
-from observatory.platform.config import module_file_path
-from observatory.platform.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
-from observatory.platform.observatory_config import Workflow
-from observatory.platform.observatory_environment import (
+from observatory_platform.dataset_api import get_dataset_releases
+from observatory_platform.config import module_file_path
+from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
+from observatory_platform.airflow.workflow import Workflow
+from observatory_platform.sandbox.sandbox_environment import (
     find_free_port,
     load_and_parse_json,
     ObservatoryEnvironment,
@@ -698,7 +698,7 @@ class TestCreateOrcidBatchManifest(unittest.TestCase):
             datetime.datetime(2022, 12, 31),
             datetime.datetime(2023, 1, 1),
             datetime.datetime(2023, 1, 1, 1),
-            datetime.datetime(2023, 1, 2)
+            datetime.datetime(2023, 1, 2),
         ]
         blobs = []
         for i, updated in enumerate(updated_dates):
@@ -726,7 +726,6 @@ class TestCreateOrcidBatchManifest(unittest.TestCase):
             self.assertEqual(rows[0]["updated"], str(blobs[-2].updated))
             self.assertEqual(rows[1]["blob_name"], blobs[-1].name)
             self.assertEqual(rows[1]["updated"], str(blobs[-1].updated))
-
 
     def test_no_results(self):
         """Tests that the manifest file is not created if there are no blobs modified after the reference date"""

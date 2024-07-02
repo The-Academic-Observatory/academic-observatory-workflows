@@ -20,7 +20,7 @@ import unittest
 from click.testing import CliRunner
 
 import docs.generate_schema_csv as gsc
-from observatory.platform.observatory_environment import test_fixtures_path
+from observatory_platform.sandbox.sandbox_environment import test_fixtures_path
 
 
 class TestSchemaCSVGenerator(unittest.TestCase):

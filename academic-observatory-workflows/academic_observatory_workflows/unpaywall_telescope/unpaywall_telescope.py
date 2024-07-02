@@ -34,14 +34,14 @@ from google.cloud.bigquery import SourceFormat
 
 from academic_observatory_workflows.config import project_path
 from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.platform.airflow import (
+from observatory_platform.airflow import (
     get_airflow_connection_password,
     is_first_dag_run,
     on_failure_callback,
     PreviousDagRunSensor,
 )
-from observatory.platform.api import get_dataset_releases, get_latest_dataset_release, make_observatory_api
-from observatory.platform.bigquery import (
+from observatory_platform.dataset_api import get_dataset_releases, get_latest_dataset_release, make_observatory_api
+from observatory_platform.google.bigquery import (
     bq_create_dataset,
     bq_find_schema,
     bq_load_table,
@@ -50,18 +50,18 @@ from observatory.platform.bigquery import (
     bq_table_id,
     bq_upsert_records,
 )
-from observatory.platform.config import AirflowConns
-from observatory.platform.files import clean_dir, find_replace_file, gunzip_files, list_files, merge_update_files
-from observatory.platform.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
-from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.refactor.tasks import check_dependencies
-from observatory.platform.utils.http_download import download_file, download_files, DownloadInfo
-from observatory.platform.utils.url_utils import (
+from observatory_platform.config import AirflowConns
+from observatory_platform.files import clean_dir, find_replace_file, gunzip_files, list_files, merge_update_files
+from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
+from observatory_platform.airflow.workflow import CloudWorkspace
+from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.utils.http_download import download_file, download_files, DownloadInfo
+from observatory_platform.url_utils import (
     get_filename_from_http_header,
     get_http_response_json,
     get_observatory_http_header,
 )
-from observatory.platform.workflows.workflow import (
+from observatory_platform.workflows.workflow import (
     ChangefileRelease,
     cleanup,
     Release,

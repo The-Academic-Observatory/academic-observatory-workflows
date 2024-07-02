@@ -45,11 +45,11 @@ import observatory.platform.bigquery as bq
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.s5cmd import S5Cmd
 from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.platform.airflow import is_first_dag_run, on_failure_callback, PreviousDagRunSensor
-from observatory.platform.api import get_dataset_releases, get_latest_dataset_release, make_observatory_api
-from observatory.platform.config import AirflowConns
-from observatory.platform.files import change_keys, list_files, save_jsonl_gz
-from observatory.platform.gcs import (
+from observatory_platform.airflow import is_first_dag_run, on_failure_callback, PreviousDagRunSensor
+from observatory_platform.dataset_api import get_dataset_releases, get_latest_dataset_release, make_observatory_api
+from observatory_platform.config import AirflowConns
+from observatory_platform.files import change_keys, list_files, save_jsonl_gz
+from observatory_platform.google.gcs import (
     gcs_blob_name_from_path,
     gcs_blob_uri,
     gcs_create_aws_transfer,
@@ -57,9 +57,9 @@ from observatory.platform.gcs import (
     gcs_list_blobs,
     gcs_upload_files,
 )
-from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.refactor.tasks import check_dependencies
-from observatory.platform.workflows.workflow import ChangefileRelease, cleanup
+from observatory_platform.airflow.workflow import CloudWorkspace
+from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.workflows.workflow import ChangefileRelease, cleanup
 
 ORCID_AWS_SUMMARIES_BUCKET = "v2.0-summaries"
 ORCID_REGEX = r"\d{4}-\d{4}-\d{4}-\d{3}(\d|X)\b"
