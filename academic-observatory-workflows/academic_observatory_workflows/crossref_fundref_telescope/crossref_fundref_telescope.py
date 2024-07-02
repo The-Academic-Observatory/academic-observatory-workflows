@@ -34,27 +34,27 @@ from google.cloud.bigquery import SourceFormat
 
 from academic_observatory_workflows.config import project_path
 from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory.platform.airflow import on_failure_callback
-from observatory.platform.api import make_observatory_api
-from observatory.platform.bigquery import (
+from observatory_platform.airflow import on_failure_callback
+from observatory_platform.dataset_api import make_observatory_api
+from observatory_platform.google.bigquery import (
     bq_create_dataset,
     bq_find_schema,
     bq_load_table,
     bq_sharded_table_id,
     bq_table_exists,
 )
-from observatory.platform.config import AirflowConns
-from observatory.platform.files import clean_dir, save_jsonl_gz
-from observatory.platform.gcs import (
+from observatory_platform.config import AirflowConns
+from observatory_platform.files import clean_dir, save_jsonl_gz
+from observatory_platform.google.gcs import (
     gcs_blob_name_from_path,
     gcs_blob_uri,
     gcs_download_blob,
     gcs_upload_file,
 )
-from observatory.platform.observatory_config import CloudWorkspace
-from observatory.platform.refactor.tasks import check_dependencies
-from observatory.platform.utils.url_utils import retry_get_url
-from observatory.platform.workflows.workflow import cleanup as cleanup_workflow, set_task_state, SnapshotRelease
+from observatory_platform.airflow.workflow import CloudWorkspace
+from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.url_utils import retry_get_url
+from observatory_platform.workflows.workflow import cleanup as cleanup_workflow, set_task_state, SnapshotRelease
 
 RELEASES_URL = "https://gitlab.com/api/v4/projects/crossref%2Fopen_funder_registry/releases"
 

@@ -16,7 +16,7 @@
 
 import os
 
-from observatory.platform.config import module_file_path
+from observatory_platform.config import module_file_path
 
 
 class Tag:

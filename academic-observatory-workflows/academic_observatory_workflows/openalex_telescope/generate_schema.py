@@ -13,7 +13,7 @@ from academic_observatory_workflows.openalex_telescope.openalex_telescope import
     merge_schema_maps,
     transform_file,
 )
-from observatory.platform.files import list_files
+from observatory_platform.files import list_files
 
 
 def sort_schema(input_file: Path):
