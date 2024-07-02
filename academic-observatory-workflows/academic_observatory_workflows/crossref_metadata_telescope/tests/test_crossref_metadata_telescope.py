@@ -32,13 +32,13 @@ from academic_observatory_workflows.crossref_metadata_telescope.crossref_metadat
     transform_file,
     transform_item,
 )
-from observatory.platform.api import get_dataset_releases
-from observatory.platform.bigquery import bq_sharded_table_id
-from observatory.platform.config import module_file_path
-from observatory.platform.files import is_gzip, list_files, load_jsonl
-from observatory.platform.gcs import gcs_blob_name_from_path
-from observatory.platform.observatory_config import Workflow
-from observatory.platform.observatory_environment import find_free_port, ObservatoryEnvironment, ObservatoryTestCase
+from observatory_platform.dataset_api import get_dataset_releases
+from observatory_platform.google.bigquery import bq_sharded_table_id
+from observatory_platform.config import module_file_path
+from observatory_platform.files import is_gzip, list_files, load_jsonl
+from observatory_platform.google.gcs import gcs_blob_name_from_path
+from observatory_platform.airflow.workflow import Workflow
+from observatory_platform.sandbox.sandbox_environment import find_free_port, ObservatoryEnvironment, ObservatoryTestCase
 
 FIXTURES_FOLDER = project_path("crossref_metadata_telescope", "tests", "fixtures")
 

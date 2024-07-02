@@ -30,13 +30,13 @@ from academic_observatory_workflows.ror_telescope.ror_telescope import (
     RorRelease,
     transform_ror,
 )
-from observatory.platform.api import get_dataset_releases
-from observatory.platform.bigquery import bq_sharded_table_id
-from observatory.platform.config import module_file_path
-from observatory.platform.files import list_files, load_jsonl
-from observatory.platform.gcs import gcs_blob_name_from_path
-from observatory.platform.observatory_config import Workflow
-from observatory.platform.observatory_environment import (
+from observatory_platform.dataset_api import get_dataset_releases
+from observatory_platform.google.bigquery import bq_sharded_table_id
+from observatory_platform.config import module_file_path
+from observatory_platform.files import list_files, load_jsonl
+from observatory_platform.google.gcs import gcs_blob_name_from_path
+from observatory_platform.airflow.workflow import Workflow
+from observatory_platform.sandbox.sandbox_environment import (
     find_free_port,
     HttpServer,
     ObservatoryEnvironment,
