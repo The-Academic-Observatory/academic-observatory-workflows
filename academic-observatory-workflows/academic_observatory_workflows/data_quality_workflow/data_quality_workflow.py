@@ -44,7 +44,7 @@ from observatory_platform.google.bigquery import (
     bq_table_id_parts,
 )
 from observatory_platform.airflow.workflow import CloudWorkspace
-from observatory_platform.workflows.workflow import set_task_state
+from observatory_platform.airflow.workflow import set_task_state
 
 
 @dataclass
