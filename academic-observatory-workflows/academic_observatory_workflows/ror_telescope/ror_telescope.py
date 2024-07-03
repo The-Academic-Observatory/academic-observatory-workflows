@@ -40,10 +40,10 @@ from observatory_platform.config import AirflowConns
 from observatory_platform.files import clean_dir, list_files, save_jsonl_gz
 from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_download_blob, gcs_upload_files
 from observatory_platform.airflow.workflow import CloudWorkspace
-from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.airflow.tasks import check_dependencies
 from observatory_platform.utils.http_download import download_file
 from observatory_platform.url_utils import retry_get_url
-from observatory_platform.workflows.workflow import cleanup, set_task_state, SnapshotRelease
+from observatory_platform.airflow.workflow import cleanup, set_task_state, SnapshotRelease
 
 
 class RorRelease(SnapshotRelease):

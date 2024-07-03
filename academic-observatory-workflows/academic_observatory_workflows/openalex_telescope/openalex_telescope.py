@@ -59,9 +59,9 @@ from observatory_platform.google.gcs import (
 )
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.sandbox.sandbox_environment import log_diff
-from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.airflow.tasks import check_dependencies
 from observatory_platform.refactor.workflow import make_workflow_folder
-from observatory_platform.workflows.workflow import (
+from observatory_platform.airflow.workflow import (
     ChangefileRelease,
     cleanup,
     DATE_TIME_FORMAT,

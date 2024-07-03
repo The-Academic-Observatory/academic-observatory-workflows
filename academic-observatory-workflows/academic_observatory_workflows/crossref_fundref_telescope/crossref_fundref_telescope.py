@@ -52,9 +52,9 @@ from observatory_platform.google.gcs import (
     gcs_upload_file,
 )
 from observatory_platform.airflow.workflow import CloudWorkspace
-from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.airflow.tasks import check_dependencies
 from observatory_platform.url_utils import retry_get_url
-from observatory_platform.workflows.workflow import cleanup as cleanup_workflow, set_task_state, SnapshotRelease
+from observatory_platform.airflow.workflow import cleanup as cleanup_workflow, set_task_state, SnapshotRelease
 
 RELEASES_URL = "https://gitlab.com/api/v4/projects/crossref%2Fopen_funder_registry/releases"
 

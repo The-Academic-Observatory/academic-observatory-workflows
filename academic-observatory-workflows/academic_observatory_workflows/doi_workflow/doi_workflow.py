@@ -51,12 +51,12 @@ from observatory_platform.google.bigquery import (
 from observatory_platform.config import AirflowConns
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.refactor.sensors import DagCompleteSensor
-from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.airflow.tasks import check_dependencies
 from observatory_platform.utils.jinja2_utils import (
     render_template,
 )
 from observatory_platform.url_utils import retry_get_url
-from observatory_platform.workflows.workflow import make_snapshot_date, set_task_state, SnapshotRelease
+from observatory_platform.airflow.workflow import make_snapshot_date, set_task_state, SnapshotRelease
 
 MAX_QUERIES = 100
 

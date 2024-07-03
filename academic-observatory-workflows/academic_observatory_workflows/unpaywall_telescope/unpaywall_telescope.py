@@ -54,14 +54,14 @@ from observatory_platform.config import AirflowConns
 from observatory_platform.files import clean_dir, find_replace_file, gunzip_files, list_files, merge_update_files
 from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
 from observatory_platform.airflow.workflow import CloudWorkspace
-from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.airflow.tasks import check_dependencies
 from observatory_platform.utils.http_download import download_file, download_files, DownloadInfo
 from observatory_platform.url_utils import (
     get_filename_from_http_header,
     get_http_response_json,
     get_observatory_http_header,
 )
-from observatory_platform.workflows.workflow import (
+from observatory_platform.airflow.workflow import (
     ChangefileRelease,
     cleanup,
     Release,
