@@ -58,7 +58,7 @@ from observatory_platform.sandbox.sandbox_environment import (
     ObservatoryEnvironment,
     ObservatoryTestCase,
 )
-from observatory_platform.workflows.workflow import ChangefileRelease
+from observatory_platform.airflow.workflow import ChangefileRelease
 
 FIXTURES_FOLDER = project_path("pubmed_telescope", "tests", "fixtures")
 

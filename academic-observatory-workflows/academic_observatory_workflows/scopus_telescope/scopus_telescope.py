@@ -50,9 +50,9 @@ from observatory_platform.files import (
 )
 from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_download_blobs, gcs_upload_files
 from observatory_platform.airflow.workflow import CloudWorkspace
-from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.airflow.tasks import check_dependencies
 from observatory_platform.url_utils import get_user_agent
-from observatory_platform.workflows.workflow import (
+from observatory_platform.airflow.workflow import (
     cleanup,
     make_snapshot_date,
     SnapshotRelease,

@@ -63,8 +63,8 @@ from observatory_platform.config import AirflowConns
 from observatory_platform.files import get_chunks, save_jsonl_gz, yield_jsonl
 from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_upload_files
 from observatory_platform.airflow.workflow import CloudWorkspace
-from observatory_platform.refactor.tasks import check_dependencies
-from observatory_platform.workflows.workflow import (
+from observatory_platform.airflow.tasks import check_dependencies
+from observatory_platform.airflow.workflow import (
     ChangefileRelease as DatafileRelease,
     cleanup,
 )

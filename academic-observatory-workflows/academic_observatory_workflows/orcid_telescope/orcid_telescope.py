@@ -58,8 +58,8 @@ from observatory_platform.google.gcs import (
     gcs_upload_files,
 )
 from observatory_platform.airflow.workflow import CloudWorkspace
-from observatory_platform.refactor.tasks import check_dependencies
-from observatory_platform.workflows.workflow import ChangefileRelease, cleanup
+from observatory_platform.airflow.tasks import check_dependencies
+from observatory_platform.airflow.workflow import ChangefileRelease, cleanup
 
 ORCID_AWS_SUMMARIES_BUCKET = "v2.0-summaries"
 ORCID_REGEX = r"\d{4}-\d{4}-\d{4}-\d{3}(\d|X)\b"

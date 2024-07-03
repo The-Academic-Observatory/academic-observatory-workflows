@@ -67,9 +67,9 @@ from observatory_platform.google.gcs import (
     gcs_upload_file,
 )
 from observatory_platform.airflow.workflow import CloudWorkspace
-from observatory_platform.refactor.tasks import check_dependencies
+from observatory_platform.airflow.tasks import check_dependencies
 from observatory_platform.utils.jinja2_utils import render_template
-from observatory_platform.workflows.workflow import (
+from observatory_platform.airflow.workflow import (
     cleanup,
     make_snapshot_date,
     set_task_state,
