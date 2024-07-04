@@ -45,11 +45,11 @@ from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.release import set_task_state, SnapshotRelease
 from observatory_platform.airflow.tasks import check_dependencies
 from observatory_platform.airflow.workflow import cleanup, CloudWorkspace
-from observatory_platform.config import AirflowConns
 from observatory_platform.dataset_api import DatasetRelease, DatasetAPI
-from observatory_platform.files import clean_dir, get_chunks, list_files
 from observatory_platform.google.bigquery import bq_create_dataset, bq_find_schema, bq_load_table, bq_sharded_table_id
+from observatory_platform.google.gke import gke_create_volume, gke_delete_volume
 from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
+from observatory_platform.files import clean_dir, get_chunks, list_files
 from observatory_platform.url_utils import retry_get_url, retry_session
 
 SNAPSHOT_URL = "https://api.crossref.org/snapshots/monthly/{year}/{month:02d}/all.json.tar.gz"
@@ -282,7 +282,7 @@ def create_dag(
             logging.info(f"Successfully download url to {release.download_file_path}")
 
         @task.kubernetes(
-            name="download",
+            name="upload_download",
             container_resources=V1ResourceRequirements(
                 requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
             ),
@@ -299,7 +299,7 @@ def create_dag(
             set_task_state(success, "upload_downloaded", release)
 
         @task.kubernetes(
-            name="download",
+            name="extract",
             container_resources=V1ResourceRequirements(
                 requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
             ),
@@ -368,14 +368,7 @@ def create_dag(
             success = gcs_upload_files(bucket_name=cloud_workspace.transform_bucket, file_paths=files_list)
             set_task_state(success, "upload_transformed", release)
 
-        @task.kubernetes(
-            name="bq_load",
-            container_resources=V1ResourceRequirements(
-                requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
-            ),
-            secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
-            **kubernetes_task_params,
-        )
+        @task
         def bq_load(release: dict, **context):
             """Task to load each transformed release to BigQuery.
             The table_id is set to the file name without the extension."""
@@ -410,14 +403,7 @@ def create_dag(
             )
             set_task_state(success, "bq_load", release)
 
-        @task.kubernetes(
-            name="add_dataset_release",
-            container_resources=V1ResourceRequirements(
-                requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
-            ),
-            secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
-            **kubernetes_task_params,
-        )
+        @task
         def add_dataset_release(release: dict, **context) -> None:
             """Adds release information to API."""
 
@@ -437,14 +423,7 @@ def create_dag(
             )
             api.add_dataset_release(dataset_release)
 
-        @task.kubernetes(
-            name="cleanup_workflow",
-            container_resources=V1ResourceRequirements(
-                requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
-            ),
-            secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
-            **kubernetes_task_params,
-        )
+        @task
         def cleanup_workflow(release: dict, **context) -> None:
             """Delete all files, folders and XComs associated with this release."""
 
@@ -454,11 +433,13 @@ def create_dag(
         # Define task connections
         task_check_dependencies = check_dependencies(airflow_conns=[crossref_metadata_conn_id])
         xcom_release = fetch_release()
+        task_create_volume = gke_create_volume(kubernetes_conn_id, gke_volume_name, gke_volume_size)
         task_download = download(xcom_release)
         task_upload_downloaded = upload_downloaded(xcom_release)
         task_extract = extract(xcom_release)
         task_transform = transform(xcom_release)
         task_upload_transformed = upload_transformed(xcom_release)
+        task_delete_volume = gke_delete_volume(kubernetes_conn_id, gke_volume_name)
         task_bq_load = bq_load(xcom_release)
         task_add_dataset_release = add_dataset_release(xcom_release)
         task_cleanup_workflow = cleanup_workflow(xcom_release)
@@ -466,12 +447,14 @@ def create_dag(
         (
             task_check_dependencies
             >> xcom_release
+            >> task_create_volume
             >> task_download
             >> task_upload_downloaded
             >> task_extract
             >> task_transform
             >> task_upload_transformed
             >> task_bq_load
+            >> task_delete_volume
             >> task_add_dataset_release
             >> task_cleanup_workflow
         )
