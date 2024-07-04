@@ -1,4 +1,4 @@
-FROM quay.io/astronomer/astro-runtime:8.10.0
+FROM quay.io/astronomer/astro-runtime:9.15.0
 
 # The following describes what various dependencies are used for. Some dependencies are specified in packages.txt
 # and some are installed in this Dockerfile if not available in apt by default.
@@ -25,8 +25,8 @@ RUN curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_
 USER astro
 
 # Install Observatory Platform
-RUN git clone --branch feature/astro https://github.com/The-Academic-Observatory/observatory-platform.git
-RUN pip install -e ./observatory-platform/observatory-platform --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-3.10.txt
+RUN git clone --branch feature/astro-refactor https://github.com/The-Academic-Observatory/observatory-platform.git
+RUN pip install -e ./observatory-platform --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-3.10.txt
 
 # Install Academic Observatory Workflows
 COPY academic-observatory-workflows ./academic-observatory-workflows

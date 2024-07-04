@@ -1,2 +1,2 @@
 # Astro Runtime includes the following pre-installed providers packages: https://docs.astronomer.io/astro/runtime-image-architecture#provider-packages
-apache-airflow-providers-cncf-kubernetes>=7.4.0
+apache-airflow-providers-cncf-kubernetes>=8.3.2
