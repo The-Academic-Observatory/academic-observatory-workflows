@@ -41,16 +41,16 @@ from kubernetes.client import models as k8s
 from kubernetes.client.models import V1ResourceRequirements
 
 from academic_observatory_workflows.config import project_path
-from observatory_platform.airflow import on_failure_callback
-from observatory_platform.dataset_api import make_observatory_api, DatasetRelease
-from observatory_platform.google.bigquery import bq_create_dataset, bq_find_schema, bq_load_table, bq_sharded_table_id
-from observatory_platform.config import AirflowConns
-from observatory_platform.files import clean_dir, get_chunks, list_files
-from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
-from observatory_platform.airflow.workflow import CloudWorkspace
+from observatory_platform.airflow.airflow import on_failure_callback
+from observatory_platform.airflow.release import set_task_state, SnapshotRelease
 from observatory_platform.airflow.tasks import check_dependencies
+from observatory_platform.airflow.workflow import cleanup, CloudWorkspace
+from observatory_platform.config import AirflowConns
+from observatory_platform.dataset_api import DatasetRelease, DatasetAPI
+from observatory_platform.files import clean_dir, get_chunks, list_files
+from observatory_platform.google.bigquery import bq_create_dataset, bq_find_schema, bq_load_table, bq_sharded_table_id
+from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
 from observatory_platform.url_utils import retry_get_url, retry_session
-from observatory_platform.airflow.workflow import cleanup, set_task_state, SnapshotRelease
 
 SNAPSHOT_URL = "https://api.crossref.org/snapshots/monthly/{year}/{month:02d}/all.json.tar.gz"
 
@@ -113,24 +113,23 @@ def create_dag(
     cloud_workspace: CloudWorkspace,
     bq_dataset_id: str = "crossref_metadata",
     bq_table_name: str = "crossref_metadata",
-    api_dataset_id: str = "crossref_metadata",
+    api_bq_dataset_id: str = "crossref_metadata",
     schema_folder: str = project_path("crossref_metadata_telescope", "schema"),
     dataset_description: str = "The Crossref Metadata Plus dataset: https://www.crossref.org/services/metadata-retrieval/metadata-plus/",
     table_description: str = "The Crossref Metadata Plus dataset: https://www.crossref.org/services/metadata-retrieval/metadata-plus/",
     crossref_metadata_conn_id: str = "crossref_metadata",
-    observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
     max_processes: int = os.cpu_count(),
     batch_size: int = 20,
     start_date: pendulum.DateTime = pendulum.datetime(2020, 6, 7),
     schedule: str = "0 0 7 * *",
     catchup: bool = True,
-    queue: str = "remote_queue",
+    queue: str = "default",
     max_active_runs: int = 1,
     retries: int = 3,
     gke_image="us-docker.pkg.dev/project-id/academic-observatory/academic-observatory:latest",
     gke_namespace: str = "coki-astro",
     gke_startup_timeout_seconds: int = 300,
-    gke_volume_name: str = "crossref_metadata",
+    gke_volume_name: str = "crossref-metadata",
     gke_volume_path: str = "/data",
     gke_zone: str = "us-central1",
     gke_volume_size: int = 1000,
@@ -236,6 +235,7 @@ def create_dag(
             # E.g. the 2020-05 release is added to the website on 2020-06-05.
             data_interval_start = context["data_interval_start"]
             exists = check_release_exists(data_interval_start, get_api_key(crossref_metadata_conn_id))
+            exists = True  # TODO undo this
             if not exists:
                 raise AirflowException(
                     f"check_release_exists: release doesn't exist for month {data_interval_start.year}-{data_interval_start.month}, something is wrong and needs investigating."
@@ -422,16 +422,20 @@ def create_dag(
             """Adds release information to API."""
 
             release = CrossrefMetadataRelease.from_dict(release)
+
+            api = DatasetAPI(bq_project_id=cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
+            api.seed_db()
             dataset_release = DatasetRelease(
                 dag_id=dag_id,
-                dataset_id=api_dataset_id,
+                entity_id="crossref_metadata",
                 dag_run_id=release.run_id,
-                snapshot_date=release.snapshot_date,
-                data_interval_start=context["data_interval_start"],
-                data_interval_end=context["data_interval_end"],
+                created=pendulum.now(),
+                modified=pendulum.now(),
+                data_interval_start=release.data_interval_start,
+                data_interval_end=release.data_interval_end,
+                partition_date=release.partition_date,
             )
-            api = make_observatory_api(observatory_api_conn_id=observatory_api_conn_id)
-            api.post_dataset_release(dataset_release)
+            api.add_dataset_release(dataset_release)
 
         @task.kubernetes(
             name="cleanup_workflow",
@@ -448,7 +452,7 @@ def create_dag(
             cleanup(dag_id=dag_id, execution_date=context["logical_date"], workflow_folder=release.workflow_folder)
 
         # Define task connections
-        task_check_dependencies = check_dependencies(airflow_conns=[observatory_api_conn_id, crossref_metadata_conn_id])
+        task_check_dependencies = check_dependencies(airflow_conns=[crossref_metadata_conn_id])
         xcom_release = fetch_release()
         task_download = download(xcom_release)
         task_upload_downloaded = upload_downloaded(xcom_release)
