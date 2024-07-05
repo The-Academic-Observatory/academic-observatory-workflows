@@ -126,9 +126,9 @@ def create_dag(
     queue: str = "default",
     max_active_runs: int = 1,
     retries: int = 3,
-    gke_image="us-docker.pkg.dev/project-id/academic-observatory/academic-observatory:latest",
+    gke_image="us-docker.pkg.dev/keegan-dev/academic-observatory/academic-observatory:latest",  # TODO: change this
     gke_namespace: str = "coki-astro",
-    gke_startup_timeout_seconds: int = 300,
+    gke_startup_timeout_seconds: int = 60,
     gke_volume_name: str = "crossref-metadata",
     gke_volume_path: str = "/data",
     gke_zone: str = "us-central1",
@@ -252,12 +252,19 @@ def create_dag(
                 batch_size=batch_size,
             ).to_dict()
 
+        @task
+        def create_volume(**context):
+            """Create the Kubernetes persistent volume"""
+            gke_create_volume(
+                kubernetes_conn_id=kubernetes_conn_id, volume_name=gke_volume_name, size_gi=gke_volume_size
+            )
+
         @task.kubernetes(
             name="download",
             container_resources=V1ResourceRequirements(
                 requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
             ),
-            secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
+            secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "API_TOKEN")],
             **kubernetes_task_params,
         )
         def download(release: dict, **context):
@@ -404,6 +411,11 @@ def create_dag(
             set_task_state(success, "bq_load", release)
 
         @task
+        def delete_volume(**context) -> None:
+            """Delete the persistent Kubernetes volume"""
+            gke_delete_volume(kubernetes_conn_id=kubernetes_conn_id, volume_name=gke_volume_name)
+
+        @task
         def add_dataset_release(release: dict, **context) -> None:
             """Adds release information to API."""
 
@@ -433,13 +445,13 @@ def create_dag(
         # Define task connections
         task_check_dependencies = check_dependencies(airflow_conns=[crossref_metadata_conn_id])
         xcom_release = fetch_release()
-        task_create_volume = gke_create_volume(kubernetes_conn_id, gke_volume_name, gke_volume_size)
+        task_create_volume = create_volume()
         task_download = download(xcom_release)
         task_upload_downloaded = upload_downloaded(xcom_release)
         task_extract = extract(xcom_release)
         task_transform = transform(xcom_release)
         task_upload_transformed = upload_transformed(xcom_release)
-        task_delete_volume = gke_delete_volume(kubernetes_conn_id, gke_volume_name)
+        task_delete_volume = delete_volume()
         task_bq_load = bq_load(xcom_release)
         task_add_dataset_release = add_dataset_release(xcom_release)
         task_cleanup_workflow = cleanup_workflow(xcom_release)
