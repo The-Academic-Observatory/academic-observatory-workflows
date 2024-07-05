@@ -11,7 +11,7 @@ PROJECT_NAME="$1"
 DEPLOYMENT_ID="$2"
 
 # Build, tag, and push the Docker image with the specified project name
-docker build -t academic-observatory .
+docker build --no-cache -t academic-observatory .
 docker tag academic-observatory us-docker.pkg.dev/${PROJECT_NAME}/academic-observatory/academic-observatory
 docker push us-docker.pkg.dev/${PROJECT_NAME}/academic-observatory/academic-observatory
 
