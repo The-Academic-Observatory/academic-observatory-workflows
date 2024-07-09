@@ -17,11 +17,9 @@
 
 from __future__ import annotations
 
-import functools
 import json
 import logging
 import os
-import shutil
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from datetime import datetime
 
@@ -41,8 +39,9 @@ from kubernetes.client import models as k8s
 from kubernetes.client.models import V1ResourceRequirements
 
 from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.crossref_metadata_telescope.release import CrossrefMetadataRelease
 from observatory_platform.airflow.airflow import on_failure_callback
-from observatory_platform.airflow.release import set_task_state, SnapshotRelease
+from observatory_platform.airflow.release import set_task_state
 from observatory_platform.airflow.tasks import check_dependencies
 from observatory_platform.airflow.workflow import cleanup, CloudWorkspace
 from observatory_platform.dataset_api import DatasetRelease, DatasetAPI
@@ -51,60 +50,6 @@ from observatory_platform.google.gke import gke_create_volume, gke_delete_volume
 from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
 from observatory_platform.files import clean_dir, get_chunks, list_files
 from observatory_platform.url_utils import retry_get_url, retry_session
-
-SNAPSHOT_URL = "https://api.crossref.org/snapshots/monthly/{year}/{month:02d}/all.json.tar.gz"
-
-
-class CrossrefMetadataRelease(SnapshotRelease):
-    def __init__(
-        self,
-        *,
-        dag_id: str,
-        run_id: str,
-        snapshot_date: pendulum.DateTime,
-        cloud_workspace: CloudWorkspace,
-        batch_size: int,
-    ):
-        """Construct a RorRelease.
-
-        :param dag_id: the DAG id.
-        :param run_id: the DAG run id.
-        :param snapshot_date: the release date.
-        :param cloud_workspace: the cloud workspace settings.
-        :param batch_size: the number of files to send to ProcessPoolExecutor at one time.
-        """
-
-        super().__init__(dag_id=dag_id, run_id=run_id, snapshot_date=snapshot_date)
-        self.cloud_workspace = cloud_workspace
-        self.batch_size = batch_size
-        self.download_file_name = "crossref_metadata.json.tar.gz"
-        self.download_file_path = os.path.join(self.download_folder, self.download_file_name)
-        self.extract_files_regex = r".*\.json$"
-        self.transform_files_regex = r".*\.jsonl$"
-
-    @staticmethod
-    def from_dict(dict_: dict):
-        dag_id = dict_["dag_id"]
-        run_id = dict_["run_id"]
-        snapshot_date = pendulum.parse(dict_["snapshot_date"])
-        cloud_workspace = CloudWorkspace.from_dict(dict_["cloud_workspace"])
-        batch_size = dict_["batch_size"]
-        return CrossrefMetadataRelease(
-            dag_id=dag_id,
-            run_id=run_id,
-            snapshot_date=snapshot_date,
-            cloud_workspace=cloud_workspace,
-            batch_size=batch_size,
-        )
-
-    def to_dict(self) -> dict:
-        return dict(
-            dag_id=self.dag_id,
-            run_id=self.run_id,
-            snapshot_date=self.snapshot_date.to_datetime_string(),
-            cloud_workspace=self.cloud_workspace.to_dict(),
-            batch_size=self.batch_size,
-        )
 
 
 def create_dag(
@@ -267,26 +212,11 @@ def create_dag(
             secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "API_TOKEN")],
             **kubernetes_task_params,
         )
-        def download(release: dict, **context):
+        def _download(release: dict, **context):
             """Task to download the CrossrefMetadataRelease release for a given month."""
+            from academic_observatory_workflows.crossref_metadata_telescope.tasks import download
 
-            release = CrossrefMetadataRelease.from_dict(release)
-            clean_dir(release.download_folder)
-
-            url = make_snapshot_url(release.snapshot_date)
-            logging.info(f"Downloading from url: {url}")
-
-            # Set API token header
-            api_key = get_api_key(crossref_metadata_conn_id)
-            header = {"Crossref-Plus-API-Token": f"Bearer {api_key}"}
-
-            # Download release
-            with retry_get_url(url, headers=header, stream=True) as response:
-                with open(release.download_file_path, "wb") as file:
-                    response.raw.read = functools.partial(response.raw.read, decode_content=True)
-                    shutil.copyfileobj(response.raw, file)
-
-            logging.info(f"Successfully download url to {release.download_file_path}")
+            download(release, **context)
 
         @task.kubernetes(
             name="upload_download",
@@ -446,7 +376,7 @@ def create_dag(
         task_check_dependencies = check_dependencies(airflow_conns=[crossref_metadata_conn_id])
         xcom_release = fetch_release()
         task_create_volume = create_volume()
-        task_download = download(xcom_release)
+        task_download = _download(xcom_release)
         task_upload_downloaded = upload_downloaded(xcom_release)
         task_extract = extract(xcom_release)
         task_transform = transform(xcom_release)
