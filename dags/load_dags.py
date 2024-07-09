@@ -20,4 +20,4 @@ from __future__ import annotations
 
 from observatory_platform.airflow.workflow import load_dags_from_config
 
-load_dags_from_config()
+load_dags_from_config(use_params=True)
