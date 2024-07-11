@@ -1,3 +1,19 @@
+# Copyright 2020-2024 Curtin University
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Author: Aniek Roelofs, James Diprose, Keegan Smith
+
 from concurrent.futures import as_completed, ProcessPoolExecutor
 import datetime
 import functools
@@ -23,8 +39,6 @@ from observatory_platform.dataset_api import DatasetRelease, DatasetAPI
 from observatory_platform.files import clean_dir, get_chunks, list_files
 from observatory_platform.google.bigquery import bq_create_dataset, bq_find_schema, bq_load_table, bq_sharded_table_id
 from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
-from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
-from observatory_platform.google.gke import gke_create_volume, gke_delete_volume
 from observatory_platform.url_utils import retry_get_url, retry_session
 
 
@@ -38,9 +52,19 @@ def fetch_release(
     dag_id: str,
     run_id: str,
     start_date: str,
-    data_interval_start: datetime.DateTime,
-    batch_size: int,
-):
+    data_interval_start: pendulum.DateTime,
+) -> dict:
+    """Task to retrieve the release for the given start date
+
+    :param cloud_workspace: The cloud workspace object for the dag run
+    :param crossref_metadata_conn_id: The connection ID for crossref metadata
+    :param dag_id: The dag ID for the dag run
+    :param run_id: The run ID for the dag run
+    :param start_date: The earliest date to retrieve a release for
+    :param data_interval_start: The start of the data interval for this dag run
+    :return: The release object in dictionary form
+    """
+
     # List all available releases for logging and debugging purposes
     # These values are not used to actually check if the release is available
     logging.info(f"Listing available releases since start date ({start_date}):")
@@ -67,16 +91,13 @@ def fetch_release(
         run_id=run_id,
         snapshot_date=snapshot_date,
         cloud_workspace=cloud_workspace,
-        batch_size=batch_size,
     ).to_dict()
 
 
-def create_volume(*, kubernetes_conn_id: str, gke_volume_name: str, gke_volume_size: int) -> None:
-
-    gke_create_volume(kubernetes_conn_id=kubernetes_conn_id, volume_name=gke_volume_name, size_gi=gke_volume_size)
-
-
 def download(release: dict) -> None:
+    """Task to Download the crossref metadata dataset.
+    Expects the api key to be set as an environment variable named CROSSREF_METADATA_API_KEY
+    """
     release = CrossrefMetadataRelease.from_dict(release)
     clean_dir(release.download_folder)
 
@@ -101,12 +122,17 @@ def download(release: dict) -> None:
 
 
 def upload_downloaded(release: dict, cloud_workspace: CloudWorkspace) -> None:
+    """Task to upload downloaded data to Cloud Storage.
+
+    :param cloud_workspace: The cloud workspace object for the dag run
+    """
     release = CrossrefMetadataRelease.from_dict(release)
     success = gcs_upload_files(bucket_name=cloud_workspace.download_bucket, file_paths=[release.download_file_path])
     set_task_state(success, "upload_downloaded", release)
 
 
 def extract(release, **context) -> None:
+    """Task to extract the downloaded metadata."""
     release = CrossrefMetadataRelease.from_dict(release)
     op = BashOperator(
         task_id="extract",
@@ -118,7 +144,11 @@ def extract(release, **context) -> None:
 
 def transform(release: dict, *, max_processes: int, batch_size: int) -> None:
     """Task to transform the CrossrefMetadataRelease release for a given month.
-    Each extracted file is transformmed."""
+    Each extracted file is transformmed.
+
+    :param max_processes: the number of processes used with ProcessPoolExecutor to transform files in parallel.
+    :param batch_size: the number of files to send to ProcessPoolExecutor at one time.
+    """
 
     release = CrossrefMetadataRelease.from_dict(release)
     logging.info(f"Transform input folder: {release.extract_folder}, output folder: {release.transform_folder}")
@@ -148,7 +178,9 @@ def transform(release: dict, *, max_processes: int, batch_size: int) -> None:
 
 
 def upload_transformed(release: dict, *, cloud_workspace: CloudWorkspace) -> None:
-    """Upload the transformed data to Cloud Storage."""
+    """Task to upload the transformed data to Cloud Storage.
+    :param cloud_workspace: The cloud workspace object for the dag run
+    """
 
     release = CrossrefMetadataRelease.from_dict(release)
     files_list = list_files(release.transform_folder, release.transform_files_regex)
@@ -167,7 +199,15 @@ def bq_load(
     schema_folder: str,
 ):
     """Task to load each transformed release to BigQuery.
-    The table_id is set to the file name without the extension."""
+    The table_id is set to the file name without the extension.
+
+    :param cloud_workspace: The cloud workspace object for the dag run
+    :param bq_dataset_id: The bigquery dataset ID
+    :param bq_table_name: The bigqiery table name
+    :param dataset_description: The description to use when creating the dataset
+    :param table_description: The description to use when creating the table
+    :param schema_folder: The path to the schema folder
+    """
 
     release = CrossrefMetadataRelease.from_dict(release)
     bq_create_dataset(
@@ -198,13 +238,13 @@ def bq_load(
     set_task_state(success, "bq_load", release)
 
 
-def delete_volume(*, kubernetes_conn_id: str, gke_volume_name: str) -> None:
-    """Delete the persistent Kubernetes volume"""
-    gke_delete_volume(kubernetes_conn_id=kubernetes_conn_id, volume_name=gke_volume_name)
-
-
 def add_dataset_release(release: dict, *, dag_id: str, cloud_workspace: CloudWorkspace, api_bq_dataset_id: str) -> None:
-    """Adds release information to API."""
+    """Task to add release information to API.
+
+
+    :param cloud_workspace: The cloud workspace object for the dag run
+    :param api_bq_dataset_id: The bigquery dataset ID for the API
+    """
 
     release = CrossrefMetadataRelease.from_dict(release)
 
@@ -224,18 +264,33 @@ def add_dataset_release(release: dict, *, dag_id: str, cloud_workspace: CloudWor
 
 
 def cleanup_workflow(release: dict, *, dag_id: str, logical_date: pendulum.DateTime) -> None:
-    """Delete all files, folders and XComs associated with this release."""
+    """Task to delete all files, folders and XComs associated with this release.
+
+    :param dag_id: The ID of the DAG
+    :param logical_date: The DAG run's logical/execution date
+    """
 
     release = CrossrefMetadataRelease.from_dict(release)
     cleanup(dag_id=dag_id, execution_date=logical_date, workflow_folder=release.workflow_folder)
 
 
 def make_snapshot_url(snapshot_date: pendulum.DateTime) -> str:
+    """Creates the url to the snapshot
+
+    :param snashot_date: The date of the snapshot
+    :return: The snapshot url
+    """
+
     return SNAPSHOT_URL.format(year=snapshot_date.year, month=snapshot_date.month)
 
 
-def get_api_key(crossref_metadata_conn_id: str):
-    """Return API token"""
+def get_api_key(crossref_metadata_conn_id: str) -> str:
+    """Return Crossref Metadata API token from Airflow connections
+
+    :param crossref_metadata_id: The airflow connection ID for crossref metadata
+    :return: The crossref metadata api key
+    """
+
     connection = BaseHook.get_connection(crossref_metadata_conn_id)
     return connection.password
 

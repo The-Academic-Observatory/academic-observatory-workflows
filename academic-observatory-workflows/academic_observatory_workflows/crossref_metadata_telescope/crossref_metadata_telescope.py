@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: Aniek Roelofs, James Diprose
+# Author: Aniek Roelofs, James Diprose, Keegan Smith
 
 
 from __future__ import annotations
@@ -29,12 +29,12 @@ from kubernetes.client.models import V1ResourceRequirements
 
 from academic_observatory_workflows.config import project_path
 from observatory_platform.airflow.airflow import on_failure_callback
-from observatory_platform.airflow.tasks import check_dependencies
+from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
 from observatory_platform.airflow.workflow import CloudWorkspace
 
 
 @dataclass
-class Params:
+class DagParams:
     """Parameters for the Crossref Metadata Telescope
 
     :param dag_id: the id of the DAG.
@@ -89,13 +89,13 @@ class Params:
     docker_astro_uid: int = 50000
 
 
-def create_dag(*, params: Params) -> DAG:
+def create_dag(*, dag_params: DagParams) -> DAG:
     """The Crossref Metadata DAG"""
 
     # Common @task.kubernetes params
-    volume_mounts = [k8s.V1VolumeMount(mount_path=params.gke_volume_path, name=params.gke_volume_name)]
+    volume_mounts = [k8s.V1VolumeMount(mount_path=dag_params.gke_volume_path, name=dag_params.gke_volume_name)]
     kubernetes_task_params = dict(
-        image=params.gke_image,
+        image=dag_params.gke_image,
         # init-container is used to apply the astro:astro owner to the /data directory
         init_containers=[
             k8s.V1Container(
@@ -104,7 +104,7 @@ def create_dag(*, params: Params) -> DAG:
                 command=[
                     "sh",
                     "-c",
-                    f"useradd -u {params.docker_astro_uid} astro && chown -R astro:astro /data",
+                    f"useradd -u {dag_params.docker_astro_uid} astro && chown -R astro:astro /data",
                 ],
                 volume_mounts=volume_mounts,
                 security_context=k8s.V1PodSecurityContext(fs_group=0, run_as_group=0, run_as_user=0),
@@ -114,59 +114,56 @@ def create_dag(*, params: Params) -> DAG:
         # It doesn't seem to work
         security_context=k8s.V1PodSecurityContext(
             # fs_user=docker_astro_uid,
-            fs_group=params.docker_astro_uid,
+            fs_group=dag_params.docker_astro_uid,
             fs_group_change_policy="OnRootMismatch",
-            run_as_group=params.docker_astro_uid,
-            run_as_user=params.docker_astro_uid,
+            run_as_group=dag_params.docker_astro_uid,
+            run_as_user=dag_params.docker_astro_uid,
         ),
         do_xcom_push=True,
         get_logs=True,
         in_cluster=False,
-        kubernetes_conn_id=params.kubernetes_conn_id,
+        kubernetes_conn_id=dag_params.kubernetes_conn_id,
         log_events_on_failure=True,
-        namespace=params.gke_namespace,
-        startup_timeout_seconds=params.gke_startup_timeout_seconds,
-        env_vars={"DATA_PATH": params.gke_volume_path},
+        namespace=dag_params.gke_namespace,
+        startup_timeout_seconds=dag_params.gke_startup_timeout_seconds,
+        env_vars={"DATA_PATH": dag_params.gke_volume_path},
         volumes=[
             k8s.V1Volume(
-                name=params.gke_volume_name,
-                persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(claim_name=params.gke_volume_name),
+                name=dag_params.gke_volume_name,
+                persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(claim_name=dag_params.gke_volume_name),
             )
         ],
         volume_mounts=volume_mounts,
     )
 
     @dag(
-        dag_id=params.dag_id,
-        start_date=params.start_date,
-        schedule=params.schedule,
-        catchup=params.catchup,
-        max_active_runs=params.max_active_runs,
+        dag_id=dag_params.dag_id,
+        start_date=dag_params.start_date,
+        schedule=dag_params.schedule,
+        catchup=dag_params.catchup,
+        max_active_runs=dag_params.max_active_runs,
         tags=["academic-observatory"],
         default_args={
             "owner": "airflow",
             "on_failure_callback": on_failure_callback,
-            "retries": params.retries,
-            "queue": params.queue,
+            "retries": dag_params.retries,
+            "queue": dag_params.queue,
         },
     )
     def crossref_metadata():
         @task
-        def _fetch_release(params: Params, **context):
+        def _fetch_release(dag_params: DagParams, **context) -> dict:
             """Fetch the release for this month, making sure that it exists."""
             from academic_observatory_workflows.crossref_metadata_telescope.tasks import fetch_release
 
-            fetch_release()
-
-        @task
-        def _create_volume(params: Params, **context):
-            """Create the Kubernetes persistent volume"""
-            from academic_observatory_workflows.crossref_metadata_telescope.tasks import create_volume
-
-            create_volume(
-                kubernetes_conn_id=params.kubernetes_conn_id,
-                gke_volume_name=params.gke_volume_name,
-                gke_volume_size=params.gke_volume_size,
+            return fetch_release(
+                run_id=context["run_id"],
+                data_interval_start=context["data_interval_start"],
+                cloud_workspace=dag_params.cloud_workspace,
+                crossref_metadata_conn_id=dag_params.crossref_metadata_conn_id,
+                dag_id=dag_params.dag_id,
+                start_date=dag_params.start_date,
+                batch_size=dag_params.batch_size,
             )
 
         @task.kubernetes(
@@ -174,11 +171,10 @@ def create_dag(*, params: Params) -> DAG:
             container_resources=V1ResourceRequirements(
                 requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
             ),
-            secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "API_TOKEN")],
+            secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
             **kubernetes_task_params,
         )
         def _download(release: dict, **context):
-            """Task to download the CrossrefMetadataRelease release for a given month."""
             from academic_observatory_workflows.crossref_metadata_telescope.tasks import download
 
             download(release)
@@ -188,21 +184,19 @@ def create_dag(*, params: Params) -> DAG:
             container_resources=V1ResourceRequirements(
                 requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
             ),
-            secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
             **kubernetes_task_params,
         )
-        def _upload_downloaded(release: dict, params: Params, **context):
-            """Upload data to Cloud Storage."""
+        def _upload_downloaded(release: dict, dag_params, **context):
+            """Upload downloaded data to Cloud Storage."""
             from academic_observatory_workflows.crossref_metadata_telescope.tasks import upload_downloaded
 
-            upload_downloaded(release, cloud_workspace=params.cloud_workspace)
+            upload_downloaded(release, cloud_workspace=dag_params.cloud_workspace)
 
         @task.kubernetes(
             name="extract",
             container_resources=V1ResourceRequirements(
                 requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
             ),
-            secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
             **kubernetes_task_params,
         )
         def _extract(release: dict, **context):
@@ -217,12 +211,12 @@ def create_dag(*, params: Params) -> DAG:
             ),
             **kubernetes_task_params,
         )
-        def _transform(release: dict, params: Params, **context):
+        def _transform(release: dict, dag_params, **context):
             """Task to transform the CrossrefMetadataRelease release for a given month.
             Each extracted file is transformmed."""
             from academic_observatory_workflows.crossref_metadata_telescope.tasks import transform
 
-            transform(release, max_processes=params.max_processes, batch_size=params.batch_size)
+            transform(release, max_processes=dag_params.max_processes, batch_size=dag_params.batch_size)
 
         @task.kubernetes(
             name="upload_transformed",
@@ -231,79 +225,75 @@ def create_dag(*, params: Params) -> DAG:
             ),
             **kubernetes_task_params,
         )
-        def _upload_transformed(release: dict, params: Params, **context) -> None:
-            """Upload the transformed data to Cloud Storage."""
+        def _upload_transformed(release: dict, dag_params, **context) -> None:
             from academic_observatory_workflows.crossref_metadata_telescope.tasks import upload_transformed
 
-            upload_transformed(release, cloud_workspace=params.cloud_workspace)
+            upload_transformed(release, cloud_workspace=dag_params.cloud_workspace)
 
         @task
-        def _bq_load(release: dict, params: Params, **context):
-            """Task to load each transformed release to BigQuery.
-            The table_id is set to the file name without the extension."""
+        def _bq_load(release: dict, dag_params: DagParams, **context):
             from academic_observatory_workflows.crossref_metadata_telescope.tasks import bq_load
 
             bq_load(
                 release,
-                cloud_workspace=params.cloud_workspace,
-                bq_dataset_id=params.bq_dataset_id,
-                bq_table_name=params.bq_table_name,
-                dataset_description=params.dataset_description,
-                table_description=params.table_description,
-                schema_folder=params.schema_folder,
+                cloud_workspace=dag_params.cloud_workspace,
+                bq_dataset_id=dag_params.bq_dataset_id,
+                bq_table_name=dag_params.bq_table_name,
+                dataset_description=dag_params.dataset_description,
+                table_description=dag_params.table_description,
+                schema_folder=dag_params.schema_folder,
             )
 
         @task
-        def _delete_volume(params: Params, **context) -> None:
-            """Delete the persistent Kubernetes volume"""
-            from academic_observatory_workflows.crossref_metadata_telescope.tasks import delete_volume
-
-            delete_volume(kubernetes_conn_id=params.kubernetes_conn_id, gke_volume_name=params.gke_volume_name)
-
-        @task
-        def _add_dataset_release(release: dict, params: Params, **context) -> None:
-            """Adds release information to API."""
+        def _add_dataset_release(release: dict, dag_params: DagParams, **context) -> None:
             from academic_observatory_workflows.crossref_metadata_telescope.tasks import add_dataset_release
 
             add_dataset_release(
                 release,
-                dag_id=params.dag_id,
-                cloud_workspace=params.cloud_workspace,
-                api_bq_dataset_id=params.api_bq_dataset_id,
+                dag_id=dag_params.dag_id,
+                cloud_workspace=dag_params.cloud_workspace,
+                api_bq_dataset_id=dag_params.api_bq_dataset_id,
             )
 
         @task
-        def _cleanup_workflow(release: dict, params: Params, **context) -> None:
-            """Delete all files, folders and XComs associated with this release."""
+        def _cleanup_workflow(release: dict, dag_params: DagParams, **context) -> None:
             from academic_observatory_workflows.crossref_metadata_telescope.tasks import cleanup_workflow
 
-            cleanup_workflow(release, dag_id=params.dag_id, logical_date=context["logical_date"])
+            cleanup_workflow(release, dag_id=dag_params.dag_id, logical_date=context["logical_date"])
 
         # Define task connections
-        task_check_dependencies = check_dependencies(airflow_conns=[params.crossref_metadata_conn_id])
-        xcom_release = _fetch_release(params)
-        task_create_volume = _create_volume(params)
+        task_check_dependencies = check_dependencies(airflow_conns=[dag_params.crossref_metadata_conn_id])
+        xcom_release = _fetch_release(dag_params)
+        task_create_storage = gke_create_storage(
+            volume_name=dag_params.gke_volume_name,
+            volume_size=dag_params.gke_volume_size,
+            kubernetes_conn_id=dag_params.kubernetes_conn_id,
+        )
         task_download = _download(xcom_release)
-        task_upload_downloaded = _upload_downloaded(xcom_release, params)
-        task_extract = _extract(xcom_release, params)
-        task_transform = _transform(xcom_release, params)
-        task_upload_transformed = _upload_transformed(xcom_release, params)
-        task_delete_volume = _delete_volume(params)
-        task_bq_load = _bq_load(xcom_release, params)
-        task_add_dataset_release = _add_dataset_release(xcom_release, params)
-        task_cleanup_workflow = _cleanup_workflow(xcom_release, params)
+        task_upload_downloaded = _upload_downloaded(xcom_release, dag_params)
+        task_extract = _extract(xcom_release)
+        task_transform = _transform(xcom_release, dag_params)
+        task_upload_transformed = _upload_transformed(xcom_release, dag_params)
+        task_delete_storage = gke_delete_storage(
+            volume_name=dag_params.gke_volume_name,
+            volume_size=dag_params.gke_volume_size,
+            kubernetes_conn_id=dag_params.kubernetes_conn_id,
+        )
+        task_bq_load = _bq_load(xcom_release, dag_params)
+        task_add_dataset_release = _add_dataset_release(xcom_release, dag_params)
+        task_cleanup_workflow = _cleanup_workflow(xcom_release, dag_params)
 
         (
             task_check_dependencies
             >> xcom_release
-            >> task_create_volume
+            >> task_create_storage
             >> task_download
             >> task_upload_downloaded
             >> task_extract
             >> task_transform
             >> task_upload_transformed
             >> task_bq_load
-            >> task_delete_volume
+            >> task_delete_storage
             >> task_add_dataset_release
             >> task_cleanup_workflow
         )
