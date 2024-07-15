@@ -241,7 +241,6 @@ def bq_load(
 def add_dataset_release(release: dict, *, dag_id: str, cloud_workspace: CloudWorkspace, api_bq_dataset_id: str) -> None:
     """Task to add release information to API.
 
-
     :param cloud_workspace: The cloud workspace object for the dag run
     :param api_bq_dataset_id: The bigquery dataset ID for the API
     """
