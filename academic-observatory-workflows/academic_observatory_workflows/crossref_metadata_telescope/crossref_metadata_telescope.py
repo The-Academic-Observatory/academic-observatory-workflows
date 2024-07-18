@@ -80,11 +80,11 @@ class DagParams:
     retries: int = 3
     gke_image = "us-docker.pkg.dev/keegan-dev/academic-observatory/academic-observatory:latest"  # TODO: change this
     gke_namespace: str = "coki-astro"
-    gke_startup_timeout_seconds: int = 60
+    gke_startup_timeout_seconds: int = 300
     gke_volume_name: str = "crossref-metadata"
     gke_volume_path: str = "/data"
     gke_zone: str = "us-central1"
-    gke_volume_size: int = 1000
+    gke_volume_size: int = 2500
     kubernetes_conn_id: str = "gke_cluster"
     docker_astro_uid: int = 50000
 
@@ -159,17 +159,17 @@ def create_dag(*, dag_params: DagParams) -> DAG:
             return fetch_release(
                 run_id=context["run_id"],
                 data_interval_start=context["data_interval_start"],
+                data_interval_end=context["data_interval_end"],
                 cloud_workspace=dag_params.cloud_workspace,
                 crossref_metadata_conn_id=dag_params.crossref_metadata_conn_id,
                 dag_id=dag_params.dag_id,
                 start_date=dag_params.start_date,
-                batch_size=dag_params.batch_size,
             )
 
         @task.kubernetes(
             name="download",
             container_resources=V1ResourceRequirements(
-                requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
+                requests={"memory": "2G", "cpu": "2000m"}, limits={"memory": "2G", "cpu": "2000m"}
             ),
             secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
             **kubernetes_task_params,
@@ -182,7 +182,7 @@ def create_dag(*, dag_params: DagParams) -> DAG:
         @task.kubernetes(
             name="upload_download",
             container_resources=V1ResourceRequirements(
-                requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
+                requests={"memory": "4Gi", "cpu": "4"}, limits={"memory": "4Gi", "cpu": "4"}
             ),
             **kubernetes_task_params,
         )
@@ -195,7 +195,7 @@ def create_dag(*, dag_params: DagParams) -> DAG:
         @task.kubernetes(
             name="extract",
             container_resources=V1ResourceRequirements(
-                requests={"memory": "2Gi", "cpu": "2"}, limits={"memory": "2Gi", "cpu": "2"}
+                requests={"memory": "8Gi", "cpu": "8"}, limits={"memory": "8Gi", "cpu": "8"}
             ),
             **kubernetes_task_params,
         )
@@ -207,7 +207,7 @@ def create_dag(*, dag_params: DagParams) -> DAG:
         @task.kubernetes(
             name="transform",
             container_resources=V1ResourceRequirements(
-                requests={"memory": "8Gi", "cpu": "8"}, limits={"memory": "8Gi", "cpu": "8"}
+                requests={"memory": "16Gi", "cpu": "8"}, limits={"memory": "16Gi", "cpu": "8"}
             ),
             **kubernetes_task_params,
         )

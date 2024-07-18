@@ -15,7 +15,7 @@
 # Author: Aniek Roelofs, James Diprose, Keegan Smith
 
 from concurrent.futures import as_completed, ProcessPoolExecutor
-import datetime
+from datetime import datetime
 import functools
 import json
 import logging
@@ -53,6 +53,7 @@ def fetch_release(
     run_id: str,
     start_date: str,
     data_interval_start: pendulum.DateTime,
+    data_interval_end: pendulum.DateTime,
 ) -> dict:
     """Task to retrieve the release for the given start date
 
@@ -62,6 +63,7 @@ def fetch_release(
     :param run_id: The run ID for the dag run
     :param start_date: The earliest date to retrieve a release for
     :param data_interval_start: The start of the data interval for this dag run
+    :param data_interval_end: The end of the data interval for this dag run
     :return: The release object in dictionary form
     """
 
@@ -90,6 +92,8 @@ def fetch_release(
         dag_id=dag_id,
         run_id=run_id,
         snapshot_date=snapshot_date,
+        data_interval_start=data_interval_start,
+        data_interval_end=data_interval_end,
         cloud_workspace=cloud_workspace,
     ).to_dict()
 
@@ -249,15 +253,16 @@ def add_dataset_release(release: dict, *, dag_id: str, cloud_workspace: CloudWor
 
     api = DatasetAPI(bq_project_id=cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
     api.seed_db()
+    now = pendulum.now()
     dataset_release = DatasetRelease(
         dag_id=dag_id,
         entity_id="crossref_metadata",
         dag_run_id=release.run_id,
-        created=pendulum.now(),
-        modified=pendulum.now(),
+        created=now,
+        modified=now,
         data_interval_start=release.data_interval_start,
         data_interval_end=release.data_interval_end,
-        partition_date=release.partition_date,
+        snapshot_date=release.snapshot_date,
     )
     api.add_dataset_release(dataset_release)
 
