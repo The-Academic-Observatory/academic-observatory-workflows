@@ -873,10 +873,28 @@ def ror_to_ror_hierarchy_index(ror: List[Dict]) -> Dict:
         ror_id = row["id"]
         name = row["name"]
 
+        # Build index of parents and children
+        parents = set()
+        children = set()
+        for rel in row["relationships"]:
+            rel_id = rel["id"]
+            rel_type = rel["type"]
+            if rel_type == "Parent":
+                parents.add(rel_id)
+            elif rel_type == "Child":
+                children.add(rel_id)
+
         for rel in row["relationships"]:
             rel_id = rel["id"]
             rel_type = rel["type"]
             rel_label = rel["label"]
+
+            if rel_id in parents and rel_id in children:
+                # Prevents infinite recursion
+                logging.warning(
+                    f"Skipping as: org({rel_id}, {rel_label}) is both a parent and a child of: org({ror_id}, {name})"
+                )
+                continue
 
             if rel_type == "Parent":
                 if ror_id in index:
