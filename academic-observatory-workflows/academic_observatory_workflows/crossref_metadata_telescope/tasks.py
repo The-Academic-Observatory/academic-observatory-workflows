@@ -267,7 +267,7 @@ def add_dataset_release(release: dict, *, dag_id: str, cloud_workspace: CloudWor
     api.add_dataset_release(dataset_release)
 
 
-def cleanup_workflow(release: dict, *, dag_id: str, logical_date: pendulum.DateTime) -> None:
+def cleanup_workflow(release: dict, *, dag_id: str) -> None:
     """Task to delete all files, folders and XComs associated with this release.
 
     :param dag_id: The ID of the DAG
@@ -275,7 +275,7 @@ def cleanup_workflow(release: dict, *, dag_id: str, logical_date: pendulum.DateT
     """
 
     release = CrossrefMetadataRelease.from_dict(release)
-    cleanup(dag_id=dag_id, execution_date=logical_date, workflow_folder=release.workflow_folder)
+    cleanup(dag_id=dag_id, workflow_folder=release.workflow_folder)
 
 
 def make_snapshot_url(snapshot_date: pendulum.DateTime) -> str:
