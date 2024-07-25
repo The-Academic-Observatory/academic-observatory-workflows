@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from typing import Optional
 
 import pendulum
 from airflow import DAG
@@ -31,6 +32,37 @@ from academic_observatory_workflows.config import project_path
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
 from observatory_platform.airflow.workflow import CloudWorkspace
+
+
+class _TaskResources:
+    def __init__(self, overrides: Optional[dict] = None):
+        """Describes the resources for task containers
+
+        :param overides: Optionally provide a custom resource definition for a task. For example, to override the
+        defaults for the download task, provide {"download": {"memory": "1G", "cpu": "500m"}}"""
+
+        task_resources = {
+            "download": {"memory": "2G", "cpu": "2000m"},
+            "upload_downloaded": {"memory": "4Gi", "cpu": "4"},
+            "extract": {"memory": "8Gi", "cpu": "8"},
+            "transform": {"memory": "16G", "cpu": "16"},
+            "upload_transformed": {"memory": "8G", "cpu": "8"},
+        }
+        if overrides:
+            for task, resources in overrides.items():
+                task_resources[task] = resources
+
+        self.download = V1ResourceRequirements(requests=task_resources["download"], limits=task_resources["download"])
+        self.upload_downloaded = V1ResourceRequirements(
+            requests=task_resources["upload_downloaded"], limits=task_resources["upload_downloaded"]
+        )
+        self.extract = V1ResourceRequirements(requests=task_resources["extract"], limits=task_resources["extract"])
+        self.transform = V1ResourceRequirements(
+            requests=task_resources["transform"], limits=task_resources["transform"]
+        )
+        self.upload_transformed = V1ResourceRequirements(
+            requests=task_resources["upload_transformed"], limits=task_resources["upload_transformed"]
+        )
 
 
 @dataclass
@@ -85,6 +117,7 @@ class DagParams:
     gke_volume_path: str = "/data"
     gke_zone: str = "us-central1"
     gke_volume_size: int = 2500
+    gke_resource_overrides: Optional[dict] = None
     kubernetes_conn_id: str = "gke_cluster"
     docker_astro_uid: int = 50000
 
@@ -92,28 +125,18 @@ class DagParams:
 def create_dag(*, dag_params: DagParams) -> DAG:
     """The Crossref Metadata DAG"""
 
+    task_resources = _TaskResources(overrides=dag_params.gke_resource_overrides)
     # Common @task.kubernetes params
     volume_mounts = [k8s.V1VolumeMount(mount_path=dag_params.gke_volume_path, name=dag_params.gke_volume_name)]
+    volumes = [
+        k8s.V1Volume(
+            name=dag_params.gke_volume_name,
+            persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(claim_name=dag_params.gke_volume_name),
+        )
+    ]
     kubernetes_task_params = dict(
         image=dag_params.gke_image,
-        # init-container is used to apply the astro:astro owner to the /data directory
-        init_containers=[
-            k8s.V1Container(
-                name="init-container",
-                image="ubuntu",
-                command=[
-                    "sh",
-                    "-c",
-                    f"useradd -u {dag_params.docker_astro_uid} astro && chown -R astro:astro /data",
-                ],
-                volume_mounts=volume_mounts,
-                security_context=k8s.V1PodSecurityContext(fs_group=0, run_as_group=0, run_as_user=0),
-            )
-        ],
-        # TODO: supposed to make makes pod run as astro user so that it has access to /data volume
-        # It doesn't seem to work
         security_context=k8s.V1PodSecurityContext(
-            # fs_user=docker_astro_uid,
             fs_group=dag_params.docker_astro_uid,
             fs_group_change_policy="OnRootMismatch",
             run_as_group=dag_params.docker_astro_uid,
@@ -127,12 +150,7 @@ def create_dag(*, dag_params: DagParams) -> DAG:
         namespace=dag_params.gke_namespace,
         startup_timeout_seconds=dag_params.gke_startup_timeout_seconds,
         env_vars={"DATA_PATH": dag_params.gke_volume_path},
-        volumes=[
-            k8s.V1Volume(
-                name=dag_params.gke_volume_name,
-                persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(claim_name=dag_params.gke_volume_name),
-            )
-        ],
+        volumes=volumes,
         volume_mounts=volume_mounts,
     )
 
@@ -168,9 +186,7 @@ def create_dag(*, dag_params: DagParams) -> DAG:
 
         @task.kubernetes(
             name="download",
-            container_resources=V1ResourceRequirements(
-                requests={"memory": "2G", "cpu": "2000m"}, limits={"memory": "2G", "cpu": "2000m"}
-            ),
+            container_resources=task_resources.download,
             secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
             **kubernetes_task_params,
         )
@@ -181,9 +197,7 @@ def create_dag(*, dag_params: DagParams) -> DAG:
 
         @task.kubernetes(
             name="upload_download",
-            container_resources=V1ResourceRequirements(
-                requests={"memory": "4Gi", "cpu": "4"}, limits={"memory": "4Gi", "cpu": "4"}
-            ),
+            container_resources=task_resources.upload_downloaded,
             **kubernetes_task_params,
         )
         def _upload_downloaded(release: dict, dag_params, **context):
@@ -194,9 +208,7 @@ def create_dag(*, dag_params: DagParams) -> DAG:
 
         @task.kubernetes(
             name="extract",
-            container_resources=V1ResourceRequirements(
-                requests={"memory": "8Gi", "cpu": "8"}, limits={"memory": "8Gi", "cpu": "8"}
-            ),
+            container_resources=task_resources.extract,
             **kubernetes_task_params,
         )
         def _extract(release: dict, **context):
@@ -206,9 +218,7 @@ def create_dag(*, dag_params: DagParams) -> DAG:
 
         @task.kubernetes(
             name="transform",
-            container_resources=V1ResourceRequirements(
-                requests={"memory": "16Gi", "cpu": "8"}, limits={"memory": "16Gi", "cpu": "8"}
-            ),
+            container_resources=task_resources.transform,
             **kubernetes_task_params,
         )
         def _transform(release: dict, dag_params, **context):
@@ -220,9 +230,7 @@ def create_dag(*, dag_params: DagParams) -> DAG:
 
         @task.kubernetes(
             name="upload_transformed",
-            container_resources=V1ResourceRequirements(
-                requests={"memory": "4Gi", "cpu": "4"}, limits={"memory": "4Gi", "cpu": "4"}
-            ),
+            container_resources=task_resources.upload_transformed,
             **kubernetes_task_params,
         )
         def _upload_transformed(release: dict, dag_params, **context) -> None:
@@ -259,7 +267,7 @@ def create_dag(*, dag_params: DagParams) -> DAG:
         def _cleanup_workflow(release: dict, dag_params: DagParams, **context) -> None:
             from academic_observatory_workflows.crossref_metadata_telescope.tasks import cleanup_workflow
 
-            cleanup_workflow(release, dag_id=dag_params.dag_id, logical_date=context["logical_date"])
+            cleanup_workflow(release, dag_id=dag_params.dag_id)
 
         # Define task connections
         task_check_dependencies = check_dependencies(airflow_conns=[dag_params.crossref_metadata_conn_id])
