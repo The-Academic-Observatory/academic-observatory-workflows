@@ -26,7 +26,7 @@ USER astro
 
 # Install Observatory Platform
 # RUN git clone --branch feature/astro-refactor https://github.com/The-Academic-Observatory/observatory-platform.git
-RUN git clone --branch keegan-astro https://github.com/The-Academic-Observatory/observatory-platform.git
+RUN git clone --branch feature/astro_kubernetes https://github.com/The-Academic-Observatory/observatory-platform.git
 RUN pip install -e ./observatory-platform --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-3.10.txt
 
 # Install Academic Observatory Workflows
