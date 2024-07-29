@@ -1,7 +1,7 @@
 CREATE TEMP FUNCTION calcPercent(numerator FLOAT64, denominator FLOAT64)
 RETURNS FLOAT64
 AS (
-  SAFE_DIVIDE(numerator * 100 , denominator)
+  IFNULL(SAFE_DIVIDE(numerator * 100 , denominator), 0)
 );
 
 CREATE TEMP FUNCTION removeRorPrefix(str STRING)
