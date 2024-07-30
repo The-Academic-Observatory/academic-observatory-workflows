@@ -51,7 +51,6 @@ def fetch_release(
     crossref_metadata_conn_id: str,
     dag_id: str,
     run_id: str,
-    start_date: str,
     data_interval_start: pendulum.DateTime,
     data_interval_end: pendulum.DateTime,
 ) -> dict:
@@ -67,23 +66,13 @@ def fetch_release(
     :return: The release object in dictionary form
     """
 
-    # List all available releases for logging and debugging purposes
-    # These values are not used to actually check if the release is available
-    logging.info(f"Listing available releases since start date ({start_date}):")
-    for dt in pendulum.period(pendulum.instance(start_date), pendulum.today("UTC")).range("years"):
-        response = requests.get(f"https://api.crossref.org/snapshots/monthly/{dt.year}")
-        soup = BeautifulSoup(response.text)
-        hrefs = soup.find_all("a", href=True)
-        for href in hrefs:
-            logging.info(href["href"])
-
     # Construct the release for the execution date and check if it exists.
     # The release for a given logical_date is added on the 5th day of the following month.
     # E.g. the 2020-05 release is added to the website on 2020-06-05.
     exists = check_release_exists(data_interval_start, get_api_key(crossref_metadata_conn_id))
     if not exists:
         raise AirflowException(
-            f"check_release_exists: release doesn't exist for month {data_interval_start.year}-{data_interval_start.month}, something is wrong and needs investigating."
+            f"Release doesn't exist for month {data_interval_start.year}-{data_interval_start.month}, something is wrong and needs investigating."
         )
 
     # The release date is always the end of the logical_date month
@@ -112,7 +101,7 @@ def download(release: dict) -> None:
     api_key = os.environ.get("CROSSREF_METADATA_API_KEY")
     if api_key is None:
         raise AirflowException(
-            f"download: the CROSSREF_METADATA_API_KEY environment variable is not set, please set it with a Kubernetes Secret."
+            f"The CROSSREF_METADATA_API_KEY environment variable is not set, please set it with a Kubernetes Secret."
         )
     header = {"Crossref-Plus-API-Token": f"Bearer {api_key}"}
 
@@ -125,13 +114,12 @@ def download(release: dict) -> None:
     logging.info(f"Successfully download url to {release.download_file_path}")
 
 
-def upload_downloaded(release: dict, cloud_workspace: CloudWorkspace) -> None:
-    """Task to upload downloaded data to Cloud Storage.
-
-    :param cloud_workspace: The cloud workspace object for the dag run
-    """
+def upload_downloaded(release: dict) -> None:
+    """Task to upload downloaded data to Cloud Storage."""
     release = CrossrefMetadataRelease.from_dict(release)
-    success = gcs_upload_files(bucket_name=cloud_workspace.download_bucket, file_paths=[release.download_file_path])
+    success = gcs_upload_files(
+        bucket_name=release.cloud_workspace.download_bucket, file_paths=[release.download_file_path]
+    )
     set_task_state(success, "upload_downloaded", release)
 
 
@@ -181,21 +169,18 @@ def transform(release: dict, *, max_processes: int, batch_size: int) -> None:
                     logging.info(f"Transformed {finished} files")
 
 
-def upload_transformed(release: dict, *, cloud_workspace: CloudWorkspace) -> None:
-    """Task to upload the transformed data to Cloud Storage.
-    :param cloud_workspace: The cloud workspace object for the dag run
-    """
+def upload_transformed(release: dict) -> None:
+    """Task to upload the transformed data to Cloud Storage."""
 
     release = CrossrefMetadataRelease.from_dict(release)
     files_list = list_files(release.transform_folder, release.transform_files_regex)
-    success = gcs_upload_files(bucket_name=cloud_workspace.transform_bucket, file_paths=files_list)
+    success = gcs_upload_files(bucket_name=release.cloud_workspace.transform_bucket, file_paths=files_list)
     set_task_state(success, "upload_transformed", release)
 
 
 def bq_load(
     release: dict,
     *,
-    cloud_workspace: CloudWorkspace,
     bq_dataset_id: str,
     bq_table_name: str,
     dataset_description: str,
@@ -205,7 +190,6 @@ def bq_load(
     """Task to load each transformed release to BigQuery.
     The table_id is set to the file name without the extension.
 
-    :param cloud_workspace: The cloud workspace object for the dag run
     :param bq_dataset_id: The bigquery dataset ID
     :param bq_table_name: The bigqiery table name
     :param dataset_description: The description to use when creating the dataset
@@ -215,20 +199,20 @@ def bq_load(
 
     release = CrossrefMetadataRelease.from_dict(release)
     bq_create_dataset(
-        project_id=cloud_workspace.output_project_id,
+        project_id=release.cloud_workspace.output_project_id,
         dataset_id=bq_dataset_id,
-        location=cloud_workspace.data_location,
+        location=release.cloud_workspace.data_location,
         description=dataset_description,
     )
 
     # Selects all jsonl.gz files in the releases transform folder on the Google Cloud Storage bucket and all of its
     # subfolders: https://cloud.google.com/bigquery/docs/batch-loading-data#load-wildcards
     uri = gcs_blob_uri(
-        cloud_workspace.transform_bucket,
+        release.cloud_workspace.transform_bucket,
         f"{gcs_blob_name_from_path(release.transform_folder)}/*.jsonl",
     )
     table_id = bq_sharded_table_id(
-        cloud_workspace.output_project_id, bq_dataset_id, bq_table_name, release.snapshot_date
+        release.cloud_workspace.output_project_id, bq_dataset_id, bq_table_name, release.snapshot_date
     )
     schema_file_path = bq_find_schema(path=schema_folder, table_name=bq_table_name, release_date=release.snapshot_date)
     success = bq_load_table(
@@ -242,16 +226,15 @@ def bq_load(
     set_task_state(success, "bq_load", release)
 
 
-def add_dataset_release(release: dict, *, dag_id: str, cloud_workspace: CloudWorkspace, api_bq_dataset_id: str) -> None:
+def add_dataset_release(release: dict, *, dag_id: str, api_bq_dataset_id: str) -> None:
     """Task to add release information to API.
 
-    :param cloud_workspace: The cloud workspace object for the dag run
     :param api_bq_dataset_id: The bigquery dataset ID for the API
     """
 
     release = CrossrefMetadataRelease.from_dict(release)
 
-    api = DatasetAPI(bq_project_id=cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
+    api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
     api.seed_db()
     now = pendulum.now()
     dataset_release = DatasetRelease(
