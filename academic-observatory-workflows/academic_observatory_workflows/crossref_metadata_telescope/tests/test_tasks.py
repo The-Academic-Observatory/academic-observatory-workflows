@@ -16,20 +16,26 @@
 
 import json
 import os
+from pathlib import Path
+import shutil
 import unittest
-from tempfile import TemporaryDirectory
+import uuid
 
+from airflow.exceptions import AirflowException
+from airflow.utils.session import provide_session
 import httpretty
 import pendulum
-from airflow.models import Connection
-from airflow.utils.state import State
 from click.testing import CliRunner
 
 from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.crossref_metadata_telescope.release import CrossrefMetadataRelease
 from academic_observatory_workflows.crossref_metadata_telescope.tasks import (
     check_release_exists,
+    fetch_release,
     download,
+    upload_downloaded,
     extract,
+    upload_transformed,
     CrossrefMetadataRelease,
     bq_load,
     make_snapshot_url,
@@ -37,16 +43,85 @@ from academic_observatory_workflows.crossref_metadata_telescope.tasks import (
     transform_file,
     transform_item,
 )
-from observatory_platform.dataset_api import get_dataset_releases
-from observatory_platform.google.bigquery import bq_sharded_table_id
-from observatory_platform.config import module_file_path
-from observatory_platform.files import is_gzip, list_files, load_jsonl
+from observatory_platform.airflow.airflow import upsert_airflow_connection, clear_airflow_connections
+from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.google.gcs import gcs_blob_name_from_path
-from observatory_platform.airflow.workflow import Workflow
-from observatory_platform.sandbox.sandbox_environment import find_free_port, ObservatoryEnvironment, ObservatoryTestCase
+from observatory_platform.files import load_jsonl, is_gzip
+from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
+from observatory_platform.sandbox.test_utils import SandboxTestCase
 
 
 FIXTURES_FOLDER = project_path("crossref_metadata_telescope", "tests", "fixtures")
+
+
+class TestFetchRelease(unittest.TestCase):
+    @provide_session
+    def test_fetch_release(self, session=None):
+        """Tests the fetch_release function"""
+
+        clear_airflow_connections()
+        upsert_airflow_connection(conn_id="crossref_metadata", conn_type="http")
+
+        cloud_workspace = CloudWorkspace(
+            project_id="my_project",
+            download_bucket="download_bucket",
+            transform_bucket="transform_bucket",
+            data_location="us",
+        )
+        data_interval_start = pendulum.datetime(2024, 1, 1)
+        url = make_snapshot_url(data_interval_start)
+        with httpretty.enabled():
+            httpretty.register_uri(httpretty.HEAD, uri=url, responses=[httpretty.Response(body="", status=302)])
+            release = fetch_release(
+                cloud_workspace=cloud_workspace,
+                crossref_metadata_conn_id="crossref_metadata",
+                dag_id="dag_id",
+                run_id="run_id",
+                data_interval_start=data_interval_start,
+                data_interval_end=pendulum.datetime(2024, 1, 31),
+            )
+        expected_release = {
+            "cloud_workspace": {
+                "data_location": "us",
+                "download_bucket": "download_bucket",
+                "output_project_id": "my_project",
+                "project_id": "my_project",
+                "transform_bucket": "transform_bucket",
+            },
+            "dag_id": "dag_id",
+            "data_interval_end": "2024-01-31 00:00:00",
+            "data_interval_start": "2024-01-01 00:00:00",
+            "run_id": "run_id",
+            "snapshot_date": "2024-01-31 23:59:59",
+        }
+        self.assertEqual(release, expected_release)
+
+    @provide_session
+    def test_fetch_release_400(self, session=None):
+        """Tests the fetch_release function fails appropriately"""
+
+        clear_airflow_connections()
+        upsert_airflow_connection(conn_id="crossref_metadata", conn_type="http")
+
+        cloud_workspace = CloudWorkspace(
+            project_id="my_project",
+            download_bucket="download_bucket",
+            transform_bucket="transform_bucket",
+            data_location="us",
+        )
+        data_interval_start = pendulum.datetime(2024, 1, 1)
+        url = make_snapshot_url(data_interval_start)
+        with httpretty.enabled():
+            httpretty.register_uri(httpretty.HEAD, uri=url, responses=[httpretty.Response(body="", status=400)])
+            with self.assertRaisesRegex(AirflowException, "Release doesn't exist"):
+                fetch_release(
+                    cloud_workspace=cloud_workspace,
+                    crossref_metadata_conn_id="crossref_metadata",
+                    dag_id="dag_id",
+                    run_id="run_id",
+                    data_interval_start=data_interval_start,
+                    data_interval_end=pendulum.datetime(2024, 1, 31),
+                )
 
 
 class TestCheckReleaseExists(unittest.TestCase):
@@ -78,7 +153,127 @@ class TestCheckReleaseExists(unittest.TestCase):
             self.assertFalse(exists)
 
 
-class TestTransformFile(unittest.testcase):
+class TestDownload(SandboxTestCase):
+
+    project_id = os.getenv("TEST_GCP_PROJECT_ID")
+    data_location = os.getenv("TEST_GCP_DATA_LOCATION")
+    download_path = os.path.join(FIXTURES_FOLDER, "crossref_metadata.json.tar.gz")
+    snapshot_date = pendulum.datetime(2024, 1, 1)
+
+    def test_download(self):
+        """Test the download function"""
+        env = SandboxEnvironment(
+            project_id=self.project_id, data_location=self.data_location, env_vars={"CROSSREF_METADATA_API_KEY": ""}
+        )
+        with env.create():
+            release = CrossrefMetadataRelease(
+                cloud_workspace=env.cloud_workspace,
+                snapshot_date=self.snapshot_date,
+                dag_id="crossref_metadata",
+                run_id="run_id",
+                data_interval_start=pendulum.now(),
+                data_interval_end=pendulum.now(),
+            )
+            with httpretty.enabled():  # Mock the http return
+                with open(self.download_path, "rb") as f:
+                    body = f.read()
+                url = make_snapshot_url(snapshot_date=self.snapshot_date)
+                httpretty.register_uri(httpretty.GET, url, body=body)
+                download(release.to_dict())
+            expected_file_hash = "047770ae386f3376c08e3975d7f06016"
+            self.assert_file_integrity(release.download_file_path, expected_file_hash, "md5")
+            self.assertTrue(is_gzip(release.download_file_path))
+
+    def test_download_no_api_key(self):
+        """Test the download function fails when the api key is not available"""
+        env = SandboxEnvironment(project_id=self.project_id, data_location=self.data_location)
+        with env.create():
+            release = CrossrefMetadataRelease(
+                cloud_workspace=env.cloud_workspace,
+                snapshot_date=self.snapshot_date,
+                dag_id="crossref_metadata",
+                run_id="run_id",
+                data_interval_start=pendulum.now(),
+                data_interval_end=pendulum.now(),
+            )
+            with self.assertRaisesRegex(AirflowException, "The CROSSREF_METADATA_API_KEY"):
+                download(release.to_dict())
+
+
+class TestUploadDownloaded(SandboxTestCase):
+
+    project_id = os.getenv("TEST_GCP_PROJECT_ID")
+    data_location = os.getenv("TEST_GCP_DATA_LOCATION")
+    download_path = os.path.join(FIXTURES_FOLDER, "crossref_metadata.json.tar.gz")
+    snapshot_date = pendulum.datetime(2024, 1, 1)
+
+    def test_upload_downloaded(self):
+        """Tests that the upload_downloaded function uploads to the GCS download bucket"""
+
+        env = SandboxEnvironment(project_id=self.project_id, data_location=self.data_location)
+        release = CrossrefMetadataRelease(
+            cloud_workspace=env.cloud_workspace,
+            snapshot_date=self.snapshot_date,
+            dag_id="crossref_metadata",
+            run_id="run_id",
+            data_interval_start=pendulum.now(),
+            data_interval_end=pendulum.now(),
+        )
+        with env.create():
+            shutil.copy(self.download_path, release.download_file_path)
+            upload_downloaded(release.to_dict())
+            blob_name = gcs_blob_name_from_path(release.download_file_path)
+            self.assert_blob_exists(env.download_bucket, blob_name)
+            self.assert_blob_integrity(env.download_bucket, blob_name, release.download_file_path)
+
+
+class TestUploadTransformed(SandboxTestCase):
+
+    project_id = os.getenv("TEST_GCP_PROJECT_ID")
+    data_location = os.getenv("TEST_GCP_DATA_LOCATION")
+    download_path = os.path.join(FIXTURES_FOLDER, "crossref_metadata.json.tar.gz")
+    snapshot_date = pendulum.datetime(2024, 1, 1)
+
+    def test_upload_transformed(self):
+        """Tests that the upload_transformed function uploads to the GCS transform bucket"""
+
+        env = SandboxEnvironment(project_id=self.project_id, data_location=self.data_location)
+        release = CrossrefMetadataRelease(
+            cloud_workspace=env.cloud_workspace,
+            snapshot_date=self.snapshot_date,
+            dag_id="crossref_metadata",
+            run_id="run_id",
+            data_interval_start=pendulum.now(),
+            data_interval_end=pendulum.now(),
+        )
+
+        with env.create():
+            # Set up some files
+            files = [
+                os.path.join(release.transform_folder, str(uuid.uuid4())) + ".jsonl",
+                os.path.join(release.transform_folder, str(uuid.uuid4())) + ".jsonl",
+                os.path.join(release.transform_folder, str(uuid.uuid4())) + ".json",  # Should not be uploaded
+            ]
+            for f in files:
+                Path(f).touch()
+            blob_names = [gcs_blob_name_from_path(f) for f in files]
+
+            # Run the upload function
+            upload_transformed(release.to_dict())
+
+            # Check files exist/do not exist
+            self.assert_blob_exists(env.transform_bucket, blob_names[0])
+            self.assert_blob_exists(env.transform_bucket, blob_names[1])
+            bucket = self.storage_client.get_bucket(env.transform_bucket)
+            blob = bucket.blob(blob_names[2])
+            self.assertFalse(blob.exists())
+
+            # Check file integrity
+            self.assert_blob_integrity(env.transform_bucket, blob_names[0], files[0])
+            self.assert_blob_integrity(env.transform_bucket, blob_names[1], files[1])
+
+
+class TestTransformFile(unittest.TestCase):
     """Tests for the transform file function"""
 
     def test_transform_file(self):
@@ -192,7 +387,7 @@ class TestTransformFile(unittest.testcase):
             self.assertEqual(expected_results, actual_results)
 
 
-class TestTransformItem(unittest.testcase):
+class TestTransformItem(unittest.TestCase):
     """Tests for the transform item function"""
 
     def test_transform_item(self):

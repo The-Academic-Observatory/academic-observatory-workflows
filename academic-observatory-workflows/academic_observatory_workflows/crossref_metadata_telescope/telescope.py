@@ -24,12 +24,13 @@ from typing import Optional
 import pendulum
 from airflow import DAG
 from airflow.decorators import dag, task
+from airflow.operators.empty import EmptyOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
 from kubernetes.client import models as k8s
 from kubernetes.client.models import V1ResourceRequirements
 
 from academic_observatory_workflows.config import project_path
-from observatory_platform.airflow.airflow import on_failure_callback
+from observatory_platform.airflow.airflow import on_failure_callback, upsert_airflow_connection
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
 from observatory_platform.airflow.workflow import CloudWorkspace
 
@@ -113,13 +114,14 @@ class DagParams:
     gke_image = "us-docker.pkg.dev/keegan-dev/academic-observatory/academic-observatory:latest"  # TODO: change this
     gke_namespace: str = "coki-astro"
     gke_startup_timeout_seconds: int = 300
+    gke_conn_id: str = "gke_cluster"
+    docker_astro_uid: int = 50000
     gke_volume_name: str = "crossref-metadata"
     gke_volume_path: str = "/data"
     gke_zone: str = "us-central1"
     gke_volume_size: int = 2500
     gke_resource_overrides: Optional[dict] = None
-    kubernetes_conn_id: str = "gke_cluster"
-    docker_astro_uid: int = 50000
+    test_run: bool = False
 
 
 def create_dag(*, dag_params: DagParams) -> DAG:
@@ -145,7 +147,7 @@ def create_dag(*, dag_params: DagParams) -> DAG:
         do_xcom_push=True,
         get_logs=True,
         in_cluster=False,
-        kubernetes_conn_id=dag_params.kubernetes_conn_id,
+        kubernetes_conn_id=dag_params.gke_conn_id,
         log_events_on_failure=True,
         namespace=dag_params.gke_namespace,
         startup_timeout_seconds=dag_params.gke_startup_timeout_seconds,
@@ -181,7 +183,6 @@ def create_dag(*, dag_params: DagParams) -> DAG:
                 cloud_workspace=dag_params.cloud_workspace,
                 crossref_metadata_conn_id=dag_params.crossref_metadata_conn_id,
                 dag_id=dag_params.dag_id,
-                start_date=dag_params.start_date,
             )
 
         @task.kubernetes(
@@ -270,12 +271,14 @@ def create_dag(*, dag_params: DagParams) -> DAG:
             cleanup_workflow(release, dag_id=dag_params.dag_id)
 
         # Define task connections
-        task_check_dependencies = check_dependencies(airflow_conns=[dag_params.crossref_metadata_conn_id])
+        task_check_dependencies = check_dependencies(
+            airflow_conns=[dag_params.crossref_metadata_conn_id, dag_params.gke_conn_id]
+        )
         xcom_release = _fetch_release(dag_params)
         task_create_storage = gke_create_storage(
             volume_name=dag_params.gke_volume_name,
             volume_size=dag_params.gke_volume_size,
-            kubernetes_conn_id=dag_params.kubernetes_conn_id,
+            kubernetes_conn_id=dag_params.gke_conn_id,
         )
         task_download = _download(xcom_release)
         task_upload_downloaded = _upload_downloaded(xcom_release, dag_params)
@@ -285,12 +288,14 @@ def create_dag(*, dag_params: DagParams) -> DAG:
         task_delete_storage = gke_delete_storage(
             volume_name=dag_params.gke_volume_name,
             volume_size=dag_params.gke_volume_size,
-            kubernetes_conn_id=dag_params.kubernetes_conn_id,
+            kubernetes_conn_id=dag_params.gke_conn_id,
         )
         task_bq_load = _bq_load(xcom_release, dag_params)
         task_add_dataset_release = _add_dataset_release(xcom_release, dag_params)
         task_cleanup_workflow = _cleanup_workflow(xcom_release, dag_params)
 
+        if dag_params.test_run:
+            task_create_storage = EmptyOperator(task_id="gke_create_volume")
         (
             task_check_dependencies
             >> xcom_release
@@ -307,3 +312,23 @@ def create_dag(*, dag_params: DagParams) -> DAG:
         )
 
     return crossref_metadata()
+
+
+if __name__ == "__main__":
+    from unittest.mock import patch
+
+    conn = upsert_airflow_connection(conn_id="crossref_metadata", conn_type="http")
+    conn = upsert_airflow_connection(conn_id="gke_cluster", conn_type="http")
+    test_params = DagParams(
+        dag_id="test_crossref_events",
+        cloud_workspace=CloudWorkspace(
+            project_id="keegan-dev",
+            download_bucket="keegan-dev-download-bucket",
+            transform_bucket="keegan-dev-transform-bucket",
+            data_location="us",
+        ),
+        test_run=True,
+    )
+    with patch("academic_observatory_workflows.crossref_metadata_telescope.tasks.check_release_exists") as mock_cre:
+        mock_cre.return_value = True
+        create_dag(dag_params=test_params).test()
