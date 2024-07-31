@@ -23,11 +23,10 @@ from airflow.models import Connection
 from airflow.utils.state import State
 
 from academic_observatory_workflows.config import project_path
-from academic_observatory_workflows.crossref_metadata_telescope.telescope import create_dag
+from academic_observatory_workflows.crossref_metadata_telescope.telescope import create_dag, DagParams
 from academic_observatory_workflows.crossref_metadata_telescope.release import CrossrefMetadataRelease
 from academic_observatory_workflows.crossref_metadata_telescope.tasks import make_snapshot_url
 from observatory_platform.google.bigquery import bq_sharded_table_id
-from observatory_platform.config import module_file_path
 from observatory_platform.files import is_gzip, list_files
 from observatory_platform.google.gcs import gcs_blob_name_from_path
 from observatory_platform.airflow.workflow import Workflow
@@ -56,32 +55,32 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
     def test_dag_structure(self):
         """Test that the DAG has the correct structure."""
 
-        dag = create_dag(
-            dag_id=self.dag_id,
-            cloud_workspace=self.fake_cloud_workspace,
-        )
+        dag = create_dag(DagParams(dag_id=self.dag_id, cloud_workspace=self.fake_cloud_workspace))
         self.assert_dag_structure(
             {
-                "check_dependencies": ["fetch_release"],
+                "check_dependencies": ["_fetch_release"],
                 # fetch_release passes an XCom to all of these tasks
-                "fetch_release": [
-                    "download",
-                    "upload_downloaded",
-                    "extract",
-                    "transform",
-                    "upload_transformed",
-                    "bq_load",
-                    "add_dataset_release",
-                    "cleanup_workflow",
+                "_fetch_release": [
+                    "gke_create_storage",
+                    "_download",
+                    "_upload_downloaded",
+                    "_extract",
+                    "_transform",
+                    "_upload_transformed",
+                    "_bq_load",
+                    "_add_dataset_release",
+                    "_cleanup_workflow",
                 ],
-                "download": ["upload_downloaded"],
-                "upload_downloaded": ["extract"],
-                "extract": ["transform"],
-                "transform": ["upload_transformed"],
-                "upload_transformed": ["bq_load"],
-                "bq_load": ["add_dataset_release"],
-                "add_dataset_release": ["cleanup_workflow"],
-                "cleanup_workflow": [],
+                "gke_create_storage": ["_download"],
+                "_download": ["_upload_downloaded"],
+                "_upload_downloaded": ["_extract"],
+                "_extract": ["_transform"],
+                "_transform": ["_upload_transformed"],
+                "_upload_transformed": ["_bq_load"],
+                "_bq_load": ["gke_delete_storage"],
+                "gke_delete_storage": ["_add_dataset_release"],
+                "_add_dataset_release": ["_cleanup_workflow"],
+                "_cleanup_workflow": [],
             },
             dag,
         )
@@ -94,14 +93,14 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
                 Workflow(
                     dag_id=self.dag_id,
                     name="Crossref Metadata Telescope",
-                    class_name="academic_observatory_workflows.crossref_metadata_telescope.crossref_metadata_telescope.create_dag",
+                    class_name="academic_observatory_workflows.crossref_metadata_telescope.telescope",
                     cloud_workspace=self.fake_cloud_workspace,
                 )
             ]
         )
 
         with env.create():
-            dag_file = os.path.join(module_file_path("observatory.platform.dags"), "load_dags.py")
+            dag_file = os.path.join(project_path(), "..", "..", "dags", "load_dags.py")
             self.assert_dag_load(self.dag_id, dag_file)
 
     @unittest.skip
