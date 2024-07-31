@@ -116,6 +116,7 @@ def download(release: dict) -> None:
 
 def upload_downloaded(release: dict) -> None:
     """Task to upload downloaded data to Cloud Storage."""
+
     release = CrossrefMetadataRelease.from_dict(release)
     success = gcs_upload_files(
         bucket_name=release.cloud_workspace.download_bucket, file_paths=[release.download_file_path]
@@ -125,6 +126,7 @@ def upload_downloaded(release: dict) -> None:
 
 def extract(release, **context) -> None:
     """Task to extract the downloaded metadata."""
+
     release = CrossrefMetadataRelease.from_dict(release)
     op = BashOperator(
         task_id="extract",
@@ -226,9 +228,10 @@ def bq_load(
     set_task_state(success, "bq_load", release)
 
 
-def add_dataset_release(release: dict, *, dag_id: str, api_bq_dataset_id: str) -> None:
+def add_dataset_release(release: dict, *, api_bq_dataset_id: str) -> None:
     """Task to add release information to API.
 
+    :param dag_id: The DAG ID
     :param api_bq_dataset_id: The bigquery dataset ID for the API
     """
 
@@ -238,7 +241,7 @@ def add_dataset_release(release: dict, *, dag_id: str, api_bq_dataset_id: str) -
     api.seed_db()
     now = pendulum.now()
     dataset_release = DatasetRelease(
-        dag_id=dag_id,
+        dag_id=release.dag_id,
         entity_id="crossref_metadata",
         dag_run_id=release.run_id,
         created=now,
