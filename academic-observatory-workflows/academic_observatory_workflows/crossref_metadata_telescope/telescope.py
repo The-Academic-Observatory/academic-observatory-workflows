@@ -124,7 +124,7 @@ class DagParams:
     test_run: bool = False
 
 
-def create_dag(*, dag_params: DagParams) -> DAG:
+def create_dag(dag_params: DagParams) -> DAG:
     """The Crossref Metadata DAG"""
 
     task_resources = _TaskResources(overrides=dag_params.gke_resource_overrides)
