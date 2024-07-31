@@ -3,6 +3,7 @@
 *.egg-info
 .env
 .DS_Store # macOS specific ignore
+.vscode
 airflow_settings.yaml
 __pycache__/
 astro
