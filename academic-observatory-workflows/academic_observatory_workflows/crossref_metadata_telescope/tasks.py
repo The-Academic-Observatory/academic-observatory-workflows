@@ -20,10 +20,8 @@ import functools
 import json
 import logging
 import os
-import requests
 import shutil
 
-from bs4 import BeautifulSoup
 from airflow.hooks.base import BaseHook
 from airflow.exceptions import AirflowException
 from airflow.operators.bash import BashOperator
@@ -188,7 +186,7 @@ def bq_load(
     dataset_description: str,
     table_description: str,
     schema_folder: str,
-):
+) -> None:
     """Task to load each transformed release to BigQuery.
     The table_id is set to the file name without the extension.
 
@@ -253,15 +251,14 @@ def add_dataset_release(release: dict, *, api_bq_dataset_id: str) -> None:
     api.add_dataset_release(dataset_release)
 
 
-def cleanup_workflow(release: dict, *, dag_id: str) -> None:
+def cleanup_workflow(release: dict) -> None:
     """Task to delete all files, folders and XComs associated with this release.
 
     :param dag_id: The ID of the DAG
-    :param logical_date: The DAG run's logical/execution date
     """
 
     release = CrossrefMetadataRelease.from_dict(release)
-    cleanup(dag_id=dag_id, workflow_folder=release.workflow_folder)
+    cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
 
 
 def make_snapshot_url(snapshot_date: pendulum.DateTime) -> str:
@@ -309,13 +306,12 @@ def check_release_exists(month: pendulum.DateTime, api_key: str) -> bool:
         return False
 
 
-def transform_file(input_file_path: str, output_file_path: str):
+def transform_file(input_file_path: str, output_file_path: str) -> None:
     """Transform a single Crossref Metadata json file.
     The json file is converted to a jsonl file and field names are transformed so they are accepted by BigQuery.
 
     :param input_file_path: the path of the file to transform.
     :param output_file_path: where to save the transformed file.
-    :return: None.
     """
 
     # Open json
