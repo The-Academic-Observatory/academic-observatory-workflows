@@ -16,11 +16,14 @@
 
 import os
 import unittest
+from unittest.mock import patch
+import json
 
 import httpretty
 import pendulum
 from airflow.models import Connection
 from airflow.utils.state import State
+import kubernetes
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.crossref_metadata_telescope.telescope import create_dag, DagParams
@@ -29,7 +32,8 @@ from academic_observatory_workflows.crossref_metadata_telescope.tasks import mak
 from observatory_platform.google.bigquery import bq_sharded_table_id
 from observatory_platform.files import is_gzip, list_files
 from observatory_platform.google.gcs import gcs_blob_name_from_path
-from observatory_platform.airflow.workflow import Workflow
+from observatory_platform.airflow.workflow import Workflow, CloudWorkspace
+from observatory_platform.airflow.airflow import upsert_airflow_connection, clear_airflow_connections
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
 from observatory_platform.sandbox.test_utils import find_free_port, SandboxTestCase
 
@@ -213,3 +217,44 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
                 ti = env.run_task("cleanup_workflow")
                 self.assertEqual(State.SUCCESS, ti.state)
                 self.assert_cleanup(release.workflow_folder)
+
+    def test_telescope_new(self):
+
+        env = SandboxEnvironment(
+            project_id=os.getenv("TEST_GCP_PROJECT_ID"), data_location=os.getenv("TEST_GCP_DATA_LOCATION")
+        )
+        with env.create() as data_dir, patch(
+            "academic_observatory_workflows.crossref_metadata_telescope.tasks.check_release_exists"
+        ) as mock_cre:
+            # TODO: Convert httpretty to vcr. httpretty mocks ALL requests, which doens't work with k8s
+            logical_date = pendulum.datetime(year=2023, month=1, day=7)
+            kubernetes.config.load_kube_config()
+            clear_airflow_connections()
+            upsert_airflow_connection(conn_id="crossref_metadata", conn_type="http")
+            upsert_airflow_connection(
+                conn_id="gke_cluster",
+                conn_type="kubernetes",
+                extra=json.dumps(
+                    {
+                        "extra__kubernetes__namespace": "default",
+                        "extra__kubernetes__kube_config_path": kubernetes.config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION,
+                        "extra__kubernetes__context": "minikube",
+                    }
+                ),
+            )
+            test_params = DagParams(
+                dag_id="test_crossref_events",
+                cloud_workspace=CloudWorkspace(
+                    project_id="keegan-dev",
+                    download_bucket="keegan-dev-download-bucket",
+                    transform_bucket="keegan-dev-transform-bucket",
+                    data_location="us",
+                ),
+                retries=0,
+                gke_image="academic-observatory:test",
+                gke_namespace="default",
+                gke_volume_path=data_dir,
+                test_run=True,
+            )
+            mock_cre.return_value = True
+            create_dag(dag_params=test_params).test(execution_date=logical_date)

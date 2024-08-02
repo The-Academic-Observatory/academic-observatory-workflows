@@ -24,6 +24,7 @@ from typing import Optional
 import pendulum
 from airflow import DAG
 from airflow.decorators import dag, task
+from airflow.operators.empty import EmptyOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
 from kubernetes.client import models as k8s
 from kubernetes.client.models import V1ResourceRequirements
@@ -120,7 +121,7 @@ class DagParams:
     queue: str = "default"
     max_active_runs: int = 1
     retries: int = 3
-    gke_image = "us-docker.pkg.dev/academic-observatory/academic-observatory/academic-observatory:latest"
+    gke_image: str = "us-docker.pkg.dev/academic-observatory/academic-observatory/academic-observatory:latest"
     gke_namespace: str = "coki-astro"
     gke_startup_timeout_seconds: int = 300
     gke_conn_id: str = "gke_cluster"
@@ -130,6 +131,7 @@ class DagParams:
     gke_zone: str = "us-central1"
     gke_volume_size: int = 2500
     gke_resource_overrides: Optional[dict] = None
+    test_run: bool = False
 
 
 def create_dag(dag_params: DagParams) -> DAG:
@@ -144,6 +146,9 @@ def create_dag(dag_params: DagParams) -> DAG:
             persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(claim_name=dag_params.gke_volume_name),
         )
     ]
+    if dag_params.test_run:
+        volume_mounts = None
+        volumes = None
     kubernetes_task_params = dict(
         image=dag_params.gke_image,
         security_context=k8s.V1PodSecurityContext(
@@ -158,6 +163,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         kubernetes_conn_id=dag_params.gke_conn_id,
         log_events_on_failure=True,
         namespace=dag_params.gke_namespace,
+        image_pull_policy="Never",
         startup_timeout_seconds=dag_params.gke_startup_timeout_seconds,
         env_vars={"DATA_PATH": dag_params.gke_volume_path},
         volumes=volumes,
@@ -308,6 +314,9 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_add_dataset_release = _add_dataset_release(xcom_release, dag_params)
         task_cleanup_workflow = _cleanup_workflow(xcom_release)
 
+        if dag_params.test_run:
+            task_create_storage = EmptyOperator(task_id="create_storage_dummy")
+            task_delete_storage = EmptyOperator(task_id="delete_storage_dummy")
         (
             task_check_dependencies
             >> xcom_release
@@ -324,3 +333,49 @@ def create_dag(dag_params: DagParams) -> DAG:
         )
 
     return crossref_metadata()
+
+
+if __name__ == "__main__":
+    import json
+    from unittest.mock import patch
+    from kubernetes import config
+    from observatory_platform.airflow.airflow import upsert_airflow_connection, clear_airflow_connections
+    from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
+
+    kube_config = config.load_kube_config()
+    clear_airflow_connections()
+    upsert_airflow_connection(conn_id="crossref-metadata", conn_type="http")
+    upsert_airflow_connection(
+        conn_id="gke_cluster",
+        conn_type="kubernetes",
+        extra=json.dumps(
+            {
+                "extra__kubernetes__namespace": "default",
+                "extra__kubernetes__kube_config_path": config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION,
+                "extra__kubernetes__context": "minikube",
+            }
+        ),
+    )
+
+    env = SandboxEnvironment(
+        project_id=os.getenv("TEST_GCP_PROJECT_ID"), data_location=os.getenv("TEST_GCP_DATA_LOCATION")
+    )
+    print(os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+    with env.create() as data_dir, patch(
+        "academic_observatory_workflows.crossref_metadata_telescope.tasks.check_release_exists"
+    ) as mock_cre:
+        test_params = DagParams(
+            dag_id="test_crossref_events",
+            cloud_workspace=CloudWorkspace(
+                project_id="keegan-dev",
+                download_bucket="keegan-dev-download-bucket",
+                transform_bucket="keegan-dev-transform-bucket",
+                data_location="us",
+            ),
+            gke_image="academic-observatory:test",
+            gke_namespace="default",
+            gke_volume_path=data_dir,
+            test_run=True,
+        )
+        mock_cre.return_value = True
+        create_dag(dag_params=test_params).test()
