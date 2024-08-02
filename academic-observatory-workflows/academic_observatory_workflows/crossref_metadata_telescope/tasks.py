@@ -89,6 +89,7 @@ def download(release: dict) -> None:
     """Task to Download the crossref metadata dataset.
     Expects the api key to be set as an environment variable named CROSSREF_METADATA_API_KEY
     """
+
     release = CrossrefMetadataRelease.from_dict(release)
     clean_dir(release.download_folder)
 
