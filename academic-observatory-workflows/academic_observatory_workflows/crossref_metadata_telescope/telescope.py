@@ -249,13 +249,13 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         # Define task connections
         task_check_dependencies = check_dependencies(
-            airflow_conns=[dag_params.crossref_metadata_conn_id, dag_params.gke_conn_id]
+            airflow_conns=[dag_params.crossref_metadata_conn_id, dag_params.gke_params.gke_conn_id]
         )
         xcom_release = fetch_release(dag_params)
         task_create_storage = gke_create_storage(
-            volume_name=dag_params.gke_volume_name,
-            volume_size=dag_params.gke_volume_size,
-            kubernetes_conn_id=dag_params.gke_conn_id,
+            volume_name=dag_params.gke_params.gke_volume_name,
+            volume_size=dag_params.gke_params.gke_volume_size,
+            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
         )
         task_download = download(xcom_release)
         task_upload_downloaded = upload_downloaded(xcom_release, dag_params)
@@ -263,9 +263,8 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_transform = transform(xcom_release, dag_params)
         task_upload_transformed = upload_transformed(xcom_release, dag_params)
         task_delete_storage = gke_delete_storage(
-            volume_name=dag_params.gke_volume_name,
-            volume_size=dag_params.gke_volume_size,
-            kubernetes_conn_id=dag_params.gke_conn_id,
+            volume_name=dag_params.gke_params.gke_volume_name,
+            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
         )
         task_bq_load = bq_load(xcom_release, dag_params)
         task_add_dataset_release = add_dataset_release(xcom_release, dag_params)
