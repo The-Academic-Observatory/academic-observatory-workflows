@@ -1,0 +1,24 @@
+# Use the official Python image from the Docker Hub
+FROM python:3.9-slim
+
+# Set the working directory
+WORKDIR /app
+
+# Install Flask
+RUN pip install flask
+
+# Copy the application code
+COPY . /app/
+
+# Copy the test fixtures to test_fixtures folder
+RUN mkdir /app/fixtures
+COPY academic-observatory-workflows/academic_observatory_workflows/crossref_metadata_telescope/tests/fixtures/crossref_metadata.json.tar.gz /app/fixtures
+
+# Expose the port the app runs on
+EXPOSE 5000
+
+# Print the routes for debugging 
+CMD [ "flask", "--app", "flask-app.py", "routes" ]
+
+# Define the command to run the app
+CMD [ "python", "flask-app.py" ]

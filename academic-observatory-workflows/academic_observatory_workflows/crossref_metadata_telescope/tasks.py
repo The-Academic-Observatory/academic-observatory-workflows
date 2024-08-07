@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import shutil
+import urllib
 
 from airflow.hooks.base import BaseHook
 from airflow.exceptions import AirflowException
@@ -38,9 +39,6 @@ from observatory_platform.files import clean_dir, get_chunks, list_files
 from observatory_platform.google.bigquery import bq_create_dataset, bq_find_schema, bq_load_table, bq_sharded_table_id
 from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
 from observatory_platform.url_utils import retry_get_url, retry_session
-
-
-SNAPSHOT_URL = "https://api.crossref.org/snapshots/monthly/{year}/{month:02d}/all.json.tar.gz"
 
 
 def fetch_release(
@@ -85,15 +83,17 @@ def fetch_release(
     ).to_dict()
 
 
-def download(release: dict) -> None:
+def download(release: dict, base_url: str) -> None:
     """Task to Download the crossref metadata dataset.
     Expects the api key to be set as an environment variable named CROSSREF_METADATA_API_KEY
+
+    :param base_url: The base url of the crossref metadata api
     """
 
     release = CrossrefMetadataRelease.from_dict(release)
     clean_dir(release.download_folder)
 
-    url = make_snapshot_url(release.snapshot_date)
+    url = make_snapshot_url(release.snapshot_date, base_url=base_url)
     logging.info(f"Downloading from url: {url}")
 
     # Set API token header
@@ -262,14 +262,17 @@ def cleanup_workflow(release: dict) -> None:
     cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
 
 
-def make_snapshot_url(snapshot_date: pendulum.DateTime) -> str:
+def make_snapshot_url(snapshot_date: pendulum.DateTime, base_url: str = "https://api.crossref.org/") -> str:
     """Creates the url to the snapshot
 
     :param snashot_date: The date of the snapshot
     :return: The snapshot url
     """
 
-    return SNAPSHOT_URL.format(year=snapshot_date.year, month=snapshot_date.month)
+    url_path = "/snapshots/monthly/{year}/{month:02d}/all.json.tar.gz".format(
+        year=snapshot_date.year, month=snapshot_date.month
+    )
+    return urllib.parse.urljoin(base_url, url_path)
 
 
 def get_api_key(crossref_metadata_conn_id: str) -> str:

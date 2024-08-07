@@ -28,7 +28,7 @@ import httpretty
 import pendulum
 from tempfile import TemporaryDirectory
 
-from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.crossref_metadata_telescope.release import CrossrefMetadataRelease
 from academic_observatory_workflows.crossref_metadata_telescope.tasks import (
     check_release_exists,
@@ -167,8 +167,8 @@ class TestDownload(SandboxTestCase):
     def test_download(self):
         """Test the download function"""
         env = SandboxEnvironment(
-            project_id=os.getenv("TEST_GCP_PROJECT_ID"),
-            data_location=os.getenv("TEST_GCP_DATA_LOCATION"),
+            project_id=TestConfig.gcp_project_id,
+            data_location=TestConfig.gcp_data_location,
             env_vars={"CROSSREF_METADATA_API_KEY": ""},
         )
         with env.create():
@@ -191,9 +191,7 @@ class TestDownload(SandboxTestCase):
 
     def test_download_no_api_key(self):
         """Test the download function fails when the api key is not available"""
-        env = SandboxEnvironment(
-            project_id=os.getenv("TEST_GCP_PROJECT_ID"), data_location=os.getenv("TEST_GCP_DATA_LOCATION")
-        )
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
         with env.create():
             release = CrossrefMetadataRelease(
                 cloud_workspace=env.cloud_workspace,
@@ -215,9 +213,7 @@ class TestUploadDownloaded(SandboxTestCase):
     def test_upload_downloaded(self):
         """Tests that the upload_downloaded function uploads to the GCS download bucket"""
 
-        env = SandboxEnvironment(
-            project_id=os.getenv("TEST_GCP_PROJECT_ID"), data_location=os.getenv("TEST_GCP_DATA_LOCATION")
-        )
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
         release = CrossrefMetadataRelease(
             cloud_workspace=env.cloud_workspace,
             snapshot_date=self.snapshot_date,
@@ -245,9 +241,7 @@ class TestExtract(unittest.TestCase):
         NOTE: If this fails locally, you may need to install pigz with `sudo apt-get install pigz`
         """
 
-        env = SandboxEnvironment(
-            project_id=os.getenv("TEST_GCP_PROJECT_ID"), data_location=os.getenv("TEST_GCP_DATA_LOCATION")
-        )
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
         release = CrossrefMetadataRelease(
             cloud_workspace=env.cloud_workspace,
             snapshot_date=self.snapshot_date,
@@ -276,9 +270,7 @@ class TestTransforms(unittest.TestCase):
             input_data = json.load(f)
         expected_output = load_jsonl(self.transformed_data_file)
 
-        env = SandboxEnvironment(
-            project_id=os.getenv("TEST_GCP_PROJECT_ID"), data_location=os.getenv("TEST_GCP_DATA_LOCATION")
-        )
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
         release = CrossrefMetadataRelease(
             cloud_workspace=env.cloud_workspace,
             snapshot_date=self.snapshot_date,
@@ -378,9 +370,7 @@ class TestUploadTransformed(SandboxTestCase):
     def test_upload_transformed(self):
         """Tests that the upload_transformed function uploads to the GCS transform bucket"""
 
-        env = SandboxEnvironment(
-            project_id=os.getenv("TEST_GCP_PROJECT_ID"), data_location=os.getenv("TEST_GCP_DATA_LOCATION")
-        )
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
         release = CrossrefMetadataRelease(
             cloud_workspace=env.cloud_workspace,
             snapshot_date=self.snapshot_date,
@@ -422,9 +412,7 @@ class TestBqLoad(SandboxTestCase):
     transformed_data_file = os.path.join(FIXTURES_FOLDER, "single_item_transformed.jsonl")
 
     def test_bq_load(self):
-        env = SandboxEnvironment(
-            project_id=os.getenv("TEST_GCP_PROJECT_ID"), data_location=os.getenv("TEST_GCP_DATA_LOCATION")
-        )
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
         dataset_id = env.add_dataset(prefix="crossref_metadata_test")
 
         release = CrossrefMetadataRelease(
@@ -467,9 +455,7 @@ class TestAddDatasetRelease(unittest.TestCase):
     snapshot_date = pendulum.datetime(2024, 1, 1)
 
     def test_add_dataset_release(self):
-        env = SandboxEnvironment(
-            project_id=os.getenv("TEST_GCP_PROJECT_ID"), data_location=os.getenv("TEST_GCP_DATA_LOCATION")
-        )
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
         api_dataset_id = env.add_dataset(prefix="crossref_metadata_test_api")
         now = pendulum.now()
 
