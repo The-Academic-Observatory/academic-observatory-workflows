@@ -46,6 +46,7 @@ class DagParams:
     :param dataset_description: description for the BigQuery dataset.
     :param table_description: description for the BigQuery table.
     :param crossref_metadata_conn_id: the Crossref Metadata Airflow connection key.
+    :param crossref_base_url: The crossref metadata api base url.
     :param observatory_api_conn_id: the Observatory API connection key.
     :param max_processes: the number of processes used with ProcessPoolExecutor to transform files in parallel.
     :param batch_size: the number of files to send to ProcessPoolExecutor at one time.
@@ -77,6 +78,7 @@ class DagParams:
             "The Crossref Metadata Plus dataset: https://www.crossref.org/services/metadata-retrieval/metadata-plus/"
         ),
         crossref_metadata_conn_id: str = "crossref_metadata",
+        crossref_base_url: str = "https://api.crossref.org",
         max_processes: int = os.cpu_count(),
         batch_size: int = 20,
         start_date: pendulum.DateTime = pendulum.datetime(2020, 6, 7),
@@ -101,6 +103,7 @@ class DagParams:
         self.dataset_description = dataset_description
         self.table_description = table_description
         self.crossref_metadata_conn_id = crossref_metadata_conn_id
+        self.crossref_base_url = crossref_base_url
         self.max_processes = max_processes
         self.batch_size = batch_size
         self.start_date = start_date
@@ -119,9 +122,6 @@ def create_dag(dag_params: DagParams) -> DAG:
     """The Crossref Metadata DAG"""
 
     kubernetes_task_params = gke_make_kubernetes_task_params(dag_params.gke_params)
-    if dag_params.test_run:  # Test overrides
-        kubernetes_task_params["volume_mounts"] = None
-        kubernetes_task_params["volumes"] = None
 
     @dag(
         dag_id=dag_params.dag_id,
@@ -160,11 +160,11 @@ def create_dag(dag_params: DagParams) -> DAG:
             secrets=[Secret("env", "CROSSREF_METADATA_API_KEY", "crossref-metadata", "api-key")],
             **kubernetes_task_params,
         )
-        def download(release: dict, **context):
+        def download(release: dict, dag_params, **context):
             """Downloads the data"""
             from academic_observatory_workflows.crossref_metadata_telescope import tasks
 
-            tasks.download(release)
+            tasks.download(release, base_url=dag_params.crossref_base_url)
 
         @task.kubernetes(
             name="upload_download",
@@ -173,7 +173,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             ),
             **kubernetes_task_params,
         )
-        def upload_downloaded(release: dict, dag_params, **context):
+        def upload_downloaded(release: dict, **context):
             """Upload downloaded data to Cloud Storage."""
             from academic_observatory_workflows.crossref_metadata_telescope import tasks
 
@@ -252,27 +252,27 @@ def create_dag(dag_params: DagParams) -> DAG:
             airflow_conns=[dag_params.crossref_metadata_conn_id, dag_params.gke_params.gke_conn_id]
         )
         xcom_release = fetch_release(dag_params)
-        task_create_storage = gke_create_storage(
-            volume_name=dag_params.gke_params.gke_volume_name,
-            volume_size=dag_params.gke_params.gke_volume_size,
-            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
-        )
-        task_download = download(xcom_release)
-        task_upload_downloaded = upload_downloaded(xcom_release, dag_params)
+        task_download = download(xcom_release, dag_params)
+        task_upload_downloaded = upload_downloaded(xcom_release)
         task_extract = extract(xcom_release)
         task_transform = transform(xcom_release, dag_params)
         task_upload_transformed = upload_transformed(xcom_release, dag_params)
-        task_delete_storage = gke_delete_storage(
-            volume_name=dag_params.gke_params.gke_volume_name,
-            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
-        )
         task_bq_load = bq_load(xcom_release, dag_params)
         task_add_dataset_release = add_dataset_release(xcom_release, dag_params)
         task_cleanup_workflow = cleanup_workflow(xcom_release)
-
         if dag_params.test_run:
-            task_create_storage = EmptyOperator(task_id="create_storage_dummy")
-            task_delete_storage = EmptyOperator(task_id="delete_storage_dummy")
+            task_create_storage = EmptyOperator(task_id="gke_create_storage")
+            task_delete_storage = EmptyOperator(task_id="gke_delete_storage")
+        else:
+            task_create_storage = gke_create_storage(
+                volume_name=dag_params.gke_params.gke_volume_name,
+                volume_size=dag_params.gke_params.gke_volume_size,
+                kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+            )
+            task_delete_storage = gke_delete_storage(
+                volume_name=dag_params.gke_params.gke_volume_name,
+                kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+            )
         (
             task_check_dependencies
             >> xcom_release

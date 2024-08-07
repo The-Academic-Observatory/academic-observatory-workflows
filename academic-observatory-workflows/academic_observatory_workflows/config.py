@@ -14,7 +14,11 @@
 
 # Author: James Diprose
 
+from dataclasses import dataclass
+import json
 import os
+
+import kubernetes
 
 from observatory_platform.config import module_file_path
 
@@ -45,3 +49,27 @@ def construct_module_path(*parts: str) -> str:
         raise FileNotFoundError(f"construct_module_path: directory {file_path} does not exist!")
 
     return file_path
+
+
+@dataclass
+class TestConfig:
+    """Common parameters for end to end and unit testing"""
+
+    gcp_project_id: str = os.getenv("TEST_GCP_PROJECT_ID")
+    gcp_data_location: str = os.getenv("TEST_GCP_DATA_LOCATION")
+    flask_service_url: str = "http://flask-app-service"
+    gke_image: str = "academic-observatory:test"
+    gke_namespace: str = "default"
+    gke_volume_name: str = "ao-pvc"
+    gke_volume_path: str = "/home/astro/data"
+    gke_cluster_connection: dict = dict(
+        conn_id="gke_cluster",
+        conn_type="kubernetes",
+        extra=json.dumps(
+            {
+                "extra__kubernetes__namespace": "default",
+                "extra__kubernetes__kube_config_path": kubernetes.config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION,
+                "extra__kubernetes__context": "minikube",
+            }
+        ),
+    )
