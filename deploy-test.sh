@@ -24,8 +24,8 @@ minikube addons enable gcp-auth
 eval $(minikube docker-env)
 
 # Build the Docker images. Use the test tag for academic-observatory 
-# docker build -t flask-app -f flask-Dockerfile .
-# docker build --no-cache -t academic-observatory:test .
+docker build -t flask-app -f flask-Dockerfile .
+docker build --no-cache -t academic-observatory:test .
 
 # (Re)Deploy flask deployment and service
 kubectl delete --ignore-not-found -f test-konfig.yaml
