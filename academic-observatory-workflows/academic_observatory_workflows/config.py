@@ -14,7 +14,6 @@
 
 # Author: James Diprose
 
-from dataclasses import dataclass
 import json
 import os
 
@@ -51,7 +50,6 @@ def construct_module_path(*parts: str) -> str:
     return file_path
 
 
-@dataclass
 class TestConfig:
     """Common parameters for end to end and unit testing"""
 
