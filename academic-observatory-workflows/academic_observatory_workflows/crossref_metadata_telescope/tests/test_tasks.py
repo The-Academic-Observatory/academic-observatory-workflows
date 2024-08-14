@@ -30,20 +30,7 @@ from tempfile import TemporaryDirectory
 
 from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.crossref_metadata_telescope.release import CrossrefMetadataRelease
-from academic_observatory_workflows.crossref_metadata_telescope.tasks import (
-    check_release_exists,
-    fetch_release,
-    download,
-    upload_downloaded,
-    extract,
-    upload_transformed,
-    bq_load,
-    make_snapshot_url,
-    transform,
-    transform_file,
-    transform_item,
-    add_dataset_release,
-)
+from academic_observatory_workflows.crossref_metadata_telescope import tasks
 from observatory_platform.airflow.airflow import upsert_airflow_connection, clear_airflow_connections
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.dataset_api import DatasetAPI
@@ -75,10 +62,10 @@ class TestFetchRelease(unittest.TestCase):
             data_location="us",
         )
         data_interval_start = pendulum.datetime(2024, 1, 1)
-        url = make_snapshot_url(data_interval_start)
+        url = tasks.make_snapshot_url(data_interval_start)
         with httpretty.enabled():
             httpretty.register_uri(httpretty.HEAD, uri=url, responses=[httpretty.Response(body="", status=302)])
-            release = fetch_release(
+            release = tasks.fetch_release(
                 cloud_workspace=cloud_workspace,
                 crossref_metadata_conn_id="crossref_metadata",
                 dag_id="dag_id",
@@ -116,11 +103,11 @@ class TestFetchRelease(unittest.TestCase):
             data_location="us",
         )
         data_interval_start = pendulum.datetime(2024, 1, 1)
-        url = make_snapshot_url(data_interval_start)
+        url = tasks.make_snapshot_url(data_interval_start)
         with httpretty.enabled():
             httpretty.register_uri(httpretty.HEAD, uri=url, responses=[httpretty.Response(body="", status=400)])
             with self.assertRaisesRegex(AirflowException, "Release doesn't exist"):
-                fetch_release(
+                tasks.fetch_release(
                     cloud_workspace=cloud_workspace,
                     crossref_metadata_conn_id="crossref_metadata",
                     dag_id="dag_id",
@@ -136,7 +123,7 @@ class TestCheckReleaseExists(unittest.TestCase):
 
         mock_api_key = ""
         data_interval_start = pendulum.datetime(2020, 1, 7)
-        url = make_snapshot_url(data_interval_start)
+        url = tasks.make_snapshot_url(data_interval_start)
         with httpretty.enabled():
             # Register 3 responses, successful, release not found and 'other'
             httpretty.register_uri(
@@ -149,13 +136,13 @@ class TestCheckReleaseExists(unittest.TestCase):
                 ],
             )
 
-            exists = check_release_exists(data_interval_start, mock_api_key)
+            exists = tasks.check_release_exists(data_interval_start, mock_api_key)
             self.assertTrue(exists)
 
-            exists = check_release_exists(data_interval_start, mock_api_key)
+            exists = tasks.check_release_exists(data_interval_start, mock_api_key)
             self.assertFalse(exists)
 
-            exists = check_release_exists(data_interval_start, mock_api_key)
+            exists = tasks.check_release_exists(data_interval_start, mock_api_key)
             self.assertFalse(exists)
 
 
@@ -183,9 +170,9 @@ class TestDownload(SandboxTestCase):
             with httpretty.enabled():  # Mock the http return
                 with open(self.download_path, "rb") as f:
                     body = f.read()
-                url = make_snapshot_url(snapshot_date=self.snapshot_date)
+                url = tasks.make_snapshot_url(snapshot_date=self.snapshot_date)
                 httpretty.register_uri(httpretty.GET, url, body=body)
-                download(release.to_dict())
+                tasks.download(release.to_dict())
             self.assert_file_integrity(release.download_file_path, "047770ae386f3376c08e3975d7f06016", "md5")
             self.assertTrue(is_gzip(release.download_file_path))
 
@@ -202,7 +189,7 @@ class TestDownload(SandboxTestCase):
                 data_interval_end=pendulum.now(),
             )
             with self.assertRaisesRegex(AirflowException, "The CROSSREF_METADATA_API_KEY"):
-                download(release.to_dict())
+                tasks.download(release.to_dict())
 
 
 class TestUploadDownloaded(SandboxTestCase):
@@ -224,7 +211,7 @@ class TestUploadDownloaded(SandboxTestCase):
         )
         with env.create():
             shutil.copy(self.download_path, release.download_file_path)
-            upload_downloaded(release.to_dict())
+            tasks.upload_downloaded(release.to_dict())
             blob_name = gcs_blob_name_from_path(release.download_file_path)
             self.assert_blob_exists(env.download_bucket, blob_name)
             self.assert_blob_integrity(env.download_bucket, blob_name, release.download_file_path)
@@ -252,7 +239,7 @@ class TestExtract(unittest.TestCase):
         )
         with env.create():
             shutil.copy(self.download_path, release.download_file_path)
-            extract(release.to_dict())
+            tasks.extract(release.to_dict())
             self.assertEqual(len(os.listdir(release.extract_folder)), 1)  # The crossref_metadata folder
             self.assertEqual(len(os.listdir(os.path.join(release.extract_folder, "crossref_metadata"))), 5)  # jsons
 
@@ -293,7 +280,7 @@ class TestTransforms(unittest.TestCase):
                 json.dump(input_data, f)
 
             # Transform the files and make assertions
-            transform(release.to_dict(), max_processes=2, batch_size=2)
+            tasks.transform(release.to_dict(), max_processes=2, batch_size=2)
             expected_files = [
                 os.path.join(release.transform_folder, "input1.jsonl"),
                 os.path.join(release.transform_folder, "input2.jsonl"),
@@ -321,7 +308,7 @@ class TestTransforms(unittest.TestCase):
 
             # Check results
             output_file_path = os.path.join(t, "output.jsonl")
-            transform_file(input_file_path, output_file_path)
+            tasks.transform_file(input_file_path, output_file_path)
             actual_output = load_jsonl(output_file_path)
             self.assertEqual(expected_output, actual_output)
 
@@ -337,34 +324,33 @@ class TestTransforms(unittest.TestCase):
             "hello": {},
             "hello_world": {"hello_world": [{"hello_world": 1}, {"hello_world": 1}, {"hello_world": 1}]},
         }
-        actual = transform_item(item)
+        actual = tasks.transform_item(item)
         self.assertEqual(expected, actual)
 
     def test_transform_item_date_parts(self):
         # date-parts
         item = {"date-parts": [[2021, 1, 1]]}
         expected = {"date_parts": [2021, 1, 1]}
-        actual = transform_item(item)
+        actual = tasks.transform_item(item)
         self.assertEqual(expected, actual)
 
     def test_transform_item_date_parts_none(self):
         # date-parts with None inside inner list
         item = {"date-parts": [[None]]}
         expected = {"date_parts": []}
-        actual = transform_item(item)
+        actual = tasks.transform_item(item)
         self.assertEqual(expected, actual)
 
     def test_transform_item_date_parts_list(self):
         # list with date-parts
         item = {"hello-world": {"hello-world": [{"date-parts": [[2021, 1, 1]]}, {"date-parts": [[None]]}]}}
         expected = {"hello_world": {"hello_world": [{"date_parts": [2021, 1, 1]}, {"date_parts": []}]}}
-        actual = transform_item(item)
+        actual = tasks.transform_item(item)
         self.assertEqual(expected, actual)
 
 
 class TestUploadTransformed(SandboxTestCase):
 
-    download_path = os.path.join(FIXTURES_FOLDER, "crossref_metadata.json.tar.gz")
     snapshot_date = pendulum.datetime(2024, 1, 1)
 
     def test_upload_transformed(self):
@@ -392,7 +378,7 @@ class TestUploadTransformed(SandboxTestCase):
             blob_names = [gcs_blob_name_from_path(f) for f in files]
 
             # Run the upload function
-            upload_transformed(release.to_dict())
+            tasks.upload_transformed(release.to_dict())
 
             # Check files exist/do not exist
             self.assert_blob_exists(env.transform_bucket, blob_names[0])
@@ -436,7 +422,7 @@ class TestBqLoad(SandboxTestCase):
             success = gcs_upload_files(bucket_name=release.cloud_workspace.transform_bucket, file_paths=file_paths)
             self.assertTrue(success)
 
-            bq_load(
+            tasks.bq_load(
                 release.to_dict(),
                 bq_dataset_id=dataset_id,
                 bq_table_name="crossref_metadata",
@@ -491,7 +477,7 @@ class TestAddDatasetRelease(unittest.TestCase):
             self.assertEqual(len(api.get_dataset_releases(dag_id=release.dag_id, entity_id="crossref_metadata")), 0)
             with patch("academic_observatory_workflows.crossref_metadata_telescope.tasks.pendulum.now") as mock_now:
                 mock_now.return_value = now
-                add_dataset_release(release.to_dict(), api_bq_dataset_id=api_dataset_id)
+                tasks.add_dataset_release(release.to_dict(), api_bq_dataset_id=api_dataset_id)
 
             # Should be one release in the API
             api_releases = api.get_dataset_releases(dag_id=release.dag_id, entity_id="crossref_metadata")

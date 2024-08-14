@@ -169,7 +169,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         @task.kubernetes(
             name="upload_download",
             container_resources=gke_make_container_resources(
-                {"memory": "4Gi", "cpu": "4"}, dag_params.gke_params.gke_resource_overrides.get("upload_downloaded")
+                {"memory": "2Gi", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("upload_downloaded")
             ),
             **kubernetes_task_params,
         )
@@ -182,7 +182,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         @task.kubernetes(
             name="extract",
             container_resources=gke_make_container_resources(
-                {"memory": "8G", "cpu": "8"}, dag_params.gke_params.gke_resource_overrides.get("extract")
+                {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("extract")
             ),
             **kubernetes_task_params,
         )
@@ -195,7 +195,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         @task.kubernetes(
             name="transform",
             container_resources=gke_make_container_resources(
-                {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("transform")
+                {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("transform")
             ),
             **kubernetes_task_params,
         )
@@ -209,7 +209,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         @task.kubernetes(
             name="upload_transformed",
             container_resources=gke_make_container_resources(
-                {"memory": "8G", "cpu": "8"}, dag_params.gke_params.gke_resource_overrides.get("upload_transformed")
+                {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("upload_transformed")
             ),
             **kubernetes_task_params,
         )

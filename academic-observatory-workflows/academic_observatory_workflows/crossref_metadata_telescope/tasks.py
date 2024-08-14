@@ -83,7 +83,7 @@ def fetch_release(
     ).to_dict()
 
 
-def download(release: dict, base_url: str) -> None:
+def download(release: dict, base_url: str = "https://api.crossref.org/") -> None:
     """Task to Download the crossref metadata dataset.
     Expects the api key to be set as an environment variable named CROSSREF_METADATA_API_KEY
 
@@ -253,10 +253,7 @@ def add_dataset_release(release: dict, *, api_bq_dataset_id: str) -> None:
 
 
 def cleanup_workflow(release: dict) -> None:
-    """Task to delete all files, folders and XComs associated with this release.
-
-    :param dag_id: The ID of the DAG
-    """
+    """Task to delete all files, folders and XComs associated with this release."""
 
     release = CrossrefMetadataRelease.from_dict(release)
     cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
