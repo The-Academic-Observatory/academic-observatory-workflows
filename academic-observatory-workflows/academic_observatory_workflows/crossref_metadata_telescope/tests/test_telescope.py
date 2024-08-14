@@ -58,29 +58,29 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
         dag = create_dag(DagParams(dag_id=self.dag_id, cloud_workspace=self.fake_cloud_workspace))
         self.assert_dag_structure(
             {
-                "check_dependencies": ["_fetch_release"],
+                "check_dependencies": ["fetch_release"],
                 # fetch_release passes an XCom to all of these tasks
-                "_fetch_release": [
+                "fetch_release": [
                     "gke_create_storage",
-                    "_download",
-                    "_upload_downloaded",
-                    "_extract",
-                    "_transform",
-                    "_upload_transformed",
-                    "_bq_load",
-                    "_add_dataset_release",
-                    "_cleanup_workflow",
+                    "download",
+                    "upload_downloaded",
+                    "extract",
+                    "transform",
+                    "upload_transformed",
+                    "bq_load",
+                    "add_dataset_release",
+                    "cleanup_workflow",
                 ],
-                "gke_create_storage": ["_download"],
-                "_download": ["_upload_downloaded"],
-                "_upload_downloaded": ["_extract"],
-                "_extract": ["_transform"],
-                "_transform": ["_upload_transformed"],
-                "_upload_transformed": ["_bq_load"],
-                "_bq_load": ["gke_delete_storage"],
-                "gke_delete_storage": ["_add_dataset_release"],
-                "_add_dataset_release": ["_cleanup_workflow"],
-                "_cleanup_workflow": [],
+                "gke_create_storage": ["download"],
+                "download": ["upload_downloaded"],
+                "upload_downloaded": ["extract"],
+                "extract": ["transform"],
+                "transform": ["upload_transformed"],
+                "upload_transformed": ["bq_load"],
+                "bq_load": ["gke_delete_storage"],
+                "gke_delete_storage": ["add_dataset_release"],
+                "add_dataset_release": ["cleanup_workflow"],
+                "cleanup_workflow": [],
             },
             dag,
         )
@@ -103,8 +103,52 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
             dag_file = os.path.join(project_path(), "..", "..", "dags", "load_dags.py")
             self.assert_dag_load(self.dag_id, dag_file)
 
-    @unittest.skip
     def test_telescope(self):
+        """Test the telescope end to end"""
+
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        api_bq_dataset_id = env.add_dataset("crossref_metadata_api")
+        bq_dataset_id = env.add_dataset("crossref_metadata")
+
+        with env.create(), patch(
+            "academic_observatory_workflows.crossref_metadata_telescope.tasks.check_release_exists"
+        ) as mock_cre:
+
+            mock_cre.return_value = True
+            logical_date = pendulum.datetime(year=2023, month=1, day=7)
+            clear_airflow_connections()
+            upsert_airflow_connection(conn_id="crossref_metadata", conn_type="http")
+            upsert_airflow_connection(**TestConfig.gke_cluster_connection)
+
+            # Make an http server to serve the test files
+            task_resources = {
+                "download": {"memory": "2G", "cpu": "2"},
+                "upload_downloaded": {"memory": "2G", "cpu": "2"},
+                "extract": {"memory": "2G", "cpu": "2"},
+                "transform": {"memory": "2G", "cpu": "2"},
+                "upload_transformed": {"memory": "2G", "cpu": "2"},
+            }
+            test_params = DagParams(
+                dag_id="test_crossref_metadata",
+                cloud_workspace=env.cloud_workspace,
+                crossref_base_url=TestConfig.flask_service_url,
+                retries=0,
+                bq_dataset_id=bq_dataset_id,
+                api_bq_dataset_id=api_bq_dataset_id,
+                gke_image=TestConfig.gke_image,
+                gke_namespace=TestConfig.gke_namespace,
+                gke_volume_name=TestConfig.gke_volume_name,
+                gke_volume_path=TestConfig.gke_volume_path,
+                gke_resource_overrides=task_resources,
+                test_run=True,
+            )
+
+            dagrun = create_dag(dag_params=test_params).test(execution_date=logical_date)
+            if not dagrun.state == "success":
+                raise RuntimeError("Dagrun did not complete successfully")
+
+    @unittest.skip
+    def test_telescope_old(self):
         """Test the Crossref Metadata telescope end to end."""
 
         env = SandboxEnvironment(self.project_id, self.data_location, api_port=find_free_port())
@@ -213,47 +257,3 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
                 ti = env.run_task("cleanup_workflow")
                 self.assertEqual(State.SUCCESS, ti.state)
                 self.assert_cleanup(release.workflow_folder)
-
-    def test_telescope_new(self):
-        """Test the telescope end to end"""
-
-        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
-        api_bq_dataset_id = env.add_dataset("crossref_metadata_api")
-        bq_dataset_id = env.add_dataset("crossref_metadata")
-
-        with env.create(), patch(
-            "academic_observatory_workflows.crossref_metadata_telescope.tasks.check_release_exists"
-        ) as mock_cre:
-
-            mock_cre.return_value = True
-            logical_date = pendulum.datetime(year=2023, month=1, day=7)
-            clear_airflow_connections()
-            upsert_airflow_connection(conn_id="crossref_metadata", conn_type="http")
-            upsert_airflow_connection(**TestConfig.gke_cluster_connection)
-
-            # Make an http server to serve the test files
-            task_resources = {
-                "download": {"memory": "2G", "cpu": "2"},
-                "upload_downloaded": {"memory": "2G", "cpu": "2"},
-                "extract": {"memory": "2G", "cpu": "2"},
-                "transform": {"memory": "2G", "cpu": "2"},
-                "upload_transformed": {"memory": "2G", "cpu": "2"},
-            }
-            test_params = DagParams(
-                dag_id="test_crossref_events",
-                cloud_workspace=env.cloud_workspace,
-                crossref_base_url=TestConfig.flask_service_url,
-                retries=0,
-                bq_dataset_id=bq_dataset_id,
-                api_bq_dataset_id=api_bq_dataset_id,
-                gke_image=TestConfig.gke_image,
-                gke_namespace=TestConfig.gke_namespace,
-                gke_volume_name=TestConfig.gke_volume_name,
-                gke_volume_path=TestConfig.gke_volume_path,
-                gke_resource_overrides=task_resources,
-                test_run=True,
-            )
-
-            dagrun = create_dag(dag_params=test_params).test(execution_date=logical_date)
-            if not dagrun.state == "success":
-                raise RuntimeError("Dagrun did not complete successfully")
