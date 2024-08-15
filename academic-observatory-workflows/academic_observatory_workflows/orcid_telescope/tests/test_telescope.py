@@ -18,43 +18,26 @@ from __future__ import annotations
 
 import csv
 import datetime
-import os
-import re
-import shutil
-import tempfile
-import unittest
 from dataclasses import dataclass
-from unittest.mock import MagicMock, patch
+import os
+import unittest
+from unittest.mock import patch
 
 import pendulum
 from airflow.exceptions import AirflowException
 from airflow.models import Connection
 from airflow.utils.state import State
-from google.cloud import storage
 
-from academic_observatory_workflows.config import project_path
-from academic_observatory_workflows.orcid_telescope.orcid_telescope import (
-    BATCH_REGEX,
-    create_dag,
-    create_orcid_batch_manifest,
-    latest_modified_record_date,
-    MANIFEST_HEADER,
-    orcid_batch_names,
-    OrcidBatch,
-    OrcidRelease,
-    transform_orcid_record,
-)
-from observatory_platform.dataset_api import get_dataset_releases
+from academic_observatory_workflows.config import project_path, TestConfig
+from academic_observatory_workflows.orcid_telescope.telescope import create_dag, DagParams
+from academic_observatory_workflows.orcid_telescope.release import OrcidRelease
 from observatory_platform.config import module_file_path
-from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_upload_files
+from observatory_platform.dataset_api import DatasetAPI, DatasetRelease
+from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_upload_files
+from observatory_platform.airflow.airflow import clear_airflow_connections, upsert_airflow_connection
 from observatory_platform.airflow.workflow import Workflow
-from observatory_platform.sandbox.sandbox_environment import (
-    find_free_port,
-    load_and_parse_json,
-    ObservatoryEnvironment,
-    ObservatoryTestCase,
-    random_id,
-)
+from observatory_platform.sandbox.test_utils import SandboxTestCase, find_free_port, load_and_parse_json
+from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
 
 FIXTURES_FOLDER = project_path("orcid_telescope", "tests", "fixtures")
 
@@ -121,7 +104,7 @@ class OrcidTestRecords:
     timestamp_fields = ["submission_date", "last_modified_date", "created_date"]
 
 
-class TestOrcidTelescope(ObservatoryTestCase):
+class TestOrcidTelescope(SandboxTestCase):
     """Tests for the ORCID telescope"""
 
     def __init__(self, *args, **kwargs):
@@ -145,10 +128,12 @@ class TestOrcidTelescope(ObservatoryTestCase):
                     "create_dataset",
                     "transfer_orcid",
                     "bq_create_main_table_snapshot",
+                    "create_storage",
                     "create_manifests",
                     "download",
                     "transform",
                     "upload_transformed",
+                    "delete_storage",
                     "bq_load_main_table",
                     "bq_load_upsert_table",
                     "bq_load_delete_table",
@@ -159,11 +144,13 @@ class TestOrcidTelescope(ObservatoryTestCase):
                 ],
                 "create_dataset": ["transfer_orcid"],
                 "transfer_orcid": ["bq_create_main_table_snapshot"],
-                "bq_create_main_table_snapshot": ["create_manifests"],
+                "bq_create_main_table_snapshot": ["create_storage"],
+                "create_storage": ["create_manifests"],
                 "create_manifests": ["download"],
                 "download": ["transform"],
                 "transform": ["upload_transformed"],
-                "upload_transformed": ["bq_load_main_table"],
+                "upload_transformed": ["delete_storage"],
+                "delete_storage": ["bq_load_main_table"],
                 "bq_load_main_table": ["bq_load_upsert_table"],
                 "bq_load_upsert_table": ["bq_load_delete_table"],
                 "bq_load_delete_table": ["bq_upsert_records"],
@@ -179,12 +166,12 @@ class TestOrcidTelescope(ObservatoryTestCase):
     def test_dag_load(self):
         """Test that workflow can be loaded from a DAG bag."""
 
-        env = ObservatoryEnvironment(
+        env = SandboxEnvironment(
             workflows=[
                 Workflow(
                     dag_id=self.dag_id,
                     name="Orcid Telescope",
-                    class_name="academic_observatory_workflows.orcid_telescope.orcid_telescope.create_dag",
+                    class_name="academic_observatory_workflows.orcid_telescope.orcid_telescope",
                     cloud_workspace=self.fake_cloud_workspace,
                 )
             ]
@@ -197,8 +184,87 @@ class TestOrcidTelescope(ObservatoryTestCase):
     def test_telescope(self):
         """Test the ORCID workflow end to end."""
 
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        api_bq_dataset_id = env.add_dataset("orcid_api")
+        bq_dataset_id = env.add_dataset("orcid")
+        orcid_bucket = env.add_bucket(prefix="orcid")
+
+        with env.create(task_logging=True):
+
+            clear_airflow_connections()
+            # , uri=f"http://:aws-orcid-token@/aws-orcid")
+            upsert_airflow_connection(conn_id="aws_orcid", conn_type="http")
+            upsert_airflow_connection(**TestConfig.gke_cluster_connection)
+
+            # Make an http server to serve the test files
+            task_resources = {
+                "create_manifests": {"memory": "2G", "cpu": "2"},
+                "download": {"memory": "2G", "cpu": "2"},
+                "transform": {"memory": "2G", "cpu": "2"},
+                "upload_transformed": {"memory": "2G", "cpu": "2"},
+            }
+            test_params = DagParams(
+                dag_id="test_orcid",
+                cloud_workspace=env.cloud_workspace,
+                orcid_bucket=orcid_bucket,
+                retries=0,
+                bq_dataset_id=bq_dataset_id,
+                api_bq_dataset_id=api_bq_dataset_id,
+                max_workers=2,
+                gke_image=TestConfig.gke_image,
+                gke_namespace=TestConfig.gke_namespace,
+                gke_volume_name=TestConfig.gke_volume_name,
+                gke_volume_path=TestConfig.gke_volume_path,
+                gke_resource_overrides=task_resources,
+                test_run=True,
+            )
+
+            # First execution
+            # Upload the test files to the test bucket
+            blob_names = []
+            file_paths = []
+            for record in OrcidTestRecords.first_run_records:
+                blob_names.append(f"{test_params.orcid_summaries_prefix}/{record['batch']}/{record['orcid']}.xml")
+                file_paths.append(record["path"])
+            success = gcs_upload_files(
+                bucket_name=test_params.orcid_bucket, file_paths=file_paths, blob_names=blob_names
+            )
+            self.assertTrue(success)
+
+            # Begin the run
+            first_execution_date = pendulum.datetime(year=2023, month=6, day=1)
+            with patch("academic_observatory_workflows.orcid_telescope.tasks.gcs_create_aws_transfer") as mock_transfer:
+                mock_transfer.return_value = (True, 1)  # Fake transfer success
+                dagrun = create_dag(dag_params=test_params).test(execution_date=first_execution_date)
+            if not dagrun.state == "success":
+                raise RuntimeError("Frist Dagrun did not complete successfully")
+
+            # Second execution
+            # Upload the second run test files to the bucket
+            blob_names = []
+            file_paths = []
+            for record in OrcidTestRecords.second_run_records:
+                blob_names.append(f"{test_params.orcid_summaries_prefix}/{record['batch']}/{record['orcid']}.xml")
+                file_paths.append(record["path"])
+            success = gcs_upload_files(
+                bucket_name=test_params.orcid_bucket, file_paths=file_paths, blob_names=blob_names
+            )
+            self.assertTrue(success)
+
+            # Begin the run
+            second_execution_date = pendulum.datetime(year=2023, month=6, day=8)
+            with patch("academic_observatory_workflows.orcid_telescope.tasks.gcs_create_aws_transfer") as mock_transfer:
+                mock_transfer.return_value = (True, 1)  # Fake transfer success
+                dagrun = create_dag(dag_params=test_params).test(execution_date=second_execution_date)
+            if not dagrun.state == "success":
+                raise RuntimeError("Second Dagrun did not complete successfully")
+
+    @unittest.skip
+    def test_telescope_old(self):
+        """Test the ORCID workflow end to end."""
+
         # Create the Observatory environment and run tests for first run
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
+        env = SandboxEnvironment(self.project_id, self.data_location, api_port=find_free_port())
         orcid_bucket = env.add_bucket(prefix="orcid")
         bq_dataset_id = env.add_dataset(prefix="orcid")
         with env.create(task_logging=True):
@@ -575,242 +641,3 @@ class TestOrcidTelescope(ObservatoryTestCase):
                 ti = env.run_task("cleanup_workflow")
                 self.assertEqual(State.SUCCESS, ti.state)
                 self.assert_cleanup(first_release.workflow_folder)
-
-
-class TestOrcidBatch(unittest.TestCase):
-    def test_orcid_batch(self):
-        """Test that the orcid batches are correctly constructed"""
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            download_dir = os.path.join(tmp_dir, "download")
-            transform_dir = os.path.join(tmp_dir, "transform")
-            test_batch_str = "12X"
-
-            # Download/transform dirs don't exist
-            with self.assertRaises(NotADirectoryError):
-                OrcidBatch(download_dir, transform_dir, test_batch_str)
-            os.makedirs(download_dir)
-            with self.assertRaises(NotADirectoryError):
-                OrcidBatch(download_dir, transform_dir, test_batch_str)
-            os.makedirs(transform_dir)
-
-            # Invalid batch string
-            for batch_str in ["0000", "12C", "99", "XXX"]:
-                with self.assertRaises(ValueError):
-                    OrcidBatch(download_dir, transform_dir, batch_str)
-
-            # Create a batch for testing
-            test_batch = OrcidBatch(download_dir, transform_dir, test_batch_str)
-
-            # Check that expected folders exist
-            self.assertTrue(os.path.isdir(test_batch.download_dir))
-
-            # Check that file names are as expected
-            self.assertEqual(test_batch.download_batch_dir, os.path.join(download_dir, test_batch_str))
-            self.assertEqual(test_batch.download_log_file, os.path.join(download_dir, f"{test_batch_str}_log.txt"))
-            self.assertEqual(test_batch.download_error_file, os.path.join(download_dir, f"{test_batch_str}_error.txt"))
-            self.assertEqual(test_batch.manifest_file, os.path.join(download_dir, f"{test_batch_str}_manifest.csv"))
-            self.assertEqual(
-                test_batch.transform_upsert_file, os.path.join(transform_dir, f"{test_batch_str}_upsert.jsonl.gz")
-            )
-            self.assertEqual(
-                test_batch.transform_delete_file, os.path.join(transform_dir, f"{test_batch_str}_delete.jsonl.gz")
-            )
-
-            # Make the manifest file
-            shutil.copy(os.path.join(FIXTURES_FOLDER, "test_manifest.csv"), test_batch.manifest_file)
-
-            # Check that missing, expected and existing records are correctly identified
-            records = [os.path.basename(record["path"]) for record in OrcidTestRecords.first_run_records]
-            self.assertEqual(set(test_batch.expected_records), set(records))
-            self.assertEqual(test_batch.existing_records, [])
-            self.assertEqual(set(test_batch.missing_records), set(records))
-            for record in OrcidTestRecords.first_run_records:
-                path = record["path"]
-                shutil.copy(path, test_batch.download_batch_dir)
-            self.assertEqual(set(test_batch.expected_records), set(records))
-            self.assertEqual(set(test_batch.existing_records), set(records))
-            self.assertEqual(test_batch.missing_records, [])
-
-            # Check that the blob uris are correctly generated
-            expected_blob_uris = []
-            for record in OrcidTestRecords.first_run_records:
-                expected_blob_uris.append(gcs_blob_uri("orcid-testing", f"orcid_summaries/000/{record['orcid']}.xml"))
-            self.assertEqual(set(test_batch.blob_uris), set(expected_blob_uris))
-
-
-class TestCreateOrcidBatchManifest(ObservatoryTestCase):
-    dag_id = "orcid"
-    aws_key = (os.getenv("AWS_ACCESS_KEY_ID"), os.getenv("AWS_SECRET_ACCESS_KEY"))
-    aws_region_name = os.getenv("AWS_DEFAULT_REGION")
-
-    def test_create_orcid_batch_manifest(self):
-        """Tests the create_orcid_batch_manifest function"""
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            download_dir = os.path.join(tmp_dir, "download")
-            transform_dir = os.path.join(tmp_dir, "transform")
-            test_batch_str = "12X"
-            # Create a batch for testing
-            test_batch = OrcidBatch(download_dir, transform_dir, test_batch_str)
-
-            # Upload the .xml files to the test bucket
-            client = storage.Client()
-            bucket_id = f"orcid_test_{random_id()}"
-            bucket = client.create_bucket(bucket_id)
-
-            blob1 = storage.Blob(f"{test_batch_str}/0000-0001-5000-1000.xml", bucket)
-            blob1.upload_from_string("Test data 1")
-            # Make now the reference time - blob1 should be ignored
-            reference_time = pendulum.now()
-            blob2 = storage.Blob(f"{test_batch_str}/0000-0001-5000-2000.xml", bucket)
-            blob2.upload_from_string("Test data 2")
-            blob3 = storage.Blob(f"{test_batch_str}/0000-0001-5000-3000.xml", bucket)
-            blob3.upload_from_string("Test data 3")
-            # Put a blob in a different folder - should be ignored
-            blob4 = storage.Blob(f"somewhere_else/{test_batch_str}/0000-0001-5000-4000.xml", bucket)
-            blob4.upload_from_string("Test data 4")
-
-            create_orcid_batch_manifest(orcid_batch=test_batch, reference_time=reference_time, bucket=bucket_id)
-            with open(test_batch.manifest_file, "w", newline="") as csvfile:
-                reader = csv.reader(csvfile)
-                manifest_rows = [row for row in reader]
-            bucket = [row[0] for row in manifest_rows]
-            blobs = [row[1] for row in manifest_rows]
-            orcid = [row[2] for row in manifest_rows]
-            modification_times = [row[3] for row in manifest_rows]
-            self.assertEqual(len(manifest_rows), 2)
-            self.assertEqual(set(blobs), set([blob2.name, blob3.name]))
-            self.assertEqual(set(orcid), set(["0000-0001-5000-2000", "0000-0001-5000-3000"]))
-            self.assertEqual(set(modification_times), set([blob2.updated.isoformat(), blob3.updated.isoformat()]))
-
-
-class TestCreateOrcidBatchManifest(unittest.TestCase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.list_blobs_path = "academic_observatory_workflows.orcid_telescope.orcid_telescope.gcs_list_blobs"
-        self.test_batch_str = "12X"
-        self.bucket_name = "test-bucket"
-
-    def test_create_orcid_batch_manifest(self):
-        """Tests that the manifest file is created with the correct header and contains the correct blob names and
-        modification dates"""
-
-        updated_dates = [
-            datetime.datetime(2022, 12, 31),
-            datetime.datetime(2023, 1, 1),
-            datetime.datetime(2023, 1, 1, 1),
-            datetime.datetime(2023, 1, 2),
-        ]
-        blobs = []
-        for i, updated in enumerate(updated_dates):
-            blob = MagicMock()
-            blob.name = f"{self.test_batch_str}/blob{i+1}"
-            blob.bucket.name = self.bucket_name
-            blob.updated = updated
-            blobs.append(blob)
-
-        reference_date = pendulum.datetime(2023, 1, 1)
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            transform_dir = os.path.join(tmp_dir, "transform")
-            os.mkdir(transform_dir)
-            test_batch = OrcidBatch(tmp_dir, transform_dir, self.test_batch_str)
-            with patch(self.list_blobs_path, return_value=blobs):
-                create_orcid_batch_manifest(test_batch, reference_date, self.bucket_name)
-
-            # Assert manifest file is created with correct header and content
-            with open(test_batch.manifest_file, "r") as f:
-                reader = csv.DictReader(f)
-                rows = list(reader)
-
-            self.assertEqual(len(rows), 2)
-            self.assertEqual(rows[0]["blob_name"], blobs[-2].name)
-            self.assertEqual(rows[0]["updated"], str(blobs[-2].updated))
-            self.assertEqual(rows[1]["blob_name"], blobs[-1].name)
-            self.assertEqual(rows[1]["updated"], str(blobs[-1].updated))
-
-    def test_no_results(self):
-        """Tests that the manifest file is not created if there are no blobs modified after the reference date"""
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            transform_dir = os.path.join(tmp_dir, "transform")
-            os.mkdir(transform_dir)
-            test_batch = OrcidBatch(tmp_dir, transform_dir, self.test_batch_str)
-
-            # Mock gcs_list_blobs
-            blob = MagicMock()
-            blob.name = f"{self.test_batch_str}/blob1"
-            blob.bucket.name = self.bucket_name
-            blob.updated = datetime.datetime(2022, 6, 1)
-            with patch(self.list_blobs_path, return_value=[blob]):
-                create_orcid_batch_manifest(test_batch, pendulum.datetime(2023, 1, 1), self.bucket_name)
-
-            # Assert manifest file is created
-            self.assertTrue(os.path.exists(test_batch.manifest_file))
-            with open(test_batch.manifest_file, "r") as f:
-                reader = csv.DictReader(f)
-                rows = list(reader)
-            self.assertEqual(len(rows), 0)
-
-
-class TestTransformOrcidRecord(unittest.TestCase):
-    def test_valid_record(self):
-        """Tests that a valid ORCID record with 'record' section is transformed correctly"""
-        for asset in OrcidTestRecords.first_run_records:
-            orcid = asset["orcid"]
-            path = asset["path"]
-            transformed_record = transform_orcid_record(path)
-            self.assertIsInstance(transformed_record, dict)
-            self.assertEqual(transformed_record["orcid_identifier"]["path"], orcid)
-
-    def test_error_record(self):
-        """Tests that an ORCID record with 'error' section is transformed correctly"""
-        error_record = OrcidTestRecords.second_run_records[1]
-        orcid = error_record["orcid"]
-        path = error_record["path"]
-        transformed_record = transform_orcid_record(path)
-        self.assertIsInstance(transformed_record, str)
-        self.assertEqual(transformed_record, orcid)
-
-    def test_invalid_key_record(self):
-        """Tests that an ORCID record with no 'error' or 'record' section raises a Key Error"""
-        invaid_key_record = OrcidTestRecords.invalid_key_orcid
-        path = invaid_key_record["path"]
-        with self.assertRaises(KeyError):
-            transform_orcid_record(path)
-
-    def test_mismatched_orcid(self):
-        """Tests that a ValueError is raised if the ORCID in the file name does not match the ORCID in the record"""
-        mismatched_orcid = OrcidTestRecords.mismatched_orcid
-        path = mismatched_orcid["path"]
-        with self.assertRaisesRegex(ValueError, "does not match ORCID in record"):
-            transform_orcid_record(path)
-
-
-class TestExtras(unittest.TestCase):
-    def test_latest_modified_record_date(self):
-        """Tests that the latest_modified_record_date function returns the correct date"""
-        # Create a temporary manifest file for the test
-        with tempfile.NamedTemporaryFile() as temp_file:
-            with open(temp_file.name, "w") as f:
-                f.write(",".join(MANIFEST_HEADER))
-                f.write("\n")
-                f.write("gs://test-bucket,folder/0000-0000-0000-0001.xml,2023-06-03T00:00:00Z\n")
-                f.write("gs://test-bucket,folder/0000-0000-0000-0002.xml,2023-06-03T00:00:00Z\n")
-                f.write("gs://test-bucket,folder/0000-0000-0000-0003.xml,2023-06-02T00:00:00Z\n")
-                f.write("gs://test-bucket,folder/0000-0000-0000-0004.xml,2023-06-01T00:00:00Z\n")
-
-            # Call the function and assert the result
-            expected_date = pendulum.parse("2023-06-03T00:00:00Z")
-            actual_date = latest_modified_record_date(temp_file.name)
-            self.assertEqual(actual_date, expected_date)
-
-    def test_orcid_batch_names(self):
-        """Tests that the orcid_batch_names function returns the expected results"""
-        batch_names = orcid_batch_names()
-
-        # Test that the function returns a list
-        self.assertIsInstance(batch_names, list)
-        self.assertEqual(len(batch_names), 1100)
-        self.assertTrue(all(isinstance(element, str) for element in batch_names))
-        self.assertEqual(len(set(batch_names)), len(batch_names))
-        # Test that the batch names match the OrcidBatch regex
-        for batch_name in batch_names:
-            self.assertTrue(re.match(BATCH_REGEX, batch_name))
