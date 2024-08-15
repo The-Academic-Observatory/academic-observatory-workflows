@@ -26,7 +26,6 @@ import re
 import time
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from dataclasses import dataclass
-from datetime import timedelta
 from ftplib import error_reply, FTP
 from typing import Dict, List, Set, Tuple, Union
 
@@ -1091,7 +1090,6 @@ def create_dag(
         sensor = PreviousDagRunSensor(
             dag_id=dag_id,
             external_task_id=external_task_id,
-            execution_delta=timedelta(days=7),  # To match the @weekly schedule_interval
         )
         task_check_dependencies = check_dependencies(airflow_conns=[observatory_api_conn_id])
         xcom_release = fetch_release()

@@ -20,7 +20,6 @@ import datetime
 import logging
 import os
 import re
-from datetime import timedelta
 from typing import Dict, List
 
 import pendulum
@@ -714,7 +713,6 @@ def create_dag(
         sensor = PreviousDagRunSensor(
             dag_id=dag_id,
             external_task_id=external_task_id,
-            execution_delta=timedelta(days=1),  # To match the @daily schedule
         )
         task_check_dependencies = check_dependencies(airflow_conns=[observatory_api_conn_id, unpaywall_conn_id])
         xcom_release = fetch_release()
