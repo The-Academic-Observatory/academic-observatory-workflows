@@ -170,7 +170,7 @@ def transfer_orcid(
             break
 
     if not success:
-        raise AirflowException("")
+        raise AirflowException("Error transferring data. See GCP logs for details.")
 
 
 def bq_create_main_table_snapshot(release: dict, snapshot_expiry_days: int):
@@ -193,7 +193,7 @@ def bq_create_main_table_snapshot(release: dict, snapshot_expiry_days: int):
         expiry_date=expiry_date,
     )
     if not success:
-        raise AirflowException("")
+        raise AirflowException("Error occurred on table creation.")
 
 
 def create_manifests(release: dict, orcid_bucket: str, orcid_summaries_prefix: str, max_workers: Optional[int] = None):
