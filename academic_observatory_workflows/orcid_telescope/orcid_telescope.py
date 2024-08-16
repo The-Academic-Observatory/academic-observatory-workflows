@@ -25,7 +25,6 @@ import os
 import re
 import time
 from concurrent.futures import as_completed, ProcessPoolExecutor, ThreadPoolExecutor
-from datetime import timedelta
 from functools import cached_property
 from os import PathLike
 from typing import Dict, List, Tuple, Union
@@ -691,7 +690,6 @@ def create_dag(
         sensor = PreviousDagRunSensor(
             dag_id=dag_id,
             external_task_id=external_task_id,
-            execution_delta=timedelta(days=7),  # To match the @weekly schedule_interval
         )
         task_check_dependencies = check_dependencies(airflow_conns=[observatory_api_conn_id, aws_orcid_conn_id])
         xcom_release = fetch_release()
