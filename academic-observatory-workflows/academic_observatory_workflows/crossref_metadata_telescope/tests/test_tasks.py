@@ -483,3 +483,28 @@ class TestAddDatasetRelease(unittest.TestCase):
             api_releases = api.get_dataset_releases(dag_id=release.dag_id, entity_id="crossref_metadata")
         self.assertEqual(len(api_releases), 1)
         self.assertEqual(expected_api_release, api_releases[0].to_dict())
+
+
+class TestCleanupWorkflow(SandboxTestCase):
+    def test_cleanup_workflow(self):
+        """Test the cleanup_workflow function"""
+
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        with env.create():
+            release = CrossrefMetadataRelease(
+                cloud_workspace=env.cloud_workspace,
+                snapshot_date=pendulum.datetime(2024, 1, 1),
+                dag_id="crossref_metadata",
+                run_id="run_id",
+                data_interval_start=pendulum.datetime(2024, 1, 1),
+                data_interval_end=pendulum.datetime(2024, 1, 1).end_of("month"),
+            )
+            # Create the folders
+            workflow_folder = release.workflow_folder
+            release.download_folder
+            release.transform_folder
+            release.extract_folder
+
+            # Run cleanup and make sure the folders are gone
+            tasks.cleanup_workflow(release.to_dict())
+            self.assert_cleanup(workflow_folder)

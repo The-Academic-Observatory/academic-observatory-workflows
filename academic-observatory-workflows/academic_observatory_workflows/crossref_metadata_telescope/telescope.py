@@ -53,7 +53,6 @@ class DagParams:
     :param start_date: the start date of the DAG.
     :param schedule: the schedule interval of the DAG.
     :param catchup: whether to catchup the DAG or not.
-    :param queue: what Airflow queue this job runs on.
     :param max_active_runs: the maximum number of DAG runs that can be run at once.
     :param retries: the number of times to retry a task.
     :param test_run: Whether this is a test run or not.
@@ -84,7 +83,6 @@ class DagParams:
         start_date: pendulum.DateTime = pendulum.datetime(2020, 6, 7),
         schedule: str = "0 0 7 * *",
         catchup: bool = True,
-        queue: str = "default",
         max_active_runs: int = 1,
         retries: int = 3,
         test_run: bool = False,
@@ -109,7 +107,6 @@ class DagParams:
         self.start_date = start_date
         self.schedule = schedule
         self.catchup = catchup
-        self.queue = queue
         self.max_active_runs = max_active_runs
         self.retries = retries
         self.test_run = test_run
@@ -134,7 +131,6 @@ def create_dag(dag_params: DagParams) -> DAG:
             "owner": "airflow",
             "on_failure_callback": on_failure_callback,
             "retries": dag_params.retries,
-            "queue": dag_params.queue,
         },
     )
     def crossref_metadata():
