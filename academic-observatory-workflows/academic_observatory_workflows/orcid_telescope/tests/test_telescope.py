@@ -31,11 +31,12 @@ from airflow.utils.state import State
 from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.orcid_telescope.telescope import create_dag, DagParams
 from academic_observatory_workflows.orcid_telescope.release import OrcidRelease
-from observatory_platform.config import module_file_path
-from observatory_platform.dataset_api import DatasetAPI, DatasetRelease
-from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_upload_files
 from observatory_platform.airflow.airflow import clear_airflow_connections, upsert_airflow_connection
 from observatory_platform.airflow.workflow import Workflow
+from observatory_platform.config import module_file_path
+from observatory_platform.dataset_api import DatasetAPI, DatasetRelease
+from observatory_platform.google.bigquery import bq_table_id
+from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_upload_files
 from observatory_platform.sandbox.test_utils import SandboxTestCase, find_free_port, load_and_parse_json
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
 
@@ -236,8 +237,14 @@ class TestOrcidTelescope(SandboxTestCase):
             with patch("academic_observatory_workflows.orcid_telescope.tasks.gcs_create_aws_transfer") as mock_transfer:
                 mock_transfer.return_value = (True, 1)  # Fake transfer success
                 dagrun = create_dag(dag_params=test_params).test(execution_date=first_execution_date)
+
+            # Make assertions
             if not dagrun.state == "success":
                 raise RuntimeError("Frist Dagrun did not complete successfully")
+            table_id = bq_table_id(
+                project_id=TestConfig.gcp_project_id, dataset_id=test_params.bq_dataset_id, table_id="orcid"
+            )
+            self.assert_table_content(table_id, os.path.join(FIXTURES_FOLDER, "first_run", "main_table.json"))
 
             # Second execution
             # Upload the second run test files to the bucket
@@ -256,8 +263,22 @@ class TestOrcidTelescope(SandboxTestCase):
             with patch("academic_observatory_workflows.orcid_telescope.tasks.gcs_create_aws_transfer") as mock_transfer:
                 mock_transfer.return_value = (True, 1)  # Fake transfer success
                 dagrun = create_dag(dag_params=test_params).test(execution_date=second_execution_date)
+
+            # Make assertions
             if not dagrun.state == "success":
                 raise RuntimeError("Second Dagrun did not complete successfully")
+            table_id = bq_table_id(
+                project_id=TestConfig.gcp_project_id, dataset_id=test_params.bq_dataset_id, table_id="orcid"
+            )
+            self.assert_table_content(table_id, os.path.join(FIXTURES_FOLDER, "second_run", "main_table.json"))
+            table_id = bq_table_id(
+                project_id=TestConfig.gcp_project_id, dataset_id=test_params.bq_dataset_id, table_id="delete"
+            )
+            self.assert_table_content(table_id, os.path.join(FIXTURES_FOLDER, "second_run", "delete_table.json"))
+            table_id = bq_table_id(
+                project_id=TestConfig.gcp_project_id, dataset_id=test_params.bq_dataset_id, table_id="upsert"
+            )
+            self.assert_table_content(table_id, os.path.join(FIXTURES_FOLDER, "second_run", "upsert_table.json"))
 
     @unittest.skip
     def test_telescope_old(self):
