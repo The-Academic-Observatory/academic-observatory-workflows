@@ -57,3 +57,14 @@ spec:
     requests:
       storage: 5Gi
   storageClassName: standard
+
+# Crossref metadata secret
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: crossref-metadata
+  namespace: default
+type: Opaque
+data:
+  api-key: c2VjcmV0 # 'secret'

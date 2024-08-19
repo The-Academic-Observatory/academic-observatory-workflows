@@ -227,7 +227,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         @task.kubernetes(
             name="transform",
             container_resources=gke_make_container_resources(
-                {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("tranform")
+                {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("transform")
             ),
             **kubernetes_task_params,
         )
@@ -286,11 +286,11 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.bq_delete_records(release)
 
         @task(trigger_rule=TriggerRule.ALL_DONE)
-        def add_dataset_release(release: dict, **context) -> None:
+        def add_dataset_release(release: dict, dag_params, **context) -> None:
             """Adds release information to API."""
             from academic_observatory_workflows.orcid_telescope import tasks
 
-            tasks.add_dataset_release(release)
+            tasks.add_dataset_release(release, api_bq_dataset_id=dag_params.api_bq_dataset_id)
 
         @task
         def cleanup_workflow(release: dict, **context) -> None:
