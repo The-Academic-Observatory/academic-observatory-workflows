@@ -43,6 +43,7 @@ from academic_observatory_workflows.orcid_telescope.batch import OrcidBatch
 from observatory_platform.airflow.airflow import is_first_dag_run
 from observatory_platform.airflow.workflow import CloudWorkspace, cleanup
 from observatory_platform.dataset_api import DatasetRelease, DatasetAPI
+from observatory_platform.date_utils import datetime_normalise
 from observatory_platform.files import change_keys, save_jsonl_gz
 from observatory_platform.google import bigquery as bq
 from observatory_platform.google.gcs import (
@@ -479,11 +480,11 @@ def bq_delete_records(release: dict):
     )
 
 
-def add_dataset_release(release: dict) -> None:
+def add_dataset_release(release: dict, *, api_bq_dataset_id: str) -> None:
     """Adds release information to API."""
 
     release = OrcidRelease.from_dict(release)
-    api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=release.api_bq_dataset_id)
+    api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
     api.seed_db()
     now = pendulum.now()
     dataset_release = DatasetRelease(
@@ -548,7 +549,7 @@ def create_orcid_batch_manifest(
     logging.info(f"Manifest saved to {orcid_batch.manifest_file}")
 
 
-def latest_modified_record_date(manifest_file_path: Union[str, PathLike]) -> pendulum.DateTime:
+def latest_modified_record_date(manifest_file_path: Union[str, PathLike]) -> str:
     """Reads the manifest file and finds the most recent date of modification for the records
 
     :param manifest_file_path: the path to the manifest file
@@ -557,7 +558,7 @@ def latest_modified_record_date(manifest_file_path: Union[str, PathLike]) -> pen
     with open(manifest_file_path, "r") as f:
         reader = csv.DictReader(f)
         modified_dates = sorted([pendulum.parse(row["updated"]) for row in reader])
-    return modified_dates[-1]
+    return datetime_normalise(modified_dates[-1])
 
 
 def transform_orcid_record(record_path: str) -> Union[Dict, str]:
