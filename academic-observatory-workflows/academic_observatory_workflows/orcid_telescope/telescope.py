@@ -52,7 +52,6 @@ class DagParams:
     :param delete_schema_file_path: the path to the delete schema file for the records produced by this workflow.
     :param transfer_attempts: the number of AWS to GCP transfer attempts.
     :param max_workers: maximum processes to use when transforming files.
-    :param api_dataset_id: the Dataset ID to use when storing releases.
     :param observatory_api_conn_id: the Observatory API Airflow Connection ID.
     :param aws_orcid_conn_id: Airflow Connection ID for the AWS ORCID bucket.
     :param start_date: the Apache Airflow DAG start date.
@@ -82,7 +81,6 @@ class DagParams:
         delete_schema_file_path: str = project_path("orcid_telescope", "schema", "orcid_delete.json"),
         transfer_attempts: int = 5,
         max_workers: Optional[int] = None,
-        api_dataset_id: str = "orcid",
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         aws_orcid_conn_id: str = "aws_orcid",
         start_date: pendulum.DateTime = pendulum.datetime(2023, 6, 1),
@@ -110,7 +108,6 @@ class DagParams:
         self.delete_schema_file_path = delete_schema_file_path
         self.transfer_attempts = transfer_attempts
         self.max_workers = max_workers
-        self.api_dataset_id = api_dataset_id
         self.observatory_api_conn_id = observatory_api_conn_id
         self.aws_orcid_conn_id = aws_orcid_conn_id
         self.start_date = start_date
@@ -193,8 +190,8 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.bq_create_main_table_snapshot(release, snapshot_expiry_days=dag_params.snapshot_expiry_days)
 
         @task.kubernetes(
-            trigger_rule=TriggerRule.ALL_DONE,
             name="create_manifests",
+            trigger_rule=TriggerRule.ALL_DONE,
             container_resources=gke_make_container_resources(
                 {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("create_manifests")
             ),
@@ -212,7 +209,23 @@ def create_dag(dag_params: DagParams) -> DAG:
             )
 
         @task.kubernetes(
+            name="latest_modified_record_date",
+            trigger_rule=TriggerRule.ALL_DONE,
+            container_resources=gke_make_container_resources(
+                {"memory": "2G", "cpu": "2"},
+                dag_params.gke_params.gke_resource_overrides.get("latest_modified_record_date"),
+            ),
+            **kubernetes_task_params,
+        )
+        def latest_modified_record_date(release: dict, **context):
+            """Reads each batch's manifest and downloads the files from the gcs bucket."""
+            from academic_observatory_workflows.orcid_telescope import tasks
+
+            return tasks.latest_modified_record_date(release)
+
+        @task.kubernetes(
             name="download",
+            trigger_rule=TriggerRule.ALL_DONE,
             container_resources=gke_make_container_resources(
                 {"memory": "8G", "cpu": "8"}, dag_params.gke_params.gke_resource_overrides.get("download")
             ),
@@ -226,12 +239,13 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         @task.kubernetes(
             name="transform",
+            trigger_rule=TriggerRule.ALL_DONE,
             container_resources=gke_make_container_resources(
                 {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("transform")
             ),
             **kubernetes_task_params,
         )
-        def transform(release: dict, dag_parms, **context):
+        def transform(release: dict, dag_params, **context):
             """Transforms the downloaded files into serveral bigquery-compatible .jsonl files"""
             from academic_observatory_workflows.orcid_telescope import tasks
 
@@ -239,8 +253,9 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         @task.kubernetes(
             name="upload_transformed",
+            trigger_rule=TriggerRule.ALL_DONE,
             container_resources=gke_make_container_resources(
-                {"memory": "8G", "cpu": "8"}, dag_params.gke_params.gke_resource_overrides.get("upload_tranformed")
+                {"memory": "8G", "cpu": "8"}, dag_params.gke_params.gke_resource_overrides.get("upload_transformed")
             ),
             **kubernetes_task_params,
         )
@@ -250,7 +265,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             tasks.upload_transformed(release)
 
-        @task
+        @task(trigger_rule=TriggerRule.ALL_DONE)
         def bq_load_main_table(release: dict, dag_params, **context):
             """Load the main table."""
             from academic_observatory_workflows.orcid_telescope import tasks
@@ -286,13 +301,15 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.bq_delete_records(release)
 
         @task(trigger_rule=TriggerRule.ALL_DONE)
-        def add_dataset_release(release: dict, dag_params, **context) -> None:
+        def add_dataset_release(release: dict, latest_modified_date: str, dag_params, **context) -> None:
             """Adds release information to API."""
             from academic_observatory_workflows.orcid_telescope import tasks
 
-            tasks.add_dataset_release(release, api_bq_dataset_id=dag_params.api_bq_dataset_id)
+            tasks.add_dataset_release(
+                release, api_bq_dataset_id=dag_params.api_bq_dataset_id, latest_modified_date=latest_modified_date
+            )
 
-        @task
+        @task(trigger_rule=TriggerRule.ALL_DONE)
         def cleanup_workflow(release: dict, **context) -> None:
             """Delete all files, folders and XComs associated with this release."""
             from academic_observatory_workflows.orcid_telescope import tasks
@@ -311,6 +328,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_transfer_orcid = transfer_orcid(xcom_release, dag_params)
         task_bq_create_main_table_snapshot = bq_create_main_table_snapshot(xcom_release, dag_params)
         task_create_manifests = create_manifests(xcom_release, dag_params)
+        xcom_latest_modified_date = latest_modified_record_date(xcom_release)
         task_download = download(xcom_release)
         task_transform = transform(xcom_release, dag_params)
         task_upload_transformed = upload_transformed(xcom_release)
@@ -319,7 +337,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_bq_load_delete_table = bq_load_delete_table(xcom_release, dag_params)
         task_bq_upsert_records = bq_upsert_records(xcom_release)
         task_bq_delete_records = bq_delete_records(xcom_release)
-        task_add_dataset_release = add_dataset_release(xcom_release)
+        task_add_dataset_release = add_dataset_release(xcom_release, xcom_latest_modified_date, dag_params)
         task_cleanup_workflow = cleanup_workflow(xcom_release)
         task_dag_run_complete = EmptyOperator(
             task_id=external_task_id,
@@ -347,6 +365,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> task_bq_create_main_table_snapshot
             >> task_create_storage
             >> task_create_manifests
+            >> xcom_latest_modified_date
             >> task_download
             >> task_transform
             >> task_upload_transformed

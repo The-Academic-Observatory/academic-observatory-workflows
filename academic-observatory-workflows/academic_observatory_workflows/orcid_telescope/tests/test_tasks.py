@@ -264,7 +264,7 @@ class TestCreateMainTableSnapshot(SandboxTestCase):
             release = dummy_release()
             release.is_first_run = True
             with self.assertRaises(AirflowSkipException):
-                tasks.bq_create_main_table_snapshot(release.to_dict(), 31)
+                tasks.bq_create_main_table_snapshot(release.to_dict(), snapshot_expiry_days=31)
 
     def test_create_main_table_snapshot_second_run(self):
         """Test that the main table snapshot is created for subsequent runs"""
@@ -292,7 +292,7 @@ class TestCreateMainTableSnapshot(SandboxTestCase):
             bq.bq_load_from_memory(release.bq_main_table_id, records=content)
 
             # Run the task and check output
-            tasks.bq_create_main_table_snapshot(release.to_dict(), 31)
+            tasks.bq_create_main_table_snapshot(release.to_dict(), snapshot_expiry_days=31)
             self.assertTrue(bq.bq_table_exists(release.bq_snapshot_table_id))
             self.assert_table_content(
                 table_id=release.bq_snapshot_table_id, expected_content=content, primary_key="test"
@@ -448,6 +448,8 @@ class TestCreateOrcidManifest(unittest.TestCase):
 
 class TestDownload(unittest.TestCase):
     def test_download(self):
+        """Tests the download function works as intended"""
+
         env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
         with env.create():
             release = OrcidRelease(
@@ -645,8 +647,11 @@ class TestLatestModifiedRecordDate(unittest.TestCase):
     def test_latest_modified_record_date(self):
         """Tests that the latest_modified_record_date function returns the correct date"""
         # Create a temporary manifest file for the test
-        with tempfile.NamedTemporaryFile() as temp_file:
-            with open(temp_file.name, "w") as f:
+        with SandboxEnvironment(
+            project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location
+        ).create():
+            release = dummy_release()
+            with open(release.master_manifest_file, "w") as f:
                 f.write(",".join(tasks.MANIFEST_HEADER))
                 f.write("\n")
                 f.write("gs://test-bucket,folder/0000-0000-0000-0001.xml,2023-06-03T00:00:00Z\n")
@@ -655,8 +660,8 @@ class TestLatestModifiedRecordDate(unittest.TestCase):
                 f.write("gs://test-bucket,folder/0000-0000-0000-0004.xml,2023-06-01T00:00:00Z\n")
 
             # Call the function and assert the result
-            expected_date = "2023-06-03T00:00:00Z"
-            actual_date = tasks.latest_modified_record_date(temp_file.name)
+            expected_date = datetime_normalise("2023-06-03T00:00:00Z")
+            actual_date = tasks.latest_modified_record_date(release.to_dict())
             self.assertEqual(actual_date, expected_date)
 
 
