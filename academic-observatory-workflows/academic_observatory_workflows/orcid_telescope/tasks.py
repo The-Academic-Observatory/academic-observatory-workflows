@@ -197,12 +197,15 @@ def bq_create_main_table_snapshot(release: dict, snapshot_expiry_days: int):
         raise AirflowException("Error occurred on table creation.")
 
 
-def create_manifests(release: dict, orcid_bucket: str, orcid_summaries_prefix: str, max_workers: Optional[int] = None):
+def create_manifests(
+    release: dict, orcid_bucket: str, orcid_summaries_prefix: str, max_workers: Optional[int] = None
+) -> str:
     """Create a manifest of all the modified files in the orcid bucket.
 
     :param orcid_bucket: The name of the gcs bucket to store the Orcid data
     :param orcid_summaries_prefix: The prefix in which to store the summaries in the bucket
     :param max_workers: Number of process pools to use. If None, uses the cpu count
+    :return: The datetime of the last modified ORCID record in the manifest as a string
     """
 
     release = OrcidRelease.from_dict(release)
@@ -249,6 +252,7 @@ def download(release: dict):
         start_time = time.time()
         for orcid_batch in release.orcid_batches():
             if not orcid_batch.missing_records:
+                total_files += len(orcid_batch.existing_records)
                 logging.info(f"All files present for {orcid_batch.batch_str}. Skipping download.")
                 continue
 
@@ -364,11 +368,7 @@ def bq_load_main_table(release: dict, schema_file_path: str):
         logging.info(msg)
         raise AirflowSkipException(msg)
 
-    # Check that the number of files matches the number of blobs
     blobs = gcs_list_blobs(release.cloud_workspace.transform_bucket, match_glob=release.upsert_blob_glob)
-    if not len(blobs) == len(release.upsert_files):
-        raise ValueError(f"Number of blobs ({len(blobs)}) does not match number of files ({len(release.upsert_files)})")
-
     success = bq.bq_load_table(
         uri=[gcs_blob_uri(blob.bucket.name, blob.name) for blob in blobs],
         table_id=release.bq_main_table_id,
@@ -393,11 +393,7 @@ def bq_load_upsert_table(release: dict, schema_file_path: str):
         logging.info(msg)
         raise AirflowSkipException(msg)
 
-    # Check that the number of files matches the number of blobs
     blobs = gcs_list_blobs(release.cloud_workspace.transform_bucket, match_glob=release.upsert_blob_glob)
-    if not len(blobs) == len(release.upsert_files):
-        raise ValueError(f"Number of blobs ({len(blobs)}) does not match number of files ({len(release.upsert_files)})")
-
     success = bq.bq_load_table(
         uri=[gcs_blob_uri(blob.bucket.name, blob.name) for blob in blobs],
         table_id=release.bq_upsert_table_id,
@@ -421,16 +417,8 @@ def bq_load_delete_table(release: dict, delete_schema_file_path: str):
         msg = "bq_load_delete_table: skipping as no records are deleted on the first run"
         logging.info(msg)
         raise AirflowSkipException(msg)
-    if not len(release.delete_files):
-        msg = "bq_load_delete_table: skipping as no records require deleting"
-        logging.info(msg)
-        raise AirflowSkipException(msg)
 
-    # Check that the number of files matches the number of blobs
     blobs = gcs_list_blobs(release.cloud_workspace.transform_bucket, match_glob=release.delete_blob_glob)
-    if not len(blobs) == len(release.delete_files):
-        raise ValueError(f"Number of blobs ({len(blobs)}) does not match number of files ({len(release.delete_files)})")
-
     success = bq.bq_load_table(
         uri=[gcs_blob_uri(blob.bucket.name, blob.name) for blob in blobs],
         table_id=release.bq_delete_table_id,
@@ -467,10 +455,6 @@ def bq_delete_records(release: dict):
         msg = "bq_delete_records: skipping as no records are deleted on the first run"
         logging.info(msg)
         raise AirflowSkipException(msg)
-    if not len(release.delete_files):
-        msg = f"bq_load_delete_table: skipping as no records require deleting"
-        logging.info(msg)
-        raise AirflowSkipException(msg)
 
     bq.bq_delete_records(
         main_table_id=release.bq_main_table_id,
@@ -480,8 +464,11 @@ def bq_delete_records(release: dict):
     )
 
 
-def add_dataset_release(release: dict, *, api_bq_dataset_id: str) -> None:
-    """Adds release information to API."""
+def add_dataset_release(release: dict, *, api_bq_dataset_id: str, latest_modified_date: str) -> None:
+    """Adds release information to API.
+
+    :param api_bq_datastet_id: bigquery dataset ID of the API
+    :param last_modified_release_date: The modification datetime of the last modified record of this release"""
 
     release = OrcidRelease.from_dict(release)
     api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
@@ -495,7 +482,7 @@ def add_dataset_release(release: dict, *, api_bq_dataset_id: str) -> None:
         modified=now,
         changefile_start_date=release.start_date,
         changefile_end_date=release.end_date,
-        extra={"latest_modified_record_date": latest_modified_record_date(release.master_manifest_file)},
+        extra={"latest_modified_record_date": latest_modified_date},
     )
     api.add_dataset_release(dataset_release)
 
@@ -549,13 +536,15 @@ def create_orcid_batch_manifest(
     logging.info(f"Manifest saved to {orcid_batch.manifest_file}")
 
 
-def latest_modified_record_date(manifest_file_path: Union[str, PathLike]) -> str:
+def latest_modified_record_date(release: dict) -> str:
     """Reads the manifest file and finds the most recent date of modification for the records
 
     :param manifest_file_path: the path to the manifest file
     :return: the most recent date of modification for the records
     """
-    with open(manifest_file_path, "r") as f:
+
+    release = OrcidRelease.from_dict(release)
+    with open(release.master_manifest_file, "r") as f:
         reader = csv.DictReader(f)
         modified_dates = sorted([pendulum.parse(row["updated"]) for row in reader])
     return datetime_normalise(modified_dates[-1])
