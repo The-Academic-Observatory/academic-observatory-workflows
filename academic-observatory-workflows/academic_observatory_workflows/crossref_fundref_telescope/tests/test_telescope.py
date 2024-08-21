@@ -99,7 +99,7 @@ class TestCrossrefFundrefTelescope(SandboxTestCase):
         bq_dataset_id = env.add_dataset("crossref_fundref")
         logical_date = pendulum.datetime(year=2021, month=5, day=16)
 
-        with env.create():
+        with env.create(task_logging=True):
             test_params = DagParams(
                 dag_id="test_crossref_fundref",
                 cloud_workspace=env.cloud_workspace,
