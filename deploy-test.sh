@@ -1,10 +1,24 @@
 #!/usr/bin/env bash
 set -e
 
-# This script builds the flask and academic observatory containers and deploys them to the minikube cluster
+usage() {
+    echo "This script builds and starts the Academic Observatory test environment"
+    echo "Usage: $0 [--no-build]"
+    echo "       $0 [--help]"
+    echo
+    echo "--no-build  Will not build the AO workflows Docker image."
+    echo "--help      Display this help message"
+    exit 1
+}
+if [ "$1" == "--help" ]; then
+    usage
+elif [ "$1" != "--no-build" ] && [ "$1" != "--help" ] && [ ! -z "$1" ]; then
+    echo "Invalid argument: $1"
+    usage
+fi
 
 # Check if minikube is running, if not, start it
-minikube status || minikube start
+minikube status || minikube start --network=bridge --driver=docker
 
 # Authenticate minikube with gcp
 if [ -f .env ]; then # Source the .env file
@@ -20,14 +34,14 @@ fi
 export GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS
 minikube addons enable gcp-auth
 
-# Use the minikube docker daemon
+# Use the minikube docker daemon to build Academic Observatory workflows image
 eval $(minikube docker-env)
+docker build -t ao-tests-flask-app -f flask-Dockerfile .
+if [ "$1" != "--no-build" ]; then
+    docker build --no-cache -t academic-observatory:test .
+fi
 
-# Build the Docker images. Use the test tag for academic-observatory 
-docker build -t flask-app -f flask-Dockerfile .
-docker build --no-cache -t academic-observatory:test .
-
-# (Re)Deploy flask deployment and service
+# (Re)Deploy kubernetes config items
 kubectl delete --ignore-not-found -f test-konfig.yaml
 kubectl apply -f test-konfig.yaml
 
