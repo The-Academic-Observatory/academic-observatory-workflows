@@ -9,7 +9,7 @@ metadata:
 spec:
   containers:
     - name: flask-app
-      image: docker.io/library/flask-app:latest
+      image: docker.io/library/ao-tests-flask-app:latest
       ports:
         - containerPort: 5000
       imagePullPolicy: Never

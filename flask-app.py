@@ -14,7 +14,7 @@ def crossref_metadata_download():
     return send_file(filepath, as_attachment=True)
 
 
-@app.route("/")
+@app.route("/")  # For debugging
 def hello_world():
     return "hello world"
 

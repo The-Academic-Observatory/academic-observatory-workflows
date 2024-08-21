@@ -26,7 +26,6 @@ from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.orcid_telescope.telescope import create_dag, DagParams
 from observatory_platform.airflow.airflow import clear_airflow_connections, upsert_airflow_connection
 from observatory_platform.airflow.workflow import Workflow
-from observatory_platform.config import module_file_path
 from observatory_platform.dataset_api import DatasetAPI
 from observatory_platform.google.bigquery import bq_table_id, bq_sharded_table_id
 from observatory_platform.google.gcs import gcs_upload_files
@@ -112,8 +111,7 @@ class TestOrcidTelescope(SandboxTestCase):
 
     def test_dag_structure(self):
         """Test that the DAG has the correct structure."""
-
-        dag = create_dag(dag_id=self.dag_id, cloud_workspace=self.fake_cloud_workspace)
+        dag = create_dag(DagParams(dag_id=self.dag_id, cloud_workspace=self.fake_cloud_workspace))
         self.assert_dag_structure(
             {
                 "wait_for_prev_dag_run": ["check_dependencies"],
@@ -122,12 +120,11 @@ class TestOrcidTelescope(SandboxTestCase):
                     "create_dataset",
                     "transfer_orcid",
                     "bq_create_main_table_snapshot",
-                    "create_storage",
                     "create_manifests",
+                    "latest_modified_record_date",
                     "download",
                     "transform",
                     "upload_transformed",
-                    "delete_storage",
                     "bq_load_main_table",
                     "bq_load_upsert_table",
                     "bq_load_delete_table",
@@ -138,13 +135,14 @@ class TestOrcidTelescope(SandboxTestCase):
                 ],
                 "create_dataset": ["transfer_orcid"],
                 "transfer_orcid": ["bq_create_main_table_snapshot"],
-                "bq_create_main_table_snapshot": ["create_storage"],
-                "create_storage": ["create_manifests"],
-                "create_manifests": ["download"],
+                "bq_create_main_table_snapshot": ["gke_create_storage"],
+                "gke_create_storage": ["create_manifests"],
+                "create_manifests": ["latest_modified_record_date"],
+                "latest_modified_record_date": ["download", "add_dataset_release"],
                 "download": ["transform"],
                 "transform": ["upload_transformed"],
-                "upload_transformed": ["delete_storage"],
-                "delete_storage": ["bq_load_main_table"],
+                "upload_transformed": ["gke_delete_storage"],
+                "gke_delete_storage": ["bq_load_main_table"],
                 "bq_load_main_table": ["bq_load_upsert_table"],
                 "bq_load_upsert_table": ["bq_load_delete_table"],
                 "bq_load_delete_table": ["bq_upsert_records"],
@@ -165,14 +163,14 @@ class TestOrcidTelescope(SandboxTestCase):
                 Workflow(
                     dag_id=self.dag_id,
                     name="Orcid Telescope",
-                    class_name="academic_observatory_workflows.orcid_telescope.telesope",
+                    class_name="academic_observatory_workflows.orcid_telescope.telescope",
                     cloud_workspace=self.fake_cloud_workspace,
                 )
             ]
         )
 
         with env.create():
-            dag_file = os.path.join(module_file_path("observatory.platform.dags"), "load_dags.py")
+            dag_file = os.path.join(project_path(), "..", "..", "dags", "load_dags.py")
             self.assert_dag_load(self.dag_id, dag_file)
 
     def test_telescope(self):
