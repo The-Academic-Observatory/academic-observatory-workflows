@@ -29,7 +29,7 @@ from Bio.Entrez.Parser import DictionaryElement, ListElement, StringElement
 from click.testing import CliRunner
 
 from academic_observatory_workflows.config import project_path
-from academic_observatory_workflows.pubmed_telescope.pubmed_telescope import (
+from academic_observatory_workflows.pubmed_telescope.telescope import (
     add_attributes,
     change_pubmed_list_structure,
     create_dag,
@@ -60,6 +60,16 @@ from observatory_platform.sandbox.sandbox_environment import (
 )
 from observatory_platform.airflow.workflow import ChangefileRelease
 
+from academic_observatory_workflows.config import project_path, TestConfig
+from academic_observatory_workflows.pubmed_telescope.telescope import create_dag, DagParams
+from observatory_platform.airflow.airflow import clear_airflow_connections, upsert_airflow_connection
+from observatory_platform.airflow.workflow import Workflow
+from observatory_platform.dataset_api import DatasetAPI
+from observatory_platform.google.bigquery import bq_table_id, bq_sharded_table_id
+from observatory_platform.google.gcs import gcs_upload_files
+from observatory_platform.sandbox.test_utils import SandboxTestCase, load_and_parse_json
+from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
+
 FIXTURES_FOLDER = project_path("pubmed_telescope", "tests", "fixtures")
 
 
@@ -77,180 +87,179 @@ def query_table(table_id: str, select_columns: str, order_by_field: str) -> List
     ]
 
 
+class PubMedTest:
+    # FTP Server params
+    ftp_server_url = "localhost"
+    ftp_port = 80
+    baseline_path = "/pubmed/baseline/"
+    updatefiles_path = "/pubmed/updatefiles/"
+
+    # Expected values for how the Pubmed Telescope should run.
+    first_run = {
+        "ftp_hosted_files": {
+            "pubmed/baseline/pubmed22n0001.xml.gz": pendulum.datetime(year=2021, month=12, day=2),
+            "pubmed/baseline/pubmed22n0002.xml.gz": pendulum.datetime(year=2021, month=12, day=2),
+            "pubmed/updatefiles/pubmed22n0003.xml.gz": pendulum.datetime(year=2021, month=12, day=3),
+            "pubmed/updatefiles/pubmed22n0004.xml.gz": pendulum.datetime(year=2021, month=12, day=4),
+            "pubmed/updatefiles/pubmed22n0005.xml.gz": pendulum.datetime(year=2021, month=12, day=30),
+        },
+        # Execution_date is a week before the workflow's actual run date.
+        "logical_date": pendulum.datetime(year=2021, month=12, day=5),
+        "release_interval_start": pendulum.datetime(year=2021, month=12, day=2),
+        "release_interval_end": pendulum.datetime(year=2021, month=12, day=12),
+        "baseline_upload_date": pendulum.datetime(year=2021, month=12, day=2),
+        "is_first_run": True,
+        "year_first_run": True,
+        "datafiles": [
+            Datafile(
+                filename="pubmed22n0001.xml.gz",
+                file_index=1,
+                path_on_ftp=f"{baseline_path}pubmed22n0001.xml.gz",
+                baseline=True,
+                datafile_date=pendulum.datetime(year=2021, month=12, day=2),
+            ),
+            Datafile(
+                filename="pubmed22n0002.xml.gz",
+                file_index=2,
+                path_on_ftp=f"{baseline_path}pubmed22n0002.xml.gz",
+                baseline=True,
+                datafile_date=pendulum.datetime(year=2021, month=12, day=2),
+            ),
+            Datafile(
+                filename="pubmed22n0003.xml.gz",
+                file_index=3,
+                path_on_ftp=f"{updatefiles_path}pubmed22n0003.xml.gz",
+                baseline=False,
+                datafile_date=pendulum.datetime(year=2021, month=12, day=3),
+            ),
+            Datafile(
+                filename="pubmed22n0004.xml.gz",
+                file_index=4,
+                path_on_ftp=f"{updatefiles_path}pubmed22n0004.xml.gz",
+                baseline=False,
+                datafile_date=pendulum.datetime(year=2021, month=12, day=4),
+            ),
+        ],
+        "md5hash_download": {
+            "pubmed22n0001.xml.gz": "73624a987b3572221fdd53ebefa1043f",
+            "pubmed22n0002.xml.gz": "24da7ffc1afb277044ee1ba8cddb4e74",
+            "pubmed22n0003.xml.gz": "d6da2c87390489d22cdeb6e046b77da1",
+            "pubmed22n0004.xml.gz": "83764fc19cd98d247dc5603ca65569e6",
+        },
+        "PMID_list": [
+            {"f0_": {"_field_1": "1", "_field_2": "1"}},
+            {"f0_": {"_field_1": "2", "_field_2": "2"}},
+            {"f0_": {"_field_1": "1", "_field_2": "30970"}},
+            {"f0_": {"_field_1": "1", "_field_2": "36519887"}},
+            {"f0_": {"_field_1": "1", "_field_2": "36519888"}},
+        ],
+    }
+    # Regular update for Pubmed. No new baseline files but download and process the updatefiles.
+    second_run = {
+        # Need to change the upload dates of the
+        "ftp_hosted_files": {
+            "pubmed/baseline/pubmed22n0001.xml.gz": pendulum.datetime(year=2021, month=12, day=2),
+            "pubmed/baseline/pubmed22n0002.xml.gz": pendulum.datetime(year=2021, month=12, day=2),
+            "pubmed/updatefiles/pubmed22n0003.xml.gz": pendulum.datetime(year=2021, month=12, day=3),
+            "pubmed/updatefiles/pubmed22n0004.xml.gz": pendulum.datetime(year=2021, month=12, day=4),
+            "pubmed/updatefiles/pubmed22n0005.xml.gz": pendulum.datetime(year=2021, month=12, day=14),
+        },
+        # Execution_date is a week before the workflow's actual run date.
+        "logical_date": pendulum.datetime(year=2021, month=12, day=12),
+        "release_interval_start": pendulum.datetime(year=2021, month=12, day=12),
+        "release_interval_end": pendulum.datetime(year=2021, month=12, day=19),
+        "baseline_upload_date": pendulum.datetime(year=2021, month=12, day=2),
+        "is_first_run": False,
+        "year_first_run": False,
+        "datafiles": [
+            Datafile(
+                filename="pubmed22n0005.xml.gz",
+                file_index=5,
+                path_on_ftp=f"{updatefiles_path}pubmed22n0005.xml.gz",
+                baseline=False,
+                datafile_date=pendulum.datetime(year=2021, month=12, day=14),
+            ),
+        ],
+        "md5hash_download": {
+            "pubmed22n0005.xml.gz": "9c61c5b19f021cadfc57845d0d1dcbc9",
+        },
+        "update_tables": {
+            "additions": 2,
+            "deletions": 1,
+        },
+        "PMID_list": [
+            {"f0_": {"_field_1": "1", "_field_2": "1"}},
+            {"f0_": {"_field_1": "1", "_field_2": "2994179"}},
+            {"f0_": {"_field_1": "1", "_field_2": "2994180"}},
+            {"f0_": {"_field_1": "1", "_field_2": "30970"}},
+            {"f0_": {"_field_1": "1", "_field_2": "36519887"}},
+            {"f0_": {"_field_1": "1", "_field_2": "36519888"}},
+        ],
+    }
+    # New yearly run of Pubmed. Grab newly available baseline files and process them.
+    # This is to only make sure that the new yearly baseline is detected and will be downloaded and processed
+    # along with any updatefiles with in the release period.
+    third_run = {
+        "ftp_hosted_files": {
+            "pubmed/baseline/pubmed22n0001.xml.gz": pendulum.datetime(year=2022, month=12, day=8),
+            "pubmed/baseline/pubmed22n0002.xml.gz": pendulum.datetime(year=2022, month=12, day=8),
+            "pubmed/updatefiles/pubmed22n0003.xml.gz": pendulum.datetime(year=2022, month=12, day=9),
+            "pubmed/updatefiles/pubmed22n0004.xml.gz": pendulum.datetime(year=2022, month=12, day=10),
+            "pubmed/updatefiles/pubmed22n0005.xml.gz": pendulum.datetime(year=2022, month=12, day=21),
+        },
+        # Execution_date is a week before the workflow's actual run date.
+        "logical_date": pendulum.datetime(year=2022, month=12, day=4),
+        "release_interval_start": pendulum.datetime(year=2022, month=12, day=8),
+        "release_interval_end": pendulum.datetime(year=2022, month=12, day=11),
+        "baseline_upload_date": pendulum.datetime(year=2022, month=12, day=8),
+        "is_first_run": False,
+        "year_first_run": True,
+        "datafiles": [
+            Datafile(
+                filename="pubmed22n0001.xml.gz",
+                file_index=1,
+                path_on_ftp=f"{baseline_path}pubmed22n0001.xml.gz",
+                baseline=True,
+                datafile_date=pendulum.datetime(year=2022, month=12, day=8),
+            ),
+            Datafile(
+                filename="pubmed22n0002.xml.gz",
+                file_index=2,
+                path_on_ftp=f"{baseline_path}pubmed22n0002.xml.gz",
+                baseline=True,
+                datafile_date=pendulum.datetime(year=2022, month=12, day=8),
+            ),
+            Datafile(
+                filename="pubmed22n0003.xml.gz",
+                file_index=3,
+                path_on_ftp=f"{updatefiles_path}pubmed22n0003.xml.gz",
+                baseline=False,
+                datafile_date=pendulum.datetime(year=2022, month=12, day=9),
+            ),
+            Datafile(
+                filename="pubmed22n0004.xml.gz",
+                file_index=4,
+                path_on_ftp=f"{updatefiles_path}pubmed22n0004.xml.gz",
+                baseline=False,
+                datafile_date=pendulum.datetime(year=2022, month=12, day=10),
+            ),
+        ],
+        "PMID_list": [
+            {"f0_": {"_field_1": "1", "_field_2": "1"}},
+            {"f0_": {"_field_1": "2", "_field_2": "2"}},
+            {"f0_": {"_field_1": "1", "_field_2": "30970"}},
+            {"f0_": {"_field_1": "1", "_field_2": "36519887"}},
+            {"f0_": {"_field_1": "1", "_field_2": "36519888"}},
+        ],
+    }
+
+
 class TestPubMedTelescope(ObservatoryTestCase):
     """Tests for the Pubmed telescope"""
 
     def __init__(self, *args, **kwargs):
         self.dag_id = "pubmed"
-        self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
-        self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
-
-        # FTP Server params
-        self.ftp_server_url = "localhost"
-        self.ftp_port = find_free_port()
-        self.baseline_path = "/pubmed/baseline/"
-        self.updatefiles_path = "/pubmed/updatefiles/"
-
         super(TestPubMedTelescope, self).__init__(*args, **kwargs)
-
-        # Expected values for how the Pubmed Telescope should run.
-        self.first_run = {
-            "ftp_hosted_files": {
-                "pubmed/baseline/pubmed22n0001.xml.gz": pendulum.datetime(year=2021, month=12, day=2),
-                "pubmed/baseline/pubmed22n0002.xml.gz": pendulum.datetime(year=2021, month=12, day=2),
-                "pubmed/updatefiles/pubmed22n0003.xml.gz": pendulum.datetime(year=2021, month=12, day=3),
-                "pubmed/updatefiles/pubmed22n0004.xml.gz": pendulum.datetime(year=2021, month=12, day=4),
-                "pubmed/updatefiles/pubmed22n0005.xml.gz": pendulum.datetime(year=2021, month=12, day=30),
-            },
-            # Execution_date is a week before the workflow's actual run date.
-            "logical_date": pendulum.datetime(year=2021, month=12, day=5),
-            "release_interval_start": pendulum.datetime(year=2021, month=12, day=2),
-            "release_interval_end": pendulum.datetime(year=2021, month=12, day=12),
-            "baseline_upload_date": pendulum.datetime(year=2021, month=12, day=2),
-            "is_first_run": True,
-            "year_first_run": True,
-            "datafiles": [
-                Datafile(
-                    filename="pubmed22n0001.xml.gz",
-                    file_index=1,
-                    path_on_ftp=f"{self.baseline_path}pubmed22n0001.xml.gz",
-                    baseline=True,
-                    datafile_date=pendulum.datetime(year=2021, month=12, day=2),
-                ),
-                Datafile(
-                    filename="pubmed22n0002.xml.gz",
-                    file_index=2,
-                    path_on_ftp=f"{self.baseline_path}pubmed22n0002.xml.gz",
-                    baseline=True,
-                    datafile_date=pendulum.datetime(year=2021, month=12, day=2),
-                ),
-                Datafile(
-                    filename="pubmed22n0003.xml.gz",
-                    file_index=3,
-                    path_on_ftp=f"{self.updatefiles_path}pubmed22n0003.xml.gz",
-                    baseline=False,
-                    datafile_date=pendulum.datetime(year=2021, month=12, day=3),
-                ),
-                Datafile(
-                    filename="pubmed22n0004.xml.gz",
-                    file_index=4,
-                    path_on_ftp=f"{self.updatefiles_path}pubmed22n0004.xml.gz",
-                    baseline=False,
-                    datafile_date=pendulum.datetime(year=2021, month=12, day=4),
-                ),
-            ],
-            "md5hash_download": {
-                "pubmed22n0001.xml.gz": "73624a987b3572221fdd53ebefa1043f",
-                "pubmed22n0002.xml.gz": "24da7ffc1afb277044ee1ba8cddb4e74",
-                "pubmed22n0003.xml.gz": "d6da2c87390489d22cdeb6e046b77da1",
-                "pubmed22n0004.xml.gz": "83764fc19cd98d247dc5603ca65569e6",
-            },
-            "PMID_list": [
-                {"f0_": {"_field_1": "1", "_field_2": "1"}},
-                {"f0_": {"_field_1": "2", "_field_2": "2"}},
-                {"f0_": {"_field_1": "1", "_field_2": "30970"}},
-                {"f0_": {"_field_1": "1", "_field_2": "36519887"}},
-                {"f0_": {"_field_1": "1", "_field_2": "36519888"}},
-            ],
-        }
-        # Regular update for Pubmed. No new baseline files but download and process the updatefiles.
-        self.second_run = {
-            # Need to change the upload dates of the
-            "ftp_hosted_files": {
-                "pubmed/baseline/pubmed22n0001.xml.gz": pendulum.datetime(year=2021, month=12, day=2),
-                "pubmed/baseline/pubmed22n0002.xml.gz": pendulum.datetime(year=2021, month=12, day=2),
-                "pubmed/updatefiles/pubmed22n0003.xml.gz": pendulum.datetime(year=2021, month=12, day=3),
-                "pubmed/updatefiles/pubmed22n0004.xml.gz": pendulum.datetime(year=2021, month=12, day=4),
-                "pubmed/updatefiles/pubmed22n0005.xml.gz": pendulum.datetime(year=2021, month=12, day=14),
-            },
-            # Execution_date is a week before the workflow's actual run date.
-            "logical_date": pendulum.datetime(year=2021, month=12, day=12),
-            "release_interval_start": pendulum.datetime(year=2021, month=12, day=12),
-            "release_interval_end": pendulum.datetime(year=2021, month=12, day=19),
-            "baseline_upload_date": pendulum.datetime(year=2021, month=12, day=2),
-            "is_first_run": False,
-            "year_first_run": False,
-            "datafiles": [
-                Datafile(
-                    filename="pubmed22n0005.xml.gz",
-                    file_index=5,
-                    path_on_ftp=f"{self.updatefiles_path}pubmed22n0005.xml.gz",
-                    baseline=False,
-                    datafile_date=pendulum.datetime(year=2021, month=12, day=14),
-                ),
-            ],
-            "md5hash_download": {
-                "pubmed22n0005.xml.gz": "9c61c5b19f021cadfc57845d0d1dcbc9",
-            },
-            "update_tables": {
-                "additions": 2,
-                "deletions": 1,
-            },
-            "PMID_list": [
-                {"f0_": {"_field_1": "1", "_field_2": "1"}},
-                {"f0_": {"_field_1": "1", "_field_2": "2994179"}},
-                {"f0_": {"_field_1": "1", "_field_2": "2994180"}},
-                {"f0_": {"_field_1": "1", "_field_2": "30970"}},
-                {"f0_": {"_field_1": "1", "_field_2": "36519887"}},
-                {"f0_": {"_field_1": "1", "_field_2": "36519888"}},
-            ],
-        }
-        # New yearly run of Pubmed. Grab newly available baseline files and process them.
-        # This is to only make sure that the new yearly baseline is detected and will be downloaded and processed
-        # along with any updatefiles with in the release period.
-        self.third_run = {
-            "ftp_hosted_files": {
-                "pubmed/baseline/pubmed22n0001.xml.gz": pendulum.datetime(year=2022, month=12, day=8),
-                "pubmed/baseline/pubmed22n0002.xml.gz": pendulum.datetime(year=2022, month=12, day=8),
-                "pubmed/updatefiles/pubmed22n0003.xml.gz": pendulum.datetime(year=2022, month=12, day=9),
-                "pubmed/updatefiles/pubmed22n0004.xml.gz": pendulum.datetime(year=2022, month=12, day=10),
-                "pubmed/updatefiles/pubmed22n0005.xml.gz": pendulum.datetime(year=2022, month=12, day=21),
-            },
-            # Execution_date is a week before the workflow's actual run date.
-            "logical_date": pendulum.datetime(year=2022, month=12, day=4),
-            "release_interval_start": pendulum.datetime(year=2022, month=12, day=8),
-            "release_interval_end": pendulum.datetime(year=2022, month=12, day=11),
-            "baseline_upload_date": pendulum.datetime(year=2022, month=12, day=8),
-            "is_first_run": False,
-            "year_first_run": True,
-            "datafiles": [
-                Datafile(
-                    filename="pubmed22n0001.xml.gz",
-                    file_index=1,
-                    path_on_ftp=f"{self.baseline_path}pubmed22n0001.xml.gz",
-                    baseline=True,
-                    datafile_date=pendulum.datetime(year=2022, month=12, day=8),
-                ),
-                Datafile(
-                    filename="pubmed22n0002.xml.gz",
-                    file_index=2,
-                    path_on_ftp=f"{self.baseline_path}pubmed22n0002.xml.gz",
-                    baseline=True,
-                    datafile_date=pendulum.datetime(year=2022, month=12, day=8),
-                ),
-                Datafile(
-                    filename="pubmed22n0003.xml.gz",
-                    file_index=3,
-                    path_on_ftp=f"{self.updatefiles_path}pubmed22n0003.xml.gz",
-                    baseline=False,
-                    datafile_date=pendulum.datetime(year=2022, month=12, day=9),
-                ),
-                Datafile(
-                    filename="pubmed22n0004.xml.gz",
-                    file_index=4,
-                    path_on_ftp=f"{self.updatefiles_path}pubmed22n0004.xml.gz",
-                    baseline=False,
-                    datafile_date=pendulum.datetime(year=2022, month=12, day=10),
-                ),
-            ],
-            "PMID_list": [
-                {"f0_": {"_field_1": "1", "_field_2": "1"}},
-                {"f0_": {"_field_1": "2", "_field_2": "2"}},
-                {"f0_": {"_field_1": "1", "_field_2": "30970"}},
-                {"f0_": {"_field_1": "1", "_field_2": "36519887"}},
-                {"f0_": {"_field_1": "1", "_field_2": "36519888"}},
-            ],
-        }
 
     def test_dag_structure(self):
         """Test PubMed DAG structure."""
@@ -268,43 +277,43 @@ class TestPubMedTelescope(ObservatoryTestCase):
                     "short_circuit",
                     "create_snapshot",
                     "branch_baseline_or_updatefiles",
-                    "baseline.download",
-                    "baseline.upload_downloaded",
-                    "baseline.transform",
-                    "baseline.upload_transformed",
-                    "baseline.bq_load",
+                    "baseline.baseline_download",
+                    "baseline.baseline_upload_downloaded",
+                    "baseline.baseline_transform",
+                    "baseline.baseline_upload_transformed",
+                    "baseline.baseline_bq_load",
                     "branch_updatefiles_or_dataset_release",
-                    "updatefiles.download",
-                    "updatefiles.upload_downloaded",
-                    "updatefiles.transform",
-                    "updatefiles.merge_upserts_deletes",
-                    "updatefiles.upload_merged_upsert_records",
-                    "updatefiles.bq_load_upsert_table",
-                    "updatefiles.bq_upsert_records",
-                    "updatefiles.upload_merged_delete_records",
-                    "updatefiles.bq_load_delete_table",
-                    "updatefiles.bq_delete_records",
+                    "updatefiles.updatefiles_download",
+                    "updatefiles.updatefiles_upload_downloaded",
+                    "updatefiles.updatefiles_transform",
+                    "updatefiles.updatefiles_merge_upserts_deletes",
+                    "updatefiles.updatefiles_upload_merged_upsert_records",
+                    "updatefiles.updatefiles_bq_load_upsert_table",
+                    "updatefiles.updatefiles_bq_upsert_records",
+                    "updatefiles.updatefiles_upload_merged_delete_records",
+                    "updatefiles.updatefiles_bq_load_delete_table",
+                    "updatefiles.updatefiles_bq_delete_records",
                     "add_dataset_releases",
                     "cleanup_workflow",
                 ],
                 "short_circuit": ["create_snapshot"],
                 "create_snapshot": ["branch_baseline_or_updatefiles"],
-                "branch_baseline_or_updatefiles": ["baseline.download", "updatefiles.download"],
-                "baseline.download": ["baseline.upload_downloaded"],
-                "baseline.upload_downloaded": ["baseline.transform"],
-                "baseline.transform": ["baseline.upload_transformed"],
-                "baseline.upload_transformed": ["baseline.bq_load"],
+                "branch_baseline_or_updatefiles": ["baseline.baseline_download", "updatefiles.download"],
+                "baseline.download": ["baseline.baseline_upload_downloaded"],
+                "baseline.upload_downloaded": ["baseline.baseline_transform"],
+                "baseline.transform": ["baseline.baseline_upload_transformed"],
+                "baseline.upload_transformed": ["baseline.baseline_bq_load"],
                 "baseline.bq_load": ["branch_updatefiles_or_dataset_release"],
-                "branch_updatefiles_or_dataset_release": ["updatefiles.download", "add_dataset_releases"],
-                "updatefiles.download": ["updatefiles.upload_downloaded"],
-                "updatefiles.upload_downloaded": ["updatefiles.transform"],
-                "updatefiles.transform": ["updatefiles.merge_upserts_deletes"],
-                "updatefiles.merge_upserts_deletes": ["updatefiles.upload_merged_upsert_records"],
-                "updatefiles.upload_merged_upsert_records": ["updatefiles.bq_load_upsert_table"],
-                "updatefiles.bq_load_upsert_table": ["updatefiles.bq_upsert_records"],
-                "updatefiles.bq_upsert_records": ["updatefiles.upload_merged_delete_records"],
-                "updatefiles.upload_merged_delete_records": ["updatefiles.bq_load_delete_table"],
-                "updatefiles.bq_load_delete_table": ["updatefiles.bq_delete_records"],
+                "branch_updatefiles_or_dataset_release": ["updatefiles.updatefiles_download", "add_dataset_releases"],
+                "updatefiles.download": ["updatefiles.updatefiles_upload_downloaded"],
+                "updatefiles.upload_downloaded": ["updatefiles.updatefiles_transform"],
+                "updatefiles.transform": ["updatefiles.updatefiles_merge_upserts_deletes"],
+                "updatefiles.merge_upserts_deletes": ["updatefiles.updatefiles_upload_merged_upsert_records"],
+                "updatefiles.upload_merged_upsert_records": ["updatefiles.updatefiles_bq_load_upsert_table"],
+                "updatefiles.bq_load_upsert_table": ["updatefiles.updatefiles_bq_upsert_records"],
+                "updatefiles.bq_upsert_records": ["updatefiles.updatefiles_upload_merged_delete_records"],
+                "updatefiles.upload_merged_delete_records": ["updatefiles.updatefiles_bq_load_delete_table"],
+                "updatefiles.bq_load_delete_table": ["updatefiles.updatefiles_bq_delete_records"],
                 "updatefiles.bq_delete_records": ["add_dataset_releases"],
                 "add_dataset_releases": ["cleanup_workflow"],
                 "cleanup_workflow": ["dag_run_complete"],
@@ -321,7 +330,7 @@ class TestPubMedTelescope(ObservatoryTestCase):
                 Workflow(
                     dag_id=self.dag_id,
                     name="PubMed Telescope",
-                    class_name="academic_observatory_workflows.pubmed_telescope.pubmed_telescope.create_dag",
+                    class_name="academic_observatory_workflows.pubmed_telescope.pubmed_telescope",
                     cloud_workspace=self.fake_cloud_workspace,
                 )
             ]
@@ -332,6 +341,149 @@ class TestPubMedTelescope(ObservatoryTestCase):
             self.assert_dag_load(self.dag_id, dag_file)
 
     def test_telescope(self):
+        """Test the PubMed Telescope end to end"""
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        api_bq_dataset_id = env.add_dataset("pubmed_api")
+        bq_dataset_id = env.add_dataset("pubmed")
+
+        with env.create(task_logging=True):
+            clear_airflow_connections()
+            upsert_airflow_connection(**TestConfig.gke_cluster_connection)
+
+            # Make an http server to serve the test files
+            task_resources = {
+                "create_manifests": {"memory": "2G", "cpu": "2"},
+                "latest_modified_record_date": {"memory": "2G", "cpu": "2"},
+                "download": {"memory": "2G", "cpu": "2"},
+                "transform": {"memory": "2G", "cpu": "2"},
+                "upload_transformed": {"memory": "2G", "cpu": "2"},
+                "bq_load_main_table": {"memory": "2G", "cpu": "2"},
+                "bq_load_upsert_table": {"memory": "2G", "cpu": "2"},
+                "bq_load_delete_table": {"memory": "2G", "cpu": "2"},
+            }
+            test_params = DagParams(
+                dag_id="test_pubmed",
+                cloud_workspace=env.cloud_workspace,
+                bq_dataset_id=bq_dataset_id,
+                api_bq_dataset_id=api_bq_dataset_id,
+                max_workers=2,
+                retries=0,
+                max_download_retry=0,
+                ftp_port=21,
+                ftp_server_url=TestConfig.flask_service_url,
+                gke_image=TestConfig.gke_image,
+                gke_namespace=TestConfig.gke_namespace,
+                gke_volume_name=TestConfig.gke_volume_name,
+                gke_volume_path=TestConfig.gke_volume_path,
+                gke_resource_overrides=task_resources,
+                test_run=True,
+            )
+            api = DatasetAPI(bq_project_id=env.cloud_workspace.project_id, bq_dataset_id=test_params.api_bq_dataset_id)
+            api.seed_db()
+
+            # First execution
+            # Upload the test files to the test bucket
+            blob_names = []
+            file_paths = []
+            for record in OrcidTestRecords.first_run_records:
+                blob_names.append(f"{test_params.orcid_summaries_prefix}/{record['batch']}/{record['orcid']}.xml")
+                file_paths.append(record["path"])
+            success = gcs_upload_files(
+                bucket_name=test_params.orcid_bucket, file_paths=file_paths, blob_names=blob_names
+            )
+            self.assertTrue(success)
+
+            # Begin the run
+            first_execution_date = pendulum.datetime(year=2023, month=6, day=1)
+            with patch("academic_observatory_workflows.orcid_telescope.tasks.gcs_create_aws_transfer") as mock_transfer:
+                mock_transfer.return_value = (True, 1)  # Fake transfer success
+                dagrun = create_dag(dag_params=test_params).test(execution_date=first_execution_date)
+
+            # Make assertions
+            if not dagrun.state == "success":
+                raise RuntimeError("Frist Dagrun did not complete successfully")
+
+            # Main table
+            main_table_id = bq_table_id(
+                project_id=TestConfig.gcp_project_id, dataset_id=test_params.bq_dataset_id, table_id="orcid"
+            )
+            expected = load_and_parse_json(
+                OrcidTestRecords.first_run_main_table,
+                timestamp_fields=OrcidTestRecords.timestamp_fields,
+            )
+            self.assert_table_content(main_table_id, expected, primary_key="path")
+
+            # Should be one release in the API
+            api_releases = api.get_dataset_releases(dag_id=test_params.dag_id, entity_id="orcid")
+            self.assertEqual(len(api_releases), 1)
+
+            # Second execution
+            # Upload the second run test files to the bucket
+            blob_names = []
+            file_paths = []
+            for record in OrcidTestRecords.second_run_records:
+                blob_names.append(f"{test_params.orcid_summaries_prefix}/{record['batch']}/{record['orcid']}.xml")
+                file_paths.append(record["path"])
+            success = gcs_upload_files(
+                bucket_name=test_params.orcid_bucket, file_paths=file_paths, blob_names=blob_names
+            )
+            self.assertTrue(success)
+
+            # Begin the run
+            second_execution_date = pendulum.datetime(year=2023, month=6, day=8)
+            with patch("academic_observatory_workflows.orcid_telescope.tasks.gcs_create_aws_transfer") as mock_transfer:
+                mock_transfer.return_value = (True, 1)  # Fake transfer success
+                dagrun = create_dag(dag_params=test_params).test(execution_date=second_execution_date)
+
+            # Make assertions
+            if not dagrun.state == "success":
+                raise RuntimeError("Second Dagrun did not complete successfully")
+
+            # Snapshotted table
+            expected = load_and_parse_json(
+                OrcidTestRecords.first_run_main_table,
+                timestamp_fields=OrcidTestRecords.timestamp_fields,
+            )
+            snapshot_table_id = bq_sharded_table_id(
+                project_id=TestConfig.gcp_project_id,
+                dataset_id=test_params.bq_dataset_id,
+                table_name="orcid_snapshot",
+                date=pendulum.date(2023, 5, 28),
+            )
+            self.assert_table_content(snapshot_table_id, expected, primary_key="path")
+
+            # Main table
+            expected = load_and_parse_json(
+                OrcidTestRecords.second_run_main_table,
+                timestamp_fields=OrcidTestRecords.timestamp_fields,
+            )
+            self.assert_table_content(main_table_id, expected, primary_key="path")
+
+            # Delete table
+            table_id = bq_table_id(
+                project_id=TestConfig.gcp_project_id, dataset_id=test_params.bq_dataset_id, table_id="orcid_delete"
+            )
+            expected = load_and_parse_json(
+                OrcidTestRecords.delete_table,
+                timestamp_fields=OrcidTestRecords.timestamp_fields,
+            )
+            self.assert_table_content(table_id, expected, primary_key="id")
+
+            # Upsert table
+            table_id = bq_table_id(
+                project_id=TestConfig.gcp_project_id, dataset_id=test_params.bq_dataset_id, table_id="orcid_upsert"
+            )
+            expected = load_and_parse_json(
+                OrcidTestRecords.upsert_table,
+                timestamp_fields=OrcidTestRecords.timestamp_fields,
+            )
+            self.assert_table_content(table_id, expected, primary_key="path")
+
+            # Should be two releases in the API
+            api_releases = api.get_dataset_releases(dag_id=test_params.dag_id, entity_id="orcid")
+            self.assertEqual(len(api_releases), 2)
+
+    def test_telescope_old(self):
         """Test the PubMed Telescope end to end"""
 
         env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
