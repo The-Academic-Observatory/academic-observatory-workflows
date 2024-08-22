@@ -1,0 +1,164 @@
+[
+  {
+    "name": "id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Internal identifier for the citation"
+  },
+  {
+    "name": "created",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Date of item’s incorporation into the corpus"
+  },
+  {
+    "name": "updated",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Date of item’s most recent update in corpus"
+  },
+  {
+    "name": "repository",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": "Repository where cited data is stored",
+    "fields": [
+      {
+        "name": "title",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "external_id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ]
+  },
+  {
+    "name": "publisher",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": "Publisher for the article citing the data",
+    "fields": [
+      {
+        "name": "title",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "external_id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ]
+  },
+  {
+    "name": "journal",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": "Journal for the article citing the data",
+    "fields": [
+      {
+        "name": "title",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "external_id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ]
+  },
+  {
+    "name": "title",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Title of cited data"
+  },
+  {
+    "name": "objId",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "DOI of article where data is cited"
+  },
+  {
+    "name": "subjId",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "DOI or accession number of cited data"
+  },
+  {
+    "name": "publishedDate",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "Date when citing article was published"
+  },
+  {
+    "name": "accessionNumber",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Accession number of cited data"
+  },
+  {
+    "name": "doi",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "DOI of cited data"
+  },
+  {
+    "name": "relationTypeId",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Relation type in metadata between citation object and subject"
+  },
+  {
+    "name": "source",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Source where citation was harvested"
+  },
+  {
+    "name": "subjects",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "Subject information for dataset"
+  },
+  {
+    "name": "affiliations",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "Affiliation information for creator of cited data",
+    "fields": [
+      {
+        "name": "title",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "external_id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ]
+  },
+  {
+    "name": "funders",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": "Funding information for cited data",
+    "fields": [
+      {
+        "name": "title",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "external_id",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ]
+  }
+]
