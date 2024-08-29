@@ -55,7 +55,10 @@ class TestConfig:
 
     gcp_project_id: str = os.getenv("TEST_GCP_PROJECT_ID")
     gcp_data_location: str = os.getenv("TEST_GCP_DATA_LOCATION")
-    flask_service_url: str = "http://flask-app-service"
+    http_host_url: str = "host.minikube.internal"
+    http_port: int = 5080
+    ftp_host_url: str = "host.minikube.internal"
+    ftp_port: int = 5021
     gke_image: str = "academic-observatory:test"
     gke_namespace: str = "default"
     gke_volume_name: str = "ao-pvc"
