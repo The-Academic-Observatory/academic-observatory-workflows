@@ -6,6 +6,7 @@ from typing import List
 import pendulum
 
 from academic_observatory_workflows.pubmed_telescope.datafile import Datafile
+from academic_observatory_workflows.config import project_path
 from observatory_platform.google.gcs import gcs_blob_name_from_path
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.airflow.release import ChangefileRelease as DatafileRelease
@@ -124,6 +125,7 @@ class PubMedRelease(DatafileRelease):
             dag_id=dict_["dag_id"],
             run_id=dict_["run_id"],
             cloud_workspace=CloudWorkspace.from_dict(dict_["cloud_workspace"]),
+            bq_dataset_id=dict_["bq_dataset_id"],
             start_date=pendulum.from_timestamp(dict_["start_date"]),
             end_date=pendulum.from_timestamp(dict_["end_date"]),
             year_first_run=dict_["year_first_run"],
@@ -136,6 +138,7 @@ class PubMedRelease(DatafileRelease):
             dag_id=self.dag_id,
             run_id=self.run_id,
             cloud_workspace=self.cloud_workspace.to_dict(),
+            bq_dataset_id=self.bq_dataset_id,
             start_date=self.start_date.timestamp(),
             end_date=self.end_date.timestamp(),
             year_first_run=self.year_first_run,
