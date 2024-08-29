@@ -107,6 +107,7 @@ def fetch_release(
     dag_run: DagRun,
     data_interval_end: pendulum.DateTime,
     bq_dataset_id: str,
+    api_bq_dataset_id: str,
     ftp_server_url: str,
     ftp_port: int,
     reset_ftp_counter: int,
@@ -121,6 +122,7 @@ def fetch_release(
     :param dag_run: The DagRun object
     :param data_interval_end: The end of the data interval for this run
     :param bq_dataset_id: The bigquery datset ID
+    :param api_bq_dataset_id: The dataset ID of the bigquery API.
     :param ftp_server_url: The host of the pubmed data
     :param ftp_port: The port to access the ftp server
     :param reset_ftp_counter: After this many files, reset the ftp connection
@@ -139,17 +141,20 @@ def fetch_release(
     baseline_upload_date = pendulum.from_format(baseline_upload, "YYYYMMDDHHmmss")
     logging.info(f"baseline upload time: {baseline_first_file}, {baseline_upload_date}")
 
+    # Get the previous releases from our API datset
+    api = DatasetAPI(bq_project_id=cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
+    api.seed_db()
+
     # Make workflow re-download the baseline yearly data if the upload date does not match the date from the last release.
-    dataset_releases = get_dataset_releases(dag_id=dag_id, dataset_id=bq_dataset_id)
-    prev_release = get_latest_dataset_release(dataset_releases, "changefile_end_date")
     is_first_run = is_first_dag_run(dag_run)
     if is_first_run:
         year_first_run = True
     else:
+        prev_release = api.get_dataset_releases(dag_id=dag_id, entity_id="pubmed", limit=1)[0]
         prev_release_extra = prev_release.extra
         last_baseline_upload_date = pendulum.from_timestamp(prev_release_extra["baseline_upload_date"])
 
-        logging.info(f"prev_release: {prev_release}")
+        logging.info(f"prev_release: {prev_release.to_dict()}")
         logging.info(f"pre_release_extra: {prev_release_extra}")
         logging.info(f"Last baseline upload date: {last_baseline_upload_date}")
 
@@ -198,10 +203,11 @@ def fetch_release(
         )
 
     logging.info(f"data_interval_end from workflow: {data_interval_end}")
+    dataset_releases = api.get_dataset_releases(dag_id=dag_id, entity_id="pubmed")
     if is_first_run:
         if not len(dataset_releases) == 0:
             raise ValueError(
-                "fetch_releases: there should be no DatasetReleases stored in the Observatory API on the first DAG run."
+                "fetch_releases: there should be no Second stored in the Observatory API on the first DAG run."
             )
         release_interval_start = baseline_upload_date
     elif year_first_run:
@@ -219,19 +225,13 @@ def fetch_release(
 
     logging.info(f"Grabbing list of 'updatefiles' for this release: {release_interval_start} to {data_interval_end}")
 
+    # Every reset_ftp_counter number of files that are found, reinistialise the FTP connection.
     for i, file in enumerate(updatefiles_xml_gz):
-        # Every reset_ftp_counter number of files that are found, reinistialise the FTP connection.
         if i % reset_ftp_counter == 0 and i != 0:
-            # Close exisiting FTP connection.
             ftp_conn.close()
-
-            # Sleep for short time so that the server doesn't refuse the connection.
             time.sleep(random.randint(5, 10))
-
-            # Open a new FTP connection
             ftp_conn = login_to_ftp(host=ftp_server_url, port=ftp_port)
             ftp_conn.cwd(updatefiles_path)
-
             logging.info(
                 f"FTP connection to Pubmed's servers has been reset after {reset_ftp_counter} files to avoid issues."
             )
@@ -241,13 +241,12 @@ def fetch_release(
         file_upload_date = pendulum.from_format(file_upload_ftp, "YYYYMMDDHHmmss")
         if file_upload_date in pendulum.period(release_interval_start, data_interval_end):
             # Grab metadata and path of the file.
-            filename = file
             file_index = int(re.findall("\d{4}", file)[0])
             path_on_ftp = updatefiles_path + file
             datafile_date = file_upload_date
 
             datafile = Datafile(
-                filename=filename,
+                filename=file,
                 file_index=file_index,
                 baseline=False,
                 path_on_ftp=path_on_ftp,
@@ -257,7 +256,7 @@ def fetch_release(
 
     if not files_to_download:
         raise RuntimeError(
-            "List of files to download is empty. There should be at leaast 7 datafiles to download from Pubmed's FTP server."
+            "List of files to download is empty. There should be at least 7 datafiles to download from Pubmed's FTP server."
         )
 
     # Sort from oldest to newest using the file index
@@ -320,26 +319,26 @@ def short_circuit(release: dict) -> bool:
 def branch_baseline_or_updatefiles(release: dict) -> None:
     release = PubMedRelease.from_dict(release)
     if release.year_first_run:
-        return "baseline.download"
-    return "updatefiles.download"
+        return "baseline.baseline_download"
+    return "updatefiles.updatefiles_download"
 
 
 def branch_updatefiles_or_dataset_release(release: dict) -> None:
     release = PubMedRelease.from_dict(release)
     if release.updatefiles:
-        return "updatefiles.download"
+        return "updatefiles.updatefiles_download"
     return "add_dataset_releases"
 
 
 def baseline_download(
-    release: dict, ftp_server_url: str, ftp_port: str, reset_ftp_counter: int, max_download_retry: int
+    release: dict, ftp_server_url: str, ftp_port: str, reset_ftp_counter: int, max_download_attempt: int
 ) -> None:
     """Download files from PubMed's FTP server for this release.
     Unable to do this in parallel because their FTP server is not able to handle many requests at once.
 
     :param ftp_server_url: The host of the pubmed data
     :param ftp_port: The port to access the ftp server
-    :param max_download_retry: Fail after this many unsuccessful download attempts
+    :param max_download_attempt: Fail after this many unsuccessful download attempts
     """
 
     release = PubMedRelease.from_dict(release)
@@ -348,21 +347,21 @@ def baseline_download(
         ftp_server_url=ftp_server_url,
         ftp_port=ftp_port,
         reset_ftp_counter=reset_ftp_counter,
-        max_download_retry=max_download_retry,
+        max_download_attempt=max_download_attempt,
     )
     if not success:
         raise AirflowException("baseline.download: failed to download datafiles")
 
 
 def updatefiles_download(
-    release: dict, ftp_server_url: str, ftp_port: int, reset_ftp_counter: int, max_download_retry: int
+    release: dict, ftp_server_url: str, ftp_port: int, reset_ftp_counter: int, max_download_attempt: int
 ) -> None:
     """Download the updatefiles from PubMed's FTP server for this release.
     Unable to do this in parallel due to limitations of their FTP server.
 
     :param ftp_server_url: The host of the pubmed data
     :param ftp_port: The port to access the ftp server
-    :param max_download_retry: Fail after this many unsuccessful download attempts
+    :param max_download_attempt: Fail after this many unsuccessful download attempts
     """
 
     release = PubMedRelease.from_dict(release)
@@ -371,7 +370,7 @@ def updatefiles_download(
         ftp_server_url=ftp_server_url,
         ftp_port=ftp_port,
         reset_ftp_counter=reset_ftp_counter,
-        max_download_retry=max_download_retry,
+        max_download_attempt=max_download_attempt,
     )
     if not success:
         raise AirflowException("updatefiles.download: failed to download datafiles")
@@ -433,7 +432,7 @@ def baseline_transform(release: dict, max_processes: int) -> None:
                 assert filename, f"Unable to transform baseline file: {filename}"
 
 
-def updatefiles_transform(release: dict, max_processes: int) -> None:
+def updatefiles_transform(release: dict, max_processes: int) -> List[Dict]:
     """
     Transform the *.xml.gz files downloaded from PubMed's FTP server into usable json-like files for BigQuery import.
     This is a multithreaded and pulls the PubmedArticle records from the downloaded XML files.
@@ -466,9 +465,11 @@ def updatefiles_transform(release: dict, max_processes: int) -> None:
         updatefiles
     ), f"Number of updatefiles does not match the number of non baseline datafiles: {len(release.updatefiles)} vs {len(updatefiles)}"
 
-    ti: TaskInstance["ti"]
-    updatefile_list = [updatefile.to_dict() for updatefile in updatefiles]
-    ti.xcom_push(key="updatefile_list", value=updatefile_list)
+    return [updatefile.to_dict() for updatefile in updatefiles]
+
+    # ti: TaskInstance["ti"]
+    # updatefile_list = [updatefile.to_dict() for updatefile in updatefiles]
+    # ti.xcom_push(key="updatefile_list", value=updatefile_list)
 
 
 def baseline_upload_transformed(release: dict) -> None:
@@ -485,16 +486,14 @@ def baseline_upload_transformed(release: dict) -> None:
         raise AirflowException("baseline.upload_transformed: failed to upload files to cloud storage bucket")
 
 
-def updatefiles_merge_upserts_deletes(release: dict, max_processes: int) -> None:
+def updatefiles_merge_upserts_deletes(release: dict, updatefiles: List[Dict], max_processes: int) -> None:
     """Merge the upserts and deletes for this release period.
 
     :param max_processes: The number of processes to use for multithreading
     """
 
     release = PubMedRelease.from_dict(release)
-    ti: TaskInstance["ti"]
-    updatefile_list: list = ti.xcom_pull(key="updatefile_list")
-    updatefiles = [PubmedUpdatefile.from_dict(updatefile) for updatefile in updatefile_list]
+    updatefiles = [PubmedUpdatefile.from_dict(updatefile) for updatefile in updatefiles]
 
     # Merge records and return a list of what upserts to pull from the transformed updatefiles.
     upsert_index, deletes = merge_upserts_and_deletes(updatefiles)
@@ -663,11 +662,11 @@ def updatefiles_bq_load_delete_table(release: dict, delete_table_name: str, dele
     """
 
     release = PubMedRelease.from_dict(release)
-    logging.info(f"Uploading to table - {delete_table_id}")
 
     delete_table_id = bq.bq_table_id(
         project_id=release.cloud_workspace.project_id, dataset_id=release.bq_dataset_id, table_id=delete_table_name
     )
+    logging.info(f"Uploading to table - {delete_table_id}")
     success = bq.bq_load_table(
         uri=release.merged_delete_transfer_uri,
         table_id=delete_table_id,
@@ -678,9 +677,8 @@ def updatefiles_bq_load_delete_table(release: dict, delete_table_name: str, dele
         ignore_unknown_values=True,
     )
 
-    assert success, f"Unable to tranfer to table - {delete_table_id}"
     if not success:
-        raise AirflowException("")
+        raise AirflowException(f"Unable to tranfer to table - {delete_table_id}")
 
     expiry_date = pendulum.now().add(days=7)
     bq_update_table_expiration(delete_table_id, expiration_date=expiry_date)
@@ -742,8 +740,8 @@ def add_dataset_releases(release: dict, api_bq_dataset_id: str) -> None:
         changefile_end_date=release.end_date,
         extra={"baseline_upload_date": release.baseline_upload_date.timestamp()},
     )
-    logging.info(f"add_dataset_releases: dataset_release={dataset_release}")
-    api.post_dataset_release(dataset_release)
+    logging.info(f"add_dataset_releases: dataset_release={dataset_release.to_dict()}")
+    api.add_dataset_release(dataset_release)
 
 
 def cleanup_workflow(release: dict) -> None:
@@ -777,7 +775,7 @@ def create_snapshot(release: dict, bq_dataset_id: str, bq_main_table_name: str, 
             date=release.start_date,
         )
         main_table_id = bq.bq_table_id(
-            project_id=release.cloud_workspace.project_id, dataset_id=bq_dataset_id, table_name=bq_main_table_name
+            project_id=release.cloud_workspace.project_id, dataset_id=bq_dataset_id, table_id=bq_main_table_name
         )
         expiry_date = pendulum.now().add(days=snapshot_expiry_days)
         success = bq.bq_snapshot(
@@ -797,7 +795,7 @@ def download_datafiles(
     ftp_server_url: str,
     ftp_port: int,
     reset_ftp_counter: int,
-    max_download_retry: int,
+    max_download_attempt: int,
 ) -> bool:
     """Download a list of Pubmed datafiles from their FTP server.
 
@@ -806,12 +804,13 @@ def download_datafiles(
     :param ftp_port: Port for the FTP connection.
     :param reset_ftp_counter: After this number of files, reset the FTP connection
     to make sure that the connect is not reset by the host.
-    :param max_download_retry: Maximum number of retries for downloading one datafile before throwing an error.
+    :param max_download_attempt: Maximum number of retries for downloading one datafile before throwing an error.
 
     :return download_success: True if downloading all of the datafiles were successful.
     """
 
     # Open FTP connection
+    ftp_conn = login_to_ftp(host=ftp_server_url, port=ftp_port)
 
     for i, datafile in enumerate(datafile_list):
         # Pubmed's FTP server disconnects after an artbitary length of time.
@@ -835,7 +834,7 @@ def download_datafiles(
 
         download_attempt_count = 1
         download_success = False
-        while download_attempt_count <= max_download_retry and not download_success:
+        while download_attempt_count <= max_download_attempt and not download_success:
             logging.info(f"Downloading: {datafile.filename} Attempt: {download_attempt_count}")
             try:
                 # Download file
@@ -879,7 +878,7 @@ def download_datafiles(
         assert (
             download_success
         ), f"Unable to download {datafile.download_file_path} from PubMed's FTP server \
-                    {ftp_server_url} after {max_download_retry} tries."
+                    {ftp_server_url} after {max_download_attempt} tries."
 
     # Close the FTP connection after downloading the required files.
     ftp_conn.close()

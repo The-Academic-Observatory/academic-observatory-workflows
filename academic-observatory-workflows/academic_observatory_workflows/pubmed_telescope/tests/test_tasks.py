@@ -8,10 +8,11 @@ from Bio.Entrez.Parser import DictionaryElement, ListElement, StringElement
 from click.testing import CliRunner
 
 from academic_observatory_workflows.config import project_path
-from academic_observatory_workflows.pubmed_telescope.telescope import (
+from academic_observatory_workflows.pubmed_telescope.datafile import Datafile
+from academic_observatory_workflows.pubmed_telescope.release import PubMedRelease
+from academic_observatory_workflows.pubmed_telescope.tasks import (
     add_attributes,
     change_pubmed_list_structure,
-    Datafile,
     download_datafiles,
     load_datafile,
     merge_upserts_and_deletes,
@@ -27,7 +28,6 @@ from academic_observatory_workflows.pubmed_telescope.telescope import (
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
 from observatory_platform.sandbox.test_utils import SandboxTestCase, find_free_port
 from observatory_platform.sandbox.ftp_server import FtpServer
-from observatory_platform.airflow.workflow import ChangefileRelease
 
 FIXTURES_FOLDER = project_path("pubmed_telescope", "tests", "fixtures")
 
@@ -57,7 +57,7 @@ class TestPubMedUtils(SandboxTestCase):
             env = SandboxEnvironment(self.project_id, self.data_location, api_port=find_free_port())
 
             with env.create(task_logging=True):
-                changefile_release = ChangefileRelease(
+                changefile_release = PubMedRelease(
                     dag_id="pubmed_telescope",
                     run_id="something",
                     start_date=pendulum.now(),
@@ -204,7 +204,7 @@ class TestPubMedUtils(SandboxTestCase):
         env = SandboxEnvironment(self.project_id, self.data_location, api_port=find_free_port())
 
         with env.create(task_logging=True):
-            changefile_release = ChangefileRelease(
+            changefile_release = PubMedRelease(
                 dag_id="pubmed_telescope",
                 run_id="something",
                 start_date=pendulum.now(),
