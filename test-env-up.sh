@@ -17,8 +17,6 @@ elif [ "$1" != "--no-build" ] && [ "$1" != "--help" ] && [ ! -z "$1" ]; then
     usage
 fi
 
-# Check if minikube is running, if not, start it
-minikube status || minikube start --network=bridge --driver=docker
 
 # Authenticate minikube with gcp
 if [ -f .env ]; then # Source the .env file
@@ -32,11 +30,18 @@ if [ -z "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
   exit 1
 fi
 export GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS
+
+# Check if minikube is running, if not, start it
+minikube status || minikube start --ports=5080,5021 --extra-config=apiserver.service-node-port-range=30000-30009 --network=bridge
 minikube addons enable gcp-auth
+
+# Run the compose commands to spin up the servers
+docker compose -f test-env-compose.yaml build
+docker compose -f test-env-compose.yaml down
+docker compose -f test-env-compose.yaml up -d
 
 # Use the minikube docker daemon to build Academic Observatory workflows image
 eval $(minikube docker-env)
-docker build -t ao-tests-flask-app -f flask-Dockerfile .
 if [ "$1" != "--no-build" ]; then
     docker build --no-cache -t academic-observatory:test .
 fi
@@ -50,12 +55,8 @@ echo "########################### Minikube cluster running #####################
 echo "######################### Here are some useful commands ########################"
 echo ""
 echo "--Stop the deployment--"
-echo "minikube stop"
+echo "bash test-env-down.sh"
 echo ""
 echo "--Monitor the cluster--"
 echo "minikube dashboard"
-echo ""
-echo "--Debug flask routing--"
-echo "kubectl port-forward svc/flask-app-service 5000:80"
-echo ""
 echo "################################################################################"

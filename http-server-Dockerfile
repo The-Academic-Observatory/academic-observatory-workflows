@@ -1,0 +1,23 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+RUN pip install flask
+
+COPY . /app/
+
+# Make the fixtures folder
+RUN mkdir /app/fixtures
+
+# Crossref Metadata
+RUN mkdir /app/fixtures/crossref_metadata
+COPY academic-observatory-workflows/academic_observatory_workflows/crossref_metadata_telescope/tests/fixtures/crossref_metadata.json.tar.gz /app/fixtures/crossref_metadata
+
+# Expose the ports the app runs on
+EXPOSE 5080 
+
+# Print the routes for debugging 
+CMD [ "flask", "--app", "http-server.py", "routes" ]
+
+# Run the app
+CMD [ "python", "http-server.py" ]
