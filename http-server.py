@@ -10,7 +10,7 @@ FIXTURES_DIR = "/app/fixtures"
 @app.route("/snapshots/monthly/2022/12/all.json.tar.gz")
 def crossref_metadata_download():
 
-    filepath = os.path.join(FIXTURES_DIR, "crossref_metadata.json.tar.gz")
+    filepath = os.path.join(FIXTURES_DIR, "crossref_metadata/crossref_metadata.json.tar.gz")
     return send_file(filepath, as_attachment=True)
 
 
@@ -25,4 +25,6 @@ if __name__ == "__main__":
 
     Debug the available routes with `flask --app flask-app.py routes`
     """
-    app.run(host="0.0.0.0", port=5000, debug=True)
+
+    # Start the flask HTTP server
+    app.run(host="0.0.0.0", port=5080, debug=True)
