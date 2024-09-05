@@ -19,8 +19,8 @@ from unittest.mock import patch
 
 import pendulum
 
-from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.ror_telescope.telescope import create_dag, DagParams
+from academic_observatory_workflows.config import project_path, TestConfig
 from observatory_platform.dataset_api import DatasetAPI
 from observatory_platform.google.bigquery import bq_sharded_table_id
 from observatory_platform.files import load_jsonl
@@ -44,8 +44,6 @@ class TestRorTelescope(SandboxTestCase):
 
         super(TestRorTelescope, self).__init__(*args, **kwargs)
         self.dag_id = "ror"
-        self.project_id = os.getenv("TEST_GCP_PROJECT_ID")
-        self.data_location = os.getenv("TEST_GCP_DATA_LOCATION")
         self.ror_conceptrecid = 6347574
         self.server_port = find_free_port()
         self.mocked_files = [
@@ -116,7 +114,7 @@ class TestRorTelescope(SandboxTestCase):
         ]
         m_list_ror_records.return_value = ror_records
 
-        env = SandboxEnvironment(self.project_id, self.data_location)
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
         bq_dataset_id = env.add_dataset(prefix="ror")
         api_bq_dataset_id = env.add_dataset(prefix="ror_api")
         server = HttpServer(FIXTURES_FOLDER, port=self.server_port)
