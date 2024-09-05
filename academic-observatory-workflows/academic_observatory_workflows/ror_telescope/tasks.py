@@ -14,13 +14,15 @@ from airflow.exceptions import AirflowException
 from google.cloud.bigquery import SourceFormat
 
 from academic_observatory_workflows.ror_telescope.release import RorRelease
+from observatory_platform.dataset_api import DatasetRelease, DatasetAPI
 from observatory_platform.google.bigquery import bq_create_dataset, bq_find_schema, bq_load_table, bq_sharded_table_id
 from observatory_platform.files import clean_dir, list_files, save_jsonl_gz
 from observatory_platform.google.gcs import gcs_download_blob, gcs_upload_files
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.http_download import download_file
 from observatory_platform.url_utils import retry_get_url
-from observatory_platform.airflow.workflow import cleanup, set_task_state
+from observatory_platform.airflow.workflow import cleanup
+from observatory_platform.airflow.release import set_task_state
 
 
 def fetch_releases(
@@ -31,7 +33,16 @@ def fetch_releases(
     data_interval_end: pendulum.Datetime,
     ror_conceptrecid: int,
 ) -> List[dict]:
-    """Lists all ROR records and publishes their url, snapshot_date and checksum as an XCom."""
+    """Lists all ROR records and publishes their url, snapshot_date and checksum as an XCom.
+
+    :param dag_id: The ID of the dag
+    :param run_id: The ID of this dagrun
+    :param cloud_workspace: The CoudWorkspace object
+    :param data_interval_start: The start of the data interval for this dagrun
+    :param data_interval_end: The end of the data interval for this dagrun
+    :param ror_conceptrecid: the Zenodo conceptrecid for the ROR dataset.
+    :return: The list of releases
+    """
 
     records = list_ror_records(ror_conceptrecid, data_interval_start, data_interval_end)
     releases = []
@@ -55,9 +66,10 @@ def fetch_releases(
 def download(release: dict):
     """Task to download the ROR releases."""
 
-    # Download file from Zenodo
     release = RorRelease.from_dict(release)
     clean_dir(release.download_folder)
+
+    # Download file from Zenodo
     hash_algorithm, hash_checksum = release.checksum.split(":")
     success, _ = download_file(
         url=release.url,
@@ -145,7 +157,14 @@ def bq_load(
     table_description: str,
     schema_folder: str,
 ) -> None:
-    """Load the data into BigQuery."""
+    """Load the data into BigQuery.
+
+    :param bq_dataset_id: The bigquery dataset ID to load the data to
+    :param dataset_description: The description to give the bigquery dataset
+    :param bq_table_name: The table name to load into
+    :param table_description: The description to give the bigquery table
+    :param schema_folder: the folder containing the schema
+    """
 
     release = RorRelease.from_dict(release)
     bq_create_dataset(
@@ -171,15 +190,21 @@ def bq_load(
 
 
 def add_dataset_releases(release: dict, api_bq_dataset_id: str) -> None:
-    """Adds release information to API."""
+    """Adds release information to API.
+
+    :param api_bq_dataset_id: The dataset containing the api table"
+    """
 
     release = RorRelease.from_dict(release)
     api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
     api.seed_db()
+    now = pendulum.now()
     dataset_release = DatasetRelease(
         dag_id=release.dag_id,
-        dataset_id=api_bq_dataset_id,
+        entity_id="ror",
         dag_run_id=release.run_id,
+        created=now,
+        modified=now,
         snapshot_date=release.snapshot_date,
         data_interval_start=release.data_interval_start,
         data_interval_end=release.data_interval_end,
@@ -265,7 +290,7 @@ def is_lat_lng_valid(lat: Any, lng: Any) -> bool:
 
     :param lat: the latitude.
     :param lng: the longitude.
-    :return:
+    :return: whether the lat/long combination is valid
     """
 
     return math.fabs(lat) <= 90 and math.fabs(lng) <= 180

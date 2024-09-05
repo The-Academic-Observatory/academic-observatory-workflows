@@ -16,39 +16,20 @@
 
 from __future__ import annotations
 
-import json
-import logging
-import math
-import os
-import shutil
-import urllib.parse
-from typing import Any, Dict, List
-from zipfile import BadZipFile, ZipFile
+from typing import List
 
 import pendulum
 from airflow import DAG
 from airflow.decorators import dag, task, task_group
-from airflow.exceptions import AirflowException
-from google.cloud.bigquery import SourceFormat
 
 from academic_observatory_workflows.config import project_path
-from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory_platform.airflow import on_failure_callback
-from observatory_platform.dataset_api import make_observatory_api
-from observatory_platform.google.bigquery import bq_create_dataset, bq_find_schema, bq_load_table, bq_sharded_table_id
-from observatory_platform.config import AirflowConns
-from observatory_platform.files import clean_dir, list_files, save_jsonl_gz
-from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_download_blob, gcs_upload_files
+from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.airflow.tasks import check_dependencies
-from observatory_platform.utils.http_download import download_file
-from observatory_platform.url_utils import retry_get_url
-from observatory_platform.airflow.workflow import cleanup, set_task_state, SnapshotRelease
 
 
 class DagParams:
     """
-
     :param dag_id: the id of the DAG.
     :param cloud_workspace: the cloud workspace settings.
     :param bq_dataset_id: the BigQuery dataset id.
@@ -72,11 +53,10 @@ class DagParams:
         cloud_workspace: CloudWorkspace,
         bq_dataset_id: str = "ror",
         bq_table_name: str = "ror",
-        api_dataset_id: str = "ror",
+        api_bq_dataset_id: str = "ror",
         schema_folder: str = project_path("ror_telescope", "schema"),
         dataset_description: str = "The Research Organization Registry (ROR) database: https://ror.org/",
         table_description: str = "The Research Organization Registry (ROR) database: https://ror.org/",
-        observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         ror_conceptrecid: int = 6347574,
         start_date: pendulum.DateTime = pendulum.datetime(2021, 9, 1),
         schedule: str = "@weekly",
@@ -85,7 +65,20 @@ class DagParams:
         retries: int = 3,
     ):
 
-        pass
+        self.dag_id = dag_id
+        self.cloud_workspace = cloud_workspace
+        self.bq_dataset_id = bq_dataset_id
+        self.bq_table_name = bq_table_name
+        self.api_bq_dataset_id = api_bq_dataset_id
+        self.schema_folder = schema_folder
+        self.dataset_description = dataset_description
+        self.table_description = table_description
+        self.ror_conceptrecid = ror_conceptrecid
+        self.start_date = start_date
+        self.schedule = schedule
+        self.catchup = catchup
+        self.max_active_runs = max_active_runs
+        self.retries = retries
 
 
 def create_dag(dag_params: DagParams) -> DAG:
@@ -106,12 +99,19 @@ def create_dag(dag_params: DagParams) -> DAG:
     )
     def ror():
         @task
-        def fetch_releases(**context) -> List[dict]:
+        def fetch_releases(dag_params: DagParams, **context) -> List[dict]:
             """Lists all ROR records and publishes their url, snapshot_date and checksum as an XCom."""
 
             from academic_observatory_workflows.ror_telescope import tasks
 
-            return tasks.fetch_release()
+            return tasks.fetch_releases(
+                dag_id=dag_params.dag_id,
+                cloud_workspace=dag_params.cloud_workspace,
+                run_id=context["run_id"],
+                data_interval_start=context["data_interval_start"],
+                data_interval_end=context["data_interval_end"],
+                ror_conceptrecid=dag_params.ror_conceptrecid,
+            )
 
         @task_group(group_id="process_release")
         def process_release(data):
@@ -132,12 +132,19 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.transform(release)
 
             @task
-            def bq_load(release: dict, **context) -> None:
+            def bq_load(release: dict, dag_params: DagParams, **context) -> None:
                 """Load the data into BigQuery."""
 
                 from academic_observatory_workflows.ror_telescope import tasks
 
-                tasks.bq_load(release)
+                tasks.bq_load(
+                    release,
+                    bq_dataset_id=dag_params.bq_dataset_id,
+                    dataset_description=dag_params.dataset_description,
+                    bq_table_name=dag_params.bq_table_name,
+                    table_description=dag_params.table_description,
+                    schema_folder=dag_params.schema_folder,
+                )
 
             @task
             def add_dataset_releases(release: dict, **context) -> None:
@@ -145,7 +152,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 from academic_observatory_workflows.ror_telescope import tasks
 
-                tasks.add_dataset_releases(release)
+                tasks.add_dataset_releases(release, api_bq_dataset_id=dag_params.api_bq_dataset_id)
 
             @task
             def cleanup_workflow(release: dict, **context) -> None:
@@ -155,10 +162,16 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 tasks.cleanup_workflow(release)
 
-            (download(data) >> transform(data) >> bq_load(data) >> add_dataset_releases(data) >> cleanup_workflow(data))
+            (
+                download(data)
+                >> transform(data)
+                >> bq_load(data, dag_params)
+                >> add_dataset_releases(data)
+                >> cleanup_workflow(data)
+            )
 
-        check_task = check_dependencies(airflow_conns=[observatory_api_conn_id])
-        xcom_releases = fetch_releases()
+        check_task = check_dependencies()
+        xcom_releases = fetch_releases(dag_params)
         process_release_task_group = process_release.expand(data=xcom_releases)
 
         (check_task >> xcom_releases >> process_release_task_group)
