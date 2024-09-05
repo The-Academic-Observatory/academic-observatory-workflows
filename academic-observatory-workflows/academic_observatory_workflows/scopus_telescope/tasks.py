@@ -24,21 +24,18 @@ from concurrent.futures import as_completed, ThreadPoolExecutor
 from queue import Empty, Queue
 from threading import Event
 from time import sleep
-from typing import Any, Dict, List, Tuple, Type, Union
+from typing import Any, Dict, List, Tuple, Type, Union, Literal
 from urllib.parse import quote_plus
 
 import pendulum
 from airflow import AirflowException
-from airflow.decorators import dag, task
 from google.cloud.bigquery import SourceFormat, WriteDisposition
 from ratelimit import limits, sleep_and_retry
 
-from academic_observatory_workflows.config import project_path
-from observatory.api.client.model.dataset_release import DatasetRelease
-from observatory_platform.airflow import get_airflow_connection_password, on_failure_callback
-from observatory_platform.dataset_api import build_schedule, make_observatory_api
+from academic_observatory_workflows.scopus_telescope.release import ScopusRelease
+from observatory_platform.airflow.airflow import get_airflow_connection_password
+from observatory_platform.dataset_api import build_schedule, DatasetRelease, DatasetAPI
 from observatory_platform.google.bigquery import bq_create_dataset, bq_find_schema, bq_load_table, bq_sharded_table_id
-from observatory_platform.config import AirflowConns
 from observatory_platform.files import (
     clean_dir,
     get_as_list,
@@ -49,276 +46,167 @@ from observatory_platform.files import (
     write_to_file,
 )
 from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_blob_uri, gcs_download_blobs, gcs_upload_files
-from observatory_platform.airflow.workflow import CloudWorkspace
-from observatory_platform.airflow.tasks import check_dependencies
+from observatory_platform.airflow.workflow import CloudWorkspace, cleanup
 from observatory_platform.url_utils import get_user_agent
-from observatory_platform.airflow.workflow import (
-    cleanup,
-    make_snapshot_date,
-    SnapshotRelease,
-)
 
 
-class ScopusRelease(SnapshotRelease):
-    def __init__(
-        self,
-        *,
-        dag_id: str,
-        run_id: str,
-        snapshot_date: pendulum.DateTime,
-    ):
-        """Construct a WebOfScienceRelease instance.
+def fetch_release(
+    dag_id: str, cloud_workspace: CloudWorkspace, run_id: str, data_interval_start: str, data_interval_end: str
+) -> dict:
+    """Fetch the release"""
 
-        :param dag_id: The DAG ID.
-        :param run_id: The DAG run ID.
-        :param snapshot_date: Release date.
-        """
-
-        super().__init__(
-            dag_id=dag_id,
-            run_id=run_id,
-            snapshot_date=snapshot_date,
-        )
-        self.download_file_regex = r".*\.json"
-        self.transform_file_name = "scopus.jsonl.gz"
-        self.transform_file_path = os.path.join(self.transform_folder, self.transform_file_name)
-
-    @property
-    def transform_blob_name(self):
-        return gcs_blob_name_from_path(self.transform_file_path)
-
-    @staticmethod
-    def from_dict(dict_: dict):
-        dag_id = dict_["dag_id"]
-        run_id = dict_["run_id"]
-        snapshot_date = pendulum.parse(dict_["snapshot_date"])
-        return ScopusRelease(
-            dag_id=dag_id,
-            run_id=run_id,
-            snapshot_date=snapshot_date,
-        )
-
-    def to_dict(self) -> dict:
-        return dict(
-            dag_id=self.dag_id,
-            run_id=self.run_id,
-            snapshot_date=self.snapshot_date.to_datetime_string(),
-        )
-
-
-def create_dag(
-    *,
-    dag_id: str,
-    cloud_workspace: CloudWorkspace,
-    institution_ids: List[str],
-    scopus_conn_ids: List[str],
-    view: str = "STANDARD",
-    earliest_date: pendulum.DateTime = pendulum.datetime(1800, 1, 1),
-    bq_dataset_id: str = "scopus",
-    bq_table_name: str = "scopus",
-    api_dataset_id: str = "scopus",
-    schema_folder: str = project_path("scopus_telescope", "schema"),
-    dataset_description: str = "The Scopus citation database: https://www.scopus.com",
-    table_description: str = "The Scopus citation database: https://www.scopus.com",
-    observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
-    start_date: pendulum.DateTime = pendulum.datetime(2018, 5, 14),
-    schedule: str = "@monthly",
-    max_active_runs: int = 1,
-    retries: int = 3,
-):
-    """Scopus telescope.
-    :param dag_id: the id of the DAG.
-    :param cloud_workspace: the cloud workspace settings.
-    :param institution_ids: list of institution IDs to use for the Scopus search query.
-    :param scopus_conn_ids: list of Scopus Airflow Connection IDs.
-    :param view: The view type. Standard or complete. See https://dev.elsevier.com/sc_search_views.html
-    :param earliest_date: earliest date to query for results.
-    :param bq_dataset_id: the BigQuery dataset id.
-    :param bq_table_name: the BigQuery table name.
-    :param api_dataset_id: the Dataset ID to use when storing releases.
-    :param schema_folder: the SQL schema path.
-    :param dataset_description: description for the BigQuery dataset.
-    :param table_description: description for the BigQuery table.
-    :param observatory_api_conn_id: the Observatory API connection key.
-    :param start_date: the start date of the DAG.
-    :param schedule: the schedule interval of the DAG.
-    :param max_active_runs: the maximum number of DAG runs that can be run at once.
-    :param retries: the number of times to retry a task.
-    """
-
-    @dag(
+    return ScopusRelease(
         dag_id=dag_id,
-        start_date=start_date,
-        schedule=schedule,
-        catchup=False,
-        max_active_runs=max_active_runs,
-        tags=["academic-observatory"],
-        default_args={
-            "owner": "airflow",
-            "on_failure_callback": on_failure_callback,
-            "retries": retries,
-        },
-    )
-    def scopus():
-        @task
-        def fetch_release(**context) -> dict:
-            """Fetch the release"""
+        cloud_workspace=cloud_workspace,
+        run_id=run_id,
+        snapshot_date=data_interval_start.end_of("month"),
+        data_interval_start=data_interval_start,
+        data_interval_end=data_interval_end,
+    ).to_dict()
 
-            snapshot_date = make_snapshot_date(**context)
-            return ScopusRelease(
-                dag_id=dag_id,
-                run_id=context["run_id"],
-                snapshot_date=snapshot_date,
-            ).to_dict()
 
-        @task
-        def download(release: dict, **context):
-            """Download snapshot from SCOPUS for the given institution."""
+def download(
+    release: dict,
+    earliest_date: pendulum.DateTime,
+    scopus_conn_ids: List[str],
+    view: Literal["standard", "complete"],
+    institution_ids: List[str],
+):
+    """Download snapshot from SCOPUS for the given institution."""
 
-            release = ScopusRelease.from_dict(release)
+    release = ScopusRelease.from_dict(release)
 
-            # Download data
-            clean_dir(release.download_folder)
-            scopus_schedule = build_schedule(earliest_date, release.snapshot_date)
-            taskq = Queue()
-            for period in scopus_schedule:
-                taskq.put(period)
+    # Download data
+    clean_dir(release.download_folder)
+    scopus_schedule = build_schedule(earliest_date, release.snapshot_date)
+    taskq = Queue()
+    for period in scopus_schedule:
+        taskq.put(period)
 
-            workers = list()
-            api_keys = [get_airflow_connection_password(conn) for conn in scopus_conn_ids]
-            for i, key in enumerate(api_keys):
-                worker = ScopusUtilWorker(
-                    client_id=i,
-                    client=ScopusClient(api_key=key, view=view),
-                    quota_reset_date=release.snapshot_date,
-                    quota_remaining=ScopusUtilWorker.DEFAULT_KEY_QUOTA,
-                )
-                workers.append(worker)
-
-            ScopusUtility.download_parallel(
-                workers=workers,
-                taskq=taskq,
-                conn=dag_id,
-                institution_ids=institution_ids,
-                download_dir=release.download_folder,
-            )
-
-            # Upload to Cloud Storage
-            file_list = list_files(release.download_folder, release.download_file_regex)
-            success = gcs_upload_files(bucket_name=cloud_workspace.download_bucket, file_paths=file_list)
-            if not success:
-                raise AirflowException(f"Error uploading files to Cloud Storage: {file_list}")
-
-        @task
-        def transform(release: dict, **context):
-            """Transform the data into database format."""
-
-            release = ScopusRelease.from_dict(release)
-
-            # Download data
-            bucket_name = cloud_workspace.download_bucket
-            prefix = gcs_blob_name_from_path(release.download_folder)
-            success = gcs_download_blobs(
-                bucket_name=bucket_name,
-                prefix=prefix,
-                destination_path=release.download_folder,
-            )
-            if not success:
-                raise AirflowException(f"Error downloading files from bucket: {bucket_name}/{prefix}")
-
-            # Transform
-            clean_dir(release.transform_folder)
-            data = []
-            file_list = list_files(release.download_folder, release.download_file_regex)
-            for file in file_list:
-                records = json.loads(load_file(file))
-                data += transform_to_db_format(
-                    records=records, snapshot_date=release.snapshot_date, institution_ids=institution_ids
-                )
-            save_jsonl_gz(release.transform_file_path, data)
-
-            # Upload
-            success = gcs_upload_files(
-                bucket_name=cloud_workspace.transform_bucket, file_paths=[release.transform_file_path]
-            )
-            if not success:
-                raise AirflowException("")
-
-        @task
-        def bq_load(release: dict, **context):
-            """Task to load each transformed release to BigQuery.
-            The table_id is set to the file name without the extension."""
-
-            release = ScopusRelease.from_dict(release)
-            bq_create_dataset(
-                project_id=cloud_workspace.output_project_id,
-                dataset_id=bq_dataset_id,
-                location=cloud_workspace.data_location,
-                description=dataset_description,
-            )
-
-            uri = gcs_blob_uri(cloud_workspace.transform_bucket, gcs_blob_name_from_path(release.transform_file_path))
-            schema_file_path = bq_find_schema(
-                path=schema_folder, table_name=bq_table_name, release_date=release.snapshot_date
-            )
-            table_id = bq_sharded_table_id(
-                cloud_workspace.output_project_id, bq_dataset_id, bq_table_name, release.snapshot_date
-            )
-            success = bq_load_table(
-                uri=uri,
-                table_id=table_id,
-                schema_file_path=schema_file_path,
-                source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
-                table_description=table_description,
-                write_disposition=WriteDisposition.WRITE_APPEND,
-                ignore_unknown_values=True,
-            )
-            if not success:
-                raise AirflowException(f"Error loading BigQuery table")
-
-        @task
-        def add_dataset_release(release: dict, **context) -> None:
-            """Adds release information to API."""
-
-            release = ScopusRelease.from_dict(release)
-            dataset_release = DatasetRelease(
-                dag_id=dag_id,
-                dataset_id=api_dataset_id,
-                dag_run_id=release.run_id,
-                snapshot_date=release.snapshot_date,
-                data_interval_start=context["data_interval_start"],
-                data_interval_end=context["data_interval_end"],
-            )
-            api = make_observatory_api(observatory_api_conn_id=observatory_api_conn_id)
-            api.post_dataset_release(dataset_release)
-
-        @task
-        def cleanup_workflow(release: dict, **context) -> None:
-            """Delete all files, folders and XComs associated with this release."""
-
-            release = ScopusRelease.from_dict(release)
-            cleanup(dag_id=dag_id, execution_date=context["logical_date"], workflow_folder=release.workflow_folder)
-
-        # Define task connections
-        task_check_dependencies = check_dependencies(airflow_conns=[observatory_api_conn_id] + scopus_conn_ids)
-        xcom_release = fetch_release()
-        task_download = download(xcom_release)
-        task_transform = transform(xcom_release)
-        task_bq_load = bq_load(xcom_release)
-        task_add_dataset_release = add_dataset_release(xcom_release)
-        task_cleanup_workflow = cleanup_workflow(xcom_release)
-
-        (
-            task_check_dependencies
-            >> xcom_release
-            >> task_download
-            >> task_transform
-            >> task_bq_load
-            >> task_add_dataset_release
-            >> task_cleanup_workflow
+    workers = list()
+    api_keys = [get_airflow_connection_password(conn) for conn in scopus_conn_ids]
+    for i, key in enumerate(api_keys):
+        worker = ScopusUtilWorker(
+            client_id=i,
+            client=ScopusClient(api_key=key, view=view),
+            quota_reset_date=release.snapshot_date,
+            quota_remaining=ScopusUtilWorker.DEFAULT_KEY_QUOTA,
         )
+        workers.append(worker)
 
-    return scopus()
+    ScopusUtility.download_parallel(
+        workers=workers,
+        taskq=taskq,
+        conn=release.dag_id,
+        institution_ids=institution_ids,
+        download_dir=release.download_folder,
+    )
+
+    # Upload to Cloud Storage
+    file_list = list_files(release.download_folder, release.download_file_regex)
+    success = gcs_upload_files(bucket_name=release.cloud_workspace.download_bucket, file_paths=file_list)
+    if not success:
+        raise AirflowException(f"Error uploading files to Cloud Storage: {file_list}")
+
+
+def transform(release: dict, institution_ids: List[str]):
+    """Transform the data into database format."""
+
+    release = ScopusRelease.from_dict(release)
+
+    # Download data
+    bucket_name = release.cloud_workspace.download_bucket
+    prefix = gcs_blob_name_from_path(release.download_folder)
+    success = gcs_download_blobs(
+        bucket_name=bucket_name,
+        prefix=prefix,
+        destination_path=release.download_folder,
+    )
+    if not success:
+        raise AirflowException(f"Error downloading files from bucket: {bucket_name}/{prefix}")
+
+    # Transform
+    clean_dir(release.transform_folder)
+    data = []
+    file_list = list_files(release.download_folder, release.download_file_regex)
+    for file in file_list:
+        records = json.loads(load_file(file))
+        data += transform_to_db_format(
+            records=records, snapshot_date=release.snapshot_date, institution_ids=institution_ids
+        )
+    save_jsonl_gz(release.transform_file_path, data)
+
+    # Upload
+    success = gcs_upload_files(
+        bucket_name=release.cloud_workspace.transform_bucket, file_paths=[release.transform_file_path]
+    )
+    if not success:
+        raise AirflowException("")
+
+
+def bq_load(
+    release: dict,
+    bq_dataset_id: str,
+    dataset_description: str,
+    bq_table_name: str,
+    table_description: str,
+    schema_folder: str,
+):
+    """Task to load each transformed release to BigQuery.
+    The table_id is set to the file name without the extension."""
+
+    release = ScopusRelease.from_dict(release)
+    bq_create_dataset(
+        project_id=release.cloud_workspace.output_project_id,
+        dataset_id=bq_dataset_id,
+        location=release.cloud_workspace.data_location,
+        description=dataset_description,
+    )
+
+    uri = gcs_blob_uri(release.cloud_workspace.transform_bucket, gcs_blob_name_from_path(release.transform_file_path))
+    schema_file_path = bq_find_schema(path=schema_folder, table_name=bq_table_name, release_date=release.snapshot_date)
+    table_id = bq_sharded_table_id(
+        release.cloud_workspace.output_project_id, bq_dataset_id, bq_table_name, release.snapshot_date
+    )
+    success = bq_load_table(
+        uri=uri,
+        table_id=table_id,
+        schema_file_path=schema_file_path,
+        source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
+        table_description=table_description,
+        write_disposition=WriteDisposition.WRITE_APPEND,
+        ignore_unknown_values=True,
+    )
+    if not success:
+        raise AirflowException(f"Error loading BigQuery table")
+
+
+def add_dataset_release(release: dict, api_bq_dataset_id: str) -> None:
+    """Adds release information to API."""
+
+    release = ScopusRelease.from_dict(release)
+
+    api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
+    api.seed_db()
+    now = pendulum.now()
+    dataset_release = DatasetRelease(
+        dag_id=release.dag_id,
+        entity_id="scopus",
+        dag_run_id=release.run_id,
+        created=now,
+        modified=now,
+        snapshot_date=release.snapshot_date,
+        data_interval_start=release.data_interval_start,
+        data_interval_end=release.data_interval_end,
+    )
+    api.add_dataset_release(dataset_release)
+
+
+def cleanup_workflow(release: dict) -> None:
+    """Delete all files, folders and XComs associated with this release."""
+
+    release = ScopusRelease.from_dict(release)
+    cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
 
 
 def transform_to_db_format(records: List[dict], snapshot_date: pendulum.Date, institution_ids: List[str]) -> List[dict]:
@@ -501,7 +389,7 @@ class ScopusUtility:
         tail_offset = -4  # To remove ' or ' and ' OR ' from tail of string
 
         organisations = str()
-        for i, inst in enumerate(institution_ids):
+        for inst in institution_ids:
             organisations += f"AF-ID({inst}) OR "
         organisations = organisations[:tail_offset]
 
