@@ -35,7 +35,7 @@ class DagParams:
     :param earliest_date: earliest date to query for results.
     :param bq_dataset_id: the BigQuery dataset id.
     :param bq_table_name: the BigQuery table name.
-    :param api_dataset_id: the Dataset ID to use when storing releases.
+    :param api_bq_dataset_id: the Dataset ID to use when storing releases.
     :param schema_folder: the SQL schema path.
     :param dataset_description: description for the BigQuery dataset.
     :param table_description: description for the BigQuery table.
@@ -57,7 +57,7 @@ class DagParams:
         earliest_date: pendulum.DateTime = pendulum.datetime(1800, 1, 1),
         bq_dataset_id: str = "scopus",
         bq_table_name: str = "scopus",
-        api_dataset_id: str = "scopus",
+        api_bq_dataset_id: str = "scopus",
         schema_folder: str = project_path("scopus_telescope", "schema"),
         dataset_description: str = "The Scopus citation database: https://www.scopus.com",
         table_description: str = "The Scopus citation database: https://www.scopus.com",
@@ -74,7 +74,7 @@ class DagParams:
         self.earliest_date = earliest_date
         self.bq_dataset_id = bq_dataset_id
         self.bq_table_name = bq_table_name
-        self.api_dataset_id = api_dataset_id
+        self.api_bq_dataset_id = api_bq_dataset_id
         self.schema_folder = schema_folder
         self.dataset_description = dataset_description
         self.table_description = table_description
@@ -159,7 +159,7 @@ def create_dag(dag_params: DagParams):
 
             from academic_observatory_workflows.scopus_telescope import tasks
 
-            tasks.add_dataset_release(release, api_bq_dataset_id=dag_params.api_dataset_id)
+            tasks.add_dataset_release(release, api_bq_dataset_id=dag_params.api_bq_dataset_id)
 
         @task
         def cleanup_workflow(release: dict, **context) -> None:
