@@ -59,7 +59,7 @@ def fetch_release(
         dag_id=dag_id,
         cloud_workspace=cloud_workspace,
         run_id=run_id,
-        snapshot_date=data_interval_start.end_of("month"),
+        snapshot_date=data_interval_end,
         data_interval_start=data_interval_start,
         data_interval_end=data_interval_end,
     ).to_dict()

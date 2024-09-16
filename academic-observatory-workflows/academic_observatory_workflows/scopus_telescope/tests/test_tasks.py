@@ -42,7 +42,7 @@ class TestScopusUtility(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.Queue.empty")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.Queue.empty")
     def test_clear_task_queue(self, m_empty):
         m_empty.side_effect = [False, False, True]
 
@@ -93,7 +93,7 @@ class TestScopusClient(unittest.TestCase):
 
     def test_scopus_client_user_agent(self):
         """Test to make sure the user agent string is set correctly."""
-        with patch("observatory.platform.utils.url_utils.metadata", return_value=TestScopusClient.MockMetadata):
+        with patch("observatory_platform.url_utils.metadata", return_value=TestScopusClient.MockMetadata):
             obj = ScopusClient(api_key="")
             generated_ua = obj._headers["User-Agent"]
             self.assertEqual(generated_ua, get_user_agent(package_name="academic_observatory_workflows"))
@@ -120,16 +120,16 @@ class TestScopusClient(unittest.TestCase):
         links = [{}]
         self.assertEqual(ScopusClient.get_next_page_url(links), None)
 
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.Request")
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.urlopen")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.Request")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.urlopen")
     def test_retrieve_exceeded(self, m_urlopen, m_request):
         m_urlopen.return_value = MockUrlResponse(code=429)
 
         client = ScopusClient(api_key=self.api_key)
         self.assertRaises(AirflowException, client.retrieve, self.query)
 
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.Request")
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.urlopen")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.Request")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.urlopen")
     def test_retrieve_noresults(self, m_urlopen, m_request):
         m_urlopen.return_value = MockUrlResponse(code=200, response=b"{}")
 
@@ -139,9 +139,9 @@ class TestScopusClient(unittest.TestCase):
         self.assertEqual(remaining, 0)
         self.assertEqual(reset, 10)
 
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.json.loads")
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.Request")
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.urlopen")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.json.loads")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.Request")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.urlopen")
     def test_retrieve_totalresults_zero(self, m_urlopen, m_request, m_json):
         m_urlopen.return_value = MockUrlResponse(code=200, response=b"{}")
 
@@ -158,16 +158,16 @@ class TestScopusClient(unittest.TestCase):
         self.assertEqual(remaining, 0)
         self.assertEqual(reset, 10)
 
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.Request")
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.urlopen")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.Request")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.urlopen")
     def test_retrieve_unexpected_httpcode(self, m_urlopen, m_request):
         m_urlopen.return_value = MockUrlResponse(code=403, response=b"{}")
 
         client = ScopusClient(api_key=self.api_key)
         self.assertRaises(AirflowException, client.retrieve, self.query)
 
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.Request")
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.urlopen")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.Request")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.urlopen")
     def test_retrieve_max_results_exceeded(self, m_urlopen, m_request):
         response = b'{"search-results": {"entry": [1], "opensearch:totalResults": 5001}}'
 
@@ -175,8 +175,8 @@ class TestScopusClient(unittest.TestCase):
         client = ScopusClient(api_key=self.api_key)
         self.assertRaises(AirflowException, client.retrieve, self.query)
 
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.Request")
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.urlopen")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.Request")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.urlopen")
     def test_retrieve_no_next_url(self, m_urlopen, m_request):
         response = b'{"search-results": {"entry": [1], "opensearch:totalResults": 2, "link": []}}'
 
@@ -184,8 +184,8 @@ class TestScopusClient(unittest.TestCase):
         client = ScopusClient(api_key=self.api_key)
         self.assertRaises(AirflowException, client.retrieve, self.query)
 
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.Request")
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.urllib.request.urlopen")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.Request")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.urllib.request.urlopen")
     def test_retrieve(self, m_urlopen, m_request):
         response = b'{"search-results": {"entry": [1], "opensearch:totalResults": 2, "link": [{"@ref": "next", "@href": "someurl"}]}}'
 
@@ -222,7 +222,7 @@ class TestScopusUtilWorker(unittest.TestCase):
         self.assertEqual(results, "[{}, {}]")
 
     @time_machine.travel(datetime.datetime(2021, 2, 1))
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.write_to_file")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.write_to_file")
     def test_download_period(self, m_write_file):
         conn = "conn_id"
         worker = MagicMock()
@@ -243,14 +243,14 @@ class TestScopusUtilWorker(unittest.TestCase):
     @time_machine.travel(datetime.datetime(2021, 2, 2))
     def test_sleep_if_needed_needed(self):
         reset_date = pendulum.datetime(2021, 2, 2, 0, 0, 1)
-        with patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.logging.info") as m_log:
+        with patch("academic_observatory_workflows.scopus_telescope.tasks.logging.info") as m_log:
             ScopusUtility.sleep_if_needed(reset_date=reset_date, conn="conn")
             self.assertEqual(m_log.call_count, 1)
 
     @time_machine.travel(datetime.datetime(2021, 2, 2))
     def test_sleep_if_needed_not_needed(self):
         reset_date = pendulum.datetime(2021, 2, 1)
-        with patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.logging.info") as m_log:
+        with patch("academic_observatory_workflows.scopus_telescope.tasks.logging.info") as m_log:
             ScopusUtility.sleep_if_needed(reset_date=reset_date, conn="conn")
             self.assertEqual(m_log.call_count, 0)
 
@@ -295,7 +295,7 @@ class TestScopusUtilWorker(unittest.TestCase):
         )
         thread.join()
 
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.ScopusUtility.download_period")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.ScopusUtility.download_period")
     def test_download_worker_download_exit(self, m_download):
         def trigger_exit(event):
             now = pendulum.now("UTC")
@@ -327,7 +327,7 @@ class TestScopusUtilWorker(unittest.TestCase):
         )
         thread.join()
 
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.ScopusUtility.download_period")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.ScopusUtility.download_period")
     def test_download_worker_download_quota_exceed_retry_exit(self, m_download):
         def trigger_exit(event):
             now = pendulum.now("UTC")
@@ -363,7 +363,7 @@ class TestScopusUtilWorker(unittest.TestCase):
         )
         thread.join()
 
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.ScopusUtility.download_period")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.ScopusUtility.download_period")
     def test_download_worker_download_uncaught_exception(self, m_download):
         def trigger_exit(event):
             now = pendulum.now("UTC")
@@ -399,7 +399,7 @@ class TestScopusUtilWorker(unittest.TestCase):
         )
         thread.join()
 
-    @patch("academic_observatory_workflows.scopus_telescope.scopus_telescope.ScopusUtility.download_period")
+    @patch("academic_observatory_workflows.scopus_telescope.tasks.ScopusUtility.download_period")
     def test_download_parallel(self, m_download):
         now = pendulum.now("UTC")
         conn = "conn"
