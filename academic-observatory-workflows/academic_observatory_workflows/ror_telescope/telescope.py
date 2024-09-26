@@ -23,6 +23,7 @@ from airflow import DAG
 from airflow.decorators import dag, task, task_group
 
 from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.ror_telescope import tasks
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.airflow.tasks import check_dependencies
@@ -102,8 +103,6 @@ def create_dag(dag_params: DagParams) -> DAG:
         def fetch_releases(dag_params: DagParams, **context) -> List[dict]:
             """Lists all ROR records and publishes their url, snapshot_date and checksum as an XCom."""
 
-            from academic_observatory_workflows.ror_telescope import tasks
-
             return tasks.fetch_releases(
                 dag_id=dag_params.dag_id,
                 cloud_workspace=dag_params.cloud_workspace,
@@ -119,23 +118,17 @@ def create_dag(dag_params: DagParams) -> DAG:
             def download(release: dict, **context):
                 """Task to download the ROR releases."""
 
-                from academic_observatory_workflows.ror_telescope import tasks
-
                 tasks.download(release)
 
             @task
             def transform(release: dict, **context):
                 """Task to transform the ROR releases."""
 
-                from academic_observatory_workflows.ror_telescope import tasks
-
                 tasks.transform(release)
 
             @task
             def bq_load(release: dict, dag_params: DagParams, **context) -> None:
                 """Load the data into BigQuery."""
-
-                from academic_observatory_workflows.ror_telescope import tasks
 
                 tasks.bq_load(
                     release,
@@ -150,15 +143,11 @@ def create_dag(dag_params: DagParams) -> DAG:
             def add_dataset_releases(release: dict, **context) -> None:
                 """Adds release information to API."""
 
-                from academic_observatory_workflows.ror_telescope import tasks
-
                 tasks.add_dataset_releases(release, api_bq_dataset_id=dag_params.api_bq_dataset_id)
 
             @task
             def cleanup_workflow(release: dict, **context) -> None:
                 """Delete all files, folders and XComs associated with this release."""
-
-                from academic_observatory_workflows.ror_telescope import tasks
 
                 tasks.cleanup_workflow(release)
 

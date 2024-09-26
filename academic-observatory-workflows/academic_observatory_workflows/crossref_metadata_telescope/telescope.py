@@ -27,6 +27,7 @@ from airflow.operators.empty import EmptyOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
 
 from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.crossref_metadata_telescope import tasks
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
 from observatory_platform.airflow.workflow import CloudWorkspace
@@ -137,7 +138,6 @@ def create_dag(dag_params: DagParams) -> DAG:
         @task
         def fetch_release(dag_params: DagParams, **context) -> dict:
             """Fetch the release for this month, making sure that it exists."""
-            from academic_observatory_workflows.crossref_metadata_telescope import tasks
 
             return tasks.fetch_release(
                 run_id=context["run_id"],
@@ -218,7 +218,6 @@ def create_dag(dag_params: DagParams) -> DAG:
         @task
         def bq_load(release: dict, dag_params: DagParams, **context):
             """Loads the data into a bigquery table"""
-            from academic_observatory_workflows.crossref_metadata_telescope import tasks
 
             tasks.bq_load(
                 release,
@@ -239,7 +238,6 @@ def create_dag(dag_params: DagParams) -> DAG:
         @task
         def cleanup_workflow(release: dict, **context) -> None:
             """Performs cleanup actions"""
-            from academic_observatory_workflows.crossref_metadata_telescope import tasks
 
             tasks.cleanup_workflow(release)
 
