@@ -24,6 +24,7 @@ from airflow.decorators import dag, task, task_group
 from airflow.models import Pool
 
 from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.crossref_fundref_telescope import tasks
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.workflow import CloudWorkspace
 
@@ -111,7 +112,7 @@ def create_dag(dag_params: DagParams) -> DAG:
     def crossref_fundref():
         @task(pool=dag_params.gitlab_pool_name)
         def fetch_releases(**context):
-            from academic_observatory_workflows.crossref_fundref_telescope import tasks
+            """Task to grab the release"""
 
             return tasks.fetch_releases(
                 dag_params.cloud_workspace,
@@ -127,37 +128,37 @@ def create_dag(dag_params: DagParams) -> DAG:
         def process_release(data):
             @task
             def download(release: dict, **context):
-                from academic_observatory_workflows.crossref_fundref_telescope import tasks
+                """Task to download the data"""
 
                 tasks.download(release)
 
             @task
             def upload_downloaded(release: dict, **context):
-                from academic_observatory_workflows.crossref_fundref_telescope import tasks
+                """Task to upload the downloaded data to GCS"""
 
                 tasks.upload_downloaded(release)
 
             @task
             def extract(release: dict, **context):
-                from academic_observatory_workflows.crossref_fundref_telescope import tasks
+                """Task to extract the data"""
 
                 tasks.extract(release)
 
             @task
             def transform(release: dict, **context):
-                from academic_observatory_workflows.crossref_fundref_telescope import tasks
+                """Task to transform the data"""
 
                 tasks.transform(release)
 
             @task
             def upload_transformed(release: dict, **context):
-                from academic_observatory_workflows.crossref_fundref_telescope import tasks
+                """Task to upload the transformed data to GCS"""
 
                 tasks.upload_transformed(release)
 
             @task
             def bq_load(release: dict, dag_params, **context):
-                from academic_observatory_workflows.crossref_fundref_telescope import tasks
+                """Task to load the data into Bigquery"""
 
                 tasks.bq_load(
                     release,
@@ -171,13 +172,12 @@ def create_dag(dag_params: DagParams) -> DAG:
             @task
             def add_dataset_releases(release: dict, dag_params, **context):
                 """Adds release information to API."""
-                from academic_observatory_workflows.crossref_fundref_telescope import tasks
 
                 tasks.add_dataset_releases(release, api_bq_dataset_id=dag_params.api_bq_dataset_id)
 
             @task
             def cleanup_workflow(release: dict, **context):
-                from academic_observatory_workflows.crossref_fundref_telescope import tasks
+                """Task to clean up the workflow files"""
 
                 tasks.cleanup_workflow(release)
 
