@@ -20,6 +20,7 @@ import pendulum
 from airflow.decorators import dag, task
 
 from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.scopus_telescope import tasks
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.airflow.tasks import check_dependencies
@@ -105,8 +106,6 @@ def create_dag(dag_params: DagParams):
         def fetch_release(dag_params: DagParams, **context) -> dict:
             """Fetch the release"""
 
-            from academic_observatory_workflows.scopus_telescope import tasks
-
             return tasks.fetch_release(
                 dag_id=dag_params.dag_id,
                 cloud_workspace=dag_params.cloud_workspace,
@@ -118,8 +117,6 @@ def create_dag(dag_params: DagParams):
         @task
         def download(release: dict, dag_params: DagParams, **context):
             """Download snapshot from SCOPUS for the given institution."""
-
-            from academic_observatory_workflows.scopus_telescope import tasks
 
             tasks.download(
                 release,
@@ -133,16 +130,12 @@ def create_dag(dag_params: DagParams):
         def transform(release: dict, dag_params: DagParams, **context):
             """Transform the data into database format."""
 
-            from academic_observatory_workflows.scopus_telescope import tasks
-
             tasks.transform(release, institution_ids=dag_params.institution_ids)
 
         @task
         def bq_load(release: dict, dag_params: DagParams, **context):
             """Task to load each transformed release to BigQuery.
             The table_id is set to the file name without the extension."""
-
-            from academic_observatory_workflows.scopus_telescope import tasks
 
             tasks.bq_load(
                 release=release,
@@ -157,15 +150,11 @@ def create_dag(dag_params: DagParams):
         def add_dataset_release(release: dict, **context) -> None:
             """Adds release information to API."""
 
-            from academic_observatory_workflows.scopus_telescope import tasks
-
             tasks.add_dataset_release(release, api_bq_dataset_id=dag_params.api_bq_dataset_id)
 
         @task
         def cleanup_workflow(release: dict, **context) -> None:
             """Delete all files, folders and XComs associated with this release."""
-
-            from academic_observatory_workflows.scopus_telescope import tasks
 
             tasks.cleanup_workflow(release)
 
