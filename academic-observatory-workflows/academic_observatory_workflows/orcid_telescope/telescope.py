@@ -27,6 +27,7 @@ from airflow.operators.empty import EmptyOperator
 from airflow.utils.trigger_rule import TriggerRule
 
 from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.orcid_telescope import tasks
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.sensors import PreviousDagRunSensor
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
@@ -143,8 +144,6 @@ def create_dag(dag_params: DagParams) -> DAG:
         def fetch_release(**context) -> dict:
             """Generates the OrcidRelease object."""
 
-            from academic_observatory_workflows.orcid_telescope import tasks
-
             return tasks.fetch_release(
                 dag_id=dag_params.dag_id,
                 run_id=context["run_id"],
@@ -163,15 +162,11 @@ def create_dag(dag_params: DagParams) -> DAG:
         def create_dataset(release: dict, dag_params, **context) -> None:
             """Create datasets"""
 
-            from academic_observatory_workflows.orcid_telescope import tasks
-
             tasks.create_dataset(release, dataset_description=dag_params.dataset_description)
 
         @task
         def transfer_orcid(release: dict, dag_params, **context):
             """Sync files from AWS bucket to Google Cloud bucket."""
-
-            from academic_observatory_workflows.orcid_telescope import tasks
 
             tasks.transfer_orcid(
                 release,
@@ -181,17 +176,16 @@ def create_dag(dag_params: DagParams) -> DAG:
                 orcid_summaries_prefix=dag_params.orcid_summaries_prefix,
             )
 
-        @task
+        @task(trigger_rule=TriggerRule.NONE_FAILED)
         def bq_create_main_table_snapshot(release: dict, dag_params, **context):
             """Create a snapshot of each main table. The purpose of this table is to be able to rollback the table
             if something goes wrong. The snapshot expires after snapshot_expiry_days."""
-            from academic_observatory_workflows.orcid_telescope import tasks
 
             tasks.bq_create_main_table_snapshot(release, snapshot_expiry_days=dag_params.snapshot_expiry_days)
 
         @task.kubernetes(
+            trigger_rule=TriggerRule.NONE_FAILED,
             name="create_manifests",
-            trigger_rule=TriggerRule.ALL_DONE,
             container_resources=gke_make_container_resources(
                 {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("create_manifests")
             ),
@@ -210,9 +204,8 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         @task.kubernetes(
             name="latest_modified_record_date",
-            trigger_rule=TriggerRule.ALL_DONE,
             container_resources=gke_make_container_resources(
-                {"memory": "2G", "cpu": "2"},
+                {"memory": "4G", "cpu": "2"},
                 dag_params.gke_params.gke_resource_overrides.get("latest_modified_record_date"),
             ),
             **kubernetes_task_params,
@@ -225,7 +218,6 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         @task.kubernetes(
             name="download",
-            trigger_rule=TriggerRule.ALL_DONE,
             container_resources=gke_make_container_resources(
                 {"memory": "8G", "cpu": "8"}, dag_params.gke_params.gke_resource_overrides.get("download")
             ),
@@ -239,9 +231,8 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         @task.kubernetes(
             name="transform",
-            trigger_rule=TriggerRule.ALL_DONE,
             container_resources=gke_make_container_resources(
-                {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("transform")
+                {"memory": "32G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("transform")
             ),
             **kubernetes_task_params,
         )
@@ -253,7 +244,6 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         @task.kubernetes(
             name="upload_transformed",
-            trigger_rule=TriggerRule.ALL_DONE,
             container_resources=gke_make_container_resources(
                 {"memory": "8G", "cpu": "8"}, dag_params.gke_params.gke_resource_overrides.get("upload_transformed")
             ),
@@ -265,54 +255,47 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             tasks.upload_transformed(release)
 
-        @task(trigger_rule=TriggerRule.ALL_DONE)
+        @task()
         def bq_load_main_table(release: dict, dag_params, **context):
             """Load the main table."""
-            from academic_observatory_workflows.orcid_telescope import tasks
 
             tasks.bq_load_main_table(release, schema_file_path=dag_params.schema_file_path)
 
-        @task(trigger_rule=TriggerRule.ALL_DONE)
+        @task(trigger_rule=TriggerRule.NONE_FAILED)
         def bq_load_upsert_table(release: dict, dag_params, **context):
             """Load the upsert table into bigquery"""
-            from academic_observatory_workflows.orcid_telescope import tasks
 
             tasks.bq_load_upsert_table(release, schema_file_path=dag_params.schema_file_path)
 
-        @task(trigger_rule=TriggerRule.ALL_DONE)
+        @task(trigger_rule=TriggerRule.NONE_FAILED)
         def bq_load_delete_table(release: dict, dag_params, **context):
             """Load the delete table into bigquery"""
-            from academic_observatory_workflows.orcid_telescope import tasks
 
             tasks.bq_load_delete_table(release, delete_schema_file_path=dag_params.delete_schema_file_path)
 
-        @task(trigger_rule=TriggerRule.ALL_DONE)
+        @task(trigger_rule=TriggerRule.NONE_FAILED)
         def bq_upsert_records(release: dict, **context):
             """Upsert the records from the upserts table into the main table."""
-            from academic_observatory_workflows.orcid_telescope import tasks
 
             tasks.bq_upsert_records(release)
 
-        @task(trigger_rule=TriggerRule.ALL_DONE)
+        @task(trigger_rule=TriggerRule.NONE_FAILED)
         def bq_delete_records(release: dict, **context):
             """Delete the records in the delete table from the main table."""
-            from academic_observatory_workflows.orcid_telescope import tasks
 
             tasks.bq_delete_records(release)
 
-        @task(trigger_rule=TriggerRule.ALL_DONE)
+        @task(trigger_rule=TriggerRule.NONE_FAILED)
         def add_dataset_release(release: dict, latest_modified_date: str, dag_params, **context) -> None:
             """Adds release information to API."""
-            from academic_observatory_workflows.orcid_telescope import tasks
 
             tasks.add_dataset_release(
                 release, api_bq_dataset_id=dag_params.api_bq_dataset_id, latest_modified_date=latest_modified_date
             )
 
-        @task(trigger_rule=TriggerRule.ALL_DONE)
+        @task()
         def cleanup_workflow(release: dict, **context) -> None:
             """Delete all files, folders and XComs associated with this release."""
-            from academic_observatory_workflows.orcid_telescope import tasks
 
             tasks.cleanup_workflow(release)
 
@@ -343,15 +326,15 @@ def create_dag(dag_params: DagParams) -> DAG:
             task_id=external_task_id,
         )
         if dag_params.test_run:
-            task_create_storage = EmptyOperator(task_id="gke_create_storage")
-            task_delete_storage = EmptyOperator(task_id="gke_delete_storage")
+            task_create_storage = EmptyOperator(task_id="gke_create_storage", trigger_rule=TriggerRule.NONE_FAILED)
+            task_delete_storage = EmptyOperator(task_id="gke_delete_storage", trigger_rule=TriggerRule.NONE_FAILED)
         else:
-            task_create_storage = gke_create_storage(
+            task_create_storage = gke_create_storage.override(trigger_rule=TriggerRule.NONE_FAILED)(
                 volume_name=dag_params.gke_params.gke_volume_name,
                 volume_size=dag_params.gke_params.gke_volume_size,
                 kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
             )
-            task_delete_storage = gke_delete_storage(
+            task_delete_storage = gke_delete_storage.override(trigger_rule=TriggerRule.NONE_FAILED)(
                 volume_name=dag_params.gke_params.gke_volume_name,
                 kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
             )
