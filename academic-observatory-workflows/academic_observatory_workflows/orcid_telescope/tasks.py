@@ -25,6 +25,7 @@ import time
 from concurrent.futures import as_completed, ProcessPoolExecutor, ThreadPoolExecutor
 import datetime
 from os import PathLike
+import json
 from typing import Dict, Optional, Tuple, Union
 
 import pendulum
@@ -33,7 +34,9 @@ from airflow import AirflowException
 from airflow.exceptions import AirflowSkipException
 from airflow.hooks.base import BaseHook
 from airflow.models import DagRun
-from google.auth import default
+from google import auth
+from google.auth.compute_engine import Credentials as ComputeEngineCredentials
+from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
 
@@ -46,6 +49,7 @@ from observatory_platform.dataset_api import DatasetRelease, DatasetAPI
 from observatory_platform.date_utils import datetime_normalise
 from observatory_platform.files import change_keys, save_jsonl_gz
 from observatory_platform.google import bigquery as bq
+from observatory_platform.google.gke import gke_service_account_email
 from observatory_platform.google.gcs import (
     gcs_blob_uri,
     gcs_create_aws_transfer,
@@ -106,8 +110,10 @@ def fetch_release(
                 "fetch_releases: there should be at least 1 DatasetRelease in the Observatory API after the first DAG run"
             )
         prev_release = api.get_latest_dataset_release(dag_id=dag_id, entity_id="orcid", date_key="changefile_end_date")
+        logging.info(f"Extra: {prev_release.extra}")
+        logging.info(f"Type: {type(prev_release.extra)}")
+        prev_latest_modified_record = pendulum.parse(json.loads(prev_release.extra["latest_modified_record_date"]))
         prev_release_end = prev_release.changefile_end_date
-        prev_latest_modified_record = pendulum.parse(prev_release.extra["latest_modified_record_date"])
 
     return OrcidRelease(
         dag_id=dag_id,
@@ -246,8 +252,21 @@ def download(release: dict):
     """Reads each batch's manifest and downloads the files from the gcs bucket."""
 
     release = OrcidRelease.from_dict(release)
-    gcs_creds, project_id = default()
-    with gcs_hmac_key(project_id, gcs_creds.service_account_email) as (key, secret):
+
+    # Check the type of credentials
+    credentials, _ = auth.default()
+    if isinstance(credentials, ServiceAccountCredentials):
+        email = credentials.service_account_email
+        logging.info("Using service account credentials")
+    elif isinstance(credentials, ComputeEngineCredentials):
+        logging.info("Using compute engine credentials")
+        email = gke_service_account_email()
+        if not email:
+            raise AirflowException("Email could not be retrieved")
+    else:
+        raise AirflowException(f"Unknown credentials type: {type(credentials)}")
+
+    with gcs_hmac_key(release.cloud_workspace.project_id, email) as (key, secret):
         total_files = 0
         start_time = time.time()
         for orcid_batch in release.orcid_batches():
@@ -265,6 +284,9 @@ def download(release: dict):
 
             # Check for errors
             if returncode != 0:
+                with open(orcid_batch.download_log_file) as f:
+                    output = f.read()
+                logging.error(output)
                 raise RuntimeError(
                     f"Download attempt '{orcid_batch.batch_str}': returned non-zero exit code: {returncode}. See log file: {orcid_batch.download_log_file}"
                 )
@@ -471,6 +493,11 @@ def add_dataset_release(release: dict, *, api_bq_dataset_id: str, latest_modifie
     :param last_modified_release_date: The modification datetime of the last modified record of this release"""
 
     release = OrcidRelease.from_dict(release)
+    try:
+        pendulum.parse(latest_modified_date)
+    except pendulum.parsing.Exceptions.ParserError:
+        raise AirflowException("Latest modified record date not valid: {latest_modified_date}")
+
     api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
     api.seed_db()
     now = pendulum.now()
@@ -547,7 +574,9 @@ def latest_modified_record_date(release: dict) -> str:
     with open(release.master_manifest_file, "r") as f:
         reader = csv.DictReader(f)
         modified_dates = sorted([pendulum.parse(row["updated"]) for row in reader])
-    return datetime_normalise(modified_dates[-1])
+    latest_modified_record_date = datetime_normalise(modified_dates[-1])
+    logging.info(f"Latest modified record date: {latest_modified_record_date}")
+    return latest_modified_record_date
 
 
 def transform_orcid_record(record_path: str) -> Union[Dict, str]:
