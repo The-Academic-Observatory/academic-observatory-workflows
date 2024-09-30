@@ -38,7 +38,7 @@ def fetch_wikipedia_descriptions(wikipedia_urls: List[str]) -> List[Tuple[str, s
     """
 
     # Download 'punkt' resource, required when shortening wiki descriptions
-    nltk.download("punkt")
+    nltk.download("punkt_tab")
 
     # Create list with dictionaries of max 20 ids + titles (this is wiki api max)
     chunks = list(get_chunks(input_list=wikipedia_urls, chunk_size=WIKI_MAX_TITLES))
