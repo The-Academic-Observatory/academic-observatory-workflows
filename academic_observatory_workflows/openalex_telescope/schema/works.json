@@ -199,6 +199,24 @@
         "mode": "REPEATED"
       },
       {
+        "name": "affiliations",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "description": "Each institutional affiliation that this author has claimed will be listed here: the raw affiliation string that we found, along with the OpenAlex Institution ID or IDs that we matched it to.",
+        "fields": [
+          {
+            "name": "raw_affiliation_string",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "institution_ids",
+            "type": "STRING",
+            "mode": "REPEATED"
+          }
+        ]
+      },
+      {
         "name": "raw_author_name",
         "type": "STRING",
         "mode": "NULLABLE",
