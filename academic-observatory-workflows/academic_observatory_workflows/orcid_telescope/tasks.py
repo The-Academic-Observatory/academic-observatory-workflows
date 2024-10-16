@@ -24,8 +24,8 @@ import re
 import time
 from concurrent.futures import as_completed, ProcessPoolExecutor, ThreadPoolExecutor
 import datetime
-from os import PathLike
 import json
+import shutil
 from typing import Dict, Optional, Tuple, Union
 
 import pendulum
@@ -110,9 +110,8 @@ def fetch_release(
                 "fetch_releases: there should be at least 1 DatasetRelease in the Observatory API after the first DAG run"
             )
         prev_release = api.get_latest_dataset_release(dag_id=dag_id, entity_id="orcid", date_key="changefile_end_date")
-        logging.info(f"Extra: {prev_release.extra}")
-        logging.info(f"Type: {type(prev_release.extra)}")
-        prev_latest_modified_record = pendulum.parse(json.loads(prev_release.extra["latest_modified_record_date"]))
+        prev_latest_modified_record = pendulum.parse(json.loads(prev_release.extra)["latest_modified_record_date"])
+        logging.info(f"Proceeding with previous latest modified record date: {prev_latest_modified_record}")
         prev_release_end = prev_release.changefile_end_date
 
     return OrcidRelease(
@@ -314,7 +313,7 @@ def transform(release: dict, max_workers: Optional[int] = None):
 
     release = OrcidRelease.from_dict(release)
     if not max_workers:
-        max_workers = os.cpu_count() * 2
+        max_workers = os.cpu_count()
     logging.info(f"Using {max_workers} processes for transform operation")
 
     total_upsert_records = 0
@@ -366,6 +365,14 @@ def transform(release: dict, max_workers: Optional[int] = None):
         raise ValueError(
             f"Expected {len(release.downloaded_records)} total records processed but got {total_upsert_records + total_delete_records}"
         )
+
+
+def clean_downloads(release: dict):
+    """Removes all files in the downloads folder of the release"""
+    release = OrcidRelease.from_dict(release)
+
+    logging.info(f"Removing folder: {release.download_folder}")
+    shutil.rmtree(release.download_folder)
 
 
 def upload_transformed(release: dict):
