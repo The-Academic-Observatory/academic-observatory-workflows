@@ -1,0 +1,20 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+RUN pip install pyftpdlib
+
+COPY . /app/
+
+# Make the fixtures folder
+RUN mkdir /app/fixtures
+
+# Pubmed
+RUN mkdir /app/fixtures/pubmed
+RUN mkdir /app/fixtures/pubmed/baseline
+RUN mkdir /app/fixtures/pubmed/updatefiles
+COPY academic-observatory-workflows/academic_observatory_workflows/pubmed_telescope/tests/fixtures/baseline /app/fixtures/pubmed/baseline
+COPY academic-observatory-workflows/academic_observatory_workflows/pubmed_telescope/tests/fixtures/updatefiles /app/fixtures/pubmed/updatefiles
+
+# Run the app
+CMD [ "python", "ftp-server.py" ]
