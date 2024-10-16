@@ -217,30 +217,21 @@ def create_dag(dag_params: DagParams) -> DAG:
             return tasks.latest_modified_record_date(release)
 
         @task.kubernetes(
-            name="download",
+            name="download_transform",
             container_resources=gke_make_container_resources(
-                {"memory": "8G", "cpu": "8"}, dag_params.gke_params.gke_resource_overrides.get("download")
+                {"memory": "64G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("download_transform")
             ),
             **kubernetes_task_params,
         )
-        def download(release: dict, **context):
-            """Reads each batch's manifest and downloads the files from the gcs bucket."""
+        def download_transform(release: dict, dag_params, **context):
+            """Reads each batch's manifest and downloads the files from the gcs bucket.
+            The download and transform tasks are merged to avoid mounting a disk with millions of files."""
+
             from academic_observatory_workflows.orcid_telescope import tasks
 
             tasks.download(release)
-
-        @task.kubernetes(
-            name="transform",
-            container_resources=gke_make_container_resources(
-                {"memory": "32G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("transform")
-            ),
-            **kubernetes_task_params,
-        )
-        def transform(release: dict, dag_params, **context):
-            """Transforms the downloaded files into serveral bigquery-compatible .jsonl files"""
-            from academic_observatory_workflows.orcid_telescope import tasks
-
             tasks.transform(release, max_workers=dag_params.max_workers)
+            tasks.clean_downloads(release)
 
         @task.kubernetes(
             name="upload_transformed",
@@ -312,8 +303,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_bq_create_main_table_snapshot = bq_create_main_table_snapshot(xcom_release, dag_params)
         task_create_manifests = create_manifests(xcom_release, dag_params)
         xcom_latest_modified_date = latest_modified_record_date(xcom_release)
-        task_download = download(xcom_release)
-        task_transform = transform(xcom_release, dag_params)
+        task_download_transform = download_transform(xcom_release, dag_params)
         task_upload_transformed = upload_transformed(xcom_release)
         task_bq_load_main_table = bq_load_main_table(xcom_release, dag_params)
         task_bq_load_upsert_table = bq_load_upsert_table(xcom_release, dag_params)
@@ -349,8 +339,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> task_create_storage
             >> task_create_manifests
             >> xcom_latest_modified_date
-            >> task_download
-            >> task_transform
+            >> task_download_transform
             >> task_upload_transformed
             >> task_delete_storage
             >> task_bq_load_main_table
