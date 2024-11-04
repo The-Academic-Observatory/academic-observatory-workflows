@@ -199,6 +199,12 @@
         "mode": "REPEATED"
       },
       {
+        "name": "raw_author_name",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "This author's name as it originally came to us (on a webpage or in an API), as a raw unformatted string."
+      },
+      {
         "name": "affiliations",
         "type": "RECORD",
         "mode": "REPEATED",
@@ -215,12 +221,6 @@
             "mode": "REPEATED"
           }
         ]
-      },
-      {
-        "name": "raw_author_name",
-        "type": "STRING",
-        "mode": "NULLABLE",
-        "description": "This author's name as it originally came to us (on a webpage or in an API), as a raw unformatted string."
       }
     ]
   },
