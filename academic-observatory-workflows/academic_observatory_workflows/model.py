@@ -31,7 +31,7 @@ from click.testing import CliRunner
 from faker import Faker
 from observatory_platform.google.bigquery import bq_find_schema
 from observatory_platform.files import load_jsonl
-from observatory_platform.sandbox.sandbox_environment import bq_load_tables, Table
+from observatory_platform.sandbox.test_utils import bq_load_tables, Table
 from pendulum import DateTime
 
 from academic_observatory_workflows.config import project_path

@@ -45,7 +45,7 @@ test = [
     "liccheck==0.4.*",
     "flake8==3.8.*",
     "coverage==5.2",
-    "vcrpy==4.0.*",
+    "vcrpy>=6,<7",
     "Faker==8.1.*",
     "boto3>=1.15.0,<2"
 ]
