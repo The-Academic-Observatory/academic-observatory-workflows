@@ -522,12 +522,12 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> xcom_release
             >> task_shortcircuit
             >> task_create_snapshot
-            # >> task_create_storage
+            >> task_create_storage
             >> task_branch_baseline_or_updatefiles
             >> task_group_baseline
             >> task_branch_updatefiles_or_dataset_release
             >> task_group_updatefiles
-            # >> task_delete_storage
+            >> task_delete_storage
             >> task_add_dataset_releases
             >> task_cleanup_workflow
             >> task_dag_run_complete
