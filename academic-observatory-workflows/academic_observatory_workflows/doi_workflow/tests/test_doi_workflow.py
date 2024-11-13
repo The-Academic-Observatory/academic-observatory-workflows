@@ -21,11 +21,18 @@ from typing import Dict, List
 
 import pendulum
 import vcr
-# from airflow.models import DagModel
-# from airflow.utils.session import provide_session
-# from airflow.utils.state import State
+from airflow.models import DagModel
+from airflow.utils.session import provide_session
+from airflow.utils.state import State
 
 from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.doi_workflow.queries import (
+    fetch_ror_affiliations,
+    make_sql_queries,
+    ror_to_ror_hierarchy_index,
+)
+from academic_observatory_workflows.doi_workflow.workflow import create_dag, DagParams, SENSOR_DAG_IDS
+
 # from academic_observatory_workflows.doi_workflow.doi_workflow import (
 #     AGGREGATIONS,
 #     create_dag,
@@ -43,15 +50,18 @@ from academic_observatory_workflows.model import (
     Repository,
     sort_events,
 )
-from academic_observatory_workflows.doi_workflow.queries import fetch_ror_affiliations, ror_to_ror_hierarchy_index
-from academic_observatory_workflows.doi_workflow.workflow import create_dag, DagParams
-# from observatory_platform.dataset_api import get_dataset_releases
-from observatory_platform.google.bigquery import bq_run_query, bq_sharded_table_id, bq_table_id
-from observatory_platform.config import module_file_path
-from observatory_platform.files import load_jsonl
 from observatory_platform.airflow.workflow import Workflow
+from observatory_platform.dataset_api import DatasetAPI
+from observatory_platform.files import load_jsonl
+
+# from observatory_platform.dataset_api import get_dataset_releases
+from observatory_platform.google.bigquery import bq_run_query, bq_sharded_table_id
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
-from observatory_platform.sandbox.test_utils import SandboxTestCase
+from observatory_platform.sandbox.test_utils import make_dummy_dag, SandboxTestCase
+
+# from airflow.models import DagModel
+# from airflow.utils.session import provide_session
+# from airflow.utils.state import State
 
 # from observatory_platform.sandbox.sandbox_environment import (
 #     find_free_port,
@@ -328,262 +338,142 @@ class TestDoiWorkflow(SandboxTestCase):
         # International Centre for Radio Astronomy Research
         self.assertEqual({"https://ror.org/02n415q13", "https://ror.org/047272k79"}, index["https://ror.org/05sd1pp77"])
 
-    # @provide_session
-    # def update_db(self, *, session, object):
-    #     session.merge(object)
-    #     session.commit()
-    #
-    # def add_dummy_dag_model(self, *, tmp_dir: str, dag_id: str, schedule: str):
-    #     model = DagModel()
-    #     model.dag_id = dag_id
-    #     model.schedule = schedule
-    #     model.fileloc = os.path.join(tmp_dir, "dummy_dag.py")
-    #     open(model.fileloc, mode="a").close()
-    #     self.update_db(object=model)
+    @provide_session
+    def update_db(self, *, session, object):
+        session.merge(object)
+        session.commit()
 
-    def test_telescope(self):
+    def add_dummy_dag_model(self, *, tmp_dir: str, dag_id: str, schedule: str):
+        model = DagModel()
+        model.dag_id = dag_id
+        model.schedule = schedule
+        model.fileloc = os.path.join(tmp_dir, "dummy_dag.py")
+        open(model.fileloc, mode="a").close()
+        self.update_db(object=model)
+
+    def test_workflow(self):
         """Test the DOI telescope end to end."""
 
-        # env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
-        #
-        # # Create datasets
-        # fake_dataset_id = env.add_dataset(prefix="fake")
-        # bq_intermediate_dataset_id = env.add_dataset(prefix="intermediate")
-        # bq_dashboards_dataset_id = env.add_dataset(prefix="dashboards")
-        # bq_observatory_dataset_id = env.add_dataset(prefix="observatory")
-        # bq_settings_dataset_id = env.add_dataset(prefix="settings")
-        # sql_queries = make_sql_queries(
-        #     input_project_id=self.project_id,
-        #     output_project_id=self.project_id,
-        #     dataset_id_crossref_events=fake_dataset_id,
-        #     dataset_id_crossref_metadata=fake_dataset_id,
-        #     dataset_id_crossref_fundref=fake_dataset_id,
-        #     dataset_id_ror=fake_dataset_id,
-        #     dataset_id_orcid=fake_dataset_id,
-        #     dataset_id_open_citations=fake_dataset_id,
-        #     dataset_id_unpaywall=fake_dataset_id,
-        #     dataset_id_scihub=fake_dataset_id,
-        #     dataset_id_settings=bq_settings_dataset_id,
-        #     dataset_id_observatory=bq_observatory_dataset_id,
-        #     dataset_id_observatory_intermediate=bq_intermediate_dataset_id,
-        #     dataset_id_openalex=fake_dataset_id,
-        #     dataset_id_pubmed=fake_dataset_id,
-        # )
-        #
-        # with env.create(task_logging=True):
-        #     start_date = pendulum.datetime(year=2021, month=10, day=10)
-        #     api_dataset_id = env.add_dataset("api_dataset")
-        #     doi_dag = create_dag(
-        #         dag_id=self.dag_id,
-        #         cloud_workspace=env.cloud_workspace,
-        #         bq_intermediate_dataset_id=bq_intermediate_dataset_id,
-        #         bq_dashboards_dataset_id=bq_dashboards_dataset_id,
-        #         bq_observatory_dataset_id=bq_observatory_dataset_id,
-        #         bq_unpaywall_dataset_id=fake_dataset_id,
-        #         bq_ror_dataset_id=fake_dataset_id,
-        #         sql_queries=sql_queries,
-        #         start_date=start_date,
-        #         max_fetch_threads=1,
-        #         api_dataset_id=api_dataset_id,
-        #     )
-        #
-        #     # # Disable dag check on dag run sensor
-        #     # for sensor in workflow.operators[0]:
-        #     #     sensor.check_exists = False
-        #     #     sensor.grace_period = timedelta(seconds=1)
-        #     #
-        #     # doi_dag = workflow.make_dag()
-        #
-        #     # If there is no dag run for the DAG being monitored, the sensor will pass.  This is so we can
-        #     # skip waiting on weeks when the DAG being waited on is not scheduled to run.
-        #     # expected_state = "success"
-        #     # with env.create_dag_run(doi_dag, start_date):
-        #     #     for task_id in SENSOR_DAG_IDS:
-        #     #         ti = env.run_task(f"sensors.{task_id}_sensor")
-        #     #         self.assertEqual(expected_state, ti.state)
-        #
-        #     # Run Dummy Dags
-        #     logical_date = pendulum.datetime(year=2023, month=6, day=18)
-        #     snapshot_date = pendulum.datetime(year=2023, month=6, day=25)
-        #     expected_state = "success"
-        #     for dag_id in SENSOR_DAG_IDS:
-        #         dag = make_dummy_dag(dag_id, logical_date)
-        #         with env.create_dag_run(dag, logical_date):
-        #             # Running all of a DAGs tasks sets the DAG to finished
-        #             self.add_dummy_dag_model(tmp_dir=env.temp_dir, dag_id=dag.dag_id, schedule=dag.schedule_interval)
-        #             ti = env.run_task("dummy_task")
-        #             self.assertEqual(expected_state, ti.state)
-        #
-        #     # Run end to end tests for DOI DAG
-        #     with env.create_dag_run(doi_dag, logical_date):
-        #         # Test that sensors go into 'success' state as the DAGs that they are waiting for have finished
-        #         for task_id in SENSOR_DAG_IDS:
-        #             ti = env.run_task(f"sensors.{task_id}_sensor")
-        #             self.assertEqual(expected_state, ti.state)
-        #
-        #         # Check dependencies
-        #         ti = env.run_task("check_dependencies")
-        #         self.assertEqual(expected_state, ti.state)
-        #
-        #         # Fetch release
-        #         ti = env.run_task("fetch_release")
-        #         self.assertEqual(expected_state, ti.state)
-        #
-        #         # Create datasets
-        #         ti = env.run_task("create_datasets")
-        #         self.assertEqual(expected_state, ti.state)
-        #
-        #         # Generate fake dataset
-        #         repository = load_jsonl(os.path.join(FIXTURES_FOLDER, "repository.jsonl"))
-        #         observatory_dataset = make_observatory_dataset(self.institutions, self.repositories)
-        #         bq_load_observatory_dataset(
-        #             observatory_dataset,
-        #             repository,
-        #             env.download_bucket,
-        #             fake_dataset_id,
-        #             bq_settings_dataset_id,
-        #             snapshot_date,
-        #             self.project_id,
-        #         )
-        #
-        #         # Create repository institution table
-        #         with vcr.use_cassette(
-        #             os.path.join(FIXTURES_FOLDER, "create_repo_institution_to_ror_table.yaml"),
-        #             ignore_hosts=["oauth2.googleapis.com", "bigquery.googleapis.com"],
-        #             ignore_localhost=True,
-        #         ):
-        #             ti = env.run_task("create_repo_institution_to_ror_table")
-        #         self.assertEqual(expected_state, ti.state)
-        #         table_id = bq_sharded_table_id(
-        #             self.project_id, bq_intermediate_dataset_id, "repository_institution_to_ror", snapshot_date
-        #         )
-        #         rors = [
-        #             {"rors": [], "repository_institution": "Academia.edu"},
-        #             {"rors": [], "repository_institution": "Australian National University DSpace Repository"},
-        #             {"rors": [], "repository_institution": "CiteSeer X"},
-        #             {"rors": [], "repository_institution": "Europe PMC"},
-        #             {"rors": [], "repository_institution": "OSF Preprints - Arabixiv"},
-        #             {"rors": [], "repository_institution": "PubMed Central"},
-        #             {"rors": [], "repository_institution": "Repo 3"},
-        #             {"rors": [], "repository_institution": "SciELO Preprints - SciELO"},
-        #             {"rors": [], "repository_institution": "Unknown Repo 1"},
-        #             {"rors": [], "repository_institution": "Unknown Repo 2"},
-        #             {"rors": [], "repository_institution": "Zenodo"},
-        #             {"rors": [], "repository_institution": "arXiv"},
-        #             {
-        #                 "rors": [{"name": "ResearchGate", "id": "https://ror.org/008f3q107"}],
-        #                 "repository_institution": "ResearchGate",
-        #             },
-        #             {
-        #                 "rors": [{"name": "Curtin University", "id": "https://ror.org/02n415q13"}],
-        #                 "repository_institution": "Curtin University Repository",
-        #             },
-        #             {
-        #                 "rors": [{"name": "University of Auckland", "id": "https://ror.org/03b94tp07"}],
-        #                 "repository_institution": "University of Auckland Repository",
-        #             },
-        #             {
-        #                 "rors": [{"name": "Figshare (United Kingdom)", "id": "https://ror.org/041mxqs23"}],
-        #                 "repository_institution": "Figshare",
-        #             },
-        #         ]
-        #         names = set()
-        #         for paper in observatory_dataset.papers:
-        #             for repo in paper.repositories:
-        #                 for ror in rors:
-        #                     if repo.name in ror["repository_institution"]:
-        #                         names.add(repo.name)
-        #                         break
-        #         expected = []
-        #         for ror in rors:
-        #             if ror["repository_institution"] in names:
-        #                 expected.append(ror)
-        #         self.assert_table_integrity(table_id, expected_rows=len(expected))
-        #         self.assert_table_content(table_id, expected, "repository_institution")
-        #
-        #         # Create ROR hierarchy table
-        #         ti = env.run_task("create_ror_hierarchy_table")
-        #         self.assertEqual(expected_state, ti.state)
-        #
-        #         # Test that source dataset transformations run
-        #         for i, batch in enumerate(sql_queries):
-        #             for sql_query in batch:
-        #                 task_id = sql_query.name
-        #                 ti = env.run_task(f"intermediate_tables.{task_id}")
-        #                 self.assertEqual(expected_state, ti.state)
-        #             ti = env.run_task(f"intermediate_tables.merge_{i}")
-        #             self.assertEqual(expected_state, ti.state)
-        #
-        #         # DOI assert table exists
-        #         table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, "doi", snapshot_date)
-        #         expected_rows = len(observatory_dataset.papers)
-        #         self.assert_table_integrity(table_id, expected_rows=expected_rows)
-        #
-        #         # Check openalex table created
-        #         table_id = bq_table_id(self.project_id, fake_dataset_id, "works")
-        #         self.assert_table_integrity(table_id, expected_rows=expected_rows)
-        #
-        #         table_id = bq_sharded_table_id(self.project_id, bq_intermediate_dataset_id, "openalex", snapshot_date)
-        #         self.assert_table_integrity(table_id, expected_rows=expected_rows)
-        #
-        #         # DOI assert correctness of output
-        #         expected_output = make_doi_table(observatory_dataset)
-        #         table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, "doi", snapshot_date)
-        #         actual_output = query_table(table_id, "doi")
-        #         self.assert_doi(expected_output, actual_output)
-        #
-        #         # Test aggregations tasks
-        #         for agg in AGGREGATIONS:
-        #             task_id = f"aggregate_tables.{agg.table_name}"
-        #             ti = env.run_task(task_id)
-        #             self.assertEqual(expected_state, ti.state)
-        #
-        #             # Aggregation assert table exists
-        #             table_id = bq_sharded_table_id(
-        #                 self.project_id, bq_observatory_dataset_id, agg.table_name, snapshot_date
-        #             )
-        #             self.assert_table_integrity(table_id)
-        #
-        #         # Assert country aggregation output
-        #         agg = "country"
-        #         expected_output = make_aggregate_table(agg, observatory_dataset)
-        #         table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, agg, snapshot_date)
-        #         actual_output = query_table(table_id, "id, time_period")
-        #         self.assert_aggregate(expected_output, actual_output)
-        #
-        #         # Assert institution aggregation output
-        #         agg = "institution"
-        #         expected_output = make_aggregate_table(agg, observatory_dataset)
-        #         table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, agg, snapshot_date)
-        #         actual_output = query_table(table_id, "id, time_period")
-        #         self.assert_aggregate(expected_output, actual_output)
-        #         # TODO: test correctness of remaining outputs
-        #
-        #         # Test updating table descriptions
-        #         ti = env.run_task("update_table_descriptions")
-        #         self.assertEqual(expected_state, ti.state)
-        #
-        #         # Test copy to dashboards
-        #         ti = env.run_task("copy_to_dashboards")
-        #         self.assertEqual(expected_state, ti.state)
-        #         for agg in AGGREGATIONS:
-        #             table_id = bq_table_id(self.project_id, bq_dashboards_dataset_id, agg.table_name)
-        #             self.assert_table_integrity(table_id)
-        #
-        #         # Test create dashboard views
-        #         ti = env.run_task("create_dashboard_views")
-        #         self.assertEqual(expected_state, ti.state)
-        #         for table_name in ["country", "funder", "group", "institution", "publisher", "subregion"]:
-        #             table_id = bq_table_id(self.project_id, bq_dashboards_dataset_id, f"{table_name}_comparison")
-        #             self.assert_table_integrity(table_id)
-        #
-        #         # add_dataset_release_task
-        #         dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=api_dataset_id)
-        #         self.assertEqual(len(dataset_releases), 0)
-        #         ti = env.run_task("add_dataset_release")
-        #         self.assertEqual(State.SUCCESS, ti.state)
-        #         dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=api_dataset_id)
-        #         self.assertEqual(len(dataset_releases), 1)
+        env = SandboxEnvironment(self.project_id, self.data_location)
+
+        # Create datasets
+        fake_dataset_id = env.add_dataset(prefix="fake")
+        bq_intermediate_dataset_id = env.add_dataset(prefix="intermediate")
+        bq_dashboards_dataset_id = env.add_dataset(prefix="dashboards")
+        bq_observatory_dataset_id = env.add_dataset(prefix="observatory")
+        bq_settings_dataset_id = env.add_dataset(prefix="settings")
+        sql_queries = make_sql_queries(
+            input_project_id=self.project_id,
+            output_project_id=self.project_id,
+            dataset_id_crossref_events=fake_dataset_id,
+            dataset_id_crossref_metadata=fake_dataset_id,
+            dataset_id_crossref_fundref=fake_dataset_id,
+            dataset_id_ror=fake_dataset_id,
+            dataset_id_orcid=fake_dataset_id,
+            dataset_id_open_citations=fake_dataset_id,
+            dataset_id_unpaywall=fake_dataset_id,
+            dataset_id_scihub=fake_dataset_id,
+            dataset_id_settings=bq_settings_dataset_id,
+            dataset_id_observatory=bq_observatory_dataset_id,
+            dataset_id_observatory_intermediate=bq_intermediate_dataset_id,
+            dataset_id_openalex=fake_dataset_id,
+            dataset_id_pubmed=fake_dataset_id,
+        )
+
+        with env.create(task_logging=True):
+            ##########
+            # Prepare previous DAG runs and setup DOI DAG
+            ##########
+
+            start_date = pendulum.datetime(year=2021, month=10, day=10)
+            api_bq_dataset_id = env.add_dataset("api_dataset")
+            dag_params = DagParams(
+                dag_id=self.dag_id,
+                cloud_workspace=env.cloud_workspace,
+                bq_intermediate_dataset_id=bq_intermediate_dataset_id,
+                bq_dashboards_dataset_id=bq_dashboards_dataset_id,
+                bq_observatory_dataset_id=bq_observatory_dataset_id,
+                bq_unpaywall_dataset_id=fake_dataset_id,
+                bq_ror_dataset_id=fake_dataset_id,
+                api_bq_dataset_id=api_bq_dataset_id,
+                sql_queries=sql_queries,
+                start_date=start_date,
+                max_fetch_threads=1,
+            )
+            doi_dag = create_dag(dag_params)
+
+            # Run Dummy Dags
+            logical_date = pendulum.datetime(year=2023, month=6, day=18)
+            snapshot_date = pendulum.datetime(year=2023, month=6, day=25)
+            expected_state = "success"
+            for dag_id in SENSOR_DAG_IDS:
+                dag = make_dummy_dag(dag_id, logical_date)
+                with env.create_dag_run(dag, logical_date):
+                    # Running all of a DAGs tasks sets the DAG to finished
+                    self.add_dummy_dag_model(tmp_dir=env.temp_dir, dag_id=dag.dag_id, schedule=dag.schedule_interval)
+                    ti = env.run_task("dummy_task")
+                    self.assertEqual(expected_state, ti.state)
+
+            # Generate fake dataset
+            repository = load_jsonl(os.path.join(FIXTURES_FOLDER, "repository.jsonl"))
+            observatory_dataset = make_observatory_dataset(self.institutions, self.repositories)
+            bq_load_observatory_dataset(
+                observatory_dataset,
+                repository,
+                env.download_bucket,
+                fake_dataset_id,
+                bq_settings_dataset_id,
+                snapshot_date,
+                self.project_id,
+            )
+
+            # Check dataset releases before running
+            api = DatasetAPI(
+                bq_project_id=dag_params.cloud_workspace.project_id, bq_dataset_id=dag_params.api_bq_dataset_id
+            )
+            api.seed_db()
+            dataset_releases = api.get_dataset_releases(dag_id=dag_params.dag_id, entity_id="doi")
+            self.assertEqual(len(dataset_releases), 0)
+
+            ##########
+            # Run DAG
+            ##########
+
+            dag_run = doi_dag.test(execution_date=snapshot_date, session=env.session)
+            self.assertEqual(State.SUCCESS, dag_run.state)
+
+            ##########
+            # Assert results
+            ##########
+
+            # DOI assert table exists
+            table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, "doi", snapshot_date)
+            expected_rows = len(observatory_dataset.papers)
+            self.assert_table_integrity(table_id, expected_rows=expected_rows)
+
+            # DOI assert correctness of output
+            expected_output = make_doi_table(observatory_dataset)
+            table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, "doi", snapshot_date)
+            actual_output = query_table(table_id, "doi")
+            self.assert_doi(expected_output, actual_output)
+
+            # Assert country aggregation output
+            agg = "country"
+            expected_output = make_aggregate_table(agg, observatory_dataset)
+            table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, agg, snapshot_date)
+            actual_output = query_table(table_id, "id, time_period")
+            self.assert_aggregate(expected_output, actual_output)
+
+            # Assert institution aggregation output
+            agg = "institution"
+            expected_output = make_aggregate_table(agg, observatory_dataset)
+            table_id = bq_sharded_table_id(self.project_id, bq_observatory_dataset_id, agg, snapshot_date)
+            actual_output = query_table(table_id, "id, time_period")
+            self.assert_aggregate(expected_output, actual_output)
+
+            # Check dataset releases created
+            dataset_releases = api.get_dataset_releases(dag_id=dag_params.dag_id, entity_id="doi")
+            self.assertEqual(len(dataset_releases), 1)
 
     def assert_aggregate(self, expected: List[Dict], actual: List[Dict]):
         """Assert an aggregate table.

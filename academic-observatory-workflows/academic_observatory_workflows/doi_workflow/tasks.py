@@ -1,3 +1,17 @@
+# Copyright 2020-2024 Curtin University
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from __future__ import annotations
 
 import json
@@ -119,11 +133,13 @@ def create_ror_hierarchy_table(
     # Fetch latest ROR table
     # release = DOIRelease.from_dict(release)
     ror_table_name = "ror"
+    print(f"create_ror_hierarchy_table: table_id={bq_table_id(input_project_id, bq_ror_dataset_id, ror_table_name)}, end_date={release.snapshot_date}")
     ror_table_id = bq_select_latest_table(
         table_id=bq_table_id(input_project_id, bq_ror_dataset_id, ror_table_name),
         end_date=release.snapshot_date,
         sharded=True,
     )
+    print("")
     ror = [dict(row) for row in bq_run_query(f"SELECT * FROM {ror_table_id}")]
 
     # Create ROR hierarchy table
@@ -253,43 +269,6 @@ def update_table_descriptions(
             table_id=table_id,
             description=description,
         )
-
-
-# def copy_to_dashboards( *,):
-#     release = DOIRelease.from_dict(release)
-#     results = []
-#     table_names = [agg.table_name for agg in AGGREGATIONS]
-#     for table_id in table_names:
-#         src_table_id = bq_sharded_table_id(
-#             output_project_id, bq_observatory_dataset_id, table_id, release.snapshot_date
-#         )
-#         dst_table_id = bq_table_id(output_project_id, bq_dashboards_dataset_id, table_id)
-#         success = bq_copy_table(src_table_id=src_table_id, dst_table_id=dst_table_id)
-#         if not success:
-#             logging.error(f"Issue copying table: {src_table_id} to {dst_table_id}")
-#
-#         results.append(success)
-#
-#     success = all(results)
-#     set_task_state(success, "copy_to_dashboards")
-#
-#
-# def create_dashboard_views( *,):
-#     # Create processed dataset
-#     template_path = project_path("doi_workflow", "sql", "comparison_view.sql.jinja2")
-#
-#     # Create views
-#     table_names = ["country", "funder", "group", "institution", "publisher", "subregion"]
-#     for table_name in table_names:
-#         view_name = f"{table_name}_comparison"
-#         query = render_template(
-#             template_path,
-#             project_id=output_project_id,
-#             dataset_id=bq_dashboards_dataset_id,
-#             table_id=table_name,
-#         )
-#         view_id = bq_table_id(output_project_id, bq_dashboards_dataset_id, view_name)
-#         bq_create_view(view_id=view_id, query=query)
 
 
 def add_dataset_release(*, release: DOIRelease, api_bq_project_id: str, api_bq_dataset_id: str):

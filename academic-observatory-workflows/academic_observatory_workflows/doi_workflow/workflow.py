@@ -31,7 +31,6 @@ from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.release import make_snapshot_date
 from observatory_platform.airflow.tasks import check_dependencies
 from observatory_platform.airflow.workflow import CloudWorkspace
-from observatory_platform.config import AirflowConns
 
 SENSOR_DAG_IDS = [
     "crossref_metadata",
@@ -132,10 +131,9 @@ class DagParams:
         bq_observatory_dataset_id: str = "observatory",
         bq_unpaywall_dataset_id: str = "unpaywall",
         bq_ror_dataset_id: str = "ror",
-        api_bq_dataset_id: str = "doi",
+        api_bq_dataset_id: str = "dataset_api",
         sql_queries: List[List[SQLQuery]] = None,
         max_fetch_threads: int = 4,
-        observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         start_date: Optional[pendulum.DateTime] = pendulum.datetime(2020, 8, 30),
         schedule: Optional[str] = "@weekly",
         sensor_dag_ids: List[str] = None,
@@ -181,7 +179,6 @@ class DagParams:
             )
 
         self.max_fetch_threads = max_fetch_threads
-        self.observatory_api_conn_id = observatory_api_conn_id
         self.start_date = start_date
         self.schedule = schedule
 
@@ -361,7 +358,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             )
 
         sensor_task_group = make_sensors()
-        task_check_dependencies = check_dependencies(airflow_conns=[dag_params.observatory_api_conn_id])
+        task_check_dependencies = check_dependencies()
         xcom_release = fetch_release()
         create_datasets_task = create_datasets(xcom_release)
         create_repo_institution_to_ror_table_task = create_repo_institution_to_ror_table(xcom_release)
