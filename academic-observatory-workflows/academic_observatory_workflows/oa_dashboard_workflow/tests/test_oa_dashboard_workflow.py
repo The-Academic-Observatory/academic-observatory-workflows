@@ -22,15 +22,15 @@ from unittest.mock import patch
 
 import pendulum
 from airflow.models.connection import Connection
+from airflow.operators.empty import EmptyOperator
 from airflow.utils.state import State
 from click.testing import CliRunner
 from deepdiff import DeepDiff
 
-import academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow
+import academic_observatory_workflows.oa_dashboard_workflow.workflow
 from academic_observatory_workflows.config import project_path
-from academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow import (
+from academic_observatory_workflows.oa_dashboard_workflow.tasks import (
     clean_url,
-    create_dag,
     data_file_pattern,
     EntityHistograms,
     EntityStats,
@@ -42,24 +42,18 @@ from academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow 
     yield_data_glob,
 )
 from academic_observatory_workflows.tests.test_zenodo import MockZenodo
-from observatory_platform.google.bigquery import bq_find_schema
-from observatory_platform.config import module_file_path
-from observatory_platform.files import load_jsonl, save_jsonl_gz
-from observatory_platform.google.gcs import gcs_upload_file
 from observatory_platform.airflow.workflow import Workflow
-from observatory_platform.sandbox.sandbox_environment import (
-    bq_load_tables,
-    log_diff,
-    make_dummy_dag,
-    ObservatoryEnvironment,
-    ObservatoryTestCase,
-    Table,
-)
+from observatory_platform.files import load_jsonl, save_jsonl_gz
+from observatory_platform.google.bigquery import bq_find_schema
+from observatory_platform.google.gcs import gcs_upload_file
+from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
+from observatory_platform.sandbox.test_utils import bq_load_tables, log_diff, make_dummy_dag, SandboxTestCase, Table
 
-academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow.INCLUSION_THRESHOLD = {
+academic_observatory_workflows.oa_dashboard_workflow.tasks.INCLUSION_THRESHOLD = {
     "country": 0,
     "institution": 0,
 }
+from academic_observatory_workflows.oa_dashboard_workflow.workflow import create_dag, DagParams
 
 
 FIXTURES_FOLDER = project_path("oa_dashboard_workflow", "tests", "fixtures")
@@ -80,12 +74,10 @@ class TestFunctions(TestCase):
         actual = make_logo_url(entity_type="country", entity_id="1234", size="s", fmt="jpg")
         self.assertEqual(expected, actual)
 
-    @patch("academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow.make_logo_url")
+    @patch("academic_observatory_workflows.oa_dashboard_workflow.tasks.make_logo_url")
     def test_get_institution_logo(self, mock_make_url):
         mock_make_url.return_value = "logo_path"
-        mock_clearbit_ref = (
-            "academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow.clearbit_download_logo"
-        )
+        mock_clearbit_ref = "academic_observatory_workflows.oa_dashboard_workflow.tasks.clearbit_download_logo"
 
         def download_logo(company_url, file_path, size, fmt):
             if not os.path.isdir(os.path.dirname(file_path)):
@@ -186,7 +178,7 @@ class TestFunctions(TestCase):
             self.assertEqual(expected, actual)
 
 
-class TestOaDashboardWorkflow(ObservatoryTestCase):
+class TestOaDashboardWorkflow(SandboxTestCase):
     maxDiff = None
     dt_fmt = "YYYY-MM-DD"
 
@@ -211,14 +203,15 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
     def test_dag_structure(self):
         """Test that the DAG has the correct structure."""
 
-        env = ObservatoryEnvironment(enable_api=False)
+        env = SandboxEnvironment()
         with env.create():
-            dag = create_dag(
+            dag_params = DagParams(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
                 data_bucket=self.data_bucket_name,
                 conceptrecid=self.conceptrecid,
             )
+            dag = create_dag(dag_params)
             self.assert_dag_structure(
                 {
                     "doi_sensor": ["check_dependencies"],
@@ -262,12 +255,12 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
         """Test that the DAG can be loaded from a DAG bag."""
 
         # Test successful
-        env = ObservatoryEnvironment(
+        env = SandboxEnvironment(
             workflows=[
                 Workflow(
                     dag_id=self.dag_id,
                     name="Open Access Website Workflow",
-                    class_name="academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow.create_dag",
+                    class_name="academic_observatory_workflows.oa_dashboard_workflow.workflow",
                     cloud_workspace=self.fake_cloud_workspace,
                     kwargs=dict(
                         data_bucket=self.data_bucket_name,
@@ -278,16 +271,16 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
         )
 
         with env.create():
-            dag_file = os.path.join(module_file_path("observatory.platform.dags"), "load_dags.py")
+            dag_file = os.path.join(project_path(), "..", "..", "dags", "load_dags.py")
             self.assert_dag_load(self.dag_id, dag_file)
 
         # Test required kwargs
-        env = ObservatoryEnvironment(
+        env = SandboxEnvironment(
             workflows=[
                 Workflow(
                     dag_id=self.dag_id,
                     name="Open Access Website Workflow",
-                    class_name="academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow.create_dag",
+                    class_name="academic_observatory_workflows.oa_dashboard_workflow.workflow",
                     cloud_workspace=self.fake_cloud_workspace,
                     kwargs=dict(),
                 )
@@ -295,11 +288,11 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
         )
 
         with env.create():
-            dag_file = os.path.join(module_file_path("observatory.platform.dags"), "load_dags.py")
+            dag_file = os.path.join(project_path(), "..", "..", "dags", "load_dags.py")
             with self.assertRaises(AssertionError) as cm:
                 self.assert_dag_load(self.dag_id, dag_file)
             msg = cm.exception.args[0]
-            self.assertTrue("missing 2 required keyword-only arguments" in msg)
+            self.assertTrue("missing 2 required positional arguments" in msg)
             self.assertTrue("data_bucket" in msg)
             self.assertTrue("conceptrecid" in msg)
 
@@ -354,15 +347,14 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                 snapshot_date=snapshot_date,
             )
 
-    @patch("academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow.Zenodo")
-    @patch("academic_observatory_workflows.oa_dashboard_workflow.oa_dashboard_workflow.trigger_repository_dispatch")
-    def test_telescope(self, mock_trigger_repository_dispatch, mock_zenodo):
+    @patch("academic_observatory_workflows.oa_dashboard_workflow.tasks.Zenodo")
+    @patch("academic_observatory_workflows.oa_dashboard_workflow.tasks.trigger_repository_dispatch")
+    def test_workflow(self, mock_trigger_repository_dispatch, mock_zenodo):
         """Test the telescope end to end."""
 
         mock_zenodo.return_value = MockZenodo()
-        logical_date = pendulum.datetime(2021, 11, 14)
         snapshot_date = pendulum.datetime(2021, 11, 21)
-        env = ObservatoryEnvironment(project_id=self.project_id, data_location=self.data_location, enable_api=False)
+        env = SandboxEnvironment(project_id=self.project_id, data_location=self.data_location)
         bq_dataset_id = env.add_dataset("data")
         bq_dataset_id_settings = env.add_dataset("settings")
         bq_dataset_id_oa_dashboard = env.add_dataset("oa_dashboard")
@@ -371,9 +363,12 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
         zenodo_token = "zenodo-token"
 
         with env.create() as t:
-            # Run fake DOI workflow to test sensor
-            dag = make_dummy_dag("doi", logical_date)
-            with env.create_dag_run(dag, logical_date):
+            ##########
+            # Setup and run fake DOI workflow to test sensor
+            ##########
+
+            dag = make_dummy_dag("doi", snapshot_date)
+            with env.create_dag_run(dag, snapshot_date):
                 # Running all of a DAGs tasks sets the DAG to finished
                 ti = env.run_task("dummy_task")
                 self.assertEqual(State.SUCCESS, ti.state)
@@ -397,7 +392,7 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
             zenodo_conn_id = "oa_dashboard_zenodo_token"
             entity_types = ["country", "institution"]
             version = "v10"
-            dag = create_dag(
+            dag_params = DagParams(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
                 data_bucket=data_bucket,
@@ -407,132 +402,89 @@ class TestOaDashboardWorkflow(ObservatoryTestCase):
                 bq_settings_dataset_id=bq_dataset_id_settings,
                 bq_oa_dashboard_dataset_id=bq_dataset_id_oa_dashboard,
             )
+            dag = create_dag(dag_params)
             env.add_connection(Connection(conn_id=github_conn_id, uri=f"http://:{github_token}@"))
             env.add_connection(Connection(conn_id=zenodo_conn_id, uri=f"http://:{zenodo_token}@"))
 
-            # Run workflow
-            with env.create_dag_run(dag, logical_date) as dag_run:
-                # Mocked and expected data
-                release = OaDashboardRelease(
-                    dag_id=self.dag_id,
-                    run_id=dag_run.run_id,
-                    input_project_id=env.cloud_workspace.input_project_id,
-                    output_project_id=env.cloud_workspace.output_project_id,
-                    snapshot_date=snapshot_date,
-                    bq_ror_dataset_id=bq_dataset_id,
-                    bq_agg_dataset_id=bq_dataset_id,
-                    bq_settings_dataset_id=bq_dataset_id_settings,
-                    bq_oa_dashboard_dataset_id=bq_dataset_id_oa_dashboard,
-                )
+            ##########
+            # Run DAG
+            ##########
 
-                # DOI Sensor
-                ti = env.run_task("doi_sensor")
-                self.assertEqual(State.SUCCESS, ti.state)
+            # Prevent cleanup so that file assertions can be made
+            task_id = "cleanup_workflow"
+            empty_task = EmptyOperator(task_id=task_id, start_date=dag_params.start_date)
+            dag.task_dict[task_id] = empty_task
+            dag.task_dict[task_id].dag = dag
+            upstream_task = dag.get_task("repository_dispatch")
+            empty_task.set_upstream(upstream_task)
 
-                # Check dependencies
-                ti = env.run_task("check_dependencies")
-                self.assertEqual(State.SUCCESS, ti.state)
+            # Run DAG
+            dag_run = dag.test(execution_date=snapshot_date, session=env.session)
+            self.assertEqual(State.SUCCESS, dag_run.state)
 
-                # Make BQ datasets
-                ti = env.run_task("create_dataset")
-                self.assertEqual(State.SUCCESS, ti.state)
+            ##########
+            # Assert results
+            ##########
 
-                # Fetch release
-                ti = env.run_task("fetch_release")
-                self.assertEqual(State.SUCCESS, ti.state)
+            # Mocked and expected data
+            release = OaDashboardRelease(
+                dag_id=self.dag_id,
+                run_id=dag_run.run_id,
+                input_project_id=env.cloud_workspace.input_project_id,
+                output_project_id=env.cloud_workspace.output_project_id,
+                snapshot_date=snapshot_date,
+                bq_ror_dataset_id=bq_dataset_id,
+                bq_agg_dataset_id=bq_dataset_id,
+                bq_settings_dataset_id=bq_dataset_id_settings,
+                bq_oa_dashboard_dataset_id=bq_dataset_id_oa_dashboard,
+            )
 
-                # Upload institution IDs
-                # These are the institutions that were in the previous version of the dashboard to include
-                ti = env.run_task("upload_institution_ids")
-                self.assertEqual(State.SUCCESS, ti.state)
+            # Check that assets downloaded
+            for file_name in ["images.zip", "images-base.zip"]:
+                path = os.path.join(release.download_folder, file_name)
+                self.assertTrue(os.path.isfile(path))
 
-                # Create country and institution tables
-                ti = env.run_task("create_entity_tables")
-                self.assertEqual(State.SUCCESS, ti.state)
+            # Check that data downloaded
+            for file_name in ["country-data-000000000000.jsonl.gz", "institution-data-000000000000.jsonl.gz"]:
+                path = os.path.join(release.download_folder, file_name)
+                self.assertTrue(os.path.isfile(path))
 
-                # Fetch and add Wikipedia descriptions
-                ti = env.run_task("add_wiki_descriptions_country")
-                self.assertEqual(State.SUCCESS, ti.state)
-                ti = env.run_task("add_wiki_descriptions_institution")
-                self.assertEqual(State.SUCCESS, ti.state)
+            # Check that the data is as expected
+            for entity_type in entity_types:
+                file_path = os.path.join(FIXTURES_FOLDER, "expected", f"{entity_type}.json")
+                with open(file_path, "r") as f:
+                    expected_data = json.load(f)
+                actual_data = list(yield_data_glob(data_file_pattern(release.download_folder, entity_type)))
+                diff = DeepDiff(expected_data, actual_data, ignore_order=False, significant_digits=4)
+                all_matched = True
+                for diff_type, changes in diff.items():
+                    log_diff(diff_type, changes)
+                assert all_matched, "Rows in actual content do not match expected content"
 
-                # Download cached assets
-                ti = env.run_task("download_assets")
-                self.assertEqual(State.SUCCESS, ti.state)
-                for file_name in ["images.zip", "images-base.zip"]:
-                    path = os.path.join(release.download_folder, file_name)
-                    self.assertTrue(os.path.isfile(path))
+            # Check that data is transformed
+            build_folder = os.path.join(release.transform_folder, "build")
+            expected_files = make_expected_build_files(build_folder)
+            print("Checking expected transformed files")
+            for file in expected_files:
+                print(f"\t{file}")
+                self.assertTrue(os.path.isfile(file))
 
-                # Download institution logos
-                ti = env.run_task("download_institution_logos")
-                self.assertEqual(State.SUCCESS, ti.state)
+            # Check that full dataset zip file exists
+            for file_name in ["data.zip", "images.zip", "coki-oa-dataset.zip"]:
+                latest_file = os.path.join(release.transform_folder, "out", file_name)
+                print(f"\t{latest_file}")
+                self.assertTrue(os.path.isfile(latest_file))
 
-                # Export county and institution tables
-                ti = env.run_task("export_tables")
-                self.assertEqual(State.SUCCESS, ti.state)
+            # Check that data is uploaded to bucket
+            blob_name = f"{version}/data.zip"
+            self.assert_blob_exists(data_bucket, blob_name)
+            blob_name = f"{version}/images.zip"
+            self.assert_blob_exists(data_bucket, blob_name)
 
-                # Download data
-                ti = env.run_task("download_data")
-                self.assertEqual(State.SUCCESS, ti.state)
-                for file_name in ["country-data-000000000000.jsonl.gz", "institution-data-000000000000.jsonl.gz"]:
-                    path = os.path.join(release.download_folder, file_name)
-                    self.assertTrue(os.path.isfile(path))
-
-                # Check that the data is as expected
-                for entity_type in entity_types:
-                    file_path = os.path.join(FIXTURES_FOLDER, "expected", f"{entity_type}.json")
-                    with open(file_path, "r") as f:
-                        expected_data = json.load(f)
-                    actual_data = list(yield_data_glob(data_file_pattern(release.download_folder, entity_type)))
-                    diff = DeepDiff(expected_data, actual_data, ignore_order=False, significant_digits=4)
-                    all_matched = True
-                    for diff_type, changes in diff.items():
-                        log_diff(diff_type, changes)
-                    assert all_matched, "Rows in actual content do not match expected content"
-
-                # Make draft Zenodo version
-                ti = env.run_task("make_draft_zenodo_version")
-                self.assertEqual(State.SUCCESS, ti.state)
-
-                # Preprocess data
-                ti = env.run_task("build_datasets")
-                self.assertEqual(State.SUCCESS, ti.state)
-                build_folder = os.path.join(release.transform_folder, "build")
-                expected_files = make_expected_build_files(build_folder)
-                print("Checking expected transformed files")
-                for file in expected_files:
-                    print(f"\t{file}")
-                    self.assertTrue(os.path.isfile(file))
-
-                # Check that full dataset zip file exists
-                for file_name in ["data.zip", "images.zip", "coki-oa-dataset.zip"]:
-                    latest_file = os.path.join(release.transform_folder, "out", file_name)
-                    print(f"\t{latest_file}")
-                    self.assertTrue(os.path.isfile(latest_file))
-
-                # Publish Zenodo version
-                ti = env.run_task("publish_zenodo_version")
-                self.assertEqual(State.SUCCESS, ti.state)
-
-                # Upload data to bucket
-                ti = env.run_task("upload_dataset")
-                self.assertEqual(State.SUCCESS, ti.state)
-                blob_name = f"{version}/data.zip"
-                self.assert_blob_exists(data_bucket, blob_name)
-                blob_name = f"{version}/images.zip"
-                self.assert_blob_exists(data_bucket, blob_name)
-
-                # Trigger repository dispatch
-                ti = env.run_task("repository_dispatch")
-                self.assertEqual(State.SUCCESS, ti.state)
-                mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/develop")
-                mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/staging")
-                mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/production")
-
-                # Test that all workflow data deleted
-                ti = env.run_task("cleanup_workflow")
-                self.assertEqual(State.SUCCESS, ti.state)
-                self.assert_cleanup(release.workflow_folder)
+            # Check that repository dispatch called
+            mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/develop")
+            mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/staging")
+            mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/production")
 
 
 def make_expected_build_files(base_path: str) -> List[str]:
