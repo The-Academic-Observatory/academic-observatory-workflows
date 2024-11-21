@@ -37,3 +37,14 @@ metadata:
 type: Opaque
 data:
   api-key: c2VjcmV0 # 'secret'
+
+# Unpaywall secret
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: unpaywall
+  namespace: default
+type: Opaque
+data:
+  api-key: c2VjcmV0 # 'secret'

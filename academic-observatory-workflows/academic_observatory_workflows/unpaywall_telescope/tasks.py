@@ -41,9 +41,6 @@ from observatory_platform.airflow.workflow import cleanup
 from observatory_platform.url_utils import get_filename_from_http_header, get_http_response_json
 
 # See https://unpaywall.org/products/data-feed for details of available APIs
-SNAPSHOT_URL = "https://api.unpaywall.org/feed/snapshot"
-CHANGEFILES_URL = "https://api.unpaywall.org/feed/changefiles"
-CHANGEFILES_DOWNLOAD_URL = "https://api.unpaywall.org/daily-feed/changefile"
 
 
 def fetch_release(
@@ -53,21 +50,22 @@ def fetch_release(
     cloud_workspace: CloudWorkspace,
     bq_dataset_id: str,
     bq_table_name: str,
-    api_dataset_id: str,
+    api_bq_dataset_id: str,
     unpaywall_conn_id: str,
+    base_url: str,
 ) -> dict | None:
     """Fetches the release information. On the first DAG run gets the latest snapshot and the necessary changefiles
     required to get the dataset up to date. On subsequent runs it fetches unseen changefiles. It is possible
     for no changefiles to be found after the first run, in which case the rest of the tasks are skipped. Publish
     any available releases as an XCOM to avoid re-querying Unpaywall servers."""
 
-    api = DatasetAPI(bq_project_id=cloud_workspace.project_id, bq_dataset_id=api_dataset_id)
+    api = DatasetAPI(bq_project_id=cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
     api.seed_db()
     prev_release = api.get_dataset_releases(dag_id=dag_id, entity_id="unpaywall", limit=1)
 
     # Get Unpaywall changefiles and sort from newest to oldest
     api_key = get_airflow_connection_password(unpaywall_conn_id)
-    all_changefiles = get_unpaywall_changefiles(api_key)
+    all_changefiles = get_unpaywall_changefiles(api_key, base_url)
     all_changefiles.sort(key=lambda c: c.changefile_date, reverse=True)
 
     logging.info(f"fetch_release: {len(all_changefiles)} JSONL changefiles discovered")
@@ -81,7 +79,7 @@ def fetch_release(
         ), "fetch_release: there should be no DatasetReleases stored in the Observatory API on the first DAG run."
 
         # Get snapshot date as this is used to determine what changefile to get
-        snapshot_file_name = get_snapshot_file_name(api_key)
+        snapshot_file_name = get_snapshot_file_name(api_key, base_url)
         snapshot_date = unpaywall_filename_to_datetime(snapshot_file_name)
 
         # On first run, add changefiles from present until the changefile before the snapshot_date
@@ -155,16 +153,17 @@ def bq_create_main_table_snapshot(release: dict, snapshot_expiry_days: int) -> N
         raise AirflowException("bq_create_main_table_snapshot: failed to create BigQuery snapshot")
 
 
-def load_snapshot_download(release: dict, unpaywall_conn_id: str, http_header: str):
-
+def load_snapshot_download(release: dict, http_header: str, base_url: str):
     # Clean all files
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.snapshot_release.download_folder)
 
     # Download the most recent Unpaywall snapshot
     # Use a read buffer size of 8MiB as we are downloading a large file
-    api_key = get_airflow_connection_password(unpaywall_conn_id)
-    url = snapshot_url(api_key)
+    api_key = os.environ.get("UNPAYWALL_API_KEY")
+    if not api_key:
+        raise AirflowException("API key 'UNPAYWALL_API_KEY' not found")
+    url = snapshot_url(api_key, base_url=base_url)
     success, download_info = download_file(
         url=url,
         headers=http_header,
@@ -250,14 +249,16 @@ def load_snapshot_bq_load(release: dict, schema_file_path: str, table_descriptio
         raise AirflowException("bq_load: failed to load main table")
 
 
-def load_changefiles_download(release: dict, unpaywall_conn_id: str, http_header: str):
+def load_changefiles_download(release: dict, http_header: str, base_url: str):
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.changefile_release.download_folder)
+    api_key = os.environ.get("UNPAYWALL_API_KEY")
+    if not api_key:
+        raise AirflowException("API key 'UNPAYWALL_API_KEY' not found")
 
     download_list = []
-    api_key = get_airflow_connection_password(unpaywall_conn_id)
     for changefile in release.changefiles:
-        url = changefile_download_url(changefile.filename, api_key)
+        url = f"{base_url}/daily-feed/changefile/{changefile.filename}?api_key={api_key}"
         # TODO: it is a bit confusing that you have to set prefix_dir and filename, but can't just directly set filepath
         download_list.append(
             DownloadInfo(
@@ -341,10 +342,10 @@ def load_changefiles_bq_upsert(release: dict, primary_key: str):
     )
 
 
-def add_dataset_release(release: dict, api_dataset_id: str):
+def add_dataset_release(release: dict, api_bq_dataset_id: str):
     release = UnpaywallRelease.from_dict(release)
 
-    api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_dataset_id)
+    api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
     api.seed_db()
     now = pendulum.now()
     dataset_release = DatasetRelease(
@@ -366,38 +367,30 @@ def cleanup_workflow(release: dict):
     cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
 
 
-def snapshot_url(api_key: str) -> str:
+def snapshot_url(api_key: str, base_url: str) -> str:
     """Snapshot URL"""
 
-    return f"{SNAPSHOT_URL}?api_key={api_key}"
+    return f"{base_url}/feed/snapshot?api_key={api_key}"
 
 
-def get_snapshot_file_name(api_key: str) -> str:
+def get_snapshot_file_name(api_key: str, base_url: str) -> str:
     """Get the Unpaywall snapshot filename.
 
     :return: Snapshot file date.
     """
 
-    url = snapshot_url(api_key)
+    url = snapshot_url(api_key, base_url)
     return get_filename_from_http_header(url)
 
 
-def changefiles_url(api_key: str) -> str:
-    """Data Feed URL"""
+def get_unpaywall_changefiles(api_key: str, base_url: str) -> List[Changefile]:
+    """Get all changefiles from unpaywall"""
 
-    return f"{CHANGEFILES_URL}?interval=day&api_key={api_key}"
-
-
-def changefile_download_url(filename: str, api_key: str):
-    return f"{CHANGEFILES_DOWNLOAD_URL}/{filename}?api_key={api_key}"
-
-
-def get_unpaywall_changefiles(api_key: str) -> List[Changefile]:
-    url = changefiles_url(api_key)
+    url = f"{base_url}/feed/changefiles?interval=day&api_key={api_key}"
     response = get_http_response_json(url)
-    changefiles = []
 
     # Only include jsonl files, parse date and strip out api key
+    changefiles = []
     for changefile in response["list"]:
         filetype = changefile["filetype"]
         if filetype == "jsonl":

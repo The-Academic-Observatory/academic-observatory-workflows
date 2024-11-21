@@ -22,12 +22,12 @@ from airflow import DAG
 from airflow.decorators import dag, task, task_group
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.trigger_rule import TriggerRule
+from airflow.providers.cncf.kubernetes.secret import Secret
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.unpaywall_telescope import tasks
 from academic_observatory_workflows.unpaywall_telescope.release import UnpaywallRelease
 from observatory_platform.google.bigquery import bq_create_dataset, bq_find_schema
-from observatory_platform.config import AirflowConns
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.airflow.sensors import PreviousDagRunSensor
@@ -47,11 +47,12 @@ class DagParams:
     :param cloud_workspace: the cloud workspace settings.
     :param bq_dataset_id: the BigQuery dataset id.
     :param bq_table_name: the BigQuery table name.
-    :param api_dataset_id: the API dataset id.
+    :param api_bq_dataset_id: the API dataset id.
     :param schema_folder: the schema folder.
     :param dataset_description: a description for the BigQuery dataset.
     :param table_description: a description for the table.
     :param primary_key: the primary key to use for merging changefiles.
+    :param unpaywall_base_url: The unpaywall api base url.
     :param snapshot_expiry_days: the number of days to keep snapshots.
     :param http_header: the http header to use when making requests to Unpaywall.
     :param unpaywall_conn_id: Unpaywall connection key.
@@ -72,15 +73,15 @@ class DagParams:
         cloud_workspace: CloudWorkspace,
         bq_dataset_id: str = "unpaywall",
         bq_table_name: str = "unpaywall",
-        api_dataset_id: str = "unpaywall",
+        api_bq_dataset_id: str = "unpaywall",
         schema_folder: str = project_path("unpaywall_telescope", "schema"),
         dataset_description: str = "Unpaywall Data Feed: https://unpaywall.org/products/data-feed",
         table_description: str = "Unpaywall Data Feed: https://unpaywall.org/products/data-feed",
         primary_key: str = "doi",
+        unpaywall_base_url: str = "https://api.unpaywall.org",
         snapshot_expiry_days: int = 7,
         http_header: str = None,
         unpaywall_conn_id: str = "unpaywall",
-        observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
         start_date: pendulum.DateTime = pendulum.datetime(2021, 7, 2),
         schedule: str = "@daily",
         max_active_runs: int = 1,
@@ -99,16 +100,16 @@ class DagParams:
         self.cloud_workspace = cloud_workspace
         self.bq_dataset_id = bq_dataset_id
         self.bq_table_name = bq_table_name
-        self.api_dataset_id = api_dataset_id
+        self.api_bq_dataset_id = api_bq_dataset_id
         self.schema_folder = schema_folder
         self.schema_file_path = schema_file_path
         self.dataset_description = dataset_description
         self.table_description = table_description
         self.primary_key = primary_key
+        self.unpaywall_base_url = unpaywall_base_url
         self.snapshot_expiry_days = snapshot_expiry_days
         self.http_header = http_header
         self.unpaywall_conn_id = unpaywall_conn_id
-        self.observatory_api_conn_id = observatory_api_conn_id
         self.start_date = start_date
         self.schedule = schedule
         self.max_active_runs = max_active_runs
@@ -126,6 +127,7 @@ def create_dag(dag_params: DagParams) -> DAG:
     """The Unpaywall Data Feed Telescope."""
 
     kubernetes_task_params = gke_make_kubernetes_task_params(dag_params.gke_params)
+    kubernetes_task_params["log_events_on_failure"] = False
 
     @dag(
         dag_id=dag_params.dag_id,
@@ -148,15 +150,16 @@ def create_dag(dag_params: DagParams) -> DAG:
             for no changefiles to be found after the first run, in which case the rest of the tasks are skipped. Publish
             any available releases as an XCOM to avoid re-querying Unpaywall servers."""
 
-            tasks.fetch_release(
+            return tasks.fetch_release(
                 dag_id=dag_params.dag_id,
                 run_id=context["run_id"],
                 dag_run=context["dag_run"],
                 cloud_workspace=dag_params.cloud_workspace,
                 bq_dataset_id=dag_params.bq_dataset_id,
                 bq_table_name=dag_params.bq_table_name,
-                api_dataset_id=dag_params.api_dataset_id,
+                api_bq_dataset_id=dag_params.api_bq_dataset_id,
                 unpaywall_conn_id=dag_params.unpaywall_conn_id,
+                base_url=dag_params.unpaywall_base_url,
             )
 
         @task.short_circuit
@@ -194,12 +197,13 @@ def create_dag(dag_params: DagParams) -> DAG:
             """Download and process snapshot on first run"""
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.NONE_FAILED,
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 name="load_snapshot_download",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
                     dag_params.gke_params.gke_resource_overrides.get("load_snapshot_download"),
                 ),
+                secrets=[Secret("env", "UNPAYWALL_API_KEY", "unpaywall", "api-key")],
                 **kubernetes_task_params,
             )
             def load_snapshot_download(release: dict, dag_params, **context):
@@ -207,11 +211,11 @@ def create_dag(dag_params: DagParams) -> DAG:
                 from academic_observatory_workflows.unpaywall_telescope import tasks
 
                 tasks.load_snapshot_download(
-                    release, unpaywall_conn_id=dag_params.unpaywall_conn_id, http_header=dag_params.http_header
+                    release, http_header=dag_params.http_header, base_url=dag_params.unpaywall_base_url
                 )
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.NONE_FAILED,
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 name="load_snapshot_upload_downloaded",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
@@ -226,7 +230,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.load_snapshot_upload_downloaded(release, cloud_workspace=dag_params.cloud_workspace)
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.NONE_FAILED,
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 name="load_snapshot_extract",
                 container_resources=gke_make_container_resources(
                     {"memory": "16G", "cpu": "16"},
@@ -241,7 +245,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.load_snapshot_extract(release)
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.NONE_FAILED,
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 name="load_snapshot_transform",
                 container_resources=gke_make_container_resources(
                     {"memory": "16G", "cpu": "16"},
@@ -257,7 +261,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.load_snapshot_transform(release)
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.NONE_FAILED,
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 name="load_snapshot_split_main_table_file",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
@@ -272,7 +276,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.load_snapshot_split_main_table_file(release=release, **context)
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.NONE_FAILED,
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 name="load_snapshot_upload_main_table_files",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
@@ -319,22 +323,27 @@ def create_dag(dag_params: DagParams) -> DAG:
             """Download and process change files on each run"""
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.ALL_DONE,
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 name="load_changefiles_download",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
                     dag_params.gke_params.gke_resource_overrides.get("load_changefiles_download"),
                 ),
+                secrets=[Secret("env", "UNPAYWALL_API_KEY", "unpaywall", "api-key")],
                 **kubernetes_task_params,
             )
             def load_changefiles_download(release: dict, dag_params, **context):
                 """Download the Unpaywall change files that are required for this release."""
+                from academic_observatory_workflows.unpaywall_telescope import tasks
+
                 tasks.load_changefiles_download(
-                    release=release, unpaywall_conn_id=dag_params.unpaywall_conn_id, http_header=dag_params.http_header
+                    release=release,
+                    http_header=dag_params.http_header,
+                    base_url=dag_params.unpaywall_base_url,
                 )
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.ALL_DONE,
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 name="load_changefiles_upload_downloaded",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
@@ -344,11 +353,12 @@ def create_dag(dag_params: DagParams) -> DAG:
             )
             def load_changefiles_upload_downloaded(release: dict, dag_params, **context):
                 """Upload the downloaded changefiles for the given release."""
+                from academic_observatory_workflows.unpaywall_telescope import tasks
 
                 tasks.load_changefiles_upload_downloaded(release=release, cloud_workspace=dag_params.cloud_workspace)
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.ALL_DONE,
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 name="load_changefiles_extract",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
@@ -358,11 +368,12 @@ def create_dag(dag_params: DagParams) -> DAG:
             )
             def load_changefiles_extract(release: dict, **context):
                 """Task to gunzip the downloaded Unpaywall changefiles."""
+                from academic_observatory_workflows.unpaywall_telescope import tasks
 
                 tasks.load_changefiles_extract(release)
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.ALL_DONE,
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 name="load_changefiles_transform",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
@@ -373,11 +384,12 @@ def create_dag(dag_params: DagParams) -> DAG:
             def load_changefiles_transform(release: dict, dag_params, **context):
                 """Task to transform the Unpaywall changefiles merging them into the upsert file.
                 Find and replace the 'authenticated-orcid' string in the jsonl to 'authenticated_orcid'."""
+                from academic_observatory_workflows.unpaywall_telescope import tasks
 
                 tasks.load_changefiles_transform(release=release, primary_key=dag_params.primary_key)
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.ALL_DONE,
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 name="load_changefiles_upload",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
@@ -388,6 +400,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             def load_changefiles_upload(release: dict, dag_params, **context) -> None:
                 """Upload the transformed data to Cloud Storage.
                 :raises AirflowException: Raised if the files to be uploaded are not found."""
+                from academic_observatory_workflows.unpaywall_telescope import tasks
 
                 tasks.load_changefiles_upload(release=release, cloud_workspace=dag_params.cloud_workspace)
 
@@ -426,10 +439,10 @@ def create_dag(dag_params: DagParams) -> DAG:
             )
 
         @task
-        def add_dataset_release(release: dict, **context) -> None:
+        def add_dataset_release(release: dict, dag_params: DagParams, **context) -> None:
             """Adds release information to API."""
 
-            tasks.add_dataset_release()
+            tasks.add_dataset_release(release, dag_params.api_bq_dataset_id)
 
         @task
         def cleanup_workflow(release: dict, **context) -> None:
@@ -444,9 +457,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             dag_id=dag_params.dag_id,
             external_task_id=external_task_id,
         )
-        task_check_dependencies = check_dependencies(
-            airflow_conns=[dag_params.observatory_api_conn_id, dag_params.unpaywall_conn_id]
-        )
+        task_check_dependencies = check_dependencies(airflow_conns=[dag_params.unpaywall_conn_id])
         xcom_release = fetch_release()
         task_short_circuit = short_circuit(xcom_release)
         task_create_dataset = create_dataset(xcom_release)
@@ -454,7 +465,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_branch = branch(xcom_release)
         task_group_load_snapshot = load_snapshot(xcom_release)
         task_group_load_changefiles = load_changefiles(xcom_release)
-        task_add_dataset_release = add_dataset_release(xcom_release)
+        task_add_dataset_release = add_dataset_release(xcom_release, dag_params)
         task_cleanup_workflow = cleanup_workflow(xcom_release)
         # The last task that the next DAG run's ExternalTaskSensor waits for.
         task_dag_run_complete = EmptyOperator(task_id=external_task_id)
@@ -478,8 +489,8 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> xcom_release
             >> task_short_circuit
             >> task_create_dataset
-            >> task_create_storage
             >> task_bq_create_main_table_snapshot
+            >> task_create_storage
             >> task_branch
             >> task_group_load_snapshot
             >> task_group_load_changefiles
