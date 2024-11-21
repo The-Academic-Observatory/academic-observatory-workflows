@@ -30,6 +30,7 @@ from observatory_platform.airflow.workflow import Workflow
 from observatory_platform.sandbox.test_utils import load_and_parse_json, SandboxTestCase
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
 
+
 FIXTURES_FOLDER = project_path("unpaywall_telescope", "tests", "fixtures")
 
 
@@ -186,7 +187,7 @@ class TestUnpaywallTelescope(SandboxTestCase):
                 dagrun = create_dag(dag_params=test_params).test(execution_date=data_interval_end)
             # Make assertions
             if not dagrun.state == "success":
-                raise RuntimeError("Frist Dagrun did not complete successfully")
+                raise RuntimeError("First Dagrun did not complete successfully")
 
             self.assert_table_integrity(upsert_table_id, expected_rows=2)
             expected_content = load_and_parse_json(
@@ -195,6 +196,22 @@ class TestUnpaywallTelescope(SandboxTestCase):
                 timestamp_fields={"updated"},
             )
             self.assert_table_content(main_table_id, expected_content, "doi")
+            api_releases = api.get_dataset_releases(dag_id=test_params.dag_id, entity_id="unpaywall")
+            self.assertEqual(len(api_releases), 1)
+
+            ### Second Run: No new changefiles
+            data_interval_start = pendulum.datetime(2023, 4, 26)
+            data_interval_end = data_interval_start.end_of("day")
+            with patch("academic_observatory_workflows.unpaywall_telescope.tasks.get_http_response_json") as cfs, patch(
+                "academic_observatory_workflows.unpaywall_telescope.tasks.get_filename_from_http_header"
+            ) as ss:
+                cfs.return_value = {"list": []}
+                ss.return_value = "filename"
+                dagrun = create_dag(dag_params=test_params).test(execution_date=data_interval_end)
+            # Make assertions
+            if not dagrun.state == "success":
+                raise RuntimeError("Second Dagrun did not complete successfully")
+            # Check that only 1 dataset release exists
             api_releases = api.get_dataset_releases(dag_id=test_params.dag_id, entity_id="unpaywall")
             self.assertEqual(len(api_releases), 1)
 
