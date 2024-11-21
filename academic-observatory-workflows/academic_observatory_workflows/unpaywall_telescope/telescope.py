@@ -190,7 +190,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             if release.is_first_run:
                 return "load_snapshot.load_snapshot_download"
             else:
-                return "load_changefiles.load_snapshot_download"
+                return "load_changefiles.load_changefiles_download"
 
         @task_group
         def load_snapshot(data: dict):
@@ -323,7 +323,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             """Download and process change files on each run"""
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.ALL_SUCCESS,
+                trigger_rule=TriggerRule.NONE_FAILED,
                 name="load_changefiles_download",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
@@ -343,7 +343,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.ALL_SUCCESS,
+                trigger_rule=TriggerRule.NONE_FAILED,
                 name="load_changefiles_upload_downloaded",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
@@ -358,7 +358,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.load_changefiles_upload_downloaded(release=release, cloud_workspace=dag_params.cloud_workspace)
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.ALL_SUCCESS,
+                trigger_rule=TriggerRule.NONE_FAILED,
                 name="load_changefiles_extract",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
@@ -373,7 +373,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.load_changefiles_extract(release)
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.ALL_SUCCESS,
+                trigger_rule=TriggerRule.NONE_FAILED,
                 name="load_changefiles_transform",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
@@ -389,7 +389,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.load_changefiles_transform(release=release, primary_key=dag_params.primary_key)
 
             @task.kubernetes(
-                trigger_rule=TriggerRule.ALL_SUCCESS,
+                trigger_rule=TriggerRule.NONE_FAILED,
                 name="load_changefiles_upload",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
@@ -481,6 +481,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 volume_name=dag_params.gke_params.gke_volume_name,
                 kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
             )
+        task_merge_branches = EmptyOperator(task_id="merge_branches")
 
         (
             sensor
@@ -491,14 +492,18 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> task_bq_create_main_table_snapshot
             >> task_create_storage
             >> task_branch
-            >> task_group_load_snapshot
-            >> task_group_load_changefiles
+            >> [task_group_load_snapshot, task_group_load_changefiles]
+        )
+
+        task_group_load_snapshot >> task_group_load_changefiles
+        task_group_load_changefiles >> task_merge_branches
+
+        (
+            task_merge_branches
             >> task_delete_storage
             >> task_add_dataset_release
             >> task_cleanup_workflow
             >> task_dag_run_complete
         )
-
-        task_branch >> task_group_load_changefiles
 
     return unpaywall()
