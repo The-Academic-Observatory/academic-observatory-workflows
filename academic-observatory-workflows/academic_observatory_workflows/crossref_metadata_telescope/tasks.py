@@ -274,10 +274,10 @@ def make_snapshot_url(snapshot_date: pendulum.DateTime, base_url: str = "https:/
     :return: The snapshot url
     """
 
-    url_path = "/snapshots/monthly/{year}/{month:02d}/all.json.tar.gz".format(
+    url_path = "snapshots/monthly/{year}/{month:02d}/all.json.tar.gz".format(
         year=snapshot_date.year, month=snapshot_date.month
     )
-    return urllib.parse.urljoin(base_url, url_path)
+    return f"{base_url}/{url_path}"
 
 
 def get_api_key(crossref_metadata_conn_id: str) -> str:

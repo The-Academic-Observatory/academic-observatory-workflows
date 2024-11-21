@@ -122,7 +122,7 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
             test_params = DagParams(
                 dag_id="test_crossref_metadata",
                 cloud_workspace=env.cloud_workspace,
-                crossref_base_url=TestConfig.http_host_url,
+                crossref_base_url=f"http://{TestConfig.http_host_url}:{TestConfig.http_port}/crossref_metadata/",
                 retries=0,
                 bq_dataset_id=bq_dataset_id,
                 api_bq_dataset_id=api_bq_dataset_id,
