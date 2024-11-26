@@ -41,6 +41,10 @@ from observatory_platform.airflow.workflow import cleanup
 from observatory_platform.url_utils import get_filename_from_http_header, get_http_response_json
 
 # See https://unpaywall.org/products/data-feed for details of available APIs
+UNPAYWALL_BASE_URL = "https://api.unpaywall.org"
+SNAPSHOT_URL = "https://api.unpaywall.org/feed/snapshot"
+CHANGEFILES_URL = "https://api.unpaywall.org/feed/changefiles"
+CHANGEFILES_DOWNLOAD_URL = "https://api.unpaywall.org/daily-feed/changefile"
 
 
 def fetch_release(
@@ -65,7 +69,8 @@ def fetch_release(
 
     # Get Unpaywall changefiles and sort from newest to oldest
     api_key = get_airflow_connection_password(unpaywall_conn_id)
-    all_changefiles = get_unpaywall_changefiles(api_key, base_url)
+
+    all_changefiles = get_unpaywall_changefiles(changefiles_url(base_url, api_key))
     all_changefiles.sort(key=lambda c: c.changefile_date, reverse=True)
 
     logging.info(f"fetch_release: {len(all_changefiles)} JSONL changefiles discovered")
@@ -163,7 +168,7 @@ def load_snapshot_download(release: dict, http_header: str, base_url: str):
     api_key = os.environ.get("UNPAYWALL_API_KEY")
     if not api_key:
         raise AirflowException("API key 'UNPAYWALL_API_KEY' not found")
-    url = snapshot_url(api_key, base_url=base_url)
+    url = snapshot_url(base_url, api_key)
     success, download_info = download_file(
         url=url,
         headers=http_header,
@@ -249,6 +254,11 @@ def load_snapshot_bq_load(release: dict, schema_file_path: str, table_descriptio
         raise AirflowException("bq_load: failed to load main table")
 
 
+def changefile_download_url(base_url: str, changefile: str, api_key: str):
+    """Generate the changefile download url"""
+    return f"{base_url}/daily-feed/changefile/{changefile}?api_key={api_key}"
+
+
 def load_changefiles_download(release: dict, http_header: str, base_url: str):
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.changefile_release.download_folder)
@@ -258,7 +268,7 @@ def load_changefiles_download(release: dict, http_header: str, base_url: str):
 
     download_list = []
     for changefile in release.changefiles:
-        url = f"{base_url}/daily-feed/changefile/{changefile.filename}?api_key={api_key}"
+        url = changefile_download_url(base_url, changefile.filename, api_key)
         # TODO: it is a bit confusing that you have to set prefix_dir and filename, but can't just directly set filepath
         download_list.append(
             DownloadInfo(
@@ -367,26 +377,29 @@ def cleanup_workflow(release: dict):
     cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
 
 
-def snapshot_url(api_key: str, base_url: str) -> str:
+def snapshot_url(base_url: str, api_key: str) -> str:
     """Snapshot URL"""
 
     return f"{base_url}/feed/snapshot?api_key={api_key}"
 
 
-def get_snapshot_file_name(api_key: str, base_url: str) -> str:
+def get_snapshot_file_name(base_url: str, api_key: str) -> str:
     """Get the Unpaywall snapshot filename.
 
     :return: Snapshot file date.
     """
 
-    url = snapshot_url(api_key, base_url)
+    url = snapshot_url(base_url, api_key)
     return get_filename_from_http_header(url)
 
 
-def get_unpaywall_changefiles(api_key: str, base_url: str) -> List[Changefile]:
+def changefiles_url(base_url: str, api_key: str):
+    return f"{base_url}/feed/changefiles?interval=day&api_key={api_key}"
+
+
+def get_unpaywall_changefiles(url: str) -> List[Changefile]:
     """Get all changefiles from unpaywall"""
 
-    url = f"{base_url}/feed/changefiles?interval=day&api_key={api_key}"
     response = get_http_response_json(url)
 
     # Only include jsonl files, parse date and strip out api key

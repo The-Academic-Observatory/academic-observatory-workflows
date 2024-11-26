@@ -48,55 +48,56 @@ class TestUnpaywallTelescope(SandboxTestCase):
         dag = create_dag(DagParams(dag_id=self.dag_id, cloud_workspace=self.fake_cloud_workspace, test_run=True))
         self.assert_dag_structure(
             {
-                "wait_for_prev_dag_run": ["check_dependencies"],
-                "check_dependencies": ["fetch_release"],
-                "fetch_release": [
-                    "short_circuit",
+                "wait_for_prev_dag_run": {"check_dependencies"},
+                "check_dependencies": {"fetch_release"},
+                "fetch_release": {
                     "create_dataset",
-                    "bq_create_main_table_snapshot",
-                    "branch",
-                    "load_snapshot.load_snapshot_download",
-                    "load_snapshot.load_snapshot_upload_downloaded",
-                    "load_snapshot.load_snapshot_extract",
-                    "load_snapshot.load_snapshot_transform",
-                    "load_snapshot.load_snapshot_split_main_table_file",
-                    "load_snapshot.load_snapshot_upload_main_table_files",
-                    "load_snapshot.load_snapshot_bq_load",
-                    "load_changefiles.load_changefiles_download",
-                    "load_changefiles.load_changefiles_upload_downloaded",
-                    "load_changefiles.load_changefiles_extract",
-                    "load_changefiles.load_changefiles_transform",
-                    "load_changefiles.load_changefiles_upload",
-                    "load_changefiles.load_changefiles_bq_load",
                     "load_changefiles.load_changefiles_bq_upsert",
-                    "add_dataset_release",
+                    "load_snapshot.load_snapshot_bq_load",
+                    "load_snapshot.load_snapshot_download",
+                    "load_snapshot.load_snapshot_upload_main_table_files",
+                    "load_changefiles.load_changefiles_upload_downloaded",
+                    "load_snapshot.load_snapshot_split_main_table_file",
+                    "load_snapshot.load_snapshot_transform",
+                    "load_snapshot.load_snapshot_upload_downloaded",
+                    "load_changefiles.load_changefiles_download",
+                    "branch",
                     "cleanup_workflow",
-                ],
-                "short_circuit": ["create_dataset"],
-                "create_dataset": ["bq_create_main_table_snapshot"],
-                "bq_create_main_table_snapshot": ["gke_create_storage"],
-                "gke_create_storage": ["branch"],
-                "branch": ["load_snapshot.load_snapshot_download", "load_changefiles.load_changefiles_download"],
-                "load_snapshot.load_snapshot_download": ["load_snapshot.load_snapshot_upload_downloaded"],
-                "load_snapshot.load_snapshot_upload_downloaded": ["load_snapshot.load_snapshot_extract"],
-                "load_snapshot.load_snapshot_extract": ["load_snapshot.load_snapshot_transform"],
-                "load_snapshot.load_snapshot_transform": ["load_snapshot.load_snapshot_split_main_table_file"],
-                "load_snapshot.load_snapshot_split_main_table_file": [
+                    "short_circuit",
+                    "load_changefiles.load_changefiles_transform",
+                    "add_dataset_release",
+                    "load_changefiles.load_changefiles_extract",
+                    "load_changefiles.load_changefiles_upload",
+                    "bq_create_main_table_snapshot",
+                    "load_changefiles.load_changefiles_bq_load",
+                    "load_snapshot.load_snapshot_extract",
+                },
+                "short_circuit": {"create_dataset"},
+                "create_dataset": {"bq_create_main_table_snapshot"},
+                "bq_create_main_table_snapshot": {"gke_create_storage"},
+                "gke_create_storage": {"branch"},
+                "branch": {"load_snapshot.load_snapshot_download", "load_changefiles.load_changefiles_download"},
+                "load_snapshot.load_snapshot_download": {"load_snapshot.load_snapshot_upload_downloaded"},
+                "load_snapshot.load_snapshot_upload_downloaded": {"load_snapshot.load_snapshot_extract"},
+                "load_snapshot.load_snapshot_extract": {"load_snapshot.load_snapshot_transform"},
+                "load_snapshot.load_snapshot_transform": {"load_snapshot.load_snapshot_split_main_table_file"},
+                "load_snapshot.load_snapshot_split_main_table_file": {
                     "load_snapshot.load_snapshot_upload_main_table_files"
-                ],
-                "load_snapshot.load_snapshot_upload_main_table_files": ["load_snapshot.load_snapshot_bq_load"],
-                "load_snapshot.load_snapshot_bq_load": ["load_changefiles.load_changefiles_download"],
-                "load_changefiles.load_changefiles_download": ["load_changefiles.load_changefiles_upload_downloaded"],
-                "load_changefiles.load_changefiles_upload_downloaded": ["load_changefiles.load_changefiles_extract"],
-                "load_changefiles.load_changefiles_extract": ["load_changefiles.load_changefiles_transform"],
-                "load_changefiles.load_changefiles_transform": ["load_changefiles.load_changefiles_upload"],
-                "load_changefiles.load_changefiles_upload": ["load_changefiles.load_changefiles_bq_load"],
-                "load_changefiles.load_changefiles_bq_load": ["load_changefiles.load_changefiles_bq_upsert"],
-                "load_changefiles.load_changefiles_bq_upsert": ["gke_delete_storage"],
-                "gke_delete_storage": ["add_dataset_release"],
-                "add_dataset_release": ["cleanup_workflow"],
-                "cleanup_workflow": ["dag_run_complete"],
-                "dag_run_complete": [],
+                },
+                "load_snapshot.load_snapshot_upload_main_table_files": {"load_snapshot.load_snapshot_bq_load"},
+                "load_snapshot.load_snapshot_bq_load": {"load_changefiles.load_changefiles_download"},
+                "load_changefiles.load_changefiles_download": {"load_changefiles.load_changefiles_upload_downloaded"},
+                "load_changefiles.load_changefiles_upload_downloaded": {"load_changefiles.load_changefiles_extract"},
+                "load_changefiles.load_changefiles_extract": {"load_changefiles.load_changefiles_transform"},
+                "load_changefiles.load_changefiles_transform": {"load_changefiles.load_changefiles_upload"},
+                "load_changefiles.load_changefiles_upload": {"load_changefiles.load_changefiles_bq_load"},
+                "load_changefiles.load_changefiles_bq_load": {"load_changefiles.load_changefiles_bq_upsert"},
+                "load_changefiles.load_changefiles_bq_upsert": {"merge_branches"},
+                "merge_branches": {"gke_delete_storage"},
+                "gke_delete_storage": {"add_dataset_release"},
+                "add_dataset_release": {"cleanup_workflow"},
+                "cleanup_workflow": {"dag_run_complete"},
+                "dag_run_complete": {},
             },
             dag,
         )
@@ -172,7 +173,6 @@ class TestUnpaywallTelescope(SandboxTestCase):
             data_interval_start = pendulum.datetime(2023, 4, 25)
             data_interval_end = data_interval_start.end_of("day")
             snapshot_date = pendulum.datetime(2023, 4, 25, 8, 30, 2)
-            # changefile_date = pendulum.datetime(2023, 4, 25, 8, 0, 1)
 
             clear_airflow_connections()
             upsert_airflow_connection(conn_id="unpaywall", conn_type="http", password="secret")
@@ -185,6 +185,7 @@ class TestUnpaywallTelescope(SandboxTestCase):
                 }
                 ss.return_value = f"unpaywall_snapshot_{snapshot_date.format('YYYY-MM-DDTHHmmss')}.jsonl.gz"
                 dagrun = create_dag(dag_params=test_params).test(execution_date=data_interval_end)
+
             # Make assertions
             if not dagrun.state == "success":
                 raise RuntimeError("First Dagrun did not complete successfully")
@@ -209,13 +210,14 @@ class TestUnpaywallTelescope(SandboxTestCase):
                 ss.return_value = "filename"
                 dagrun = create_dag(dag_params=test_params).test(execution_date=data_interval_end)
             # Make assertions
+
             if not dagrun.state == "success":
                 raise RuntimeError("Second Dagrun did not complete successfully")
             # Check that only 1 dataset release exists
             api_releases = api.get_dataset_releases(dag_id=test_params.dag_id, entity_id="unpaywall")
             self.assertEqual(len(api_releases), 1)
 
-            # # Third run: waiting a couple of days and applying multiple changefiles
+            ## Third run: waiting a couple of days and applying multiple changefiles
             prev_end_date = pendulum.datetime(2023, 4, 25, 8, 0, 1)
             data_interval_start = pendulum.datetime(2023, 4, 27)
             data_interval_end = data_interval_start.end_of("day")
@@ -252,145 +254,3 @@ class TestUnpaywallTelescope(SandboxTestCase):
             self.assert_table_content(main_table_id, expected_content, "doi")
             api_releases = api.get_dataset_releases(dag_id=test_params.dag_id, entity_id="unpaywall")
             self.assertEqual(len(api_releases), 2)
-
-            # with env.create_dag_run(dag, data_interval_start) as dag_run:
-            #     # Mocked and expected data
-            #     release = UnpaywallRelease(
-            #         dag_id=self.dag_id,
-            #         run_id=dag_run.run_id,
-            #         cloud_workspace=env.cloud_workspace,
-            #         bq_dataset_id=bq_dataset_id,
-            #         bq_table_name=bq_table_name,
-            #         is_first_run=False,
-            #         snapshot_date=snapshot_date,
-            #         # These are out of order to make sure that they get sorted
-            #         changefiles=[
-            #             Changefile(
-            #                 "changed_dois_with_versions_2023-04-27T080001.jsonl.gz",
-            #                 end_date,
-            #             ),
-            #             Changefile(
-            #                 "changed_dois_with_versions_2023-04-26T080001.jsonl.gz",
-            #                 start_date,
-            #             ),
-            #         ],
-            #         prev_end_date=prev_end_date,
-            #     )
-            #
-            # Fetch releases and check that we have received the expected snapshot date and changefiles
-            # task_ids = [
-            #     "wait_for_prev_dag_run",
-            #     "check_dependencies",
-            #     "fetch_release",
-            #     "short_circuit",
-            #     "create_dataset",
-            #     "bq_create_main_table_snapshot",
-            #     "branch",
-            # ]
-            # with patch.multiple(
-            #     "academic_observatory_workflows.unpaywall_telescope.unpaywall_telescope",
-            #     get_unpaywall_changefiles=lambda api_key: release.changefiles,
-            #     get_snapshot_file_name=lambda api_key: _make_snapshot_filename(snapshot_date),
-            # ):
-            #     for task_id in task_ids:
-            #         ti = env.run_task(task_id)
-            #         self.assertEqual(State.SUCCESS, ti.state)
-            #
-            # # Check that snapshot created
-            # dst_table_id = bq_sharded_table_id(
-            #     env.cloud_workspace.output_project_id,
-            #     bq_dataset_id,
-            #     f"{bq_table_name}_snapshot",
-            #     prev_end_date,
-            # )
-            # self.assert_table_integrity(dst_table_id, expected_rows=10)
-
-            # # Run snapshot tasks, these should all have skipped
-            # ti = env.run_task("load_snapshot.download")
-            # self.assertEqual(State.SKIPPED, ti.state)
-
-            # TODO: not sure why, but these won't skip in the testing environment, so have to manually
-            # skip them so that we can finish testing the other tasks
-            # task_ids = [
-            #     "load_snapshot.upload_downloaded",
-            #     "load_snapshot.extract",
-            #     "load_snapshot.transform",
-            #     "load_snapshot.split_main_table_file",
-            #     "load_snapshot.upload_main_table_files",
-            #     "load_snapshot.bq_load",
-            # ]
-            # for task_id in task_ids:
-            #     ti = env.skip_task(task_id)
-            #     self.assertEqual(State.SKIPPED, ti.state)
-
-            # Run changefile tasks
-            # server = HttpServer(directory=FIXTURES_FOLDER, port=find_free_port())
-            # with server.create():
-            #     with patch.object(
-            #         academic_observatory_workflows.unpaywall_telescope.unpaywall_telescope,
-            #         "CHANGEFILES_DOWNLOAD_URL",
-            #         f"http://localhost:{server.port}",
-            #     ):
-            #         ti = env.run_task("load_changefiles.download")
-            # self.assertEqual(State.SUCCESS, ti.state)
-            # for changefile in release.changefiles:
-            #     self.assertTrue(os.path.isfile(changefile.download_file_path))
-
-            # ti = env.run_task("load_changefiles.upload_downloaded")
-            # self.assertEqual(State.SUCCESS, ti.state)
-            # for changefile in release.changefiles:
-            #     self.assert_blob_integrity(
-            #         env.download_bucket,
-            #         gcs_blob_name_from_path(changefile.download_file_path),
-            #         changefile.download_file_path,
-            #     )
-            #
-            # ti = env.run_task("load_changefiles.extract")
-            # self.assertEqual(State.SUCCESS, ti.state)
-            # for changefile in release.changefiles:
-            #     self.assertTrue(os.path.isfile(changefile.extract_file_path))
-            #
-            # ti = env.run_task("load_changefiles.transform")
-            # self.assertEqual(State.SUCCESS, ti.state)
-            # # The transformed files are deleted
-            # for changefile in release.changefiles:
-            #     self.assertFalse(os.path.isfile(changefile.transform_file_path))
-            # # Upsert file should exist
-            # self.assertTrue(os.path.isfile(release.upsert_table_file_path))
-            #
-            # ti = env.run_task("load_changefiles.upload")
-            # self.assertEqual(State.SUCCESS, ti.state)
-            # self.assert_blob_integrity(
-            #     env.transform_bucket,
-            #     gcs_blob_name_from_path(release.upsert_table_file_path),
-            #     release.upsert_table_file_path,
-            # )
-            # ti = env.run_task("load_changefiles.bq_load")
-            # self.assertEqual(State.SUCCESS, ti.state)
-            # self.assert_table_integrity(release.bq_upsert_table_id, expected_rows=4)
-            #
-            # ti = env.run_task("load_changefiles.bq_upsert")
-            # self.assertEqual(State.SUCCESS, ti.state)
-            # self.assert_table_integrity(release.bq_main_table_id, expected_rows=12)
-            # expected_content = load_and_parse_json(
-            #     os.path.join(FIXTURES_FOLDER, "expected", "run3_bq_upsert_records.json"),
-            #     date_fields={"oa_date", "published_date"},
-            #     timestamp_fields={"updated"},
-            # )
-            # self.assert_table_content(release.bq_main_table_id, expected_content, "doi")
-            #
-            # # Final tasks
-            # dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=api_dataset_id)
-            # self.assertEqual(len(dataset_releases), 1)
-            # ti = env.run_task("add_dataset_release")
-            # self.assertEqual(State.SUCCESS, ti.state)
-            # dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=api_dataset_id)
-            # self.assertEqual(len(dataset_releases), 2)
-            #
-            # # Test that all workflow data deleted
-            # ti = env.run_task("cleanup_workflow")
-            # self.assertEqual(State.SUCCESS, ti.state)
-            # self.assert_cleanup(release.workflow_folder)
-            #
-            # ti = env.run_task("dag_run_complete")
-            # self.assertEqual(State.SUCCESS, ti.state)

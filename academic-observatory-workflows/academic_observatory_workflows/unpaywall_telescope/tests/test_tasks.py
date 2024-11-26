@@ -31,6 +31,7 @@ from academic_observatory_workflows.unpaywall_telescope.tasks import (
     changefile_download_url,
     get_unpaywall_changefiles,
     unpaywall_filename_to_datetime,
+    UNPAYWALL_BASE_URL,
 )
 
 
@@ -82,15 +83,17 @@ class TestUnpaywallUtils(SandboxTestCase):
         self.assertEqual(dict_, cf.to_dict())
 
     def test_snapshot_url(self):
-        url = snapshot_url("my-api-key")
+        url = snapshot_url(UNPAYWALL_BASE_URL, "my-api-key")
         self.assertEqual(f"https://api.unpaywall.org/feed/snapshot?api_key=my-api-key", url)
 
     def test_changefiles_url(self):
-        url = changefiles_url("my-api-key")
+        url = changefiles_url(UNPAYWALL_BASE_URL, "my-api-key")
         self.assertEqual(f"https://api.unpaywall.org/feed/changefiles?interval=day&api_key=my-api-key", url)
 
     def test_changefile_download_url(self):
-        url = changefile_download_url("changed_dois_with_versions_2020-03-11T005336.jsonl.gz", "my-api-key")
+        url = changefile_download_url(
+            UNPAYWALL_BASE_URL, "changed_dois_with_versions_2020-03-11T005336.jsonl.gz", "my-api-key"
+        )
         self.assertEqual(
             f"https://api.unpaywall.org/daily-feed/changefile/changed_dois_with_versions_2020-03-11T005336.jsonl.gz?api_key=my-api-key",
             url,
@@ -112,7 +115,7 @@ class TestUnpaywallUtils(SandboxTestCase):
         dt = unpaywall_filename_to_datetime(filename)
         self.assertEqual(pendulum.datetime(2020, 3, 11, 0, 0, 0), dt)
 
-    @patch("observatory.platform.utils.url_utils.get_http_text_response")
+    @patch("observatory_platform.url_utils.get_http_text_response")
     def test_get_unpaywall_changefiles(self, m_get_http_text_response):
         # Don't use vcr here because the actual returned data contains API keys and it is a lot of data
         m_get_http_text_response.return_value = '{"list":[{"date":"2023-04-25","filename":"changed_dois_with_versions_2023-04-25T080001.jsonl.gz","filetype":"jsonl","last_modified":"2023-04-25T08:03:12","lines":310346,"size":143840367,"url":"https://api.unpaywall.org/daily-feed/changefile/changed_dois_with_versions_2023-04-25T080001.jsonl.gz?api_key=my-api-key"},{"date":"2023-04-24","filename":"changed_dois_with_versions_2023-04-24T080001.jsonl.gz","filetype":"jsonl","last_modified":"2023-04-24T08:04:49","lines":220800,"size":112157260,"url":"https://api.unpaywall.org/daily-feed/changefile/changed_dois_with_versions_2023-04-24T080001.jsonl.gz?api_key=my-api-key"},{"date":"2023-04-23","filename":"changed_dois_with_versions_2023-04-23T080001.jsonl.gz","filetype":"jsonl","last_modified":"2023-04-23T08:03:54","lines":213140,"size":105247617,"url":"https://api.unpaywall.org/daily-feed/changefile/changed_dois_with_versions_2023-04-23T080001.jsonl.gz?api_key=my-api-key"},{"date":"2023-02-24","filename":"changed_dois_with_versions_2023-02-24.jsonl.gz","filetype":"jsonl","last_modified":"2023-03-21T01:51:18","lines":5,"size":6301,"url":"https://api.unpaywall.org/daily-feed/changefile/changed_dois_with_versions_2023-02-24.jsonl.gz?api_key=my-api-key"},{"date":"2020-03-11","filename":"changed_dois_with_versions_2020-03-11T005336.csv.gz","filetype":"csv","last_modified":"2020-03-11T01:27:04","lines":1806534,"size":195900034,"url":"https://api.unpaywall.org/daily-feed/changefile/changed_dois_with_versions_2020-03-11T005336.csv.gz?api_key=my-api-key"}]}'
@@ -129,7 +132,8 @@ class TestUnpaywallUtils(SandboxTestCase):
                 "changed_dois_with_versions_2023-04-25T080001.jsonl.gz", pendulum.datetime(2023, 4, 25, 8, 0, 1)
             ),
         ]
-        changefiles = get_unpaywall_changefiles("my-api-key")
+        url = changefiles_url(UNPAYWALL_BASE_URL, "my-api-key")
+        changefiles = get_unpaywall_changefiles(url)
         self.assertEqual(expected_changefiles, changefiles)
 
     def test_get_snapshot_file_name(self):
@@ -139,7 +143,7 @@ class TestUnpaywallUtils(SandboxTestCase):
             os.path.join(FIXTURES_FOLDER, "get_snapshot_file_name_success.yaml"),
             filter_query_parameters=["api_key"],
         ):
-            filename = get_snapshot_file_name(os.getenv("UNPAYWALL_API_KEY", "my-api-key"))
+            filename = get_snapshot_file_name(UNPAYWALL_BASE_URL, os.getenv("UNPAYWALL_API_KEY", "my-api-key"))
             self.assertEqual("unpaywall_snapshot_2023-04-25T083002.jsonl.gz", filename)
 
         # An invalid API key
@@ -148,4 +152,4 @@ class TestUnpaywallUtils(SandboxTestCase):
             filter_query_parameters=["api_key"],
         ):
             with self.assertRaises(AirflowException):
-                get_snapshot_file_name("invalid-api-key")
+                get_snapshot_file_name(UNPAYWALL_BASE_URL, "invalid-api-key")
