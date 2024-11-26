@@ -35,11 +35,6 @@ from observatory_platform.airflow.tasks import check_dependencies, gke_create_st
 from observatory_platform.url_utils import get_observatory_http_header
 from observatory_platform.google.gke import GkeParams, gke_make_kubernetes_task_params, gke_make_container_resources
 
-# See https://unpaywall.org/products/data-feed for details of available APIs
-SNAPSHOT_URL = "https://api.unpaywall.org/feed/snapshot"
-CHANGEFILES_URL = "https://api.unpaywall.org/feed/changefiles"
-CHANGEFILES_DOWNLOAD_URL = "https://api.unpaywall.org/daily-feed/changefile"
-
 
 class DagParams:
     """
