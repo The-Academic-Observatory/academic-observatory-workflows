@@ -259,7 +259,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 tasks.baseline_upload_transformed(release)
 
-            @task(task_id="bq_load", TriggerRule=TriggerRule.ALL_SUCCESS)
+            @task(task_id="bq_load", trigger_rule=TriggerRule.ALL_SUCCESS)
             def baseline_bq_load(release: dict, **context):
                 """Ingest the baseline table from GCS to BQ using a file pattern."""
 

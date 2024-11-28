@@ -17,17 +17,12 @@
 import os
 from ftplib import FTP
 from typing import Dict, List
-import unittest
 
 import pendulum
-from airflow.utils.state import State
 
 from academic_observatory_workflows.config import project_path
-from academic_observatory_workflows.pubmed_telescope.datafile import Datafile
 from observatory_platform.google.bigquery import bq_run_query, bq_sharded_table_id, bq_table_id
-from observatory_platform.google.gcs import gcs_blob_name_from_path
 from observatory_platform.airflow.workflow import Workflow
-from observatory_platform.sandbox.test_utils import find_free_port
 
 from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.pubmed_telescope.telescope import create_dag, DagParams
@@ -347,9 +342,9 @@ class TestPubMedTelescope(SandboxTestCase):
                 raise RuntimeError("Second Dagrun did not complete successfully")
             snapshot_table_id = bq_sharded_table_id(
                 project_id=test_params.cloud_workspace.project_id,
-                dataset_id=test_params.cloud_workspace.bq_dataset_id,
+                dataset_id=test_params.bq_dataset_id,
                 table_name=f"{test_params.bq_main_table_name}_snapshot",
-                date=PubMedTest.second_run["baseline_upload_date"],
+                date=PubMedTest.first_run["logical_date"],
             )
             self.assert_table_integrity(snapshot_table_id, 5)
             self.assert_table_integrity(upsert_table_id, 2)
