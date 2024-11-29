@@ -78,13 +78,13 @@
     "description": "Title of cited data"
   },
   {
-    "name": "objId",
+    "name": "publication",
     "type": "STRING",
     "mode": "REQUIRED",
     "description": "DOI of article where data is cited"
   },
   {
-    "name": "subjId",
+    "name": "dataset",
     "type": "STRING",
     "mode": "REQUIRED",
     "description": "DOI or accession number of cited data"
@@ -96,24 +96,6 @@
     "description": "Date when citing article was published"
   },
   {
-    "name": "accessionNumber",
-    "type": "STRING",
-    "mode": "NULLABLE",
-    "description": "Accession number of cited data"
-  },
-  {
-    "name": "doi",
-    "type": "STRING",
-    "mode": "NULLABLE",
-    "description": "DOI of cited data"
-  },
-  {
-    "name": "relationTypeId",
-    "type": "STRING",
-    "mode": "NULLABLE",
-    "description": "Relation type in metadata between citation object and subject"
-  },
-  {
     "name": "source",
     "type": "STRING",
     "mode": "REQUIRED",
@@ -123,7 +105,7 @@
     "name": "subjects",
     "type": "STRING",
     "mode": "REPEATED",
-    "description": "Subject information for dataset"
+    "description": "Subject information for cited data"
   },
   {
     "name": "affiliations",
