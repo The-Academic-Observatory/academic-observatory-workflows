@@ -13,9 +13,10 @@
 # limitations under the License.
 
 # Author: Aniek Roelofs, James Diprose, Alex Massen-Hane
+#
+# from airflow.providers.cncf.kubernetes.decorators.kubernetes import
 
 import copy
-import datetime
 import gzip
 import json
 import os
@@ -27,48 +28,38 @@ from unittest.mock import patch
 
 import boto3
 import pendulum
-from airflow.models import Connection
+from airflow.models import Connection, DagRun
 from airflow.utils.state import State
 from bigquery_schema_generator.generate_schema import SchemaGenerator
 from click.testing import CliRunner
 from google.cloud import bigquery
-from google.cloud.exceptions import NotFound
 
-from academic_observatory_workflows.config import project_path
-from academic_observatory_workflows.openalex_telescope.openalex_telescope import (
+from academic_observatory_workflows.config import project_path, TestConfig
+from academic_observatory_workflows.openalex_telescope.release import ManifestEntry, Meta, s3_uri_parts
+from academic_observatory_workflows.openalex_telescope.tasks import (
     bq_compare_schemas,
-    create_dag,
     fetch_manifest,
     fetch_merged_ids,
     flatten_schema,
     Manifest,
-    ManifestEntry,
     merge_schema_maps,
     MergedId,
-    Meta,
     OpenAlexEntity,
-    s3_uri_parts,
     transform_object,
 )
-from observatory_platform.dataset_api import get_dataset_releases
-from observatory_platform.google.bigquery import bq_sharded_table_id, bq_table_id
-from observatory_platform.config import AirflowConns, module_file_path
-from observatory_platform.files import load_file, load_jsonl, save_jsonl_gz
-from observatory_platform.google.gcs import gcs_blob_name_from_path
+from academic_observatory_workflows.openalex_telescope.telescope import create_dag, DagParams
 from observatory_platform.airflow.workflow import CloudWorkspace, Workflow
-from observatory_platform.sandbox.sandbox_environment import (
-    aws_bucket_test_env,
-    find_free_port,
-    load_and_parse_json,
-    ObservatoryEnvironment,
-    ObservatoryTestCase,
-)
-from observatory_platform.refactor.workflow import make_workflow_folder
+from observatory_platform.config import AirflowConns
+from observatory_platform.dataset_api import DatasetAPI
+from observatory_platform.files import load_file, load_jsonl, save_jsonl_gz
+from observatory_platform.google.bigquery import bq_sharded_table_id
+from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
+from observatory_platform.sandbox.test_utils import aws_bucket_test_env, load_and_parse_json, SandboxTestCase
 
 FIXTURES_FOLDER = project_path("openalex_telescope", "tests", "fixtures")
 
 
-class TestOpenAlexUtils(ObservatoryTestCase):
+class TestOpenAlexUtils(SandboxTestCase):
     def __init__(self, *args, **kwargs):
         super(TestOpenAlexUtils, self).__init__(*args, **kwargs)
         self.dag_id = "openalex"
@@ -269,7 +260,7 @@ class TestOpenAlexUtils(ObservatoryTestCase):
             obj,
         )
 
-    @patch("observatory.platform.airflow.Variable.get")
+    @patch("observatory_platform.airflow.workflow.Variable.get")
     def test_openalex_entity(self, m_variable_get):
         with CliRunner().isolated_filesystem() as t:
             m_variable_get.return_value = t
@@ -283,6 +274,7 @@ class TestOpenAlexUtils(ObservatoryTestCase):
             schema_folder = project_path("openalex_telescope", "schema")
             bq_dataset_id = "openalex"
             is_first_run = True
+            snapshot_date = pendulum.datetime(2023, 1, 28)
             entity = OpenAlexEntity(
                 dag_id=dag_id,
                 run_id="scheduled__2023-02-01T00:00:00+00:00",
@@ -290,15 +282,13 @@ class TestOpenAlexUtils(ObservatoryTestCase):
                 entity_name="authors",
                 bq_dataset_id=bq_dataset_id,
                 schema_folder=schema_folder,
-                start_date=pendulum.datetime(2023, 1, 1),
-                end_date=pendulum.datetime(2023, 1, 31),
+                snapshot_date=snapshot_date,
                 manifest=Manifest(
                     [ManifestEntry("s3://openalex/data/authors/updated_date=2023-01-28/part_000.gz", Meta(7073, 4))],
                     Meta(7073, 4),
                 ),
                 merged_ids=[MergedId("s3://openalex/data/merged_ids/authors/2023-01-28.csv.gz", 1000)],
                 is_first_run=is_first_run,
-                prev_end_date=pendulum.datetime(2022, 12, 1),
             )
 
             # table_description
@@ -312,35 +302,13 @@ class TestOpenAlexUtils(ObservatoryTestCase):
             # data_uri
             self.assertTrue(entity.data_uri.endswith("data/authors/*"))
 
-            # merged_ids_uri
-            self.assertTrue(entity.merged_ids_uri.endswith("data/merged_ids/authors/*"))
+            # bq_table_id
+            self.assertEqual("project-id.openalex.authors20230128", entity.bq_table_id)
 
-            # merged_ids_schema_file_path
-            self.assertTrue(entity.merged_ids_schema_file_path.endswith("merged_ids.json"))
-
-            # bq_main_table_id
-            self.assertEqual("project-id.openalex.authors", entity.bq_main_table_id)
-
-            # bq_upsert_table_id
-            self.assertEqual("project-id.openalex.authors_upsert", entity.bq_upsert_table_id)
-
-            # bq_snapshot_table_id
-            self.assertEqual("project-id.openalex.authors_snapshot20221201", entity.bq_snapshot_table_id)
-
-            # current_entries
+            # entries
             self.assertEqual(
                 [ManifestEntry("s3://openalex/data/authors/updated_date=2023-01-28/part_000.gz", Meta(7073, 4))],
-                entity.current_entries,
-            )
-
-            # has_merged_ids
-            self.assertFalse(entity.has_merged_ids)
-            self.assertEqual(0, len(entity.current_merged_ids))
-            entity.is_first_run = False
-            self.assertTrue(entity.has_merged_ids)
-            self.assertEqual(1, len(entity.current_merged_ids))
-            self.assertEqual(
-                [MergedId("s3://openalex/data/merged_ids/authors/2023-01-28.csv.gz", 1000)], entity.current_merged_ids
+                entity.entries,
             )
 
     def test_fetch_manifest(self):
@@ -642,7 +610,7 @@ def create_openalex_dataset(input_path: pathlib.Path, bucket_name: str) -> Dict:
         return manifest_index
 
 
-class TestOpenAlexTelescope(ObservatoryTestCase):
+class TestOpenAlexTelescope(SandboxTestCase):
     """Tests for the OpenAlex telescope"""
 
     def __init__(self, *args, **kwargs):
@@ -657,10 +625,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
     def test_dag_structure(self):
         """Test that the DAG has the correct structure."""
 
-        dag = create_dag(
-            dag_id=self.dag_id,
-            cloud_workspace=self.fake_cloud_workspace,
-        )
+        dag = create_dag(DagParams(dag_id=self.dag_id, cloud_workspace=self.fake_cloud_workspace))
         entity_names = [
             "authors",
             "concepts",
@@ -675,7 +640,6 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             "topics",
         ]
         task_ids = [
-            "bq_snapshot",
             "aws_to_gcs_transfer",
             "download",
             "transform",
@@ -683,10 +647,7 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             "compare_schemas",
             "upload_files",
             "bq_load_table",
-            "bq_upsert_records",
-            "bq_load_delete_table",
-            "bq_delete_records",
-            "add_dataset_release",
+            "expire_previous_version",
         ]
         self.assert_dag_structure(
             {
@@ -695,153 +656,133 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
                 "fetch_entities": [
                     "short_circuit",
                     *[f"{entity_name}.{task_id}" for entity_name in entity_names for task_id in task_ids],
+                    "add_dataset_release",
                 ],
                 "short_circuit": ["create_dataset"],
-                "create_dataset": [f"{entity_name}.bq_snapshot" for entity_name in entity_names],
+                "create_dataset": [f"{entity_name}.gke_create_storage" for entity_name in entity_names],
                 # Author group
-                "authors.bq_snapshot": ["authors.aws_to_gcs_transfer"],
+                "authors.gke_create_storage": ["authors.aws_to_gcs_transfer"],
                 "authors.aws_to_gcs_transfer": ["authors.download"],
                 "authors.download": ["authors.transform"],
                 "authors.transform": ["authors.upload_schema"],
                 "authors.upload_schema": ["authors.compare_schemas"],
                 "authors.compare_schemas": ["authors.upload_files"],
                 "authors.upload_files": ["authors.bq_load_table"],
-                "authors.bq_load_table": ["authors.bq_upsert_records"],
-                "authors.bq_upsert_records": ["authors.bq_load_delete_table"],
-                "authors.bq_load_delete_table": ["authors.bq_delete_records"],
-                "authors.bq_delete_records": ["authors.add_dataset_release"],
-                "authors.add_dataset_release": ["cleanup_workflow"],
+                "authors.bq_load_table": ["authors.expire_previous_version"],
+                "authors.expire_previous_version": ["authors.gke_delete_storage"],
+                "authors.gke_delete_storage": ["add_dataset_release"],
                 # Concepts group
-                "concepts.bq_snapshot": ["concepts.aws_to_gcs_transfer"],
+                "concepts.gke_create_storage": ["concepts.aws_to_gcs_transfer"],
                 "concepts.aws_to_gcs_transfer": ["concepts.download"],
                 "concepts.download": ["concepts.transform"],
                 "concepts.transform": ["concepts.upload_schema"],
                 "concepts.upload_schema": ["concepts.compare_schemas"],
                 "concepts.compare_schemas": ["concepts.upload_files"],
                 "concepts.upload_files": ["concepts.bq_load_table"],
-                "concepts.bq_load_table": ["concepts.bq_upsert_records"],
-                "concepts.bq_upsert_records": ["concepts.bq_load_delete_table"],
-                "concepts.bq_load_delete_table": ["concepts.bq_delete_records"],
-                "concepts.bq_delete_records": ["concepts.add_dataset_release"],
-                "concepts.add_dataset_release": ["cleanup_workflow"],
+                "concepts.bq_load_table": ["concepts.expire_previous_version"],
+                "concepts.expire_previous_version": ["concepts.gke_delete_storage"],
+                "concepts.gke_delete_storage": ["add_dataset_release"],
                 # Funders group
-                "funders.bq_snapshot": ["funders.aws_to_gcs_transfer"],
+                "funders.gke_create_storage": ["funders.aws_to_gcs_transfer"],
                 "funders.aws_to_gcs_transfer": ["funders.download"],
                 "funders.download": ["funders.transform"],
                 "funders.transform": ["funders.upload_schema"],
                 "funders.upload_schema": ["funders.compare_schemas"],
                 "funders.compare_schemas": ["funders.upload_files"],
                 "funders.upload_files": ["funders.bq_load_table"],
-                "funders.bq_load_table": ["funders.bq_upsert_records"],
-                "funders.bq_upsert_records": ["funders.bq_load_delete_table"],
-                "funders.bq_load_delete_table": ["funders.bq_delete_records"],
-                "funders.bq_delete_records": ["funders.add_dataset_release"],
-                "funders.add_dataset_release": ["cleanup_workflow"],
+                "funders.bq_load_table": ["funders.expire_previous_version"],
+                "funders.expire_previous_version": ["funders.gke_delete_storage"],
+                "funders.gke_delete_storage": ["add_dataset_release"],
                 # Institutions group
-                "institutions.bq_snapshot": ["institutions.aws_to_gcs_transfer"],
+                "institutions.gke_create_storage": ["institutions.aws_to_gcs_transfer"],
                 "institutions.aws_to_gcs_transfer": ["institutions.download"],
                 "institutions.download": ["institutions.transform"],
                 "institutions.transform": ["institutions.upload_schema"],
                 "institutions.upload_schema": ["institutions.compare_schemas"],
                 "institutions.compare_schemas": ["institutions.upload_files"],
                 "institutions.upload_files": ["institutions.bq_load_table"],
-                "institutions.bq_load_table": ["institutions.bq_upsert_records"],
-                "institutions.bq_upsert_records": ["institutions.bq_load_delete_table"],
-                "institutions.bq_load_delete_table": ["institutions.bq_delete_records"],
-                "institutions.bq_delete_records": ["institutions.add_dataset_release"],
-                "institutions.add_dataset_release": ["cleanup_workflow"],
+                "institutions.bq_load_table": ["institutions.expire_previous_version"],
+                "institutions.expire_previous_version": ["institutions.gke_delete_storage"],
+                "institutions.gke_delete_storage": ["add_dataset_release"],
                 # Publishers group
-                "publishers.bq_snapshot": ["publishers.aws_to_gcs_transfer"],
+                "publishers.gke_create_storage": ["publishers.aws_to_gcs_transfer"],
                 "publishers.aws_to_gcs_transfer": ["publishers.download"],
                 "publishers.download": ["publishers.transform"],
                 "publishers.transform": ["publishers.upload_schema"],
                 "publishers.upload_schema": ["publishers.compare_schemas"],
                 "publishers.compare_schemas": ["publishers.upload_files"],
                 "publishers.upload_files": ["publishers.bq_load_table"],
-                "publishers.bq_load_table": ["publishers.bq_upsert_records"],
-                "publishers.bq_upsert_records": ["publishers.bq_load_delete_table"],
-                "publishers.bq_load_delete_table": ["publishers.bq_delete_records"],
-                "publishers.bq_delete_records": ["publishers.add_dataset_release"],
-                "publishers.add_dataset_release": ["cleanup_workflow"],
+                "publishers.bq_load_table": ["publishers.expire_previous_version"],
+                "publishers.expire_previous_version": ["publishers.gke_delete_storage"],
+                "publishers.gke_delete_storage": ["add_dataset_release"],
                 # Sources group
-                "sources.bq_snapshot": ["sources.aws_to_gcs_transfer"],
+                "sources.gke_create_storage": ["sources.aws_to_gcs_transfer"],
                 "sources.aws_to_gcs_transfer": ["sources.download"],
                 "sources.download": ["sources.transform"],
                 "sources.transform": ["sources.upload_schema"],
                 "sources.upload_schema": ["sources.compare_schemas"],
                 "sources.compare_schemas": ["sources.upload_files"],
                 "sources.upload_files": ["sources.bq_load_table"],
-                "sources.bq_load_table": ["sources.bq_upsert_records"],
-                "sources.bq_upsert_records": ["sources.bq_load_delete_table"],
-                "sources.bq_load_delete_table": ["sources.bq_delete_records"],
-                "sources.bq_delete_records": ["sources.add_dataset_release"],
-                "sources.add_dataset_release": ["cleanup_workflow"],
+                "sources.bq_load_table": ["sources.expire_previous_version"],
+                "sources.expire_previous_version": ["sources.gke_delete_storage"],
+                "sources.gke_delete_storage": ["add_dataset_release"],
                 # Works group
-                "works.bq_snapshot": ["works.aws_to_gcs_transfer"],
+                "works.gke_create_storage": ["works.aws_to_gcs_transfer"],
                 "works.aws_to_gcs_transfer": ["works.download"],
                 "works.download": ["works.transform"],
                 "works.transform": ["works.upload_schema"],
                 "works.upload_schema": ["works.compare_schemas"],
                 "works.compare_schemas": ["works.upload_files"],
                 "works.upload_files": ["works.bq_load_table"],
-                "works.bq_load_table": ["works.bq_upsert_records"],
-                "works.bq_upsert_records": ["works.bq_load_delete_table"],
-                "works.bq_load_delete_table": ["works.bq_delete_records"],
-                "works.bq_delete_records": ["works.add_dataset_release"],
-                "works.add_dataset_release": ["cleanup_workflow"],
+                "works.bq_load_table": ["works.expire_previous_version"],
+                "works.expire_previous_version": ["works.gke_delete_storage"],
+                "works.gke_delete_storage": ["add_dataset_release"],
                 # Domains
-                "domains.bq_snapshot": ["domains.aws_to_gcs_transfer"],
+                "domains.gke_create_storage": ["domains.aws_to_gcs_transfer"],
                 "domains.aws_to_gcs_transfer": ["domains.download"],
                 "domains.download": ["domains.transform"],
                 "domains.transform": ["domains.upload_schema"],
                 "domains.upload_schema": ["domains.compare_schemas"],
                 "domains.compare_schemas": ["domains.upload_files"],
                 "domains.upload_files": ["domains.bq_load_table"],
-                "domains.bq_load_table": ["domains.bq_upsert_records"],
-                "domains.bq_upsert_records": ["domains.bq_load_delete_table"],
-                "domains.bq_load_delete_table": ["domains.bq_delete_records"],
-                "domains.bq_delete_records": ["domains.add_dataset_release"],
-                "domains.add_dataset_release": ["cleanup_workflow"],
+                "domains.bq_load_table": ["domains.expire_previous_version"],
+                "domains.expire_previous_version": ["domains.gke_delete_storage"],
+                "domains.gke_delete_storage": ["add_dataset_release"],
                 # Fields
-                "fields.bq_snapshot": ["fields.aws_to_gcs_transfer"],
+                "fields.gke_create_storage": ["fields.aws_to_gcs_transfer"],
                 "fields.aws_to_gcs_transfer": ["fields.download"],
                 "fields.download": ["fields.transform"],
                 "fields.transform": ["fields.upload_schema"],
                 "fields.upload_schema": ["fields.compare_schemas"],
                 "fields.compare_schemas": ["fields.upload_files"],
                 "fields.upload_files": ["fields.bq_load_table"],
-                "fields.bq_load_table": ["fields.bq_upsert_records"],
-                "fields.bq_upsert_records": ["fields.bq_load_delete_table"],
-                "fields.bq_load_delete_table": ["fields.bq_delete_records"],
-                "fields.bq_delete_records": ["fields.add_dataset_release"],
-                "fields.add_dataset_release": ["cleanup_workflow"],
+                "fields.bq_load_table": ["fields.expire_previous_version"],
+                "fields.expire_previous_version": ["fields.gke_delete_storage"],
+                "fields.gke_delete_storage": ["add_dataset_release"],
                 # Subfields
-                "subfields.bq_snapshot": ["subfields.aws_to_gcs_transfer"],
+                "subfields.gke_create_storage": ["subfields.aws_to_gcs_transfer"],
                 "subfields.aws_to_gcs_transfer": ["subfields.download"],
                 "subfields.download": ["subfields.transform"],
                 "subfields.transform": ["subfields.upload_schema"],
                 "subfields.upload_schema": ["subfields.compare_schemas"],
                 "subfields.compare_schemas": ["subfields.upload_files"],
                 "subfields.upload_files": ["subfields.bq_load_table"],
-                "subfields.bq_load_table": ["subfields.bq_upsert_records"],
-                "subfields.bq_upsert_records": ["subfields.bq_load_delete_table"],
-                "subfields.bq_load_delete_table": ["subfields.bq_delete_records"],
-                "subfields.bq_delete_records": ["subfields.add_dataset_release"],
-                "subfields.add_dataset_release": ["cleanup_workflow"],
+                "subfields.bq_load_table": ["subfields.expire_previous_version"],
+                "subfields.expire_previous_version": ["subfields.gke_delete_storage"],
+                "subfields.gke_delete_storage": ["add_dataset_release"],
                 # Topics
-                "topics.bq_snapshot": ["topics.aws_to_gcs_transfer"],
+                "topics.gke_create_storage": ["topics.aws_to_gcs_transfer"],
                 "topics.aws_to_gcs_transfer": ["topics.download"],
                 "topics.download": ["topics.transform"],
                 "topics.transform": ["topics.upload_schema"],
                 "topics.upload_schema": ["topics.compare_schemas"],
                 "topics.compare_schemas": ["topics.upload_files"],
                 "topics.upload_files": ["topics.bq_load_table"],
-                "topics.bq_load_table": ["topics.bq_upsert_records"],
-                "topics.bq_upsert_records": ["topics.bq_load_delete_table"],
-                "topics.bq_load_delete_table": ["topics.bq_delete_records"],
-                "topics.bq_delete_records": ["topics.add_dataset_release"],
-                "topics.add_dataset_release": ["cleanup_workflow"],
+                "topics.bq_load_table": ["topics.expire_previous_version"],
+                "topics.expire_previous_version": ["topics.gke_delete_storage"],
+                "topics.gke_delete_storage": ["add_dataset_release"],
                 # Cleanup
+                "add_dataset_release": ["cleanup_workflow"],
                 "cleanup_workflow": ["dag_run_complete"],
                 "dag_run_complete": [],
             },
@@ -851,29 +792,26 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
     def test_dag_load(self):
         """Test that the OpenAlex DAG can be loaded from a DAG bag."""
 
-        env = ObservatoryEnvironment(
+        env = SandboxEnvironment(
             workflows=[
                 Workflow(
                     dag_id=self.dag_id,
                     name="OpenAlex Telescope",
-                    class_name="academic_observatory_workflows.openalex_telescope.openalex_telescope.create_dag",
+                    class_name="academic_observatory_workflows.openalex_telescope.telescope",
                     cloud_workspace=self.fake_cloud_workspace,
                 )
             ]
         )
 
         with env.create():
-            dag_file = os.path.join(module_file_path("observatory.platform.dags"), "load_dags.py")
+            dag_file = os.path.join(project_path(), "..", "..", "dags", "load_dags.py")
             self.assert_dag_load(self.dag_id, dag_file)
 
-    @patch("observatory.platform.airflow.send_slack_msg")
+    @patch("observatory_platform.airflow.airflow.send_slack_msg")
     def test_telescope(self, m_send_slack_msg):
-        """Test the OpenAlex telescope end to end."""
-
-        env = ObservatoryEnvironment(self.project_id, self.data_location, api_port=find_free_port())
-        bq_dataset_id = env.add_dataset()
-        temp_table_expiry_days = 7
-        temp_table_expiry_mins = temp_table_expiry_days * 24 * 60
+        env = SandboxEnvironment(self.project_id, self.data_location)
+        bq_dataset_id = env.add_dataset("openalex")
+        api_bq_dataset_id = env.add_dataset("dataset_api")
         schema_folder = project_path("openalex_telescope", "schema")
         entity_names = [
             "authors",
@@ -899,543 +837,98 @@ class TestOpenAlexTelescope(ObservatoryTestCase):
             conn_id=AirflowConns.SLACK,
             uri="https://:my-slack-token@https%3A%2F%2Fhooks.slack.com%2Fservices",
         )
+        conn_gke = Connection(
+            conn_id=TestConfig.gke_cluster_connection["conn_id"],
+            conn_type=TestConfig.gke_cluster_connection["conn_type"],
+            extra=TestConfig.gke_cluster_connection["extra"],
+        )
 
-        # Create the Observatory environment and run tests
-        with env.create(task_logging=True):
-            # Create bucket and dataset for use in first and second run
-            with aws_bucket_test_env(prefix=self.dag_id, region_name=self.aws_region_name) as bucket_name:
-                dag = create_dag(
-                    dag_id=self.dag_id,
-                    cloud_workspace=env.cloud_workspace,
-                    bq_dataset_id=bq_dataset_id,
-                    aws_openalex_bucket=bucket_name,
-                    entity_names=entity_names,
-                    schema_folder=schema_folder,
-                    temp_table_expiry_days=temp_table_expiry_days,
+        # Create bucket and dataset for use in third run
+        with env.create(task_logging=True), aws_bucket_test_env(
+            prefix=self.dag_id, region_name=self.aws_region_name
+        ) as bucket_name:
+            # Add Airflow Connections
+            env.add_connection(conn_aws)
+            env.add_connection(conn_slack)
+            env.add_connection(conn_gke)
+
+            # Upload test dataset
+            manifest_index = create_openalex_dataset(
+                pathlib.Path(os.path.join(FIXTURES_FOLDER, "2023-04-16")),
+                bucket_name,
+            )
+
+            # Build DAG
+            snapshot_date = pendulum.datetime(2023, 4, 16)
+            container_resources = {
+                "download": {"memory": "1G", "cpu": "1"},
+                "transform": {"memory": "1G", "cpu": "1"},
+                "upload_schema": {"memory": "1G", "cpu": "1"},
+                "upload_files": {"memory": "1G", "cpu": "1"},
+            }
+            resource_map = {
+                "small": {"container_resources": container_resources},
+                "medium": {"container_resources": container_resources},
+                "large": {"container_resources": container_resources},
+            }
+            gke_volume_size_map = {key: "100Mi" for key in entity_names}
+            dag_params = DagParams(
+                dag_id=self.dag_id,
+                cloud_workspace=env.cloud_workspace,
+                bq_dataset_id=bq_dataset_id,
+                api_bq_dataset_id=api_bq_dataset_id,
+                aws_openalex_bucket=bucket_name,
+                entity_names=entity_names,
+                schema_folder=schema_folder,
+                gke_image=TestConfig.gke_image,
+                gke_namespace=TestConfig.gke_namespace,
+                gke_resource_map=resource_map,
+                gke_volume_size_map=gke_volume_size_map,
+                test_run=True,
+                retries=0,
+            )
+            dag = create_dag(dag_params)
+
+            # Run DAG
+            dag_run: DagRun = dag.test(execution_date=snapshot_date, session=env.session)
+            self.assertEqual(State.SUCCESS, dag_run.state)
+
+            # Make assertions
+            expected_row_count = {
+                "authors": 4,
+                "concepts": 5,
+                "institutions": 4,
+                "publishers": 5,
+                "sources": 4,
+                "works": 4,
+                "funders": 5,
+                "domains": 1,
+                "fields": 2,
+                "subfields": 2,
+                "topics": 3,
+            }
+            for entity_name in entity_names:
+                table_id = bq_sharded_table_id(
+                    env.cloud_workspace.project_id, bq_dataset_id, entity_name, snapshot_date
                 )
-                env.add_connection(conn_aws)
-                env.add_connection(conn_slack)
+                print(f"Checking table: {table_id}")
 
-                # Create data
-                manifest_index = create_openalex_dataset(
-                    pathlib.Path(FIXTURES_FOLDER, "2023-04-02"),
-                    bucket_name,
+                # Assert expected rows
+                expected_rows = expected_row_count[entity_name]
+                self.assert_table_integrity(table_id, expected_rows)
+
+                # Assert content
+                expected_data = load_and_parse_json(
+                    os.path.join(FIXTURES_FOLDER, "2023-04-16", "expected", f"{entity_name}.json"),
+                    date_fields={"created_date", "publication_date"},
+                    timestamp_fields={"updated_date"},
                 )
-                # fmt: off
-                merged_ids_index = {
-                    "authors": [MergedId(f"s3://{bucket_name}/data/merged_ids/authors/2023-04-02.csv.gz", 99)],
-                    "institutions": [MergedId(f"s3://{bucket_name}/data/merged_ids/institutions/2023-04-02.csv.gz", 97)],
-                    "sources": [MergedId(f"s3://{bucket_name}/data/merged_ids/sources/2023-04-02.csv.gz", 100)],
-                    "works": [MergedId(f"s3://{bucket_name}/data/merged_ids/works/2023-04-02.csv.gz", 100)],
-                }
-                # fmt: on
+                self.assert_table_content(table_id, expected_data, "id")
 
-                # Create expected data
-                data_interval_start = pendulum.datetime(2023, 4, 2)
-                is_first_run = True
-                expected_entities = []
-                for entity_name in entity_names:
-                    expected_entities.append(
-                        OpenAlexEntity(
-                            dag_id=self.dag_id,
-                            run_id="scheduled__2023-04-02T00:00:00+00:00",
-                            cloud_workspace=env.cloud_workspace,
-                            entity_name=entity_name,
-                            bq_dataset_id=bq_dataset_id,
-                            schema_folder=schema_folder,
-                            start_date=data_interval_start,
-                            end_date=data_interval_start,
-                            manifest=manifest_index[entity_name],
-                            merged_ids=merged_ids_index.get(entity_name, []),
-                            is_first_run=is_first_run,
-                            prev_end_date=pendulum.instance(datetime.datetime.min),
-                        )
-                    )
-
-                # First run: snapshot
-                with env.create_dag_run(dag, data_interval_start) as dag_run:
-                    # Wait for the previous DAG run to finish
-                    ti = env.run_task("wait_for_prev_dag_run")
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Check dependencies
-                    ti = env.run_task("check_dependencies")
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Fetch releases and check that we have received the expected snapshot date and changefiles
-                    ti = env.run_task("fetch_entities")
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Check that the expected release is the same as the created release
-                    entity_index = ti.xcom_pull(
-                        key="return_value",
-                        task_ids="fetch_entities",
-                        include_prior_dates=False,
-                    )
-                    self.assertEqual(11, len(entity_index))
-                    expected_entity_index = {entity.entity_name: entity.to_dict() for entity in expected_entities}
-                    self.assertEqual(expected_entity_index, entity_index)
-
-                    ti = env.run_task("short_circuit")
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    ti = env.run_task("create_dataset")
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Task groups
-                    entity: OpenAlexEntity
-                    for entity in expected_entities:
-                        ti = env.run_task(f"{entity.entity_name}.bq_snapshot")
-                        self.assertEqual(State.SKIPPED, ti.state)
-
-                        ti = env.run_task(f"{entity.entity_name}.aws_to_gcs_transfer")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        base_folder = gcs_blob_name_from_path(entity.download_folder)
-                        for entry in entity.current_entries:
-                            actual_path = os.path.join(base_folder, entry.object_key)
-                            self.assert_blob_exists(env.download_bucket, actual_path)
-                        for merged_id in entity.current_merged_ids:
-                            actual_path = os.path.join(base_folder, merged_id.object_key)
-                            self.assert_blob_exists(env.download_bucket, actual_path)
-
-                        ti = env.run_task(f"{entity.entity_name}.download")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        for entry in entity.current_entries:
-                            file_path = os.path.join(entity.download_folder, entry.object_key)
-                            self.assertTrue(os.path.isfile(file_path))
-
-                        ti = env.run_task(f"{entity.entity_name}.transform")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        for entry in entity.current_entries:
-                            file_path = os.path.join(entity.transform_folder, entry.object_key)
-                            self.assertTrue(os.path.isfile(file_path))
-                        self.assertTrue(os.path.isfile(entity.generated_schema_path))
-
-                        ti = env.run_task(f"{entity.entity_name}.upload_schema")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        self.assert_blob_exists(
-                            env.transform_bucket, gcs_blob_name_from_path(entity.generated_schema_path)
-                        )
-
-                        ti = env.run_task(f"{entity.entity_name}.compare_schemas")
-                        self.assertEqual(State.SUCCESS, ti.state)
-
-                        ti = env.run_task(f"{entity.entity_name}.upload_files")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        for entry in entity.current_entries:
-                            file_path = os.path.join(entity.transform_folder, entry.object_key)
-                            self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
-
-                        expected_row_count = {
-                            "authors": 4,
-                            "concepts": 4,
-                            "institutions": 4,
-                            "publishers": 4,
-                            "sources": 4,
-                            "works": 4,
-                            "funders": 4,
-                            "domains": 1,
-                            "fields": 1,
-                            "subfields": 1,
-                            "topics": 2,
-                        }
-                        expected_rows = expected_row_count[entity.entity_name]
-
-                        ti = env.run_task(f"{entity.entity_name}.bq_load_table")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
-                        self.assertIsNone(get_table_expiry(entity.bq_main_table_id))
-
-                        ti = env.run_task(f"{entity.entity_name}.bq_upsert_records")
-                        self.assertEqual(State.SKIPPED, ti.state)
-                        self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
-
-                        # These two don't do anything on the first run
-                        ti = env.run_task(f"{entity.entity_name}.bq_load_delete_table")
-                        self.assertEqual(State.SKIPPED, ti.state)
-                        with self.assertRaises(NotFound):
-                            self.bigquery_client.get_table(entity.bq_delete_table_id)
-
-                        ti = env.run_task(f"{entity.entity_name}.bq_delete_records")
-                        self.assertEqual(State.SKIPPED, ti.state)
-                        self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
-
-                        # Assert content
-                        table_id = bq_table_id(self.project_id, bq_dataset_id, entity.entity_name)
-                        print(f"Assert content run 1 {entity.entity_name}: {table_id}")
-                        expected_data = load_and_parse_json(
-                            os.path.join(FIXTURES_FOLDER, "2023-04-02", "expected", f"{entity.entity_name}.json"),
-                            date_fields={"created_date", "publication_date"},
-                            timestamp_fields={"updated_date"},
-                        )
-                        self.assert_table_content(table_id, expected_data, "id")
-
-                        # Check that there is zero dataset release per entity before add_dataset_release and 1 after
-                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity.entity_name)
-                        self.assertEqual(len(dataset_releases), 0)
-
-                        ti = env.run_task(f"{entity.entity_name}.add_dataset_release")
-                        self.assertEqual(State.SUCCESS, ti.state)
-                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity.entity_name)
-                        self.assertEqual(len(dataset_releases), 1)
-
-                    # Test that all workflow data deleted
-                    ti = env.run_task("cleanup_workflow")
-                    self.assertEqual(State.SUCCESS, ti.state)
-                    self.assert_cleanup(entity.workflow_folder)
-
-                    ti = env.run_task("dag_run_complete")
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                # Second run: no updates
-                data_interval_start = pendulum.datetime(2023, 4, 9)
-                with env.create_dag_run(dag, data_interval_start) as dag_run:
-                    # Check that first three tasks are successful
-                    task_ids = ["wait_for_prev_dag_run", "check_dependencies", "fetch_entities", "short_circuit"]
-                    for task_id in task_ids:
-                        print(f"Running task: {task_id}")
-                        ti = env.run_task(task_id)
-                        self.assertEqual(State.SUCCESS, ti.state)
-
-                    task_ids = ["create_dataset"]
-                    for entity_name in entity_names:
-                        for task_id in [
-                            "bq_snapshot",
-                            "aws_to_gcs_transfer",
-                            "download",
-                            "transform",
-                            "upload_schema",
-                            "compare_schemas",
-                            "upload_files",
-                            "bq_load_table",
-                            "bq_upsert_records",
-                            "bq_load_delete_table",
-                            "bq_delete_records",
-                            "add_dataset_release",
-                        ]:
-                            task_ids.append(f"{entity_name}.{task_id}")
-                    task_ids.append("cleanup_workflow")
-                    task_ids.append("dag_run_complete")
-                    for task_id in task_ids:
-                        print(f"Checking that skipped: {task_id}")
-                        ti = env.get_task_instance(task_id)
-                        self.assertEqual(State.SKIPPED, ti.state)
-
-                    # Check that tables all still have the same number of rows
-                    for entity in expected_entities:
-                        expected_rows = expected_row_count[entity.entity_name]
-                        self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
-
-                    # Check that only 1 dataset release exists for each entity
-                    for entity_name in entity_names:
-                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
-                        self.assertEqual(len(dataset_releases), 1)
-
-            # Create bucket and dataset for use in third run
-            with aws_bucket_test_env(prefix=self.dag_id, region_name=self.aws_region_name) as bucket_name:
-                dag = create_dag(
-                    dag_id=self.dag_id,
-                    cloud_workspace=env.cloud_workspace,
-                    bq_dataset_id=bq_dataset_id,
-                    aws_openalex_bucket=bucket_name,
-                    entity_names=entity_names,
-                    schema_folder=schema_folder,
-                    temp_table_expiry_days=temp_table_expiry_days,
-                )
-                env.add_connection(conn_aws)
-                env.add_connection(conn_slack)
-
-                manifest_index = create_openalex_dataset(
-                    pathlib.Path(os.path.join(FIXTURES_FOLDER, "2023-04-16")),
-                    bucket_name,
-                )
-                merged_ids_index = {
-                    "authors": [
-                        MergedId(f"s3://{bucket_name}/data/merged_ids/authors/2023-04-02.csv.gz", 99),
-                        MergedId(f"s3://{bucket_name}/data/merged_ids/authors/2023-04-16.csv.gz", 95),
-                    ],
-                    "institutions": [
-                        MergedId(f"s3://{bucket_name}/data/merged_ids/institutions/2023-04-02.csv.gz", 97),
-                        MergedId(f"s3://{bucket_name}/data/merged_ids/institutions/2023-04-16.csv.gz", 97),
-                    ],
-                    "sources": [
-                        MergedId(f"s3://{bucket_name}/data/merged_ids/sources/2023-04-02.csv.gz", 100),
-                        MergedId(f"s3://{bucket_name}/data/merged_ids/sources/2023-04-16.csv.gz", 95),
-                    ],
-                    "works": [
-                        MergedId(f"s3://{bucket_name}/data/merged_ids/works/2023-04-02.csv.gz", 100),
-                        MergedId(f"s3://{bucket_name}/data/merged_ids/works/2023-04-16.csv.gz", 98),
-                    ],
-                }
-                # Create expected data
-                prev_end_date = pendulum.datetime(2023, 4, 2)
-                data_interval_start = pendulum.datetime(2023, 4, 16)
-                is_first_run = False
-                expected_entities = []
-                for entity_name in entity_names:
-                    if entity_name == "domains":
-                        expected_entities.append((entity_name, None))
-                    else:
-                        expected_entities.append(
-                            (
-                                entity_name,
-                                OpenAlexEntity(
-                                    dag_id=self.dag_id,
-                                    run_id="scheduled__2023-04-16T00:00:00+00:00",
-                                    cloud_workspace=env.cloud_workspace,
-                                    entity_name=entity_name,
-                                    bq_dataset_id=bq_dataset_id,
-                                    schema_folder=schema_folder,
-                                    start_date=data_interval_start,
-                                    end_date=data_interval_start,
-                                    manifest=manifest_index[entity_name],
-                                    merged_ids=merged_ids_index.get(entity_name, []),
-                                    is_first_run=is_first_run,
-                                    prev_end_date=prev_end_date,
-                                ),
-                            )
-                        )
-
-                # Third run: changefiles
-                with env.create_dag_run(dag, data_interval_start) as dag_run:
-                    # Wait for the previous DAG run to finish
-                    ti = env.run_task("wait_for_prev_dag_run")
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Check dependencies
-                    ti = env.run_task("check_dependencies")
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Fetch releases and check that we have received the expected snapshot date and changefiles
-                    ti = env.run_task("fetch_entities")
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Check that the expected release is the same as the created release
-                    entity_index = ti.xcom_pull(
-                        key="return_value",
-                        task_ids="fetch_entities",
-                        include_prior_dates=False,
-                    )
-                    self.assertEqual(10, len(entity_index))
-                    expected_entity_index = {}
-                    for entity_name, entity in expected_entities:
-                        if entity is not None:
-                            expected_entity_index[entity_name] = entity.to_dict()
-                    self.assertEqual(expected_entity_index, entity_index)
-
-                    ti = env.run_task("short_circuit")
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    ti = env.run_task("create_dataset")
-                    self.assertEqual(State.SUCCESS, ti.state)
-
-                    # Task groups
-                    for entity_name, entity in expected_entities:
-                        print(f"Executing tasks for task group: {entity_name}")
-                        ti = env.run_task(f"{entity_name}.bq_snapshot")
-                        if entity is None:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                        else:
-                            self.assertEqual(State.SUCCESS, ti.state)
-                            self.assertEqual(
-                                bq_sharded_table_id(
-                                    self.project_id,
-                                    bq_dataset_id,
-                                    f"{entity_name}_snapshot",
-                                    prev_end_date,
-                                ),
-                                entity.bq_snapshot_table_id,
-                            )
-                            expected_row_count = {
-                                "authors": 4,
-                                "concepts": 4,
-                                "institutions": 4,
-                                "publishers": 4,
-                                "sources": 4,
-                                "works": 4,
-                                "funders": 4,
-                                "domains": 1,
-                                "fields": 1,
-                                "subfields": 1,
-                                "topics": 2,
-                            }
-                            expected_rows = expected_row_count[entity_name]
-                            self.assert_table_integrity(entity.bq_snapshot_table_id, expected_rows)
-
-                        # Transfer from AWS to GCP
-                        ti = env.run_task(f"{entity_name}.aws_to_gcs_transfer")
-                        if entity is None:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                        else:
-                            self.assertEqual(State.SUCCESS, ti.state)
-                            base_folder = gcs_blob_name_from_path(entity.download_folder)
-                            for entry in entity.current_entries:
-                                actual_path = os.path.join(base_folder, entry.object_key)
-                                self.assert_blob_exists(env.download_bucket, actual_path)
-                            for merged_id in entity.current_merged_ids:
-                                actual_path = os.path.join(base_folder, merged_id.object_key)
-                                self.assert_blob_exists(env.download_bucket, actual_path)
-
-                        ti = env.run_task(f"{entity_name}.download")
-                        if entity is None:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                        else:
-                            self.assertEqual(State.SUCCESS, ti.state)
-                            for entry in entity.current_entries:
-                                file_path = os.path.join(entity.download_folder, entry.object_key)
-                                self.assertTrue(os.path.isfile(file_path))
-
-                        ti = env.run_task(f"{entity_name}.transform")
-                        if entity is None:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                        else:
-                            self.assertEqual(State.SUCCESS, ti.state)
-                            for entry in entity.current_entries:
-                                file_path = os.path.join(entity.transform_folder, entry.object_key)
-                                self.assertTrue(os.path.isfile(file_path))
-                                self.assertTrue(os.path.isfile(entity.generated_schema_path))
-
-                        ti = env.run_task(f"{entity_name}.upload_schema")
-                        if entity is None:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                        else:
-                            self.assertEqual(State.SUCCESS, ti.state)
-                            self.assert_blob_exists(
-                                env.transform_bucket, gcs_blob_name_from_path(entity.generated_schema_path)
-                            )
-
-                        ti = env.run_task(f"{entity_name}.compare_schemas")
-                        if entity is None:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                        else:
-                            self.assertEqual(State.SUCCESS, ti.state)
-
-                        ti = env.run_task(f"{entity_name}.upload_files")
-                        if entity is None:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                        else:
-                            self.assertEqual(State.SUCCESS, ti.state)
-                            for entry in entity.current_entries:
-                                file_path = os.path.join(entity.transform_folder, entry.object_key)
-                                self.assert_blob_exists(env.transform_bucket, gcs_blob_name_from_path(file_path))
-
-                        ti = env.run_task(f"{entity_name}.bq_load_table")
-                        if entity is None:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                        else:
-                            self.assertEqual(State.SUCCESS, ti.state)
-                            expected_row_count = {
-                                "authors": 3,
-                                "concepts": 2,
-                                "institutions": 3,
-                                "publishers": 2,
-                                "sources": 3,
-                                "works": 3,
-                                "funders": 2,
-                                "domains": 1,
-                                "fields": 1,
-                                "subfields": 1,
-                                "topics": 1,
-                            }
-                            expected_rows = expected_row_count[entity_name]
-                            self.assert_table_integrity(entity.bq_upsert_table_id, expected_rows)
-                            self.assertIsNone(get_table_expiry(entity.bq_main_table_id))
-                            table_expiry = get_table_expiry(entity.bq_upsert_table_id)
-                            self.assertIsNotNone(table_expiry)
-                            diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_minutes()
-                            self.assertGreater(diff, temp_table_expiry_mins - 15)
-                            self.assertLess(diff, temp_table_expiry_mins + 15)
-
-                        ti = env.run_task(f"{entity_name}.bq_upsert_records")
-                        if entity is None:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                        else:
-                            self.assertEqual(State.SUCCESS, ti.state)
-                            expected_row_count = {
-                                "authors": 5,
-                                "concepts": 5,
-                                "institutions": 5,
-                                "publishers": 5,
-                                "sources": 5,
-                                "works": 5,
-                                "funders": 5,
-                                "domains": 1,
-                                "fields": 2,
-                                "subfields": 2,
-                                "topics": 3,
-                            }
-                            expected_rows = expected_row_count[entity_name]
-                            self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
-
-                        ti = env.run_task(f"{entity_name}.bq_load_delete_table")
-                        if entity is None or not entity.has_merged_ids:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                            if entity is not None:
-                                with self.assertRaises(NotFound):
-                                    self.bigquery_client.get_table(entity.bq_delete_table_id)
-                        else:
-                            self.assertEqual(State.SUCCESS, ti.state)
-                            self.assert_table_integrity(entity.bq_delete_table_id, 1)
-                            table_expiry = get_table_expiry(entity.bq_delete_table_id)
-                            self.assertIsNotNone(table_expiry)
-                            diff = pendulum.instance(table_expiry).diff(pendulum.now()).in_minutes()
-                            self.assertGreater(diff, temp_table_expiry_mins - 15)
-                            self.assertLess(diff, temp_table_expiry_mins + 15)
-
-                        ti = env.run_task(f"{entity_name}.bq_delete_records")
-                        if entity is None or not entity.has_merged_ids:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                        else:
-                            self.assertEqual(State.SUCCESS, ti.state)
-                            expected_row_count = {
-                                "authors": 4,
-                                "concepts": 5,
-                                "institutions": 4,
-                                "publishers": 5,
-                                "sources": 4,
-                                "works": 4,
-                                "funders": 5,
-                                "domains": 1,
-                                "fields": 2,
-                                "subfields": 2,
-                                "topics": 3,
-                            }
-                            expected_rows = expected_row_count[entity_name]
-                            self.assert_table_integrity(entity.bq_main_table_id, expected_rows)
-
-                            # Assert content
-                            table_id = bq_table_id(self.project_id, bq_dataset_id, entity_name)
-                            print(f"Assert content run 2 {entity_name}: {table_id}")
-                            expected_data = load_and_parse_json(
-                                os.path.join(FIXTURES_FOLDER, "2023-04-16", "expected", f"{entity_name}.json"),
-                                date_fields={"created_date", "publication_date"},
-                                timestamp_fields={"updated_date"},
-                            )
-                            self.assert_table_content(table_id, expected_data, "id")
-
-                        # Check that there is zero dataset release per entity before add_dataset_release and 1 after
-                        dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
-                        self.assertEqual(len(dataset_releases), 1)
-
-                        ti = env.run_task(f"{entity_name}.add_dataset_release")
-                        if entity is None:
-                            self.assertEqual(State.SKIPPED, ti.state)
-                        else:
-                            self.assertEqual(State.SUCCESS, ti.state)
-                            dataset_releases = get_dataset_releases(dag_id=self.dag_id, dataset_id=entity_name)
-                            self.assertEqual(len(dataset_releases), 2)
-
-                    # Test that all workflow data deleted
-                    # There is an issue with Airflow thinking that dependencies are not meant for this task when they are
-                    # Task's trigger rule 'none_failed' requires all upstream tasks to have succeeded or been skipped, but found 1 non-success(es). upstream_states=_UpstreamTIStates(success=0, skipped=1, failed=0, upstream_failed=0, removed=0, done=1, success_setup=0, skipped_setup=0), upstream_task_ids={'domains.add_dataset_release', 'authors.add_dataset_release'}
-                    ti = env.get_task_instance("cleanup_workflow")
-                    ti.run(ignore_task_deps=True)
-                    self.assertEqual(State.SUCCESS, ti.state)
-                    expected_workflow_folder = make_workflow_folder(self.dag_id, "scheduled__2023-04-16T00:00:00+00:00")
-                    self.assert_cleanup(expected_workflow_folder)
-
-                    ti = env.run_task("dag_run_complete")
-                    self.assertEqual(State.SUCCESS, ti.state)
+            # Should be one release in the API
+            api = DatasetAPI(bq_project_id=env.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
+            api_releases = api.get_dataset_releases(dag_id=self.dag_id, entity_id="openalex")
+            self.assertEqual(len(api_releases), 1)
 
 
 def get_table_expiry(table_id: str):

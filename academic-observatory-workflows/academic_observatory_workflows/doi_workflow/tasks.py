@@ -273,7 +273,6 @@ def update_table_descriptions(
 
 def add_dataset_release(*, release: DOIRelease, api_bq_project_id: str, api_bq_dataset_id: str):
     api = DatasetAPI(bq_project_id=api_bq_project_id, bq_dataset_id=api_bq_dataset_id)
-    api.seed_db()
     now = pendulum.now()
     dataset_release = DatasetRelease(
         dag_id=release.dag_id,

@@ -211,6 +211,5 @@ class TestScopusTelescope(SandboxTestCase):
             api = DatasetAPI(
                 bq_project_id=test_params.cloud_workspace.project_id, bq_dataset_id=test_params.api_bq_dataset_id
             )
-            api.seed_db()
             dataset_releases = api.get_dataset_releases(dag_id=test_params.dag_id, entity_id="scopus")
             self.assertEqual(len(dataset_releases), 1)

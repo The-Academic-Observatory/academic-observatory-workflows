@@ -8,7 +8,7 @@ from collections import OrderedDict
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from pathlib import Path
 
-from academic_observatory_workflows.openalex_telescope.openalex_telescope import (
+from academic_observatory_workflows.openalex_telescope.tasks import (
     flatten_schema,
     merge_schema_maps,
     transform_file,

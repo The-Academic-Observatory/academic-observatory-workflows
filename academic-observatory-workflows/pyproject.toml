@@ -37,7 +37,9 @@ dependencies = [
     "Deprecated>=1,<2",
     "limits>=3,<4",
     "biopython>=1.81,<2",
-    "glom>=23.0.0,<24"
+    "glom>=23.0.0,<24",
+    "bigquery-schema-generator>=1.6.1,<2",
+    "deepdiff>=8,<9"
 ]
 
 [project.optional-dependencies]

@@ -431,7 +431,6 @@ class TestDoiWorkflow(SandboxTestCase):
             api = DatasetAPI(
                 bq_project_id=dag_params.cloud_workspace.project_id, bq_dataset_id=dag_params.api_bq_dataset_id
             )
-            api.seed_db()
             dataset_releases = api.get_dataset_releases(dag_id=dag_params.dag_id, entity_id="doi")
             self.assertEqual(len(dataset_releases), 0)
 
