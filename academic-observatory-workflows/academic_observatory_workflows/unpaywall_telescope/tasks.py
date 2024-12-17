@@ -84,7 +84,7 @@ def fetch_release(
         ), "fetch_release: there should be no DatasetReleases stored in the Observatory API on the first DAG run."
 
         # Get snapshot date as this is used to determine what changefile to get
-        snapshot_file_name = get_snapshot_file_name(api_key, base_url)
+        snapshot_file_name = get_snapshot_file_name(base_url, api_key)
         snapshot_date = unpaywall_filename_to_datetime(snapshot_file_name)
 
         # On first run, add changefiles from present until the changefile before the snapshot_date

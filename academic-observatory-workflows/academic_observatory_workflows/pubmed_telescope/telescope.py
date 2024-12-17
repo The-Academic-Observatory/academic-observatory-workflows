@@ -75,7 +75,7 @@ class DagParams:
         snapshot_expiry_days: int = 31,
         max_processes: int = 4,  # Limited to 4 due to RAM usage.
         max_active_runs: int = 1,
-        retries: int = 0,  # TODO: change back
+        retries: int = 3,
         baseline_table_description="""Pubmed's main table of PubmedArticle reocrds - Includes all the metadata associated with a journal article citation, both the metadata to describe the published article, i.e. <MedlineCitation>, and additional metadata often pertaining to the publication's history or processing at NLM, i.e. <PubMedData>.""",
         upsert_table_description="""PubmedArticle upserts - Includes all the metadata associated with a journal article citation, both the metadata to describe the published article, i.e. <MedlineCitation>, and additional metadata often pertaining to the publication's history or processing at NLM, i.e. <PubMedData>.""",
         delete_table_description="""PubmedArticle deletes - Indicates one or more <PubmedArticle> or <PubmedBookArticle> that have been deleted. PMIDs in DeleteCitation will typically have been found to be duplicate citations, or citations to content that was determined to be out-of-scope for PubMed. It is possible that a PMID would appear in DeleteCitation without having been distributed in a previous file. This would happen if the creation and deletion of the record take place on the same day.""",
@@ -116,9 +116,6 @@ def create_dag(dag_params: DagParams) -> DAG:
     """Construct a PubMed Telescope instance."""
 
     kubernetes_task_params = gke_make_kubernetes_task_params(dag_params.gke_params)
-    if dag_params.test_run:
-        kubernetes_task_params["image_pull_policy"] = "Never"
-    kubernetes_task_params["log_events_on_failure"] = False
 
     @dag(
         dag_id=dag_params.dag_id,
