@@ -117,9 +117,6 @@ def create_dag(dag_params: DagParams) -> DAG:
     """Construct a PubMed Telescope instance."""
 
     kubernetes_task_params = gke_make_kubernetes_task_params(dag_params.gke_params)
-    if dag_params.test_run:
-        kubernetes_task_params["image_pull_policy"] = "Never"
-    kubernetes_task_params["log_events_on_failure"] = False
 
     @dag(
         dag_id=dag_params.dag_id,
