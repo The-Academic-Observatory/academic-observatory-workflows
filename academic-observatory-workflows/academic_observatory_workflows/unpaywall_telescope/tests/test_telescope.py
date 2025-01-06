@@ -134,7 +134,7 @@ class TestUnpaywallTelescope(SandboxTestCase):
         with env.create(task_logging=True):
 
             task_resources = {
-                "load_snapshot_download": {"memory": "2G", "cpu": "2"},
+                "load_snapshot_download": {"memory": "100G", "cpu": "2"},
                 "load_snapshot_upload_downloaded": {"memory": "2G", "cpu": "2"},
                 "load_snapshot_extract": {"memory": "2G", "cpu": "2"},
                 "load_snapshot_transform": {"memory": "2G", "cpu": "2"},

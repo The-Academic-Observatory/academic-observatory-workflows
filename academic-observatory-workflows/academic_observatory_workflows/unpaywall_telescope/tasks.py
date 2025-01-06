@@ -39,6 +39,7 @@ from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.http_download import download_file, download_files, DownloadInfo
 from observatory_platform.airflow.workflow import cleanup
 from observatory_platform.url_utils import get_filename_from_http_header, get_http_response_json
+from observatory_platform.airflow.release import release_to_bucket, release_from_bucket
 
 # See https://unpaywall.org/products/data-feed for details of available APIs
 UNPAYWALL_BASE_URL = "https://api.unpaywall.org"
@@ -57,11 +58,24 @@ def fetch_release(
     api_bq_dataset_id: str,
     unpaywall_conn_id: str,
     base_url: str,
-) -> dict | None:
+) -> str | None:
     """Fetches the release information. On the first DAG run gets the latest snapshot and the necessary changefiles
     required to get the dataset up to date. On subsequent runs it fetches unseen changefiles. It is possible
-    for no changefiles to be found after the first run, in which case the rest of the tasks are skipped. Publish
-    any available releases as an XCOM to avoid re-querying Unpaywall servers."""
+    for no changefiles to be found after the first run, in which case the rest of the tasks are skipped.
+
+    Release will be published to bigquery with a unique identifier.
+
+    :param dag_id: The ID of the dag running
+    :param run_id: The ID of the dag run
+    :param dag_run: The DagRun object
+    :param cloud_workspace: The CloudWorkspace Object
+    :param bq_dataset_id: The bigquery dataset id
+    :param bq_table_name: The bigquery table name
+    :param api_bq_dataset_id: The name of the api dataset
+    :param unpaywall_conn_id: The airflow connection ID for unpaywall
+    :param base_url: The unpaywall base url
+    :return: None if there are no release files to be processed, otherwise the release ID
+    """
 
     api = DatasetAPI(bq_project_id=cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
     api.seed_db()
@@ -124,29 +138,33 @@ def fetch_release(
     logging.info(f"changefiles: {changefiles}")
     logging.info(f"prev_end_date: {prev_end_date}")
 
-    return UnpaywallRelease(
-        dag_id=dag_id,
-        run_id=run_id,
-        cloud_workspace=cloud_workspace,
-        bq_dataset_id=bq_dataset_id,
-        bq_table_name=bq_table_name,
-        is_first_run=is_first_run,
-        snapshot_date=snapshot_date,
-        changefiles=changefiles,
-        prev_end_date=prev_end_date,
-    ).to_dict()
+    id = release_to_bucket(
+        UnpaywallRelease(
+            dag_id=dag_id,
+            run_id=run_id,
+            cloud_workspace=cloud_workspace,
+            bq_dataset_id=bq_dataset_id,
+            bq_table_name=bq_table_name,
+            is_first_run=is_first_run,
+            snapshot_date=snapshot_date,
+            changefiles=changefiles,
+            prev_end_date=prev_end_date,
+        ).to_dict(),
+        cloud_workspace.download_bucket,
+    )
+    return id
 
 
-def bq_create_main_table_snapshot(release: dict, snapshot_expiry_days: int) -> None:
+def bq_create_main_table_snapshot(release_id: str, cloud_workspace: CloudWorkspace, snapshot_expiry_days: int) -> None:
     """Create a snapshot of the main table. The purpose of this table is to be able to rollback the table
     if something goes wrong. The snapshot expires after snapshot_expiry_days."""
 
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     if release.is_first_run:
         msg = f"bq_create_main_table_snapshots: skipping as snapshots are not created on the first run"
         logging.info(msg)
         return
-        # raise AirflowSkipException(msg)
 
     expiry_date = pendulum.now().add(days=snapshot_expiry_days)
     success = bq_snapshot(
@@ -158,8 +176,9 @@ def bq_create_main_table_snapshot(release: dict, snapshot_expiry_days: int) -> N
         raise AirflowException("bq_create_main_table_snapshot: failed to create BigQuery snapshot")
 
 
-def load_snapshot_download(release: dict, http_header: str, base_url: str):
+def load_snapshot_download(release_id: str, cloud_workspace: CloudWorkspace, http_header: str, base_url: str):
     # Clean all files
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.snapshot_release.download_folder)
 
@@ -191,7 +210,8 @@ def load_snapshot_download(release: dict, http_header: str, base_url: str):
     os.rename(file_path, release.snapshot_download_file_path)
 
 
-def load_snapshot_upload_downloaded(release: dict, cloud_workspace: CloudWorkspace):
+def load_snapshot_upload_downloaded(release_id: str, cloud_workspace: CloudWorkspace):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     success = gcs_upload_files(
         bucket_name=cloud_workspace.download_bucket,
@@ -201,13 +221,15 @@ def load_snapshot_upload_downloaded(release: dict, cloud_workspace: CloudWorkspa
         raise AirflowException("gcs_upload_files: failed to upload snapshot")
 
 
-def load_snapshot_extract(release: dict):
+def load_snapshot_extract(release_id: str, cloud_workspace: CloudWorkspace):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.snapshot_release.extract_folder)
     gunzip_files(file_list=[release.snapshot_download_file_path], output_dir=release.snapshot_release.extract_folder)
 
 
-def load_snapshot_transform(release: dict):
+def load_snapshot_transform(release_id: str, cloud_workspace: CloudWorkspace):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.snapshot_release.transform_folder)
 
@@ -221,7 +243,8 @@ def load_snapshot_transform(release: dict):
     )
 
 
-def load_snapshot_split_main_table_file(release: dict, **context):
+def load_snapshot_split_main_table_file(release_id: str, cloud_workspace: CloudWorkspace, **context):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     op = BashOperator(
         task_id="split_main_table_file",
@@ -231,7 +254,10 @@ def load_snapshot_split_main_table_file(release: dict, **context):
     op.execute(context)
 
 
-def load_snapshot_upload_main_table_files(release: dict, cloud_workspace: CloudWorkspace):
+def load_snapshot_upload_main_table_files(
+    release_id: str, cloud_workspace: CloudWorkspace, cloud_workspace: CloudWorkspace
+):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     files_list = list_files(release.snapshot_release.transform_folder, release.main_table_files_regex)
     success = gcs_upload_files(bucket_name=cloud_workspace.transform_bucket, file_paths=files_list)
@@ -239,7 +265,10 @@ def load_snapshot_upload_main_table_files(release: dict, cloud_workspace: CloudW
         raise AirflowException(f"upload_main_table_files: failed to upload main table files")
 
 
-def load_snapshot_bq_load(release: dict, schema_file_path: str, table_description: str):
+def load_snapshot_bq_load(
+    release_id: str, cloud_workspace: CloudWorkspace, schema_file_path: str, table_description: str
+):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     success = bq_load_table(
         uri=release.main_table_uri,
@@ -259,7 +288,8 @@ def changefile_download_url(base_url: str, changefile: str, api_key: str):
     return f"{base_url}/daily-feed/changefile/{changefile}?api_key={api_key}"
 
 
-def load_changefiles_download(release: dict, http_header: str, base_url: str):
+def load_changefiles_download(release_id: str, cloud_workspace: CloudWorkspace, http_header: str, base_url: str):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.changefile_release.download_folder)
     api_key = os.environ.get("UNPAYWALL_API_KEY")
@@ -281,7 +311,8 @@ def load_changefiles_download(release: dict, http_header: str, base_url: str):
     download_files(download_list=download_list, headers=http_header)
 
 
-def load_changefiles_upload_downloaded(release: dict, cloud_workspace: CloudWorkspace):
+def load_changefiles_upload_downloaded(release_id: str, cloud_workspace: CloudWorkspace):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     files_list = [changefile.download_file_path for changefile in release.changefiles]
     success = gcs_upload_files(bucket_name=cloud_workspace.download_bucket, file_paths=files_list)
@@ -289,7 +320,8 @@ def load_changefiles_upload_downloaded(release: dict, cloud_workspace: CloudWork
         raise AirflowException("upload_downloaded: failed to upload downloaded changefiles")
 
 
-def load_changefiles_extract(release: dict):
+def load_changefiles_extract(release_id: str, cloud_workspace: CloudWorkspace):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.changefile_release.extract_folder)
     files_list = [changefile.download_file_path for changefile in release.changefiles]
@@ -297,7 +329,8 @@ def load_changefiles_extract(release: dict):
     gunzip_files(file_list=files_list, output_dir=release.changefile_release.extract_folder)
 
 
-def load_changefiles_transform(release: dict, primary_key: str):
+def load_changefiles_transform(release_id: str, cloud_workspace: CloudWorkspace, primary_key: str):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.changefile_release.transform_folder)
 
@@ -318,7 +351,8 @@ def load_changefiles_transform(release: dict, primary_key: str):
     merge_update_files(primary_key=primary_key, input_files=transform_files, output_file=release.upsert_table_file_path)
 
 
-def load_changefiles_upload(release: dict, cloud_workspace: CloudWorkspace):
+def load_changefiles_upload(release_id: str, cloud_workspace: CloudWorkspace):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     success = gcs_upload_files(
         bucket_name=cloud_workspace.transform_bucket, file_paths=[release.upsert_table_file_path]
@@ -327,8 +361,11 @@ def load_changefiles_upload(release: dict, cloud_workspace: CloudWorkspace):
         raise AirflowException("upload: failed to upload upsert files")
 
 
-def load_changefiles_bq_load(release: dict, schema_file_path: str, table_description: str):
+def load_changefiles_bq_load(
+    release_id: str, cloud_workspace: CloudWorkspace, schema_file_path: str, table_description: str
+):
     # Will overwrite any existing upsert table
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     success = bq_load_table(
         uri=release.upsert_table_uri,
@@ -343,7 +380,8 @@ def load_changefiles_bq_load(release: dict, schema_file_path: str, table_descrip
         raise AirflowException("bq_load: failed to load upsert table")
 
 
-def load_changefiles_bq_upsert(release: dict, primary_key: str):
+def load_changefiles_bq_upsert(release_id: str, cloud_workspace: CloudWorkspace, primary_key: str):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     bq_upsert_records(
         main_table_id=release.bq_main_table_id,
@@ -352,7 +390,8 @@ def load_changefiles_bq_upsert(release: dict, primary_key: str):
     )
 
 
-def add_dataset_release(release: dict, api_bq_dataset_id: str):
+def add_dataset_release(release_id: str, cloud_workspace: CloudWorkspace, api_bq_dataset_id: str):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
 
     api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
@@ -372,7 +411,8 @@ def add_dataset_release(release: dict, api_bq_dataset_id: str):
     api.add_dataset_release(dataset_release)
 
 
-def cleanup_workflow(release: dict):
+def cleanup_workflow(release_id: str, cloud_workspace: CloudWorkspace):
+    release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
 
