@@ -291,6 +291,8 @@ def fetch_release(
     # Close the connection to the FTP server.
     ftp_conn.close()
 
+    logging.info("DATAFILES:")
+    logging.info(files_to_download)
     return PubMedRelease(
         dag_id=dag_id,
         run_id=run_id,
@@ -539,6 +541,7 @@ def updatefiles_upload_merged_upsert_records(release: dict) -> None:
 
     release = PubMedRelease.from_dict(release)
     file_paths = [datafile.merged_upsert_file_path for datafile in release.updatefiles]
+    logging.info(f"Uploading files: {file_paths}")
     success = gcs_upload_files(
         bucket_name=release.cloud_workspace.transform_bucket,
         file_paths=file_paths,

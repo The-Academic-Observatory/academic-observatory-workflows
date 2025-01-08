@@ -78,7 +78,6 @@ def fetch_release(
     """
 
     api = DatasetAPI(bq_project_id=cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
-    api.seed_db()
     prev_release = api.get_dataset_releases(dag_id=dag_id, entity_id="unpaywall", limit=1)
 
     # Get Unpaywall changefiles and sort from newest to oldest
@@ -254,9 +253,7 @@ def load_snapshot_split_main_table_file(release_id: str, cloud_workspace: CloudW
     op.execute(context)
 
 
-def load_snapshot_upload_main_table_files(
-    release_id: str, cloud_workspace: CloudWorkspace, cloud_workspace: CloudWorkspace
-):
+def load_snapshot_upload_main_table_files(release_id: str, cloud_workspace: CloudWorkspace):
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     files_list = list_files(release.snapshot_release.transform_folder, release.main_table_files_regex)
@@ -395,7 +392,6 @@ def add_dataset_release(release_id: str, cloud_workspace: CloudWorkspace, api_bq
     release = UnpaywallRelease.from_dict(release)
 
     api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
-    api.seed_db()
     now = pendulum.now()
     dataset_release = DatasetRelease(
         dag_id=release.dag_id,
