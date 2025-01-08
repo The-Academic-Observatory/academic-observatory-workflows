@@ -27,11 +27,12 @@ from airflow.providers.cncf.kubernetes.secret import Secret
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.unpaywall_telescope import tasks
 from academic_observatory_workflows.unpaywall_telescope.release import UnpaywallRelease
-from observatory_platform.google.bigquery import bq_create_dataset, bq_find_schema
 from observatory_platform.airflow.airflow import on_failure_callback
-from observatory_platform.airflow.workflow import CloudWorkspace
+from observatory_platform.google.bigquery import bq_create_dataset, bq_find_schema
+from observatory_platform.airflow.release import release_from_bucket
 from observatory_platform.airflow.sensors import PreviousDagRunSensor
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
+from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.url_utils import get_observatory_http_header
 from observatory_platform.google.gke import GkeParams, gke_make_kubernetes_task_params, gke_make_container_resources
 
@@ -82,7 +83,7 @@ class DagParams:
         max_active_runs: int = 1,
         retries: int = 3,
         test_run: bool = False,
-        gke_volume_size: int = 500,
+        gke_volume_size: str = "500Gi",
         gke_namespace: str = "coki-astro",
         gke_volume_name: str = "unpaywall",
         **kwargs,
@@ -183,7 +184,8 @@ def create_dag(dag_params: DagParams) -> DAG:
             )
 
         @task.branch
-        def branch(release: dict, **context):
+        def branch(release_id: str, dag_params: DagParams, **context):
+            release = release_from_bucket(dag_params.cloud_workspace.download_bucket, release_id)
             release = UnpaywallRelease.from_dict(release)
             if release.is_first_run:
                 return "load_snapshot.load_snapshot_download"
@@ -482,7 +484,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_short_circuit = short_circuit(xcom_release_id)
         task_create_dataset = create_dataset()
         task_bq_create_main_table_snapshot = bq_create_main_table_snapshot(xcom_release_id, dag_params)
-        task_branch = branch(xcom_release_id)
+        task_branch = branch(xcom_release_id, dag_params)
         task_group_load_snapshot = load_snapshot(xcom_release_id)
         task_group_load_changefiles = load_changefiles(xcom_release_id)
         task_add_dataset_release = add_dataset_release(xcom_release_id, dag_params)
@@ -493,6 +495,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             task_create_storage = EmptyOperator(task_id="gke_create_storage")
             task_delete_storage = EmptyOperator(task_id="gke_delete_storage")
         else:
+            print(f"SIZE: {dag_params.gke_params.gke_volume_size}")
             task_create_storage = gke_create_storage(
                 volume_name=dag_params.gke_params.gke_volume_name,
                 volume_size=dag_params.gke_params.gke_volume_size,
