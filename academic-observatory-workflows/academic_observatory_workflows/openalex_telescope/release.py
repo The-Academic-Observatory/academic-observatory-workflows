@@ -120,8 +120,64 @@ class OpenAlexEntity(SnapshotRelease):
         )
 
 
+def s3_uri_parts(s3_uri: str) -> Tuple[str, str]:
+    """Extracts the S3 bucket name and object key from the given S3 URI.
+
+    :param s3_uri: str, S3 URI in format s3://mybucketname/path/to/object
+    :return: tuple, (bucket_name, object_key)
+    """
+
+    if not s3_uri.startswith("s3://"):
+        raise ValueError(f"Invalid S3 URI. URI should start with 's3://' - {s3_uri}")
+
+    parts = s3_uri[5:].split("/", 1)  # Remove 's3://' and split the remaining string
+    bucket_name = parts[0]
+    object_key = parts[1] if len(parts) > 1 else None
+
+    return bucket_name, object_key
+
+
+class Manifest:
+    def __init__(self, entries: List[ManifestEntry], meta: Meta):
+        """An OpenAlex Entity Manifest file in Redshift Manifest format. It lists all the data files for each
+        entity. See:
+
+        * https://docs.openalex.org/download-all-data/snapshot-data-format
+        * https://docs.aws.amazon.com/redshift/latest/dg/loading-data-files-using-manifest.html
+
+        :param entries: a list of Manifest entries.
+        :param meta: TODO not sure?
+        """
+
+        self.entries = entries
+        self.meta = meta
+
+    def __eq__(self, other):
+        if isinstance(other, Manifest):
+            return self.meta == other.meta and len(self.entries) == len(other.entries) and self.entries == other.entries
+        return False
+
+    @staticmethod
+    def from_dict(dict_: Dict) -> Manifest:
+        entries = [ManifestEntry.from_dict(entry) for entry in dict_["entries"]]
+        meta = Meta.from_dict(dict_["meta"])
+        return Manifest(entries, meta)
+
+    def to_dict(self) -> Dict:
+        return dict(entries=[entry.to_dict() for entry in self.entries], meta=self.meta.to_dict())
+
+
 class Meta:
     def __init__(self, content_length, record_count):
+        """Metadata about a file referenced in an OpenAlex Entity Manifest file. See:
+
+        * https://docs.openalex.org/download-all-data/snapshot-data-format
+        * https://docs.aws.amazon.com/redshift/latest/dg/loading-data-files-using-manifest.html
+
+        :param content_length: size of the file in bytes.
+        :param record_count: how many records in the file.
+        """
+
         self.content_length = content_length
         self.record_count = record_count
 
@@ -142,6 +198,13 @@ class Meta:
 
 class ManifestEntry:
     def __init__(self, url: str, meta: Meta):
+        """An entry in an OpenAlex Entity Manifest file, containing a URL of the file on an AWS S3
+        bucket and metadata about the file (size in bytes and number of records).
+
+        :param url: URL of the file resides on an AWS S3 bucket.
+        :param meta: metadata about the file, including size in bytes and number of records.
+        """
+
         # URLs given from OpenAlex may not be given with the 's3://' prefix.
         if not url.startswith("s3://"):
             self.url = f"s3://{url}"
@@ -179,45 +242,16 @@ class ManifestEntry:
         return dict(url=self.url, meta=self.meta.to_dict())
 
 
-def s3_uri_parts(s3_uri: str) -> Tuple[str, str]:
-    """Extracts the S3 bucket name and object key from the given S3 URI.
-
-    :param s3_uri: str, S3 URI in format s3://mybucketname/path/to/object
-    :return: tuple, (bucket_name, object_key)
-    """
-
-    if not s3_uri.startswith("s3://"):
-        raise ValueError(f"Invalid S3 URI. URI should start with 's3://' - {s3_uri}")
-
-    parts = s3_uri[5:].split("/", 1)  # Remove 's3://' and split the remaining string
-    bucket_name = parts[0]
-    object_key = parts[1] if len(parts) > 1 else None
-
-    return bucket_name, object_key
-
-
-class Manifest:
-    def __init__(self, entries: List[ManifestEntry], meta: Meta):
-        self.entries = entries
-        self.meta = meta
-
-    def __eq__(self, other):
-        if isinstance(other, Manifest):
-            return self.meta == other.meta and len(self.entries) == len(other.entries) and self.entries == other.entries
-        return False
-
-    @staticmethod
-    def from_dict(dict_: Dict) -> Manifest:
-        entries = [ManifestEntry.from_dict(entry) for entry in dict_["entries"]]
-        meta = Meta.from_dict(dict_["meta"])
-        return Manifest(entries, meta)
-
-    def to_dict(self) -> Dict:
-        return dict(entries=[entry.to_dict() for entry in self.entries], meta=self.meta.to_dict())
-
-
 class MergedId:
     def __init__(self, url: str, content_length: int):
+        """A pointer to an OpenAlex Merged ID file. See:
+
+        * https://docs.openalex.org/download-all-data/snapshot-data-format#merged-entities
+
+        :param url: the path to the Merged ID file on an AWS bucket.
+        :param content_length: size of the file in bytes.
+        """
+
         self.url = url
         self.content_length = content_length
 
