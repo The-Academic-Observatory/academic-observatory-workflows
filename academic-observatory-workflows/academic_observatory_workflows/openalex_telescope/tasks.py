@@ -296,16 +296,13 @@ def bq_load_table(*, entity: OpenAlexEntity):
     table_id = entity.bq_table_id
     description = entity.table_description
 
-    if bq.bq_table_exists(table_id):
-        raise AirflowException(f"Error, {table_id} for OpenAlexEntity({entity.entity_name}) already exists")
-
     logging.info(f"Loading OpenAlexEntity({entity.entity_name}) {table_name} table {table_id}")
     success = bq.bq_load_table(
         uri=entity.data_uri,
         table_id=table_id,
         schema_file_path=entity.schema_file_path,
         source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        write_disposition=bigquery.WriteDisposition.WRITE_EMPTY,
         ignore_unknown_values=True,
         table_description=description,
     )
