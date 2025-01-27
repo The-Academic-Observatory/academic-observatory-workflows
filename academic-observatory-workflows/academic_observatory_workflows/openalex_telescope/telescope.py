@@ -55,7 +55,6 @@ class DagParams:
         slack_conn_id: Optional[str] = AirflowConns.SLACK,
         start_date: pendulum.DateTime = pendulum.datetime(2021, 12, 1),
         schedule: str = "@weekly",
-        queue: str = "remote_queue",
         max_active_runs: int = 1,
         retries: int = 3,
         gke_image: str = DEFAULT_GKE_IMAGE,
@@ -87,7 +86,6 @@ class DagParams:
         :param schedule: the Apache Airflow schedule interval. Whilst OpenAlex snapshots are released monthly,
         they are not released on any particular day of the month, so we instead simply run the workflow weekly on a
         Sunday as this will pickup new updates regularly. See here for past release dates: https://openalex.s3.amazonaws.com/RELEASE_NOTES.txt
-        :param queue: what Airflow queue this job runs on.
         :param max_active_runs: the maximum number of DAG runs that can be run at once.
         :param retries: the number of times to retry a task.
         """
@@ -122,7 +120,6 @@ class DagParams:
         self.slack_conn_id = slack_conn_id
         self.start_date = start_date
         self.schedule = schedule
-        self.queue = queue
         self.max_active_runs = max_active_runs
         self.retries = retries
         self.test_run = test_run
@@ -214,7 +211,6 @@ def create_dag(dag_params: DagParams) -> DAG:
             "owner": "airflow",
             "on_failure_callback": on_failure_callback,
             "retries": dag_params.retries,
-            "queue": dag_params.queue,
         },
     )
     def openalex():
@@ -349,7 +345,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     entity=entity,
                     transform_bucket=dag_params.cloud_workspace.transform_bucket,
                     slack_conn_id=dag_params.slack_conn_id,
-                    **context
+                    **context,
                 )
 
             @task.kubernetes(
