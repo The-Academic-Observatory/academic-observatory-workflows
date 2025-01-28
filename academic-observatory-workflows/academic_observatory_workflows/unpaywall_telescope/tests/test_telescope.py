@@ -163,7 +163,6 @@ class TestUnpaywallTelescope(SandboxTestCase):
                 test_run=True,
             )
             api = DatasetAPI(bq_project_id=env.cloud_workspace.project_id, bq_dataset_id=test_params.api_bq_dataset_id)
-            api.seed_db()
             main_table_id = bq_table_id(
                 test_params.cloud_workspace.project_id, test_params.bq_dataset_id, test_params.bq_table_name
             )
