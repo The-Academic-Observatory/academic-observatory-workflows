@@ -136,6 +136,7 @@ class TestOrcidTelescope(SandboxTestCase):
                 "create_dataset": ["transfer_orcid"],
                 "transfer_orcid": ["bq_create_main_table_snapshot"],
                 "bq_create_main_table_snapshot": ["gke_create_storage"],
+                "bq_create_main_table_snapshot": ["gke_create_storage"],
                 "gke_create_storage": ["create_manifests"],
                 "create_manifests": ["latest_modified_record_date"],
                 "latest_modified_record_date": ["download", "add_dataset_release"],
@@ -214,7 +215,6 @@ class TestOrcidTelescope(SandboxTestCase):
                 test_run=True,
             )
             api = DatasetAPI(bq_project_id=env.cloud_workspace.project_id, bq_dataset_id=test_params.api_bq_dataset_id)
-            api.seed_db()
 
             # First execution
             # Upload the test files to the test bucket

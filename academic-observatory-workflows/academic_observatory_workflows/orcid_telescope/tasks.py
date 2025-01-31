@@ -92,7 +92,6 @@ def fetch_release(
     """
 
     api = DatasetAPI(bq_project_id=cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
-    api.seed_db()
     releases = api.get_dataset_releases(dag_id=dag_id, entity_id="orcid", date_key="changefile_end_date")
     is_first_run = is_first_dag_run(dag_run)
 
@@ -506,7 +505,6 @@ def add_dataset_release(release: dict, *, api_bq_dataset_id: str, latest_modifie
         raise AirflowException("Latest modified record date not valid: {latest_modified_date}")
 
     api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
-    api.seed_db()
     now = pendulum.now()
     dataset_release = DatasetRelease(
         dag_id=release.dag_id,
