@@ -1,4 +1,5 @@
-# Copyright 2022-2024 Curtin University
+# Copyright 2022-2025 Curtin University
+# Copyright 2024-2025 UC Curation Center (California Digital Library)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,6 +24,7 @@ import pendulum
 from airflow import DAG
 from airflow.decorators import dag, task, task_group
 from airflow.operators.empty import EmptyOperator
+from kubernetes.client import models as k8s
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.openalex_telescope.release import OpenAlexEntity
@@ -128,29 +130,74 @@ class DagParams:
         # Construct GKE parameters
         # TODO: assert that resource map correct schema
         if gke_resource_map is None:
+            # Unless you use the Performance compute class, CPU:memory ratios must be at least 1:1
+            # However, Performance requires spot VMs: https://www.googlecloudcommunity.com/gc/Google-Kubernetes-Engine-GKE/Use-Performance-Compute-Class/m-p/755214
+            resource_cpu2 = k8s.V1ResourceRequirements(
+                requests={"memory": "2G", "cpu": "2"}, limits={"memory": "2G", "cpu": "2"}
+            )
+            resource_cpu4 = k8s.V1ResourceRequirements(
+                requests={"memory": "4G", "cpu": "4"}, limits={"memory": "4G", "cpu": "4"}
+            )
+            resource_cpu8 = k8s.V1ResourceRequirements(
+                requests={"memory": "8G", "cpu": "8"}, limits={"memory": "8G", "cpu": "8"}
+            )
+            resource_cpu16 = k8s.V1ResourceRequirements(
+                requests={"memory": "16G", "cpu": "16"}, limits={"memory": "16G", "cpu": "16"}
+            )
+            resource_cpu32 = k8s.V1ResourceRequirements(
+                requests={"memory": "32G", "cpu": "32"}, limits={"memory": "32G", "cpu": "32"}
+            )
+            balanced_node_selector = {
+                "cloud.google.com/compute-class": "Balanced",
+                "supported-cpu-platform.cloud.google.com/AMD_Rome": "true",
+            }
             gke_resource_map = {
                 "small": {
-                    "container_resources": {
-                        "download": {"memory": "2G", "cpu": "2"},
-                        "transform": {"memory": "2G", "cpu": "2"},
-                        "upload_schema": {"memory": "2G", "cpu": "2"},
-                        "upload_files": {"memory": "2G", "cpu": "2"},
+                    "download": {"container_resources": resource_cpu2, "node_selector": balanced_node_selector},
+                    "transform": {"container_resources": resource_cpu4, "node_selector": balanced_node_selector},
+                    "upload_schema": {
+                        "container_resources": resource_cpu2,
+                        "node_selector": balanced_node_selector,
+                    },
+                    "upload_files": {
+                        "container_resources": resource_cpu2,
+                        "node_selector": balanced_node_selector,
                     },
                 },
                 "medium": {
-                    "container_resources": {
-                        "download": {"memory": "4G", "cpu": "8"},
-                        "transform": {"memory": "16G", "cpu": "16"},
-                        "upload_schema": {"memory": "2G", "cpu": "2"},
-                        "upload_files": {"memory": "4G", "cpu": "8"},
+                    "download": {
+                        "container_resources": resource_cpu8,
+                        "node_selector": balanced_node_selector,
+                    },
+                    "transform": {
+                        "container_resources": resource_cpu16,
+                        "node_selector": balanced_node_selector,
+                    },
+                    "upload_schema": {
+                        "container_resources": resource_cpu2,
+                        "node_selector": balanced_node_selector,
+                    },
+                    "upload_files": {
+                        "container_resources": resource_cpu8,
+                        "node_selector": balanced_node_selector,
                     },
                 },
                 "large": {
-                    "container_resources": {
-                        "download": {"memory": "8G", "cpu": "16"},
-                        "transform": {"memory": "32G", "cpu": "32"},
-                        "upload_schema": {"memory": "2G", "cpu": "2"},
-                        "upload_files": {"memory": "8G", "cpu": "16"},
+                    "download": {
+                        "container_resources": resource_cpu16,
+                        "node_selector": balanced_node_selector,
+                    },
+                    "transform": {
+                        "container_resources": resource_cpu32,
+                        "node_selector": balanced_node_selector,
+                    },
+                    "upload_schema": {
+                        "container_resources": resource_cpu2,
+                        "node_selector": balanced_node_selector,
+                    },
+                    "upload_files": {
+                        "container_resources": resource_cpu16,
+                        "node_selector": balanced_node_selector,
                     },
                 },
             }
@@ -159,18 +206,19 @@ class DagParams:
         large_resources = gke_resource_map["large"]
         # TODO: assert that volume size map correct schema
         if gke_volume_size_map is None:
+            # Space used by each OpenAlex entity: https://docs.google.com/spreadsheets/d/13RcrHkAUbGE0XWTv-12UkkcL3AkTSAagQ3Gs7vmvTaQ/edit?usp=sharing
             gke_volume_size_map = {
-                "authors": "1000Gi",
-                "concepts": "50Gi",
-                "funders": "50Gi",
-                "institutions": "50Gi",
-                "publishers": "50Gi",
-                "sources": "50Gi",
-                "works": "3000Gi",
-                "domains": "50Gi",
-                "fields": "50Gi",
-                "subfields": "50Gi",
-                "topics": "50Gi",
+                "authors": "250Gi",
+                "concepts": "1Gi",
+                "funders": "1Gi",
+                "institutions": "2500Mi",
+                "publishers": "1Gi",
+                "sources": "2500Mi",
+                "works": "1500Gi",
+                "domains": "1Gi",
+                "fields": "1Gi",
+                "subfields": "1Gi",
+                "topics": "1Gi",
             }
         gke_resource_overrides = {
             "authors": medium_resources,
@@ -281,8 +329,8 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             @task.kubernetes(
                 name="download",
-                container_resources=gke_params.container_resources,
                 **gke_params.kubernetes_task_params,
+                **gke_params.gke_resource_overrides.get("download"),
             )
             def download(entity_index_id: str, entity_name: str, dag_params, **context):
                 # entity_index: dict, entity_name: str, dag_params,
@@ -302,8 +350,8 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             @task.kubernetes(
                 name="transform",
-                container_resources=gke_params.container_resources,
                 **gke_params.kubernetes_task_params,
+                **gke_params.gke_resource_overrides.get("transform"),
             )
             def transform(entity_index_id: str, entity_name: str, dag_params, **context):
                 """Transform all files for the Work, Concept and Institution entities. Transforms one file per process.
@@ -320,8 +368,8 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             @task.kubernetes(
                 name="upload_schema",
-                container_resources=gke_params.container_resources,
                 **gke_params.kubernetes_task_params,
+                **gke_params.gke_resource_overrides.get("upload_schema"),
             )
             def upload_schema(entity_index_id: str, entity_name: str, dag_params, **context):
                 """Upload the generated schema from the transform step to GCS."""
@@ -350,8 +398,8 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             @task.kubernetes(
                 name="upload_files",
-                container_resources=gke_params.container_resources,
                 **gke_params.kubernetes_task_params,
+                **gke_params.gke_resource_overrides.get("upload_files"),
             )
             def upload_files(entity_index_id: str, entity_name: str, dag_params, **context):
                 """Upload the transformed data to Cloud Storage.
@@ -455,7 +503,9 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         external_task_id = "dag_run_complete"
         sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id, external_task_id=external_task_id)
-        task_check_dependencies = check_dependencies(airflow_conns=[dag_params.gke_conn_id, dag_params.aws_conn_id])
+        task_check_dependencies = check_dependencies(
+            airflow_conns=[dag_params.gke_conn_id, dag_params.aws_conn_id, dag_params.slack_conn_id]
+        )
         xcom = fetch_entities(dag_params)
         xcom_entity_index_id = xcom["entity_index_id"]
         xcom_entity_index = xcom["entity_index"]

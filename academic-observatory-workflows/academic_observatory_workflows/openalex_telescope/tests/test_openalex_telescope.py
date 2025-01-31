@@ -1,4 +1,5 @@
-# Copyright 2022-2023 Curtin University
+# Copyright 2022-2025 Curtin University
+# Copyright 2024-2025 UC Curation Center (California Digital Library)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,8 +14,7 @@
 # limitations under the License.
 
 # Author: Aniek Roelofs, James Diprose, Alex Massen-Hane
-#
-# from airflow.providers.cncf.kubernetes.decorators.kubernetes import
+
 
 import copy
 import gzip
@@ -33,6 +33,7 @@ from airflow.utils.state import State
 from bigquery_schema_generator.generate_schema import SchemaGenerator
 from click.testing import CliRunner
 from google.cloud import bigquery
+from kubernetes.client import models as k8s
 
 from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.openalex_telescope.release import ManifestEntry, Meta, s3_uri_parts
@@ -861,15 +862,19 @@ class TestOpenAlexTelescope(SandboxTestCase):
             # Build DAG
             snapshot_date = pendulum.datetime(2023, 4, 16)
             container_resources = {
-                "download": {"memory": "1G", "cpu": "1"},
-                "transform": {"memory": "1G", "cpu": "1"},
-                "upload_schema": {"memory": "1G", "cpu": "1"},
-                "upload_files": {"memory": "1G", "cpu": "1"},
+                "download": {"container_resources": k8s.V1ResourceRequirements(requests={"memory": "1G", "cpu": "1"})},
+                "transform": {"container_resources": k8s.V1ResourceRequirements(requests={"memory": "1G", "cpu": "1"})},
+                "upload_schema": {
+                    "container_resources": k8s.V1ResourceRequirements(requests={"memory": "1G", "cpu": "1"})
+                },
+                "upload_files": {
+                    "container_resources": k8s.V1ResourceRequirements(requests={"memory": "1G", "cpu": "1"})
+                },
             }
             resource_map = {
-                "small": {"container_resources": container_resources},
-                "medium": {"container_resources": container_resources},
-                "large": {"container_resources": container_resources},
+                "small": container_resources,
+                "medium": container_resources,
+                "large": container_resources,
             }
             gke_volume_size_map = {key: "100Mi" for key in entity_names}
             dag_params = DagParams(

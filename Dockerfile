@@ -1,4 +1,4 @@
-FROM quay.io/astronomer/astro-runtime:9.15.0
+FROM quay.io/astronomer/astro-runtime:9.21.0
 
 # The following describes what various dependencies are used for. Some dependencies are specified in packages.txt
 # and some are installed in this Dockerfile if not available in apt by default.

@@ -1,4 +1,5 @@
-# Copyright 2022-2024 Curtin University
+# Copyright 2022-2025 Curtin University
+# Copyright 2024-2025 UC Curation Center (California Digital Library)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -198,13 +199,9 @@ def download(*, entity: OpenAlexEntity, **context):
     bucket_path = f"{entity.gcs_openalex_data_uri}data/{entity.entity_name}/*"
     op = BashOperator(
         task_id="process_entity.download",
-        bash_command="mkdir -p "
-        + output_folder
-        + " && gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}"
-        + f" && gsutil -m -q cp -L {entity.log_path} -r "
-        + bucket_path
-        + " "
-        + output_folder,
+        bash_command="mkdir -p " + output_folder
+        # + " && gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}"
+        + f" && gsutil -m -q cp -L {entity.log_path} -r " + bucket_path + " " + output_folder,
         do_xcom_push=False,
     )
     op.execute(context)
@@ -525,7 +522,13 @@ def transform_object(obj: dict):
 
     # Remove nulls from arrays
     # And handle null value
-    array_fields = ["corresponding_institution_ids", "corresponding_author_ids", "societies", "alternate_titles"]
+    array_fields = [
+        "corresponding_institution_ids",
+        "corresponding_author_ids",
+        "societies",
+        "alternate_titles",
+        "host_organization_lineage_names",
+    ]
     for field in array_fields:
         clean_array_field(obj, field)
 
