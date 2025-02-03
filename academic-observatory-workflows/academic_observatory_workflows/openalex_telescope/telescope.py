@@ -328,7 +328,8 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
-                name="download",
+                task_id="download",
+                name=f"{dag_params.dag_id}-download",
                 **gke_params.kubernetes_task_params,
                 **gke_params.gke_resource_overrides.get("download"),
             )
@@ -349,7 +350,8 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.download(entity=entity, **context)
 
             @task.kubernetes(
-                name="transform",
+                task_id="transform",
+                name=f"{dag_params.dag_id}-transform",
                 retries=0, # Don't retry transform step as these tasks take a long time
                 **gke_params.kubernetes_task_params,
                 **gke_params.gke_resource_overrides.get("transform"),
@@ -368,7 +370,8 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.transform(entity=entity)
 
             @task.kubernetes(
-                name="upload_schema",
+                task_id="upload_schema",
+                name=f"{dag_params.dag_id}-upload_schema",
                 **gke_params.kubernetes_task_params,
                 **gke_params.gke_resource_overrides.get("upload_schema"),
             )
@@ -398,7 +401,8 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
-                name="upload_files",
+                task_id="upload_files",
+                name=f"{dag_params.dag_id}-upload_files",
                 **gke_params.kubernetes_task_params,
                 **gke_params.gke_resource_overrides.get("upload_files"),
             )
