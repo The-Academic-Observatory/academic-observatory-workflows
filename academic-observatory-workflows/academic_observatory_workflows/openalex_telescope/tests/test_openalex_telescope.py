@@ -433,6 +433,49 @@ class TestOpenAlexUtils(SandboxTestCase):
         transform_object(obj4)
         self.assertDictEqual({"abstract_inverted_index": None}, obj4)
 
+        # Issues with nulls in locations
+        obj = {"host_organization_lineage_names": [None]}
+        transform_object(obj)
+        self.assertDictEqual(
+            {"host_organization_lineage_names": []},
+            obj,
+        )
+
+        obj = {"primary_location": {"source": {"host_organization_lineage_names": [None]}}}
+        transform_object(obj)
+        self.assertDictEqual(
+            {"primary_location": {"source": {"host_organization_lineage_names": []}}},
+            obj,
+        )
+
+        obj = {"best_oa_location": {"source": {"host_organization_lineage_names": [None]}}}
+        transform_object(obj)
+        self.assertDictEqual(
+            {"best_oa_location": {"source": {"host_organization_lineage_names": []}}},
+            obj,
+        )
+
+        obj = {"locations": [{"source": {"host_organization_lineage_names": [None]}}]}
+        transform_object(obj)
+        self.assertDictEqual(
+            {"locations": [{"source": {"host_organization_lineage_names": []}}]},
+            obj,
+        )
+
+        obj = {"primary_location": None}
+        transform_object(obj)
+        self.assertDictEqual(
+            {"primary_location": None},
+            obj,
+        )
+
+        obj = {"primary_location": {"source": None}}
+        transform_object(obj)
+        self.assertDictEqual(
+            {"primary_location": {"source": None}},
+            obj,
+        )
+
     def test_bq_compare_schemas(self):
         # Test with matching fields and types.
         expected = [

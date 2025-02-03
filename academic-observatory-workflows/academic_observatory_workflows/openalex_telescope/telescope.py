@@ -350,6 +350,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             @task.kubernetes(
                 name="transform",
+                retries=0, # Don't retry transform step as these tasks take a long time
                 **gke_params.kubernetes_task_params,
                 **gke_params.gke_resource_overrides.get("transform"),
             )

@@ -197,11 +197,20 @@ def aws_to_gcs_transfer(
 def download(*, entity: OpenAlexEntity, **context):
     output_folder = f"{entity.download_folder}/data/{entity.entity_name}/"
     bucket_path = f"{entity.gcs_openalex_data_uri}data/{entity.entity_name}/*"
+
+    # Build command
+    cmds = [
+        "mkdir -p " + output_folder,
+    ]
+    if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        # This command is not necessary in GKE, but needed in minikube. Only run when GOOGLE_APPLICATION_CREDENTIALS is
+        # set, which is not set in GKE but set in our testing environment
+        cmds.append("gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}")
+    cmds.append("gsutil -m -q cp -L {entity.log_path} -r " + bucket_path + " " + output_folder)
+
     op = BashOperator(
         task_id="process_entity.download",
-        bash_command="mkdir -p " + output_folder
-        # + " && gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}"
-        + f" && gsutil -m -q cp -L {entity.log_path} -r " + bucket_path + " " + output_folder,
+        bash_command=" && ".join(cmds),
         do_xcom_push=False,
     )
     op.execute(context)
@@ -504,10 +513,24 @@ def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict
     return download_path, schema_map, schema_generator.error_logs
 
 
-def clean_array_field(obj: dict, field: str):
-    if field in obj:
+def remove_none_from_array(obj: dict, field: str):
+    """Remove None values from an array.
+
+    :param obj: the dictionary containing the array field.
+    :param field: the key for the array field.
+    :return: None
+    """
+
+    if obj is not None and field in obj:
         value = obj.get(field) or []
         obj[field] = [x for x in value if x is not None]
+
+
+def safe_get_dict(obj: dict, field: str) -> dict:
+    val = obj.get(field, {})
+    if val is None:
+        return {}
+    return val
 
 
 def transform_object(obj: dict):
@@ -527,15 +550,28 @@ def transform_object(obj: dict):
         "corresponding_author_ids",
         "societies",
         "alternate_titles",
-        "host_organization_lineage_names",
+        "host_organization_lineage_names",  # For sources
     ]
     for field in array_fields:
-        clean_array_field(obj, field)
+        remove_none_from_array(obj, field)
 
     # Remove nulls from authors affiliations[].years
-    for affiliation in obj.get("affiliations", []):
-        if "years" in affiliation:
-            affiliation["years"] = [x for x in affiliation["years"] if x is not None]
+    for val in obj.get("affiliations", []):
+        remove_none_from_array(val, "years")
+
+    # Remove nulls from works primary_location.source.host_organization_lineage_names
+    remove_none_from_array(
+        safe_get_dict(safe_get_dict(obj, "primary_location"), "source"), "host_organization_lineage_names"
+    )
+
+    # Remove nulls from works best_oa_location.source.host_organization_lineage_names
+    remove_none_from_array(
+        safe_get_dict(safe_get_dict(obj, "best_oa_location"), "source"), "host_organization_lineage_names"
+    )
+
+    # Remove nulls from works locations[].source.host_organization_lineage_names
+    for val in obj.get("locations", []):
+        remove_none_from_array(safe_get_dict(val, "source"), "host_organization_lineage_names")
 
     field = "abstract_inverted_index"
     if field in obj:
