@@ -151,6 +151,5 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
 
             # Should be one release in the API
             api = DatasetAPI(bq_project_id=env.cloud_workspace.project_id, bq_dataset_id=test_params.api_bq_dataset_id)
-            api.seed_db()
             api_releases = api.get_dataset_releases(dag_id=test_params.dag_id, entity_id="crossref_metadata")
             self.assertEqual(len(api_releases), 1)

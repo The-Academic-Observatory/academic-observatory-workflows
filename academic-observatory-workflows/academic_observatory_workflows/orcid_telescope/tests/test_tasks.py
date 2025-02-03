@@ -167,7 +167,6 @@ class TestFetchRelease(unittest.TestCase):
 
             # Populate the API with a release
             api = DatasetAPI(bq_project_id=env.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
-            api.seed_db()
             release = OrcidRelease.from_dict(actual_release)
             dataset_release = DatasetRelease(
                 dag_id=self.dag_id,
@@ -626,7 +625,6 @@ class TestAddDatasetRelease(unittest.TestCase):
                 "extra": {"latest_modified_record_date": datetime_normalise(now)},
             }
             api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_dataset_id)
-            api.seed_db()
 
             # Should not be any releases in the API before the task is run
             self.assertEqual(len(api.get_dataset_releases(dag_id=release.dag_id, entity_id="orcid")), 0)

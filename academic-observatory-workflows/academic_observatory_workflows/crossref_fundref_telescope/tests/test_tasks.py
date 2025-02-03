@@ -241,7 +241,6 @@ class TestAddDatasetRelease(unittest.TestCase):
                 "extra": {},
             }
             api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_dataset_id)
-            api.seed_db()
 
             # Should not be any releases in the API before the task is run
             self.assertEqual(len(api.get_dataset_releases(dag_id=release.dag_id, entity_id="crossref_fundref")), 0)

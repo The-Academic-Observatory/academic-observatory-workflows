@@ -187,7 +187,6 @@ def add_dataset_release(release: dict, api_bq_dataset_id: str) -> None:
     release = ScopusRelease.from_dict(release)
 
     api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
-    api.seed_db()
     now = pendulum.now()
     dataset_release = DatasetRelease(
         dag_id=release.dag_id,
