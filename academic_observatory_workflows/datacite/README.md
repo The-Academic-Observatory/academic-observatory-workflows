@@ -5,12 +5,12 @@ mkdir datacite transform
 
 Download DataCite Public Data File:
 ```bash
-cd datacite && wget https://datafiles.datacite.org/datafiles/public-2023/download?token=YOUR_TOKEN
+cd datacite && wget -O DataCite_Public_Data_File_2024.tar https://datafiles.datacite.org/datafiles/public-2024/download?token=YOUR_TOKEN
 ```
 
 Extract DataCite Public Data File:
 ```bash
-cd datacite && tar -xzf DataCite_Public_Data_File_2023.tar.gz
+cd datacite && tar -xf DataCite_Public_Data_File_2024.tar
 ```
 
 Install dependencies and 
