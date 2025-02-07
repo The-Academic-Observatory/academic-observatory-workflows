@@ -223,56 +223,58 @@ def normalize_related_item(value):
 
 
 def transform_object(obj):
+    attributes = obj["attributes"]
+
     # If null convert to empty array
-    obj["contentUrl"] = obj.get("contentUrl") or []
+    attributes["contentUrl"] = attributes.get("contentUrl") or []
 
     # Remove empty dicts and cleanup geography related data
-    obj["geoLocations"] = transform_geo_locations(obj.get("geoLocations", []))
+    attributes["geoLocations"] = transform_geo_locations(attributes.get("geoLocations", []))
 
     # Remove empty dicts, convert single objects to arrays
-    normalize_affiliations_and_identifiers(obj, "creators")
-    normalize_affiliations_and_identifiers(obj, "contributors")
+    normalize_affiliations_and_identifiers(attributes, "creators")
+    normalize_affiliations_and_identifiers(attributes, "contributors")
 
     # Remove empty dicts
-    obj["rightsList"] = remove_empty_dicts(obj.get("rightsList", []))
-    obj["subjects"] = remove_empty_dicts(obj.get("subjects", []))
+    attributes["rightsList"] = remove_empty_dicts(attributes.get("rightsList", []))
+    attributes["subjects"] = remove_empty_dicts(attributes.get("subjects", []))
 
     # Convert to strings
-    container = obj.get("container", {})
+    container = attributes.get("container", {})
     for key in ["volume", "issue", "firstPage", "lastPage"]:
         container[key] = normalize_to_string_or_none(container.get(key))
-    obj["container"] = container
+    attributes["container"] = container
 
     # Remove nulls from array
-    remove_nulls_from_list_field(obj, "formats")
-    remove_nulls_from_list_field(obj, "sizes")
+    remove_nulls_from_list_field(attributes, "formats")
+    remove_nulls_from_list_field(attributes, "sizes")
 
     # Some sizes are integers
-    if "sizes" in obj:
-        obj["sizes"] = [str(size) for size in obj["sizes"]]
+    if "sizes" in attributes:
+        attributes["sizes"] = [str(size) for size in attributes["sizes"]]
 
     # Convert identifiers to strings
     # "identifiers":[{"identifier":9486968,"identifierType":"ISBN"},{"identifier":"0948695X","identifierType":"ISSN"}],
-    normalize_identifier_fields(obj, "identifiers", "identifier")
-    normalize_identifier_fields(obj, "alternateIdentifiers", "alternateIdentifier")
-    normalize_identifier_fields(obj, "relatedIdentifiers", "relatedIdentifier")
-    normalize_identifier_fields(obj, "dates", "date")
+    normalize_identifier_fields(attributes, "identifiers", "identifier")
+    normalize_identifier_fields(attributes, "alternateIdentifiers", "alternateIdentifier")
+    normalize_identifier_fields(attributes, "relatedIdentifiers", "relatedIdentifier")
+    normalize_identifier_fields(attributes, "dates", "date")
 
     # Clean relatedItems
-    for item in obj.get("relatedItems", []):
+    for item in attributes.get("relatedItems", []):
         for key in ["firstPage", "lastPage"]:
             item[key] = normalize_related_item(item.get(key))
 
     # Descriptions
-    for desc in obj.get("descriptions", []):
+    for desc in attributes.get("descriptions", []):
         desc["description"] = normalize_to_string_or_none(desc.get("description"))
 
     # Cleanup boolean string award URIs
-    for item in obj.get("fundingReferences", []):
+    for item in attributes.get("fundingReferences", []):
         item["awardUri"] = clean_string_or_bool(item.get("awardUri"))
 
 
-def transform(input_path: str, output_path: str) -> Tuple[str, OrderedDict, list]:
+def transform(input_path: str, output_path: str) -> Tuple[str, bool, OrderedDict, list]:
     # Initialise the schema generator.
     schema_map = OrderedDict()
     schema_generator = SchemaGenerator(input_format="dict")
@@ -282,9 +284,11 @@ def transform(input_path: str, output_path: str) -> Tuple[str, OrderedDict, list
     os.makedirs(base_folder, exist_ok=True)
 
     logging.info(f"generate_schema {input_path}")
+    empty_file = True
     with open(output_path, mode="w") as f:
         with jsonlines.Writer(f) as writer:
             for obj in yield_jsonl(input_path):
+                empty_file = False
                 transform_object(obj)
                 writer.write(obj)
 
@@ -295,7 +299,11 @@ def transform(input_path: str, output_path: str) -> Tuple[str, OrderedDict, list
                 except Exception:
                     pass
 
-    return input_path, schema_map, schema_generator.error_logs
+    if empty_file:
+        logging.info(f"Deleting file as it is empty: {output_path}")
+        os.remove(output_path)
+
+    return input_path, empty_file, schema_map, schema_generator.error_logs
 
 
 def get_chunks(*, input_list: List[Any], chunk_size: int = 8) -> List[Any]:
@@ -321,22 +329,25 @@ def generate_schema_for_dataset(input_folder: Path, output_folder: Path, max_wor
             futures = []
 
             for input_path in chunk:
-                output_path = str(output_folder / Path(input_path).relative_to(input_folder))
+                output_path = str(output_folder / Path(input_path).relative_to(input_folder)).replace(
+                    ".jsonl.gz", ".jsonl"
+                )
                 futures.append(executor.submit(transform, input_path, output_path))
 
             for future in as_completed(futures):
-                input_path, schema_map, schema_error = future.result()
-                if schema_error:
-                    msg = f"File {input_path}: {schema_error}"
-                    with open(input_folder / "errors.txt", mode="a") as f:
-                        f.write(f"{msg}\n")
-                    print(msg)
+                input_path, empty_file, schema_map, schema_error = future.result()
+                if not empty_file:
+                    if schema_error:
+                        msg = f"File {input_path}: {schema_error}"
+                        with open(input_folder / "errors.txt", mode="a") as f:
+                            f.write(f"{msg}\n")
+                        print(msg)
 
-                # Merge the schemas from each process. Each data file could have more fields than others.
-                try:
-                    merged_schema_map = merge_schema_maps(to_add=schema_map, old=merged_schema_map)
-                except Exception as e:
-                    print(f"merge_schema_maps error: {e}")
+                    # Merge the schemas from each process. Each data file could have more fields than others.
+                    try:
+                        merged_schema_map = merge_schema_maps(to_add=schema_map, old=merged_schema_map)
+                    except Exception as e:
+                        print(f"merge_schema_maps error: {e}")
 
                 percent = i / total_files * 100
                 print(f"Progress: {i} / {total_files}, {percent:.2f}%")
