@@ -16,12 +16,12 @@ cd datacite && tar -xf DataCite_Public_Data_File_2024.tar
 Install dependencies and 
 ```bash
 pip3 install json_lines bigquery_schema_generator jsonlines
-nohup python3 datacite_transform.py /path/to/datacite /path/to/transform > output.log 2>&1 &
+nohup python3 datacite_transform.py ./datacite/2024 ./transform > output.log 2>&1 &
 ```
 
 Upload transformed files to Google Cloud Storage bucket:
 ```bash
-gsutil -m  cp -r /path/to/transform/* gs://your-bucket-name/datacite/2023/
+gsutil -m  cp -r /path/to/transform/* gs://your-bucket-name/datacite/2024/
 ```
 
 Finally, load the DataCite BigQquery table using the schema/datacite.json and the files on the Cloud Storage bucket,

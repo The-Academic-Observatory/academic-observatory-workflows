@@ -225,19 +225,8 @@ def normalize_related_item(value):
 def transform_object(obj):
     attributes = obj["attributes"]
 
-    # If null convert to empty array
-    attributes["contentUrl"] = attributes.get("contentUrl") or []
-
     # Remove empty dicts and cleanup geography related data
     attributes["geoLocations"] = transform_geo_locations(attributes.get("geoLocations", []))
-
-    # Remove empty dicts, convert single objects to arrays
-    normalize_affiliations_and_identifiers(attributes, "creators")
-    normalize_affiliations_and_identifiers(attributes, "contributors")
-
-    # Remove empty dicts
-    attributes["rightsList"] = remove_empty_dicts(attributes.get("rightsList", []))
-    attributes["subjects"] = remove_empty_dicts(attributes.get("subjects", []))
 
     # Convert to strings
     container = attributes.get("container", {})
@@ -246,7 +235,9 @@ def transform_object(obj):
     attributes["container"] = container
 
     # Remove nulls from array
+    # Only optional fields can be set to NULL. Field: formats; Value: NULL
     remove_nulls_from_list_field(attributes, "formats")
+    # Only optional fields can be set to NULL. Field: sizes; Value: NULL
     remove_nulls_from_list_field(attributes, "sizes")
 
     # Some sizes are integers
@@ -262,7 +253,10 @@ def transform_object(obj):
 
     # Clean relatedItems
     for item in attributes.get("relatedItems", []):
-        for key in ["firstPage", "lastPage"]:
+        for key in ["firstPage", "lastPage", "publicationYear"]:
+            # Array specified for non-repeated field: attributes.relatedItems.lastPage
+            # Array specified for non-repeated field: attributes.relatedItems.firstPage
+            # publicationYear can be an integer if empty strings are removed
             item[key] = normalize_related_item(item.get(key))
 
     # Descriptions
