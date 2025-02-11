@@ -1,3 +1,19 @@
+# Copyright 2020-2025 Curtin University
+# Copyright 2024-2025 UC Curation Center (California Digital Library)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
 from __future__ import annotations
 
 import argparse
@@ -105,7 +121,7 @@ def sort_schema(input_file: Path):
 
 def list_jsonl_files(folder_path):
     # Use glob to recursively find all .jsonl files
-    jsonl_files = glob.glob(os.path.join(folder_path, "**", "*.jsonl"), recursive=True)
+    jsonl_files = glob.glob(os.path.join(folder_path, "**", "*.jsonl.gz"), recursive=True)
     return jsonl_files
 
 
@@ -207,56 +223,52 @@ def normalize_related_item(value):
 
 
 def transform_object(obj):
-    # If null convert to empty array
-    obj["contentUrl"] = obj.get("contentUrl") or []
+    attributes = obj["attributes"]
 
     # Remove empty dicts and cleanup geography related data
-    obj["geoLocations"] = transform_geo_locations(obj.get("geoLocations", []))
-
-    # Remove empty dicts, convert single objects to arrays
-    normalize_affiliations_and_identifiers(obj, "creators")
-    normalize_affiliations_and_identifiers(obj, "contributors")
-
-    # Remove empty dicts
-    obj["rightsList"] = remove_empty_dicts(obj.get("rightsList", []))
-    obj["subjects"] = remove_empty_dicts(obj.get("subjects", []))
+    attributes["geoLocations"] = transform_geo_locations(attributes.get("geoLocations", []))
 
     # Convert to strings
-    container = obj.get("container", {})
+    container = attributes.get("container", {})
     for key in ["volume", "issue", "firstPage", "lastPage"]:
         container[key] = normalize_to_string_or_none(container.get(key))
-    obj["container"] = container
+    attributes["container"] = container
 
     # Remove nulls from array
-    remove_nulls_from_list_field(obj, "formats")
-    remove_nulls_from_list_field(obj, "sizes")
+    # Only optional fields can be set to NULL. Field: formats; Value: NULL
+    remove_nulls_from_list_field(attributes, "formats")
+    # Only optional fields can be set to NULL. Field: sizes; Value: NULL
+    remove_nulls_from_list_field(attributes, "sizes")
 
     # Some sizes are integers
-    if "sizes" in obj:
-        obj["sizes"] = [str(size) for size in obj["sizes"]]
+    if "sizes" in attributes:
+        attributes["sizes"] = [str(size) for size in attributes["sizes"]]
 
     # Convert identifiers to strings
     # "identifiers":[{"identifier":9486968,"identifierType":"ISBN"},{"identifier":"0948695X","identifierType":"ISSN"}],
-    normalize_identifier_fields(obj, "identifiers", "identifier")
-    normalize_identifier_fields(obj, "alternateIdentifiers", "alternateIdentifier")
-    normalize_identifier_fields(obj, "relatedIdentifiers", "relatedIdentifier")
-    normalize_identifier_fields(obj, "dates", "date")
+    normalize_identifier_fields(attributes, "identifiers", "identifier")
+    normalize_identifier_fields(attributes, "alternateIdentifiers", "alternateIdentifier")
+    normalize_identifier_fields(attributes, "relatedIdentifiers", "relatedIdentifier")
+    normalize_identifier_fields(attributes, "dates", "date")
 
     # Clean relatedItems
-    for item in obj.get("relatedItems", []):
-        for key in ["firstPage", "lastPage"]:
+    for item in attributes.get("relatedItems", []):
+        for key in ["firstPage", "lastPage", "publicationYear"]:
+            # Array specified for non-repeated field: attributes.relatedItems.lastPage
+            # Array specified for non-repeated field: attributes.relatedItems.firstPage
+            # publicationYear can be an integer if empty strings are removed
             item[key] = normalize_related_item(item.get(key))
 
     # Descriptions
-    for desc in obj.get("descriptions", []):
+    for desc in attributes.get("descriptions", []):
         desc["description"] = normalize_to_string_or_none(desc.get("description"))
 
     # Cleanup boolean string award URIs
-    for item in obj.get("fundingReferences", []):
+    for item in attributes.get("fundingReferences", []):
         item["awardUri"] = clean_string_or_bool(item.get("awardUri"))
 
 
-def transform(input_path: str, output_path: str) -> Tuple[str, OrderedDict, list]:
+def transform(input_path: str, output_path: str) -> Tuple[str, bool, OrderedDict, list]:
     # Initialise the schema generator.
     schema_map = OrderedDict()
     schema_generator = SchemaGenerator(input_format="dict")
@@ -266,9 +278,11 @@ def transform(input_path: str, output_path: str) -> Tuple[str, OrderedDict, list
     os.makedirs(base_folder, exist_ok=True)
 
     logging.info(f"generate_schema {input_path}")
+    empty_file = True
     with open(output_path, mode="w") as f:
         with jsonlines.Writer(f) as writer:
             for obj in yield_jsonl(input_path):
+                empty_file = False
                 transform_object(obj)
                 writer.write(obj)
 
@@ -279,7 +293,11 @@ def transform(input_path: str, output_path: str) -> Tuple[str, OrderedDict, list
                 except Exception:
                     pass
 
-    return input_path, schema_map, schema_generator.error_logs
+    if empty_file:
+        logging.info(f"Deleting file as it is empty: {output_path}")
+        os.remove(output_path)
+
+    return input_path, empty_file, schema_map, schema_generator.error_logs
 
 
 def get_chunks(*, input_list: List[Any], chunk_size: int = 8) -> List[Any]:
@@ -305,22 +323,25 @@ def generate_schema_for_dataset(input_folder: Path, output_folder: Path, max_wor
             futures = []
 
             for input_path in chunk:
-                output_path = str(output_folder / Path(input_path).relative_to(input_folder))
+                output_path = str(output_folder / Path(input_path).relative_to(input_folder)).replace(
+                    ".jsonl.gz", ".jsonl"
+                )
                 futures.append(executor.submit(transform, input_path, output_path))
 
             for future in as_completed(futures):
-                input_path, schema_map, schema_error = future.result()
-                if schema_error:
-                    msg = f"File {input_path}: {schema_error}"
-                    with open(input_folder / "errors.txt", mode="a") as f:
-                        f.write(f"{msg}\n")
-                    print(msg)
+                input_path, empty_file, schema_map, schema_error = future.result()
+                if not empty_file:
+                    if schema_error:
+                        msg = f"File {input_path}: {schema_error}"
+                        with open(input_folder / "errors.txt", mode="a") as f:
+                            f.write(f"{msg}\n")
+                        print(msg)
 
-                # Merge the schemas from each process. Each data file could have more fields than others.
-                try:
-                    merged_schema_map = merge_schema_maps(to_add=schema_map, old=merged_schema_map)
-                except Exception as e:
-                    print(f"merge_schema_maps error: {e}")
+                    # Merge the schemas from each process. Each data file could have more fields than others.
+                    try:
+                        merged_schema_map = merge_schema_maps(to_add=schema_map, old=merged_schema_map)
+                    except Exception as e:
+                        print(f"merge_schema_maps error: {e}")
 
                 percent = i / total_files * 100
                 print(f"Progress: {i} / {total_files}, {percent:.2f}%")

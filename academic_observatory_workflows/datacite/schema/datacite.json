@@ -1,509 +1,110 @@
 [
   {
-    "name": "alternateIdentifiers",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "alternateIdentifier",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "alternateIdentifierType",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
+    "name": "id",
+    "type": "STRING",
+    "mode": "NULLABLE"
   },
   {
-    "name": "container",
+    "name": "type",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "attributes",
     "type": "RECORD",
     "mode": "NULLABLE",
     "fields": [
       {
-        "name": "firstPage",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "identifier",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "identifierType",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "issue",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "lastPage",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "title",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "type",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "volume",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
-    "name": "contentUrl",
-    "type": "STRING",
-    "mode": "REPEATED"
-  },
-  {
-    "name": "contributors",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "affiliation",
+        "name": "alternateIdentifiers",
         "type": "RECORD",
         "mode": "REPEATED",
         "fields": [
           {
-            "name": "affiliationIdentifier",
+            "name": "alternateIdentifier",
             "type": "STRING",
             "mode": "NULLABLE"
           },
           {
-            "name": "affiliationIdentifierScheme",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "name",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "schemeUri",
+            "name": "alternateIdentifierType",
             "type": "STRING",
             "mode": "NULLABLE"
           }
         ]
       },
       {
-        "name": "contributorType",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "familyName",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "givenName",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "name",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "nameIdentifiers",
-        "type": "RECORD",
-        "mode": "REPEATED",
-        "fields": [
-          {
-            "name": "nameIdentifier",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "nameIdentifierScheme",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "schemeUri",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          }
-        ]
-      },
-      {
-        "name": "nameType",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
-    "name": "created",
-    "type": "TIMESTAMP",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "creators",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "affiliation",
-        "type": "RECORD",
-        "mode": "REPEATED",
-        "fields": [
-          {
-            "name": "affiliationIdentifier",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "affiliationIdentifierScheme",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "name",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "schemeUri",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          }
-        ]
-      },
-      {
-        "name": "familyName",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "givenName",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "lang",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "name",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "nameIdentifiers",
-        "type": "RECORD",
-        "mode": "REPEATED",
-        "fields": [
-          {
-            "name": "nameIdentifier",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "nameIdentifierScheme",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "schemeUri",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          }
-        ]
-      },
-      {
-        "name": "nameType",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
-    "name": "dates",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "date",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "dateInformation",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "dateType",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
-    "name": "descriptions",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "description",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "descriptionType",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "lang",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
-    "name": "doi",
-    "type": "STRING",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "formats",
-    "type": "STRING",
-    "mode": "REPEATED"
-  },
-  {
-    "name": "fundingReferences",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "awardNumber",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "awardTitle",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "awardUri",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "funderIdentifier",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "funderIdentifierType",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "funderName",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "schemeUri",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
-    "name": "geoLocations",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "geoLocationBox",
-        "type": "RECORD",
-        "mode": "NULLABLE",
-        "fields": [
-          {
-            "name": "eastBoundLongitude",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "northBoundLatitude",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "southBoundLatitude",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "westBoundLongitude",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          }
-        ]
-      },
-      {
-        "name": "geoLocationPlace",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "geoLocationPoint",
-        "type": "GEOGRAPHY",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "geoLocationPolygon",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
-    "name": "identifiers",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "identifier",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "identifierType",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
-    "name": "isActive",
-    "type": "BOOLEAN",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "language",
-    "type": "STRING",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "metadataVersion",
-    "type": "INTEGER",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "prefix",
-    "type": "FLOAT",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "publicationYear",
-    "type": "INTEGER",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "published",
-    "type": "STRING",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "publisher",
-    "type": "STRING",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "reason",
-    "type": "STRING",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "registered",
-    "type": "TIMESTAMP",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "relatedIdentifiers",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "id",
+        "name": "citationCount",
         "type": "INTEGER",
         "mode": "NULLABLE"
       },
       {
-        "name": "relatedIdentifier",
-        "type": "STRING",
-        "mode": "NULLABLE"
+        "name": "citationsOverTime",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          {
+            "name": "total",
+            "type": "INTEGER",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "year",
+            "type": "INTEGER",
+            "mode": "NULLABLE"
+          }
+        ]
       },
       {
-        "name": "relatedIdentifierType",
-        "type": "STRING",
-        "mode": "NULLABLE"
+        "name": "container",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "firstPage",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "identifier",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "identifierType",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "issue",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "lastPage",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "title",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "type",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "volume",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
       },
       {
-        "name": "relatedMetadataScheme",
+        "name": "contentUrl",
         "type": "STRING",
-        "mode": "NULLABLE"
+        "mode": "REPEATED"
       },
-      {
-        "name": "relationType",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "resourceTypeGeneral",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "schemeType",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "schemeUri",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "title",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "type",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
-    "name": "relatedItems",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
       {
         "name": "contributors",
         "type": "RECORD",
@@ -552,12 +153,12 @@
             "mode": "NULLABLE"
           },
           {
-            "name": "name",
+            "name": "lang",
             "type": "STRING",
             "mode": "NULLABLE"
           },
           {
-            "name": "nameType",
+            "name": "name",
             "type": "STRING",
             "mode": "NULLABLE"
           },
@@ -582,8 +183,18 @@
                 "mode": "NULLABLE"
               }
             ]
+          },
+          {
+            "name": "nameType",
+            "type": "STRING",
+            "mode": "NULLABLE"
           }
         ]
+      },
+      {
+        "name": "created",
+        "type": "TIMESTAMP",
+        "mode": "NULLABLE"
       },
       {
         "name": "creators",
@@ -628,12 +239,12 @@
             "mode": "NULLABLE"
           },
           {
-            "name": "name",
+            "name": "lang",
             "type": "STRING",
             "mode": "NULLABLE"
           },
           {
-            "name": "nameType",
+            "name": "name",
             "type": "STRING",
             "mode": "NULLABLE"
           },
@@ -658,73 +269,696 @@
                 "mode": "NULLABLE"
               }
             ]
+          },
+          {
+            "name": "nameType",
+            "type": "STRING",
+            "mode": "NULLABLE"
           }
         ]
       },
       {
-        "name": "edition",
+        "name": "dates",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          {
+            "name": "date",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "dateInformation",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "dateType",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "descriptions",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          {
+            "name": "description",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "descriptionType",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "lang",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "doi",
         "type": "STRING",
         "mode": "NULLABLE"
       },
       {
-        "name": "firstPage",
+        "name": "downloadCount",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "downloadsOverTime",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          {
+            "name": "total",
+            "type": "INTEGER",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "yearMonth",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "formats",
+        "type": "STRING",
+        "mode": "REPEATED"
+      },
+      {
+        "name": "fundingReferences",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          {
+            "name": "awardNumber",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "awardTitle",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "awardUri",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "funderIdentifier",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "funderIdentifierType",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "funderName",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "schemeUri",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "geoLocations",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          {
+            "name": "geoLocationBox",
+            "type": "RECORD",
+            "mode": "NULLABLE",
+            "fields": [
+              {
+                "name": "eastBoundLongitude",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "northBoundLatitude",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "southBoundLatitude",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "westBoundLongitude",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              }
+            ]
+          },
+          {
+            "name": "geoLocationPlace",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "geoLocationPoint",
+            "type": "GEOGRAPHY",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "geoLocationPolygon",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "identifiers",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          {
+            "name": "identifier",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "identifierType",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "isActive",
+        "type": "BOOLEAN",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "language",
         "type": "STRING",
         "mode": "NULLABLE"
       },
       {
-        "name": "issue",
-        "type": "STRING",
+        "name": "metadataVersion",
+        "type": "INTEGER",
         "mode": "NULLABLE"
       },
       {
-        "name": "lastPage",
-        "type": "STRING",
+        "name": "partCount",
+        "type": "INTEGER",
         "mode": "NULLABLE"
       },
       {
-        "name": "number",
-        "type": "STRING",
+        "name": "partOfCount",
+        "type": "INTEGER",
         "mode": "NULLABLE"
       },
       {
-        "name": "numberType",
+        "name": "prefix",
+        "type": "FLOAT",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "publicationYear",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "published",
         "type": "STRING",
         "mode": "NULLABLE"
       },
       {
         "name": "publisher",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "publicationYear",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "relatedItemIdentifier",
         "type": "RECORD",
         "mode": "NULLABLE",
         "fields": [
           {
-            "name": "relatedItemIdentifier",
+            "name": "lang",
             "type": "STRING",
             "mode": "NULLABLE"
           },
           {
-            "name": "relatedItemIdentifierType",
+            "name": "name",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "publisherIdentifier",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "publisherIdentifierScheme",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "schemeUri",
             "type": "STRING",
             "mode": "NULLABLE"
           }
         ]
       },
       {
-        "name": "relatedItemType",
+        "name": "reason",
         "type": "STRING",
         "mode": "NULLABLE"
       },
       {
-        "name": "relationType",
+        "name": "referenceCount",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "registered",
+        "type": "TIMESTAMP",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "relatedIdentifiers",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          {
+            "name": "id",
+            "type": "INTEGER",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "relatedIdentifier",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "relatedIdentifierType",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "relatedMetadataScheme",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "relationType",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "resourceTypeGeneral",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "schemeType",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "schemeUri",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "title",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "type",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "relatedItems",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          {
+            "name": "contributors",
+            "type": "RECORD",
+            "mode": "REPEATED",
+            "fields": [
+              {
+                "name": "affiliation",
+                "type": "RECORD",
+                "mode": "REPEATED",
+                "fields": [
+                  {
+                    "name": "affiliationIdentifier",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  },
+                  {
+                    "name": "affiliationIdentifierScheme",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  },
+                  {
+                    "name": "name",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  },
+                  {
+                    "name": "schemeUri",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  }
+                ]
+              },
+              {
+                "name": "contributorType",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "familyName",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "givenName",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "name",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "nameType",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "nameIdentifiers",
+                "type": "RECORD",
+                "mode": "REPEATED",
+                "fields": [
+                  {
+                    "name": "nameIdentifier",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  },
+                  {
+                    "name": "nameIdentifierScheme",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  },
+                  {
+                    "name": "schemeUri",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "creators",
+            "type": "RECORD",
+            "mode": "REPEATED",
+            "fields": [
+              {
+                "name": "affiliation",
+                "type": "RECORD",
+                "mode": "REPEATED",
+                "fields": [
+                  {
+                    "name": "affiliationIdentifier",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  },
+                  {
+                    "name": "affiliationIdentifierScheme",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  },
+                  {
+                    "name": "name",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  },
+                  {
+                    "name": "schemeUri",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  }
+                ]
+              },
+              {
+                "name": "familyName",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "givenName",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "name",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "nameType",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "nameIdentifiers",
+                "type": "RECORD",
+                "mode": "REPEATED",
+                "fields": [
+                  {
+                    "name": "nameIdentifier",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  },
+                  {
+                    "name": "nameIdentifierScheme",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  },
+                  {
+                    "name": "schemeUri",
+                    "type": "STRING",
+                    "mode": "NULLABLE"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "edition",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "firstPage",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "issue",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "lastPage",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "number",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "numberType",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "publisher",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "publicationYear",
+            "type": "INTEGER",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "relatedItemIdentifier",
+            "type": "RECORD",
+            "mode": "NULLABLE",
+            "fields": [
+              {
+                "name": "relatedItemIdentifier",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "relatedItemIdentifierType",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              }
+            ]
+          },
+          {
+            "name": "relatedItemType",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "relationType",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "titles",
+            "type": "RECORD",
+            "mode": "REPEATED",
+            "fields": [
+              {
+                "name": "lang",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "title",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "titleType",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              }
+            ]
+          },
+          {
+            "name": "volume",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "rightsList",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          {
+            "name": "lang",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "rights",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "rightsIdentifier",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "rightsIdentifierScheme",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "rightsUri",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "schemeUri",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "schemaVersion",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "sizes",
+        "type": "STRING",
+        "mode": "REPEATED"
+      },
+      {
+        "name": "source",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "state",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "subjects",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          {
+            "name": "classificationCode",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "lang",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "schemeUri",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "subject",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "subjectScheme",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "valueUri",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "suffix",
         "type": "STRING",
         "mode": "NULLABLE"
       },
@@ -751,188 +985,312 @@
         ]
       },
       {
-        "name": "volume",
+        "name": "types",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "bibtex",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "citeproc",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "resourceType",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "resourceTypeGeneral",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "ris",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "schemaOrg",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "updated",
+        "type": "TIMESTAMP",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "url",
         "type": "STRING",
         "mode": "NULLABLE"
+      },
+      {
+        "name": "version",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "versionCount",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "versionOfCount",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "viewCount",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "viewsOverTime",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          {
+            "name": "total",
+            "type": "INTEGER",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "yearMonth",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
       }
     ]
   },
   {
-    "name": "rightsList",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "lang",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "rights",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "rightsIdentifier",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "rightsIdentifierScheme",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "rightsUri",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "schemeUri",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
-    "name": "schemaVersion",
-    "type": "STRING",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "sizes",
-    "type": "STRING",
-    "mode": "REPEATED"
-  },
-  {
-    "name": "source",
-    "type": "STRING",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "state",
-    "type": "STRING",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "subjects",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "classificationCode",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "lang",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "schemeUri",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "subject",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "subjectScheme",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "valueUri",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
-    "name": "suffix",
-    "type": "STRING",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "titles",
-    "type": "RECORD",
-    "mode": "REPEATED",
-    "fields": [
-      {
-        "name": "lang",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "title",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "titleType",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      }
-    ]
-  },
-  {
-    "name": "types",
+    "name": "relationships",
     "type": "RECORD",
     "mode": "NULLABLE",
     "fields": [
       {
-        "name": "bibtex",
-        "type": "STRING",
-        "mode": "NULLABLE"
+        "name": "citations",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "data",
+            "type": "RECORD",
+            "mode": "REPEATED",
+            "fields": [
+              {
+                "name": "id",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "type",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              }
+            ]
+          }
+        ]
       },
       {
-        "name": "citeproc",
-        "type": "STRING",
-        "mode": "NULLABLE"
+        "name": "client",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "data",
+            "type": "RECORD",
+            "mode": "NULLABLE",
+            "fields": [
+              {
+                "name": "id",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "type",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              }
+            ]
+          }
+        ]
       },
       {
-        "name": "resourceType",
-        "type": "STRING",
-        "mode": "NULLABLE"
+        "name": "media",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "data",
+            "type": "RECORD",
+            "mode": "REPEATED",
+            "fields": [
+              {
+                "name": "id",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "type",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              }
+            ]
+          }
+        ]
       },
       {
-        "name": "resourceTypeGeneral",
-        "type": "STRING",
-        "mode": "NULLABLE"
+        "name": "partOf",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "data",
+            "type": "RECORD",
+            "mode": "REPEATED",
+            "fields": [
+              {
+                "name": "id",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "type",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              }
+            ]
+          }
+        ]
       },
       {
-        "name": "ris",
-        "type": "STRING",
-        "mode": "NULLABLE"
+        "name": "parts",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "data",
+            "type": "RECORD",
+            "mode": "REPEATED",
+            "fields": [
+              {
+                "name": "id",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "type",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              }
+            ]
+          }
+        ]
       },
       {
-        "name": "schemaOrg",
-        "type": "STRING",
-        "mode": "NULLABLE"
+        "name": "provider",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "data",
+            "type": "RECORD",
+            "mode": "NULLABLE",
+            "fields": [
+              {
+                "name": "id",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "type",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "references",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "data",
+            "type": "RECORD",
+            "mode": "REPEATED",
+            "fields": [
+              {
+                "name": "id",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "type",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "versionOf",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "data",
+            "type": "RECORD",
+            "mode": "REPEATED",
+            "fields": [
+              {
+                "name": "id",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "type",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "versions",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "data",
+            "type": "RECORD",
+            "mode": "REPEATED",
+            "fields": [
+              {
+                "name": "id",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              },
+              {
+                "name": "type",
+                "type": "STRING",
+                "mode": "NULLABLE"
+              }
+            ]
+          }
+        ]
       }
     ]
-  },
-  {
-    "name": "updated",
-    "type": "TIMESTAMP",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "url",
-    "type": "STRING",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "version",
-    "type": "STRING",
-    "mode": "NULLABLE"
-  },
-  {
-    "name": "rightsUri",
-    "type": "STRING",
-    "mode": "REPEATED"
   }
 ]
