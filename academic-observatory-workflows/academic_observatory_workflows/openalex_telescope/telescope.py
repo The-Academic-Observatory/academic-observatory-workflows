@@ -328,10 +328,12 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
-                task_id="download",
                 name=f"{dag_params.dag_id}-download",
-                **gke_params.kubernetes_task_params,
-                **gke_params.gke_resource_overrides.get("download"),
+                **{
+                    **gke_params.kubernetes_task_params,
+                    **gke_params.gke_resource_overrides.get("download"),
+                    "init_containers": None,
+                },
             )
             def download(entity_index_id: str, entity_name: str, dag_params, **context):
                 # entity_index: dict, entity_name: str, dag_params,
@@ -350,11 +352,14 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.download(entity=entity, **context)
 
             @task.kubernetes(
-                task_id="transform",
                 name=f"{dag_params.dag_id}-transform",
-                retries=0, # Don't retry transform step as these tasks take a long time
-                **gke_params.kubernetes_task_params,
-                **gke_params.gke_resource_overrides.get("transform"),
+                # Don't retry transform step as these tasks take a long time
+                **{
+                    **gke_params.kubernetes_task_params,
+                    **gke_params.gke_resource_overrides.get("transform"),
+                    "init_containers": None,
+                    "retries": 0,
+                },
             )
             def transform(entity_index_id: str, entity_name: str, dag_params, **context):
                 """Transform all files for the Work, Concept and Institution entities. Transforms one file per process.
@@ -370,10 +375,12 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.transform(entity=entity)
 
             @task.kubernetes(
-                task_id="upload_schema",
                 name=f"{dag_params.dag_id}-upload_schema",
-                **gke_params.kubernetes_task_params,
-                **gke_params.gke_resource_overrides.get("upload_schema"),
+                **{
+                    **gke_params.kubernetes_task_params,
+                    **gke_params.gke_resource_overrides.get("upload_schema"),
+                    "init_containers": None,
+                },
             )
             def upload_schema(entity_index_id: str, entity_name: str, dag_params, **context):
                 """Upload the generated schema from the transform step to GCS."""
@@ -401,10 +408,12 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
-                task_id="upload_files",
                 name=f"{dag_params.dag_id}-upload_files",
-                **gke_params.kubernetes_task_params,
-                **gke_params.gke_resource_overrides.get("upload_files"),
+                **{
+                    **gke_params.kubernetes_task_params,
+                    **gke_params.gke_resource_overrides.get("upload_files"),
+                    "init_containers": None,
+                },
             )
             def upload_files(entity_index_id: str, entity_name: str, dag_params, **context):
                 """Upload the transformed data to Cloud Storage.
