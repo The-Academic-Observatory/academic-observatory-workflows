@@ -919,7 +919,7 @@ class TestOpenAlexTelescope(SandboxTestCase):
                 "medium": container_resources,
                 "large": container_resources,
             }
-            gke_volume_size_map = {key: "100Mi" for key in entity_names}
+            gke_volume_map = {key: {"size": "100Mi"} for key in entity_names}
             dag_params = DagParams(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
@@ -931,7 +931,7 @@ class TestOpenAlexTelescope(SandboxTestCase):
                 gke_image=TestConfig.gke_image,
                 gke_namespace=TestConfig.gke_namespace,
                 gke_resource_map=resource_map,
-                gke_volume_size_map=gke_volume_size_map,
+                gke_volume_map=gke_volume_map,
                 test_run=True,
                 retries=0,
             )
