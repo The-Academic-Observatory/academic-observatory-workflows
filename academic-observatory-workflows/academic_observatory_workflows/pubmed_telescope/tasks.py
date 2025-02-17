@@ -143,7 +143,6 @@ def fetch_release(
 
     # Get the previous releases from our API datset
     api = DatasetAPI(bq_project_id=cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
-    api.seed_db()
 
     # Make workflow re-download the baseline yearly data if the upload date does not match the date from the last release.
     is_first_run = is_first_dag_run(dag_run)
@@ -724,7 +723,6 @@ def add_dataset_releases(release: dict, api_bq_dataset_id: str) -> None:
     release = PubMedRelease.from_dict(release)
     logging.info(f"add_dataset_releases: creating dataset release for Pubmed Articles.")
     api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
-    api.seed_db()
     now = pendulum.now()
     dataset_release = DatasetRelease(
         dag_id=release.dag_id,
