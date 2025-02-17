@@ -63,9 +63,8 @@ class DagParams:
         gke_namespace: str = "coki-astro",
         gke_volume_path: str = "/data",
         gke_resource_map: dict = None,
-        gke_volume_size_map: dict = None,
+        gke_volume_map: dict = None,
         gke_conn_id: str = "gke_cluster",
-        test_run: bool = False,
         **kwargs,
     ):
         """Construct an OpenAlexTelescope instance.
@@ -90,6 +89,62 @@ class DagParams:
         Sunday as this will pickup new updates regularly. See here for past release dates: https://openalex.s3.amazonaws.com/RELEASE_NOTES.txt
         :param max_active_runs: the maximum number of DAG runs that can be run at once.
         :param retries: the number of times to retry a task.
+        :param gke_image: the image location to pull from.
+        :param gke_namespace: the cluster namespace to use.
+        :param gke_volume_path: where to mount the persistent volume.
+        :param gke_resource_map: a dictionary defining resource allocations for different workload sizes. Each size category ("small", "medium", "large")
+        contains workload types (e.g., "download", "transform", "upload_schema", "upload_files") with their corresponding
+        resource requirements and node scheduling constraints.
+
+            The gke_resource_map dictionary structure:
+            - **Key (str):** Workload size category ("small", "medium", "large").
+            - **Value (dict):** Mapping of workload types to resource configurations.
+
+            Example structure:
+
+            .. code-block:: python
+                {
+                    "small": {
+                        "download": {
+                            "container_resources": V1ResourceRequirements(requests={"memory": "2G", "cpu": "2"},
+                                                                           limits={"memory": "2G", "cpu": "2"}),
+                            "node_selector": {"cloud.google.com/compute-class": "Balanced"}
+                        },
+                        "transform": {
+                            "container_resources": V1ResourceRequirements(requests={"memory": "4G", "cpu": "4"},
+                                                                           limits={"memory": "4G", "cpu": "4"}),
+                            "node_selector": {"cloud.google.com/compute-class": "Balanced"}
+                        }
+                    }
+                }
+
+            **Entities and Their Resource Categories:**
+            - `"authors"` → medium_resources
+            - `"concepts"` → small_resources
+            - `"funders"` → small_resources
+            - `"institutions"` → small_resources
+            - `"publishers"` → small_resources
+            - `"sources"` → small_resources
+            - `"works"` → large_resources
+            - `"domains"` → small_resources
+            - `"fields"` → small_resources
+            - `"subfields"` → small_resources
+            - `"topics"` → small_resources
+
+        :param gke_volume_map: a dict containing the entity name (OpenAlex table name) as a key and a dictionary
+        containing the size and storage class for the GKE PVC.
+
+            Example structure:
+
+                .. code-block:: python
+
+                    gke_volume_map = {
+                        "authors": {"size": "250Gi", "storage_class": "standard"},
+                        "concepts": {"size": "250Gi", "storage_class": "premium-rwo"},
+                        ...
+                    }
+
+        :param gke_conn_id: the name of the airlfow connection storing the gke cluster information.
         """
 
         self.dag_id = dag_id
@@ -124,7 +179,6 @@ class DagParams:
         self.schedule = schedule
         self.max_active_runs = max_active_runs
         self.retries = retries
-        self.test_run = test_run
         self.gke_conn_id = gke_conn_id
 
         # Construct GKE parameters
@@ -201,49 +255,50 @@ class DagParams:
                     },
                 },
             }
-        default_resources = gke_resource_map["small"]
+        small_resources = gke_resource_map["small"]
         medium_resources = gke_resource_map["medium"]
         large_resources = gke_resource_map["large"]
         # TODO: assert that volume size map correct schema
-        if gke_volume_size_map is None:
+        if gke_volume_map is None:
             # Space used by each OpenAlex entity: https://docs.google.com/spreadsheets/d/13RcrHkAUbGE0XWTv-12UkkcL3AkTSAagQ3Gs7vmvTaQ/edit?usp=sharing
-            gke_volume_size_map = {
-                "authors": "250Gi",
-                "concepts": "1Gi",
-                "funders": "1Gi",
-                "institutions": "2500Mi",
-                "publishers": "1Gi",
-                "sources": "2500Mi",
-                "works": "1500Gi",
-                "domains": "1Gi",
-                "fields": "1Gi",
-                "subfields": "1Gi",
-                "topics": "1Gi",
+            gke_volume_map = {
+                "authors": {"size": "250Gi", "storage_class": "standard"},
+                "concepts": {"size": "1Gi", "storage_class": "standard"},
+                "funders": {"size": "1Gi", "storage_class": "standard"},
+                "institutions": {"size": "2500Mi", "storage_class": "standard"},
+                "publishers": {"size": "1Gi", "storage_class": "standard"},
+                "sources": {"size": "2500Mi", "storage_class": "standard"},
+                "works": {"size": "1000Gi", "storage_class": "premium-rwo"},
+                "domains": {"size": "1Gi", "storage_class": "standard"},
+                "fields": {"size": "1Gi", "storage_class": "standard"},
+                "subfields": {"size": "1Gi", "storage_class": "standard"},
+                "topics": {"size": "1Gi", "storage_class": "standard"},
             }
         gke_resource_overrides = {
             "authors": medium_resources,
-            "concepts": default_resources,
-            "funders": default_resources,
-            "institutions": default_resources,
-            "publishers": default_resources,
-            "sources": default_resources,
+            "concepts": small_resources,
+            "funders": small_resources,
+            "institutions": small_resources,
+            "publishers": small_resources,
+            "sources": small_resources,
             "works": large_resources,
-            "domains": default_resources,
-            "fields": default_resources,
-            "subfields": default_resources,
-            "topics": default_resources,
+            "domains": small_resources,
+            "fields": small_resources,
+            "subfields": small_resources,
+            "topics": small_resources,
         }
         self.gke_params_map = {
             key: GkeParams(
                 gke_image=gke_image,
                 gke_namespace=gke_namespace,
-                gke_volume_size=gke_volume_size_map[key],
+                gke_volume_size=gke_volume_map[key].get("size", "1Gi"),
                 gke_volume_name=f"openalex-{key}",
+                gke_volume_storage_class=gke_volume_map[key].get("storage_class", "standard"),
                 gke_resource_overrides=gke_resource_overrides[key],
                 gke_volume_path=gke_volume_path,
                 gke_conn_id=gke_conn_id,
             )
-            for key in gke_volume_size_map
+            for key in gke_volume_map
         }
 
 
@@ -336,7 +391,6 @@ def create_dag(dag_params: DagParams) -> DAG:
                 },
             )
             def download(entity_index_id: str, entity_name: str, dag_params, **context):
-                # entity_index: dict, entity_name: str, dag_params,
                 """Download files for an entity from the bucket.
 
                 Gsutil is used instead of the standard Google Cloud Python library, because it is faster at downloading files
@@ -465,6 +519,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             task_create_storage = gke_create_storage(
                 volume_name=gke_params.gke_volume_name,
                 volume_size=gke_params.gke_volume_size,
+                storage_class=gke_params.gke_volume_storage_class,
                 kubernetes_conn_id=gke_params.gke_conn_id,
             )
             task_aws_to_gcs_transfer = aws_to_gcs_transfer(entity_index, entity_name, dag_params)
