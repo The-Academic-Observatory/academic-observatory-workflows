@@ -20,4 +20,4 @@ EXPOSE 5080
 CMD [ "flask", "--app", "http-server.py", "routes" ]
 
 # Run the app
-CMD [ "python", "http-server.py" ]
+CMD [ "python", "bin/http-server.py" ]

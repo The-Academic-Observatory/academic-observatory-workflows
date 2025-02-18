@@ -17,4 +17,4 @@ COPY academic-observatory-workflows/academic_observatory_workflows/pubmed_telesc
 COPY academic-observatory-workflows/academic_observatory_workflows/pubmed_telescope/tests/fixtures/updatefiles /app/fixtures/pubmed/updatefiles
 
 # Run the app
-CMD [ "python", "ftp-server.py" ]
+CMD [ "python", "bin/ftp-server.py" ]
