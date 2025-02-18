@@ -2,7 +2,7 @@ services:
   http-server:
     build:
       context: .
-      dockerfile: ../http-server-Dockerfile
+      dockerfile: http-server-Dockerfile
     image: ao-tests-http-server
     ports:
       - "5080:5080"
@@ -11,8 +11,8 @@ services:
   ftp-server:
     build:
       context: .
-      dockerfile: ../ftp-server-Dockerfile
-    image: ao-tests-ftp-server
+      dockerfile: ftp-server-Dockerfile
+    image: ao-test-ftp-server
     ports:
       - "5021:5021"
       - "30000-30009:30000-30009"
