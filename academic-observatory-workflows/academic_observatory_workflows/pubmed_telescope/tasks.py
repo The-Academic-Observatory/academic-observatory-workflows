@@ -318,15 +318,15 @@ def short_circuit(release: dict) -> bool:
 def branch_baseline_or_updatefiles(release: dict) -> None:
     release = PubMedRelease.from_dict(release)
     if release.year_first_run:
-        return "baseline.baseline_download"
-    return "updatefiles.updatefiles_download"
+        return "baseline.download"
+    return "updatefiles.download"
 
 
-def branch_updatefiles_or_dataset_release(release: dict) -> None:
+def branch_updatefiles_or_storage_delete(release: dict) -> None:
     release = PubMedRelease.from_dict(release)
     if release.updatefiles:
-        return "updatefiles.updatefiles_download"
-    return "add_dataset_releases"
+        return "updatefiles.download"
+    return "gke_delete_storage"
 
 
 def baseline_download(
