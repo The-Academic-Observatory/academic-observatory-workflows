@@ -18,12 +18,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
+from typing import Optional
 
 import pendulum
 from airflow import DAG
 from airflow.decorators import dag, task
-from airflow.operators.empty import EmptyOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
 
 from academic_observatory_workflows.config import project_path
@@ -49,7 +48,7 @@ class DagParams:
     :param crossref_metadata_conn_id: the Crossref Metadata Airflow connection key.
     :param crossref_base_url: The crossref metadata api base url.
     :param observatory_api_conn_id: the Observatory API connection key.
-    :param max_processes: the number of processes used with ProcessPoolExecutor to transform files in parallel.
+    :param max_processes: Max number of parallel processes. If None, will be determined at task runtime with cpu count.
     :param batch_size: the number of files to send to ProcessPoolExecutor at one time.
     :param start_date: the start date of the DAG.
     :param schedule: the schedule interval of the DAG.
@@ -59,7 +58,7 @@ class DagParams:
     :param test_run: Whether this is a test run or not.
     :param gke_namespace: The cluster namespace to use.
     :param gke_volume_name: The name of the persistent volume to create
-    :param gke_volume_size: The amount of storage to request for the persistent volume in GiB
+    :param gke_volume_size: The amount of storage to request for the persistent volume
     :param kwargs: Takes kwargs for building a GkeParams object.
     """
 
@@ -79,7 +78,7 @@ class DagParams:
         ),
         crossref_metadata_conn_id: str = "crossref_metadata",
         crossref_base_url: str = "https://api.crossref.org",
-        max_processes: int = os.cpu_count(),
+        max_processes: Optional[int] = None,
         batch_size: int = 20,
         start_date: pendulum.DateTime = pendulum.datetime(2020, 6, 7),
         schedule: str = "0 0 7 * *",
@@ -87,7 +86,7 @@ class DagParams:
         max_active_runs: int = 1,
         retries: int = 3,
         test_run: bool = False,
-        gke_volume_size: int = 2500,
+        gke_volume_size: str = "2500Mi",
         gke_namespace: str = "coki-astro",
         gke_volume_name: str = "crossref-metadata",
         **kwargs,
@@ -149,7 +148,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             )
 
         @task.kubernetes(
-            name="download",
+            name=f"{dag_params.dag_id}_download",
             container_resources=gke_make_container_resources(
                 {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("download")
             ),
@@ -163,7 +162,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.download(release, base_url=dag_params.crossref_base_url)
 
         @task.kubernetes(
-            name="upload_download",
+            name=f"{dag_params.dag_id}_upload_download",
             container_resources=gke_make_container_resources(
                 {"memory": "2Gi", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("upload_downloaded")
             ),
@@ -176,9 +175,9 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.upload_downloaded(release)
 
         @task.kubernetes(
-            name="extract",
+            name=f"{dag_params.dag_id}_extract",
             container_resources=gke_make_container_resources(
-                {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("extract")
+                {"memory": "4G", "cpu": "4"}, dag_params.gke_params.gke_resource_overrides.get("extract")
             ),
             **kubernetes_task_params,
         )
@@ -189,9 +188,9 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.extract(release, **context)
 
         @task.kubernetes(
-            name="transform",
+            name=f"{dag_params.dag_id}_transform",
             container_resources=gke_make_container_resources(
-                {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("transform")
+                {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("transform")
             ),
             **kubernetes_task_params,
         )
@@ -203,7 +202,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.transform(release, max_processes=dag_params.max_processes, batch_size=dag_params.batch_size)
 
         @task.kubernetes(
-            name="upload_transformed",
+            name=f"{dag_params.dag_id}_upload_transformed",
             container_resources=gke_make_container_resources(
                 {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("upload_transformed")
             ),
@@ -254,19 +253,15 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_bq_load = bq_load(xcom_release, dag_params)
         task_add_dataset_release = add_dataset_release(xcom_release, dag_params)
         task_cleanup_workflow = cleanup_workflow(xcom_release)
-        if dag_params.test_run:
-            task_create_storage = EmptyOperator(task_id="gke_create_storage")
-            task_delete_storage = EmptyOperator(task_id="gke_delete_storage")
-        else:
-            task_create_storage = gke_create_storage(
-                volume_name=dag_params.gke_params.gke_volume_name,
-                volume_size=dag_params.gke_params.gke_volume_size,
-                kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
-            )
-            task_delete_storage = gke_delete_storage(
-                volume_name=dag_params.gke_params.gke_volume_name,
-                kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
-            )
+        task_create_storage = gke_create_storage(
+            volume_name=dag_params.gke_params.gke_volume_name,
+            volume_size=dag_params.gke_params.gke_volume_size,
+            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+        )
+        task_delete_storage = gke_delete_storage(
+            volume_name=dag_params.gke_params.gke_volume_name,
+            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+        )
         (
             task_check_dependencies
             >> xcom_release

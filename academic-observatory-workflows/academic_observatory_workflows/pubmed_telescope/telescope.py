@@ -15,6 +15,7 @@
 # Author: Alex Massen-Hane
 
 from __future__ import annotations
+from typing import Optional
 
 import pendulum
 from airflow import DAG
@@ -46,13 +47,13 @@ class DagParams:
     :param reset_ftp_counter: Resets FTP connection after downloading x number of files.
     :param max_download_attempt: Maximum number of download attempts of a single Pubmed file from the FTP server before throwing an error.
     :param snapshot_expiry_days: How long until the backup snapshot (before this release's upserts and deletes) of the Pubmed table exist in BQ.
-    :param max_processes: Max number of parallel processes.
+    :param max_processes: Max number of parallel processes. If None, will be determined at task runtime with cpu count.
     :param max_active_runs: the maximum number of DAG runs that can be run at once.
     :param retries: the number of times to retry a task.
     :param test_run: Whether this is a test run or not.
     :param gke_namespace: The cluster namespace to use.
     :param gke_volume_name: The name of the persistent volume to create
-    :param gke_volume_size: The amount of storage to request for the persistent volume in GiB
+    :param gke_volume_size: The amount of storage to request for the persistent volume
     :param kwargs: Takes kwargs for building a GkeParams object.
     """
 
@@ -73,14 +74,14 @@ class DagParams:
         reset_ftp_counter: int = 40,
         max_download_attempt: int = 5,
         snapshot_expiry_days: int = 31,
-        max_processes: int = 4,  # Limited to 4 due to RAM usage.
+        max_processes: Optional[int] = None,
         max_active_runs: int = 1,
-        retries: int = 0,  # TODO: change back
+        retries: int = 3,
         baseline_table_description="""Pubmed's main table of PubmedArticle reocrds - Includes all the metadata associated with a journal article citation, both the metadata to describe the published article, i.e. <MedlineCitation>, and additional metadata often pertaining to the publication's history or processing at NLM, i.e. <PubMedData>.""",
         upsert_table_description="""PubmedArticle upserts - Includes all the metadata associated with a journal article citation, both the metadata to describe the published article, i.e. <MedlineCitation>, and additional metadata often pertaining to the publication's history or processing at NLM, i.e. <PubMedData>.""",
         delete_table_description="""PubmedArticle deletes - Indicates one or more <PubmedArticle> or <PubmedBookArticle> that have been deleted. PMIDs in DeleteCitation will typically have been found to be duplicate citations, or citations to content that was determined to be out-of-scope for PubMed. It is possible that a PMID would appear in DeleteCitation without having been distributed in a previous file. This would happen if the creation and deletion of the record take place on the same day.""",
         test_run: bool = False,
-        gke_volume_size: int = 1000,
+        gke_volume_size: str = "1000Mi",
         gke_namespace: str = "coki-astro",
         gke_volume_name: str = "pubmed",
         **kwargs,
@@ -187,7 +188,8 @@ def create_dag(dag_params: DagParams) -> DAG:
         @task_group
         def baseline(xcom: dict, **context):
             @task.kubernetes(
-                name="baseline_download",
+                task_id="download",
+                name=f"{dag_params.dag_id}_baseline_download",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"}, dag_params.gke_params.gke_resource_overrides.get("baseline_download")
                 ),
@@ -205,7 +207,8 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
-                name="baseline_upload_downloaded",
+                task_id="upload_downloaded",
+                name=f"{dag_params.dag_id}_baseline_upload_downloaded",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("baseline_upload_downloaded"),
@@ -219,7 +222,8 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.baseline_upload_downloaded(release)
 
             @task.kubernetes(
-                name="baseline_transform",
+                task_id="baseline_transform",
+                name=f"{dag_params.dag_id}_baseline_transform",
                 container_resources=gke_make_container_resources(
                     {"memory": "16G", "cpu": "16"},
                     dag_params.gke_params.gke_resource_overrides.get("baseline_transform"),
@@ -236,7 +240,8 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.baseline_transform(release, max_processes=dag_params.max_processes)
 
             @task.kubernetes(
-                name="baseline_upload_transformed",
+                task_id="upload_transformed",
+                name=f"{dag_params.dag_id}_baseline_upload_transformed",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("baseline_upload_transformed"),
@@ -250,7 +255,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 tasks.baseline_upload_transformed(release)
 
-            @task
+            @task(task_id="bq_load")
             def baseline_bq_load(release: dict, **context):
                 """Ingest the baseline table from GCS to BQ using a file pattern."""
 
@@ -280,7 +285,8 @@ def create_dag(dag_params: DagParams) -> DAG:
         @task_group
         def updatefiles(xcom: dict, **context):
             @task.kubernetes(
-                name="updatefiles_download",
+                task_id="download",
+                name=f"{dag_params.dag_id}_updatefiles_download",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_download"),
@@ -305,7 +311,8 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
-                name="updatefiles_upload_downloaded",
+                task_id="upload_downloaded",
+                name=f"{dag_params.dag_id}_updatefiles_upload_downloaded",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_upload_downloaded"),
@@ -320,7 +327,8 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.updatefiles_upload_downloaded(release)
 
             @task.kubernetes(
-                name="updatefiles_transform",
+                task_id="transform",
+                name=f"{dag_params.dag_id}_updatefiles_transform",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_transform"),
@@ -339,7 +347,8 @@ def create_dag(dag_params: DagParams) -> DAG:
                 return tasks.updatefiles_transform(release, max_processes=dag_params.max_processes)
 
             @task.kubernetes(
-                name="updatefiles_merge_upserts_deletes",
+                task_id="merge_upserts_deletes",
+                name=f"{dag_params.dag_id}_updatefiles_merge_upserts_deletes",
                 container_resources=gke_make_container_resources(
                     {"memory": "16G", "cpu": "16"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_merge_upserts_deletes"),
@@ -354,7 +363,8 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.updatefiles_merge_upserts_deletes(release, updatefiles, max_processes=dag_params.max_processes)
 
             @task.kubernetes(
-                name="updatefiles_upload_merged_upsert_records",
+                task_id="upload_merged_upsert_records",
+                name=f"{dag_params.dag_id}_updatefiles_upload_merged_upsert_records",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_upload_merged_upsert_records"),
@@ -368,7 +378,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 tasks.updatefiles_upload_merged_upsert_records(release)
 
-            @task
+            @task(task_if="bq_load_upsert_table")
             def updatefiles_bq_load_upsert_table(release: dict, **context):
                 """Ingest the upsert records from GCS to BQ using a glob pattern."""
 
@@ -380,7 +390,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     upsert_table_description=dag_params.upsert_table_description,
                 )
 
-            @task
+            @task(task_id="bq_upsert_records")
             def updatefiles_bq_upsert_records(release: dict, **context):
                 """
                 Upsert records into the main table.
@@ -398,7 +408,8 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
-                name="updatefiles_upload_merged_delete_records",
+                task_id="upload_merfed_delete_records",
+                name=f"{dag_params.dag_id}_updatefiles_upload_merged_delete_records",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_upload_merged_delete_records"),
@@ -412,7 +423,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 tasks.updatefiles_upload_merged_delete_records(release)
 
-            @task
+            @task(task_id="bq_load_delete_table")
             def updatefiles_bq_load_delete_table(release: dict, **context):
                 """Ingest delete records from GCS to BQ."""
 
@@ -424,7 +435,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     delete_table_description=dag_params.delete_table_description,
                 )
 
-            @task
+            @task(task_id="bq_delete_records")
             def updatefiles_bq_delete_records(release: dict, **context):
                 """
                 Removed records from the main table that are specified in delete table.
@@ -502,19 +513,15 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_add_dataset_releases = add_dataset_releases(xcom_release)
         task_cleanup_workflow = cleanup_workflow(xcom_release)
         task_dag_run_complete = EmptyOperator(task_id="dag_run_complete")
-        if dag_params.test_run:
-            task_create_storage = EmptyOperator(task_id="gke_create_storage")
-            task_delete_storage = EmptyOperator(task_id="gke_delete_storage")
-        else:
-            task_create_storage = gke_create_storage(
-                volume_name=dag_params.gke_params.gke_volume_name,
-                volume_size=dag_params.gke_params.gke_volume_size,
-                kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
-            )
-            task_delete_storage = gke_delete_storage(
-                volume_name=dag_params.gke_params.gke_volume_name,
-                kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
-            )
+        task_create_storage = gke_create_storage(
+            volume_name=dag_params.gke_params.gke_volume_name,
+            volume_size=dag_params.gke_params.gke_volume_size,
+            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+        )
+        task_delete_storage = gke_delete_storage(
+            volume_name=dag_params.gke_params.gke_volume_name,
+            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+        )
 
         (
             sensor
@@ -522,12 +529,12 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> xcom_release
             >> task_shortcircuit
             >> task_create_snapshot
-            # >> task_create_storage
+            >> task_create_storage
             >> task_branch_baseline_or_updatefiles
             >> task_group_baseline
             >> task_branch_updatefiles_or_dataset_release
             >> task_group_updatefiles
-            # >> task_delete_storage
+            >> task_delete_storage
             >> task_add_dataset_releases
             >> task_cleanup_workflow
             >> task_dag_run_complete

@@ -11,7 +11,7 @@ import time
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from dataclasses import dataclass
 from ftplib import error_reply, FTP
-from typing import Dict, List, Set, Tuple, Union
+from typing import Dict, List, Set, Tuple, Union, Optional
 
 import pendulum
 from airflow import AirflowException
@@ -403,7 +403,7 @@ def updatefiles_upload_downloaded(release: dict) -> None:
         raise AirflowException("updatefiles.upload_downloaded: failed to upload files to cloud storage bucket")
 
 
-def baseline_transform(release: dict, max_processes: int) -> None:
+def baseline_transform(release: dict, max_processes: Optional[int] = None) -> None:
     """
     Transform the *.xml.gz files downloaded from PubMed into usable json files for BigQuery import.
 
@@ -411,6 +411,8 @@ def baseline_transform(release: dict, max_processes: int) -> None:
     """
 
     release = PubMedRelease.from_dict(release)
+    if max_processes == None:
+        max_processes = os.cpu_count()
 
     # Process files in batches so that ProcessPoolExecutor doesn't deplete the system of memory
     for i, chunk in enumerate(get_chunks(input_list=release.baseline_files, chunk_size=max_processes)):
@@ -431,7 +433,7 @@ def baseline_transform(release: dict, max_processes: int) -> None:
                 assert filename, f"Unable to transform baseline file: {filename}"
 
 
-def updatefiles_transform(release: dict, max_processes: int) -> List[Dict]:
+def updatefiles_transform(release: dict, max_processes: Optional[int] = None) -> List[Dict]:
     """
     Transform the *.xml.gz files downloaded from PubMed's FTP server into usable json-like files for BigQuery import.
     This is a multithreaded and pulls the PubmedArticle records from the downloaded XML files.
@@ -440,6 +442,8 @@ def updatefiles_transform(release: dict, max_processes: int) -> List[Dict]:
     """
 
     release = PubMedRelease.from_dict(release)
+    if max_processes == None:
+        max_processes = os.cpu_count()
 
     # Object to store all of the upserts and delete keys that are present in each file.
     updatefiles: List[PubmedUpdatefile] = []
@@ -485,7 +489,9 @@ def baseline_upload_transformed(release: dict) -> None:
         raise AirflowException("baseline.upload_transformed: failed to upload files to cloud storage bucket")
 
 
-def updatefiles_merge_upserts_deletes(release: dict, updatefiles: List[Dict], max_processes: int) -> None:
+def updatefiles_merge_upserts_deletes(
+    release: dict, updatefiles: List[Dict], max_processes: Optional[int] = None
+) -> None:
     """Merge the upserts and deletes for this release period.
 
     :param max_processes: The number of processes to use for multithreading
@@ -493,6 +499,8 @@ def updatefiles_merge_upserts_deletes(release: dict, updatefiles: List[Dict], ma
 
     release = PubMedRelease.from_dict(release)
     updatefiles = [PubmedUpdatefile.from_dict(updatefile) for updatefile in updatefiles]
+    if max_processes == None:
+        max_processes = os.cpu_count()
 
     # Merge records and return a list of what upserts to pull from the transformed updatefiles.
     upsert_index, deletes = merge_upserts_and_deletes(updatefiles)
