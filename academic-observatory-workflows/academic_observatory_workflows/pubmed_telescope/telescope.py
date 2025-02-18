@@ -222,7 +222,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.baseline_upload_downloaded(release)
 
             @task.kubernetes(
-                task_id="baseline_transform",
+                task_id="transform",
                 name=f"{dag_params.dag_id}_baseline_transform",
                 container_resources=gke_make_container_resources(
                     {"memory": "16G", "cpu": "16"},
@@ -277,10 +277,10 @@ def create_dag(dag_params: DagParams) -> DAG:
             (task_download >> task_upload_downloaded >> task_transform >> task_upload_transformed >> task_bq_load)
 
         @task.branch
-        def branch_updatefiles_or_dataset_release(release: dict, **context):
+        def branch_updatefiles_or_storage_delete(release: dict, **context):
             from academic_observatory_workflows.pubmed_telescope import tasks
 
-            return tasks.branch_updatefiles_or_dataset_release(release)
+            return tasks.branch_updatefiles_or_storage_delete(release)
 
         @task_group
         def updatefiles(xcom: dict, **context):
@@ -378,7 +378,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 tasks.updatefiles_upload_merged_upsert_records(release)
 
-            @task(task_if="bq_load_upsert_table")
+            @task(task_id="bq_load_upsert_table")
             def updatefiles_bq_load_upsert_table(release: dict, **context):
                 """Ingest the upsert records from GCS to BQ using a glob pattern."""
 
@@ -408,7 +408,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
-                task_id="upload_merfed_delete_records",
+                task_id="upload_merged_delete_records",
                 name=f"{dag_params.dag_id}_updatefiles_upload_merged_delete_records",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
@@ -508,7 +508,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_create_snapshot = create_snapshot(xcom_release)
         task_branch_baseline_or_updatefiles = branch_baseline_or_updatefiles(xcom_release)
         task_group_baseline = baseline(xcom_release)
-        task_branch_updatefiles_or_dataset_release = branch_updatefiles_or_dataset_release(xcom_release)
+        task_branch_updatefiles_or_storage_delete = branch_updatefiles_or_storage_delete(xcom_release)
         task_group_updatefiles = updatefiles(xcom_release)
         task_add_dataset_releases = add_dataset_releases(xcom_release)
         task_cleanup_workflow = cleanup_workflow(xcom_release)
@@ -532,7 +532,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> task_create_storage
             >> task_branch_baseline_or_updatefiles
             >> task_group_baseline
-            >> task_branch_updatefiles_or_dataset_release
+            >> task_branch_updatefiles_or_storage_delete
             >> task_group_updatefiles
             >> task_delete_storage
             >> task_add_dataset_releases
@@ -541,6 +541,6 @@ def create_dag(dag_params: DagParams) -> DAG:
         )
 
         task_branch_baseline_or_updatefiles >> task_group_updatefiles
-        task_branch_updatefiles_or_dataset_release >> task_add_dataset_releases
+        task_branch_updatefiles_or_storage_delete >> task_delete_storage
 
     return pubmed()
