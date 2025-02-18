@@ -502,20 +502,15 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_cleanup_workflow = cleanup_workflow(xcom_release_id, dag_params)
         # The last task that the next DAG run's ExternalTaskSensor waits for.
         task_dag_run_complete = EmptyOperator(task_id="dag_run_complete")
-        if dag_params.test_run:
-            task_create_storage = EmptyOperator(task_id="gke_create_storage")
-            task_delete_storage = EmptyOperator(task_id="gke_delete_storage")
-        else:
-            print(f"SIZE: {dag_params.gke_params.gke_volume_size}")
-            task_create_storage = gke_create_storage(
-                volume_name=dag_params.gke_params.gke_volume_name,
-                volume_size=dag_params.gke_params.gke_volume_size,
-                kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
-            )
-            task_delete_storage = gke_delete_storage(
-                volume_name=dag_params.gke_params.gke_volume_name,
-                kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
-            )
+        task_create_storage = gke_create_storage(
+            volume_name=dag_params.gke_params.gke_volume_name,
+            volume_size=dag_params.gke_params.gke_volume_size,
+            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+        )
+        task_delete_storage = gke_delete_storage(
+            volume_name=dag_params.gke_params.gke_volume_name,
+            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+        )
         task_merge_branches = EmptyOperator(task_id="merge_branches")
 
         (
