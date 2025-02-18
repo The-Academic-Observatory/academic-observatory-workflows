@@ -20,14 +20,14 @@ fi
 
 # Authenticate minikube with gcp
 if [ -f .env ]; then # Source the .env file
-  source .env
+    source .env
 else
-  echo ".env file not found."
-  exit 1
+    echo ".env file not found."
+    exit 1
 fi
 if [ -z "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
-  echo "GOOGLE_APPLICATION_CREDENTIALS is not set in '.env'. This is required to run the tests."
-  exit 1
+    echo "GOOGLE_APPLICATION_CREDENTIALS is not set in '.env'. This is required to run the tests."
+    exit 1
 fi
 export GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS
 
@@ -47,15 +47,15 @@ if [ "$1" != "--no-build" ]; then
 fi
 
 # (Re)Deploy kubernetes config items
-kubectl delete --ignore-not-found -f test-konfig.yaml
-kubectl apply -f test-konfig.yaml
+kubectl delete --ignore-not-found -f bin/test-konfig.yaml
+kubectl apply -f bin/test-konfig.yaml
 
 echo ""
 echo "########################### Minikube cluster running ###########################"
 echo "######################### Here are some useful commands ########################"
 echo ""
 echo "--Stop the deployment--"
-echo "bash test-env-down.sh"
+echo "bash bin/test-env-down.sh"
 echo ""
 echo "--Monitor the cluster--"
 echo "minikube dashboard"
