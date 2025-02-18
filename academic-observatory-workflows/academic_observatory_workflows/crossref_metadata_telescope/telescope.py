@@ -148,7 +148,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             )
 
         @task.kubernetes(
-            name=f"{dag_params.dag_id}_download",
+            name=f"{dag_params.dag_id}-download",
             container_resources=gke_make_container_resources(
                 {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("download")
             ),
@@ -162,7 +162,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.download(release, base_url=dag_params.crossref_base_url)
 
         @task.kubernetes(
-            name=f"{dag_params.dag_id}_upload_download",
+            name=f"{dag_params.dag_id}-upload-download",
             container_resources=gke_make_container_resources(
                 {"memory": "2Gi", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("upload_downloaded")
             ),
@@ -175,7 +175,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.upload_downloaded(release)
 
         @task.kubernetes(
-            name=f"{dag_params.dag_id}_extract",
+            name=f"{dag_params.dag_id}-extract",
             container_resources=gke_make_container_resources(
                 {"memory": "4G", "cpu": "4"}, dag_params.gke_params.gke_resource_overrides.get("extract")
             ),
@@ -188,7 +188,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.extract(release, **context)
 
         @task.kubernetes(
-            name=f"{dag_params.dag_id}_transform",
+            name=f"{dag_params.dag_id}-transform",
             container_resources=gke_make_container_resources(
                 {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("transform")
             ),
@@ -202,7 +202,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.transform(release, max_processes=dag_params.max_processes, batch_size=dag_params.batch_size)
 
         @task.kubernetes(
-            name=f"{dag_params.dag_id}_upload_transformed",
+            name=f"{dag_params.dag_id}-upload-transformed",
             container_resources=gke_make_container_resources(
                 {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("upload_transformed")
             ),

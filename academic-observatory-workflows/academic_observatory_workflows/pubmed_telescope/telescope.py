@@ -189,7 +189,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         def baseline(xcom: dict, **context):
             @task.kubernetes(
                 task_id="download",
-                name=f"{dag_params.dag_id}_baseline_download",
+                name=f"{dag_params.dag_id}-baseline-download",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"}, dag_params.gke_params.gke_resource_overrides.get("baseline_download")
                 ),
@@ -208,7 +208,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             @task.kubernetes(
                 task_id="upload_downloaded",
-                name=f"{dag_params.dag_id}_baseline_upload_downloaded",
+                name=f"{dag_params.dag_id}-baseline-upload-downloaded",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("baseline_upload_downloaded"),
@@ -223,7 +223,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             @task.kubernetes(
                 task_id="transform",
-                name=f"{dag_params.dag_id}_baseline_transform",
+                name=f"{dag_params.dag_id}-baseline-transform",
                 container_resources=gke_make_container_resources(
                     {"memory": "16G", "cpu": "16"},
                     dag_params.gke_params.gke_resource_overrides.get("baseline_transform"),
@@ -241,7 +241,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             @task.kubernetes(
                 task_id="upload_transformed",
-                name=f"{dag_params.dag_id}_baseline_upload_transformed",
+                name=f"{dag_params.dag_id}-baseline-upload-transformed",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("baseline_upload_transformed"),
@@ -286,7 +286,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         def updatefiles(xcom: dict, **context):
             @task.kubernetes(
                 task_id="download",
-                name=f"{dag_params.dag_id}_updatefiles_download",
+                name=f"{dag_params.dag_id}-updatefiles-download",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_download"),
@@ -312,7 +312,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             @task.kubernetes(
                 task_id="upload_downloaded",
-                name=f"{dag_params.dag_id}_updatefiles_upload_downloaded",
+                name=f"{dag_params.dag_id}-updatefiles-upload-downloaded",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_upload_downloaded"),
@@ -328,7 +328,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             @task.kubernetes(
                 task_id="transform",
-                name=f"{dag_params.dag_id}_updatefiles_transform",
+                name=f"{dag_params.dag_id}-updatefiles-transform",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_transform"),
@@ -348,7 +348,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             @task.kubernetes(
                 task_id="merge_upserts_deletes",
-                name=f"{dag_params.dag_id}_updatefiles_merge_upserts_deletes",
+                name=f"{dag_params.dag_id}-updatefiles-merge-upserts-deletes",
                 container_resources=gke_make_container_resources(
                     {"memory": "16G", "cpu": "16"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_merge_upserts_deletes"),
@@ -364,7 +364,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             @task.kubernetes(
                 task_id="upload_merged_upsert_records",
-                name=f"{dag_params.dag_id}_updatefiles_upload_merged_upsert_records",
+                name=f"{dag_params.dag_id}-updatefiles-upload-merged-upsert-records",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_upload_merged_upsert_records"),
@@ -409,7 +409,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             @task.kubernetes(
                 task_id="upload_merged_delete_records",
-                name=f"{dag_params.dag_id}_updatefiles_upload_merged_delete_records",
+                name=f"{dag_params.dag_id}-updatefiles-upload-merged-delete-records",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_upload_merged_delete_records"),

@@ -185,7 +185,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         @task.kubernetes(
             trigger_rule=TriggerRule.NONE_FAILED,
-            name="create_manifests",
+            name=f"{dag_params.dag_id}-create-manifests",
             container_resources=gke_make_container_resources(
                 {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("create_manifests")
             ),
@@ -203,7 +203,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             )
 
         @task.kubernetes(
-            name="latest_modified_record_date",
+            name=f"{dag_params.dag_id}-latest-modified-record-date",
             container_resources=gke_make_container_resources(
                 {"memory": "4G", "cpu": "2"},
                 dag_params.gke_params.gke_resource_overrides.get("latest_modified_record_date"),
@@ -217,7 +217,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             return tasks.latest_modified_record_date(release)
 
         @task.kubernetes(
-            name="download_transform",
+            name=f"{dag_params.dag_id}-download-transform",
             container_resources=gke_make_container_resources(
                 {"memory": "64G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("download_transform")
             ),
@@ -234,7 +234,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.clean_downloads(release)
 
         @task.kubernetes(
-            name="upload_transformed",
+            name=f"{dag_params.dag_id}-upload-transformed",
             container_resources=gke_make_container_resources(
                 {"memory": "8G", "cpu": "8"}, dag_params.gke_params.gke_resource_overrides.get("upload_transformed")
             ),

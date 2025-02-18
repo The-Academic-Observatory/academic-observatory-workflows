@@ -32,15 +32,6 @@ from academic_observatory_workflows.doi_workflow.queries import (
     ror_to_ror_hierarchy_index,
 )
 from academic_observatory_workflows.doi_workflow.workflow import create_dag, DagParams, SENSOR_DAG_IDS
-
-# from academic_observatory_workflows.doi_workflow.doi_workflow import (
-#     AGGREGATIONS,
-#     create_dag,
-#     fetch_ror_affiliations,
-#     make_sql_queries,
-#     ror_to_ror_hierarchy_index,
-#     SENSOR_DAG_IDS,
-# )
 from academic_observatory_workflows.model import (
     bq_load_observatory_dataset,
     Institution,
@@ -53,22 +44,9 @@ from academic_observatory_workflows.model import (
 from observatory_platform.airflow.workflow import Workflow
 from observatory_platform.dataset_api import DatasetAPI
 from observatory_platform.files import load_jsonl
-
-# from observatory_platform.dataset_api import get_dataset_releases
 from observatory_platform.google.bigquery import bq_run_query, bq_sharded_table_id
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
 from observatory_platform.sandbox.test_utils import make_dummy_dag, SandboxTestCase
-
-# from airflow.models import DagModel
-# from airflow.utils.session import provide_session
-# from airflow.utils.state import State
-
-# from observatory_platform.sandbox.sandbox_environment import (
-#     find_free_port,
-#     make_dummy_dag,
-#     ObservatoryEnvironment,
-#     ObservatoryTestCase,
-# )
 
 FIXTURES_FOLDER = project_path("doi_workflow", "tests", "fixtures")
 

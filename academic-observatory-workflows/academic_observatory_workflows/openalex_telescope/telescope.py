@@ -387,7 +387,6 @@ def create_dag(dag_params: DagParams) -> DAG:
                 **{
                     **gke_params.kubernetes_task_params,
                     **gke_params.gke_resource_overrides.get("download"),
-                    "init_containers": None,
                 },
             )
             def download(entity_index_id: str, entity_name: str, dag_params, **context):
@@ -411,7 +410,6 @@ def create_dag(dag_params: DagParams) -> DAG:
                 **{
                     **gke_params.kubernetes_task_params,
                     **gke_params.gke_resource_overrides.get("transform"),
-                    "init_containers": None,
                     "retries": 0,
                 },
             )
@@ -429,11 +427,10 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.transform(entity=entity)
 
             @task.kubernetes(
-                name=f"{dag_params.dag_id}-upload_schema",
+                name=f"{dag_params.dag_id}-upload-schema",
                 **{
                     **gke_params.kubernetes_task_params,
                     **gke_params.gke_resource_overrides.get("upload_schema"),
-                    "init_containers": None,
                 },
             )
             def upload_schema(entity_index_id: str, entity_name: str, dag_params, **context):
@@ -462,11 +459,10 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
-                name=f"{dag_params.dag_id}-upload_files",
+                name=f"{dag_params.dag_id}-upload-files",
                 **{
                     **gke_params.kubernetes_task_params,
                     **gke_params.gke_resource_overrides.get("upload_files"),
-                    "init_containers": None,
                 },
             )
             def upload_files(entity_index_id: str, entity_name: str, dag_params, **context):
