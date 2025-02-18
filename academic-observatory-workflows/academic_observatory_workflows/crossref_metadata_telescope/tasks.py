@@ -22,6 +22,7 @@ import logging
 import os
 import shutil
 import urllib
+from typing import Optional
 
 from airflow.hooks.base import BaseHook
 from airflow.exceptions import AirflowException
@@ -135,7 +136,12 @@ def extract(release, **context) -> None:
     op.execute(context)
 
 
-def transform(release: dict, *, max_processes: int, batch_size: int) -> None:
+def transform(
+    release: dict,
+    *,
+    batch_size: int,
+    max_processes: Optional[int] = None,
+) -> None:
     """Task to transform the CrossrefMetadataRelease release for a given month.
     Each extracted file is transformmed.
 
@@ -144,6 +150,9 @@ def transform(release: dict, *, max_processes: int, batch_size: int) -> None:
     """
 
     release = CrossrefMetadataRelease.from_dict(release)
+    if max_processes == None:
+        max_processes = os.cpu_count()
+
     logging.info(f"Transform input folder: {release.extract_folder}, output folder: {release.transform_folder}")
     clean_dir(release.transform_folder)
     finished = 0

@@ -61,7 +61,7 @@ class DagParams:
     :param test_run: Whether this is a test run or not.
     :param gke_namespace: The cluster namespace to use.
     :param gke_volume_name: The name of the persistent volume to create
-    :param gke_volume_size: The amount of storage to request for the persistent volume in GiB
+    :param gke_volume_size: The amount of storage to request for the persistent volume
     :param kwargs: Takes kwargs for building a GkeParams object.
     """
 
@@ -89,7 +89,7 @@ class DagParams:
         max_active_runs: int = 1,
         retries: int = 3,
         test_run: bool = False,
-        gke_volume_size: int = 1000,
+        gke_volume_size: str = "1000Mi",
         gke_namespace: str = "coki-astro",
         gke_volume_name: str = "orcid",
         **kwargs,
