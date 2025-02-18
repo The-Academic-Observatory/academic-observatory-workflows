@@ -188,17 +188,18 @@ def create_dag(dag_params: DagParams) -> DAG:
             release = release_from_bucket(dag_params.cloud_workspace.download_bucket, release_id)
             release = UnpaywallRelease.from_dict(release)
             if release.is_first_run:
-                return "load_snapshot.load_snapshot_download"
+                return "load_snapshot.download"
             else:
-                return "load_changefiles.load_changefiles_download"
+                return "load_changefiles.download"
 
         @task_group
         def load_snapshot(data: dict):
             """Download and process snapshot on first run"""
 
             @task.kubernetes(
+                task_id="download",
                 trigger_rule=TriggerRule.ALL_SUCCESS,
-                name="load_snapshot_download",
+                name=f"{dag_params.dag_id}-load-snapshot-download",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
                     dag_params.gke_params.gke_resource_overrides.get("load_snapshot_download"),
@@ -218,8 +219,9 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
+                task_id="upload_downloaded",
                 trigger_rule=TriggerRule.ALL_SUCCESS,
-                name="load_snapshot_upload_downloaded",
+                name=f"{dag_params.dag_id}-load-snapshot-upload_downloaded",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("load_snapshot_upload_downloaded"),
@@ -233,8 +235,9 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.load_snapshot_upload_downloaded(release_id, cloud_workspace=dag_params.cloud_workspace)
 
             @task.kubernetes(
+                task_id="extract",
                 trigger_rule=TriggerRule.ALL_SUCCESS,
-                name="load_snapshot_extract",
+                name=f"{dag_params.dag_id}-load-snapshot-extract",
                 container_resources=gke_make_container_resources(
                     {"memory": "16G", "cpu": "16"},
                     dag_params.gke_params.gke_resource_overrides.get("load_snapshot_extract"),
@@ -248,8 +251,9 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.load_snapshot_extract(release_id, cloud_workspace=dag_params.cloud_workspace)
 
             @task.kubernetes(
+                task_id="transform",
                 trigger_rule=TriggerRule.ALL_SUCCESS,
-                name="load_snapshot_transform",
+                name=f"{dag_params.dag_id}-load-snapshot-transform",
                 container_resources=gke_make_container_resources(
                     {"memory": "16G", "cpu": "16"},
                     dag_params.gke_params.gke_resource_overrides.get("load_snapshot_transform"),
@@ -264,8 +268,9 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.load_snapshot_transform(release_id, cloud_workspace=dag_params.cloud_workspace)
 
             @task.kubernetes(
+                task_id="split_main_table_file",
                 trigger_rule=TriggerRule.ALL_SUCCESS,
-                name="load_snapshot_split_main_table_file",
+                name=f"{dag_params.dag_id}-load-snapshot-split-main-table_file",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("load_snapshot_split_main_table_file"),
@@ -281,8 +286,9 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
+                task_id="upload_main_table_files",
                 trigger_rule=TriggerRule.ALL_SUCCESS,
-                name="load_snapshot_upload_main_table_files",
+                name=f"{dag_params.dag_id}-load-snapshot-upload-main-table_files",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("load_snapshot_upload_main_table_files"),
@@ -295,7 +301,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 tasks.load_snapshot_upload_main_table_files(release_id, cloud_workspace=dag_params.cloud_workspace)
 
-            @task
+            @task(task_id="bq_load")
             def load_snapshot_bq_load(release_id: str, dag_params: DagParams, **context) -> None:
                 """Load the main table."""
 
@@ -329,8 +335,9 @@ def create_dag(dag_params: DagParams) -> DAG:
             """Download and process change files on each run"""
 
             @task.kubernetes(
+                task_id="download",
                 trigger_rule=TriggerRule.NONE_FAILED,
-                name="load_changefiles_download",
+                name=f"{dag_params.dag_id}-load-changefiles-download",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
                     dag_params.gke_params.gke_resource_overrides.get("load_changefiles_download"),
@@ -350,8 +357,9 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
+                task_id="upload_downloaded",
                 trigger_rule=TriggerRule.NONE_FAILED,
-                name="load_changefiles_upload_downloaded",
+                name=f"{dag_params.dag_id}-load-changefiles-upload-downloaded",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("load_changefiles_upload_downloaded"),
@@ -367,8 +375,9 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
+                task_id="extract",
                 trigger_rule=TriggerRule.NONE_FAILED,
-                name="load_changefiles_extract",
+                name=f"{dag_params.dag_id}-load-changefiles-extract",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
                     dag_params.gke_params.gke_resource_overrides.get("load_changefiles_extract"),
@@ -385,8 +394,9 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
+                task_id="transform",
                 trigger_rule=TriggerRule.NONE_FAILED,
-                name="load_changefiles_transform",
+                name=f"{dag_params.dag_id}-load-changefiles-transform",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
                     dag_params.gke_params.gke_resource_overrides.get("load_changefiles_transform"),
@@ -405,8 +415,9 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
+                task_id="upload",
                 trigger_rule=TriggerRule.NONE_FAILED,
-                name="load_changefiles_upload",
+                name=f"{dag_params.dag_id}-load-changefiles-upload",
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("load_changefiles_upload"),
@@ -420,7 +431,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 tasks.load_changefiles_upload(release_id=release_id, cloud_workspace=dag_params.cloud_workspace)
 
-            @task
+            @task(task_id="bq_load")
             def load_changefiles_bq_load(release_id: str, dag_params, **context) -> None:
                 """Load the upsert table."""
 
@@ -431,7 +442,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     table_description=dag_params.table_description,
                 )
 
-            @task
+            @task(task_id="bq_upsert")
             def load_changefiles_bq_upsert(release_id: str, dag_params: DagParams, **context) -> None:
                 """Upsert the records from the upserts table into the main table."""
 
