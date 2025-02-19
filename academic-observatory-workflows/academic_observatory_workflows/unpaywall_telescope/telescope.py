@@ -486,10 +486,11 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         # Wait for the previous DAG run to finish to make sure that
         # changefiles are processed in the correct order
+        external_task_id = "dag_run_complete"
         if dag_params.test_run:
             sensor = EmptyOperator(task_id="wait_for_prev_dag_run")
         else:
-            sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id)
+            sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id, task_id=external_task_id)
         task_check_dependencies = check_dependencies(airflow_conns=[dag_params.unpaywall_conn_id])
         xcom_release_id = fetch_release()
         task_short_circuit = short_circuit(xcom_release_id)
@@ -501,7 +502,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_add_dataset_release = add_dataset_release(xcom_release_id, dag_params)
         task_cleanup_workflow = cleanup_workflow(xcom_release_id, dag_params)
         # The last task that the next DAG run's ExternalTaskSensor waits for.
-        task_dag_run_complete = EmptyOperator(task_id="dag_run_complete")
+        task_dag_run_complete = EmptyOperator(task_id=external_task_id)
         task_create_storage = gke_create_storage(
             volume_name=dag_params.gke_params.gke_volume_name,
             volume_size=dag_params.gke_params.gke_volume_size,

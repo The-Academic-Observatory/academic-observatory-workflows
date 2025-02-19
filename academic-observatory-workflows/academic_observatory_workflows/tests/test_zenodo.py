@@ -23,7 +23,7 @@ from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
 from airflow.exceptions import AirflowException
-from click.testing import CliRunner
+import tempfile
 
 from academic_observatory_workflows.zenodo import make_draft_version, publish_new_version, Zenodo
 
@@ -175,7 +175,7 @@ class TestZenodo(TestCase):
     @patch("academic_observatory_workflows.zenodo.requests.get")
     @patch("academic_observatory_workflows.zenodo.requests.put")
     def test_upload_file(self, mock_put: MagicMock, mock_get: MagicMock):
-        with CliRunner().isolated_filesystem() as t:
+        with tempfile.TemporaryDirectory() as t:
             # Make file
             file_name = "file.txt"
             file_path = os.path.join(t, file_name)

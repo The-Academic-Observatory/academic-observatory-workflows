@@ -2,28 +2,28 @@ from __future__ import annotations
 
 import csv
 import datetime
-from dataclasses import dataclass
 import os
 import re
 import shutil
 import tempfile
 import unittest
+from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
-from airflow.exceptions import AirflowException, AirflowSkipException
 import pendulum
+from airflow.exceptions import AirflowException, AirflowSkipException
 
 from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.orcid_telescope import tasks
-from academic_observatory_workflows.orcid_telescope.batch import OrcidBatch, BATCH_REGEX
-from academic_observatory_workflows.orcid_telescope.release import OrcidRelease, orcid_batch_names
+from academic_observatory_workflows.orcid_telescope.batch import BATCH_REGEX, OrcidBatch
+from academic_observatory_workflows.orcid_telescope.release import orcid_batch_names, OrcidRelease
+from observatory_platform.airflow.airflow import clear_airflow_connections, upsert_airflow_connection
 from observatory_platform.airflow.workflow import CloudWorkspace
-from observatory_platform.airflow.airflow import upsert_airflow_connection, clear_airflow_connections
 from observatory_platform.dataset_api import DatasetAPI, DatasetRelease
 from observatory_platform.date_utils import datetime_normalise
 from observatory_platform.files import load_jsonl
-from observatory_platform.google.gcs import gcs_upload_file
 from observatory_platform.google import bigquery as bq
+from observatory_platform.google.gcs import gcs_upload_file
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
 from observatory_platform.sandbox.test_utils import SandboxTestCase
 
@@ -256,7 +256,6 @@ class TestTransferOrcid(unittest.TestCase):
 
 
 class TestCreateMainTableSnapshot(SandboxTestCase):
-
     def test_create_main_table_snapshot_first_run(self):
         """Test that the main table snapshot is not created for the first run"""
         with SandboxEnvironment().create():

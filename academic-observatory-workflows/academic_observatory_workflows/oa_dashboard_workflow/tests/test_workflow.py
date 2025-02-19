@@ -16,6 +16,7 @@
 
 import json
 import os
+import tempfile
 from typing import List
 from unittest import TestCase
 from unittest.mock import patch
@@ -24,7 +25,6 @@ import pendulum
 from airflow.models.connection import Connection
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.state import State
-from click.testing import CliRunner
 from deepdiff import DeepDiff
 
 import academic_observatory_workflows.oa_dashboard_workflow.workflow
@@ -86,7 +86,7 @@ class TestFunctions(TestCase):
                 f.write("foo")
 
         ror_id, url, size, width, fmt, build_path = "ror_id", "url.com", "size", 10, "fmt", "build_path"
-        with CliRunner().isolated_filesystem():
+        with tempfile.TemporaryDirectory():
             # Test when logo file does not exist yet and logo download fails
             with patch(mock_clearbit_ref) as mock_clearbit_download:
                 actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path)
@@ -157,7 +157,7 @@ class TestFunctions(TestCase):
         self.assertEqual(expected_stats, stats)
 
     def test_load_data_glob(self):
-        with CliRunner().isolated_filesystem() as t:
+        with tempfile.TemporaryDirectory() as t:
             path = os.path.join(t, "data-000000000000.jsonl.gz")
             save_jsonl_gz(path, [{"name": "Jim"}, {"name": "David"}, {"name": "Jane"}])
 
@@ -304,7 +304,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
         country = load_jsonl(os.path.join(FIXTURES_FOLDER, "country.jsonl.gz"))
         institution = load_jsonl(os.path.join(FIXTURES_FOLDER, "institution.jsonl.gz"))
 
-        with CliRunner().isolated_filesystem() as t:
+        with tempfile.TemporaryDirectory() as t:
             tables = [
                 Table(
                     "ror",

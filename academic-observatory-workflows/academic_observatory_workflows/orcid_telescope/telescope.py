@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Optional
 
 import pendulum
@@ -33,7 +32,7 @@ from observatory_platform.airflow.sensors import PreviousDagRunSensor
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.config import AirflowConns
-from observatory_platform.google.gke import GkeParams, gke_make_kubernetes_task_params, gke_make_container_resources
+from observatory_platform.google.gke import gke_make_container_resources, gke_make_kubernetes_task_params, GkeParams
 
 
 class DagParams:
@@ -291,20 +290,25 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.cleanup_workflow(release)
 
         external_task_id = "dag_run_complete"
-        sensor = PreviousDagRunSensor(
-            dag_id=dag_params.dag_id,
-            external_task_id=external_task_id,
-            execution_delta=timedelta(days=7),  # To match the @weekly schedule_interval
-        )
+        sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id, external_task_id=external_task_id)
         task_check_dependencies = check_dependencies(airflow_conns=[dag_params.aws_orcid_conn_id])
         xcom_release = fetch_release()
         task_create_dataset = create_dataset(xcom_release, dag_params)
         task_transfer_orcid = transfer_orcid(xcom_release, dag_params)
         task_bq_create_main_table_snapshot = bq_create_main_table_snapshot(xcom_release, dag_params)
+        task_create_storage = gke_create_storage.override(trigger_rule=TriggerRule.NONE_FAILED)(
+            volume_name=dag_params.gke_params.gke_volume_name,
+            volume_size=dag_params.gke_params.gke_volume_size,
+            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+        )
         task_create_manifests = create_manifests(xcom_release, dag_params)
         xcom_latest_modified_date = latest_modified_record_date(xcom_release)
         task_download_transform = download_transform(xcom_release, dag_params)
         task_upload_transformed = upload_transformed(xcom_release)
+        task_delete_storage = gke_delete_storage.override(trigger_rule=TriggerRule.NONE_FAILED)(
+            volume_name=dag_params.gke_params.gke_volume_name,
+            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+        )
         task_bq_load_main_table = bq_load_main_table(xcom_release, dag_params)
         task_bq_load_upsert_table = bq_load_upsert_table(xcom_release, dag_params)
         task_bq_load_delete_table = bq_load_delete_table(xcom_release, dag_params)
@@ -312,22 +316,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_bq_delete_records = bq_delete_records(xcom_release)
         task_add_dataset_release = add_dataset_release(xcom_release, xcom_latest_modified_date, dag_params)
         task_cleanup_workflow = cleanup_workflow(xcom_release)
-        task_dag_run_complete = EmptyOperator(
-            task_id=external_task_id,
-        )
-        if dag_params.test_run:
-            task_create_storage = EmptyOperator(task_id="gke_create_storage", trigger_rule=TriggerRule.NONE_FAILED)
-            task_delete_storage = EmptyOperator(task_id="gke_delete_storage", trigger_rule=TriggerRule.NONE_FAILED)
-        else:
-            task_create_storage = gke_create_storage.override(trigger_rule=TriggerRule.NONE_FAILED)(
-                volume_name=dag_params.gke_params.gke_volume_name,
-                volume_size=dag_params.gke_params.gke_volume_size,
-                kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
-            )
-            task_delete_storage = gke_delete_storage.override(trigger_rule=TriggerRule.NONE_FAILED)(
-                volume_name=dag_params.gke_params.gke_volume_name,
-                kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
-            )
+        task_dag_run_complete = EmptyOperator(task_id=external_task_id)
 
         (
             sensor

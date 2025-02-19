@@ -15,6 +15,7 @@
 # Author: Alex Massen-Hane
 
 from __future__ import annotations
+
 from typing import Optional
 
 import pendulum
@@ -25,9 +26,9 @@ from airflow.utils.trigger_rule import TriggerRule
 
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.sensors import PreviousDagRunSensor
-from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
-from observatory_platform.google.gke import GkeParams, gke_make_kubernetes_task_params, gke_make_container_resources
+from observatory_platform.airflow.workflow import CloudWorkspace
+from observatory_platform.google.gke import gke_make_container_resources, gke_make_kubernetes_task_params, GkeParams
 
 
 class DagParams:
@@ -505,30 +506,31 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             tasks.cleanup_workflow(release)
 
+        external_task_id = "dag_run_complete"
         if dag_params.test_run:
             sensor = EmptyOperator(task_id="wait_for_prev_dag_run")
         else:
-            sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id)
+            sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id, task_id=external_task_id)
         task_check_dependencies = check_dependencies()
         xcom_release = fetch_release()
         task_shortcircuit = short_circuit(xcom_release)
         task_create_snapshot = create_snapshot(xcom_release)
-        task_branch_baseline_or_updatefiles = branch_baseline_or_updatefiles(xcom_release)
-        task_group_baseline = baseline(xcom_release)
-        task_branch_updatefiles_or_storage_delete = branch_updatefiles_or_storage_delete(xcom_release)
-        task_group_updatefiles = updatefiles(xcom_release)
-        task_add_dataset_releases = add_dataset_releases(xcom_release)
-        task_cleanup_workflow = cleanup_workflow(xcom_release)
-        task_dag_run_complete = EmptyOperator(task_id="dag_run_complete")
         task_create_storage = gke_create_storage(
             volume_name=dag_params.gke_params.gke_volume_name,
             volume_size=dag_params.gke_params.gke_volume_size,
             kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
         )
+        task_branch_baseline_or_updatefiles = branch_baseline_or_updatefiles(xcom_release)
+        task_group_baseline = baseline(xcom_release)
+        task_branch_updatefiles_or_storage_delete = branch_updatefiles_or_storage_delete(xcom_release)
+        task_group_updatefiles = updatefiles(xcom_release)
         task_delete_storage = gke_delete_storage(
             volume_name=dag_params.gke_params.gke_volume_name,
             kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
         )
+        task_add_dataset_releases = add_dataset_releases(xcom_release)
+        task_cleanup_workflow = cleanup_workflow(xcom_release)
+        task_dag_run_complete = EmptyOperator(task_id=external_task_id)
 
         (
             sensor

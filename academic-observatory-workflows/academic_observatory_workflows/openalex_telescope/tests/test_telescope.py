@@ -31,7 +31,6 @@ import pendulum
 from airflow.models import Connection, DagRun
 from airflow.utils.state import State
 from bigquery_schema_generator.generate_schema import SchemaGenerator
-from click.testing import CliRunner
 from google.cloud import bigquery
 from kubernetes.client import models as k8s
 
@@ -263,7 +262,7 @@ class TestOpenAlexUtils(SandboxTestCase):
 
     @patch("observatory_platform.airflow.workflow.Variable.get")
     def test_openalex_entity(self, m_variable_get):
-        with CliRunner().isolated_filesystem() as t:
+        with tempfile.TemporaryDirectory() as t:
             m_variable_get.return_value = t
             dag_id = "openalex"
             cloud_workspace = CloudWorkspace(

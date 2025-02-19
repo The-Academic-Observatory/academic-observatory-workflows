@@ -2,10 +2,10 @@ import gzip
 import json
 import os
 import shutil
+import tempfile
 
 import pendulum
 from Bio.Entrez.Parser import DictionaryElement, ListElement, StringElement
-from click.testing import CliRunner
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.pubmed_telescope.datafile import Datafile
@@ -24,10 +24,10 @@ from academic_observatory_workflows.pubmed_telescope.tasks import (
     save_pubmed_merged_upserts,
     transform_pubmed,
 )
-from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
-from observatory_platform.sandbox.test_utils import SandboxTestCase, find_free_port
-from observatory_platform.sandbox.ftp_server import FtpServer
 from observatory_platform.airflow.release import ChangefileRelease
+from observatory_platform.sandbox.ftp_server import FtpServer
+from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
+from observatory_platform.sandbox.test_utils import find_free_port, SandboxTestCase
 
 FIXTURES_FOLDER = project_path("pubmed_telescope", "tests", "fixtures")
 
@@ -111,7 +111,7 @@ class TestPubMedUtils(SandboxTestCase):
 
         data_to_write = [{"value": 12345, "Version": 1}]
 
-        with CliRunner().isolated_filesystem() as tmp_dir:
+        with tempfile.TemporaryDirectory() as tmp_dir:
             ### Uncompressed ###
             output_path = os.path.join(tmp_dir, "test_output_file.jsonl")
             save_pubmed_jsonl(output_path=output_path, data=data_to_write)
@@ -148,7 +148,7 @@ class TestPubMedUtils(SandboxTestCase):
             }
         ]
 
-        with CliRunner().isolated_filesystem() as tmp_dir:
+        with tempfile.TemporaryDirectory() as tmp_dir:
             input_path = os.path.join(tmp_dir, filename)
             save_pubmed_jsonl(input_path, record)
 
@@ -375,7 +375,7 @@ class TestPubMedUtils(SandboxTestCase):
             {"data": [{"value": "string", "type": "str"}], "type": "list"},
         ]
 
-        with CliRunner().isolated_filesystem() as tmp_dir:
+        with tempfile.TemporaryDirectory() as tmp_dir:
             # Write test files using custom encoder
             output_file = os.path.join(tmp_dir, "test_output_file.jsonl")
             with open(output_file, "wb") as f_out:
@@ -476,7 +476,7 @@ class TestPubMedUtils(SandboxTestCase):
 
         test_file = "test_output_file.jsonl.gz"
 
-        with CliRunner().isolated_filesystem() as tmp_dir:
+        with tempfile.TemporaryDirectory() as tmp_dir:
             test_file_path = os.path.join(tmp_dir, test_file)
 
             # Write out test data with specific key listed in the encoder.

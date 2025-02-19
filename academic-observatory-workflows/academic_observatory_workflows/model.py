@@ -19,6 +19,7 @@ from __future__ import annotations
 import math
 import os
 import random
+import tempfile
 import urllib.parse
 import uuid
 from dataclasses import dataclass
@@ -27,14 +28,13 @@ from typing import Dict, List, Tuple
 
 import pandas as pd
 import pendulum
-from click.testing import CliRunner
 from faker import Faker
-from observatory_platform.google.bigquery import bq_find_schema
-from observatory_platform.files import load_jsonl
-from observatory_platform.sandbox.test_utils import bq_load_tables, Table
 from pendulum import DateTime
 
 from academic_observatory_workflows.config import project_path
+from observatory_platform.files import load_jsonl
+from observatory_platform.google.bigquery import bq_find_schema
+from observatory_platform.sandbox.test_utils import bq_load_tables, Table
 
 LICENSES = ["cc-by", None]
 
@@ -1299,7 +1299,7 @@ def bq_load_observatory_dataset(
     groupings = load_jsonl(os.path.join(doi_fixtures_path, "groupings.jsonl"))
 
     # schema_path = schema_folder()
-    with CliRunner().isolated_filesystem() as t:
+    with tempfile.TemporaryDirectory() as t:
         tables = [
             Table(
                 "repository",

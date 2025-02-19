@@ -11,16 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-# Author: Tuan Chien
-
+import json
 import os
+import tempfile
 import unittest
 
-from click.testing import CliRunner
-
 import docs.generate_schema_csv as gsc
-from observatory_platform.sandbox.sandbox_environment import test_fixtures_path
+
+
+# Author: Tuan Chien
 
 
 class TestSchemaCSVGenerator(unittest.TestCase):
@@ -59,12 +58,21 @@ class TestSchemaCSVGenerator(unittest.TestCase):
         self.assertEqual(rows[2]["description"], None)
 
     def test_generate_csv(self):
-        with CliRunner().isolated_filesystem():
-            gsc.generate_csv(schema_dir=test_fixtures_path("test_schemas"))
-            self.assertTrue(os.path.exists("schemas/test_schema_2021-01-01.csv"))
+        data = [{"name": "TestField", "type": "INTEGER", "description": "Some description"}]
+
+        with tempfile.TemporaryDirectory() as t:
+            with open(os.path.join(t, "test_schema_2021-01-01.json"), mode="w") as f:
+                json.dump(data, f)
+
+            gsc.generate_csv(schema_dir=t)
+            self.assertTrue(os.path.exists(os.path.join(t, "schemas", "test_schema_2021-01-01.csv")))
 
     def test_generate_latest_files(self):
-        with CliRunner().isolated_filesystem():
-            gsc.generate_csv(schema_dir=test_fixtures_path("test_schemas"))
+        data = [{"name": "TestField", "type": "INTEGER", "description": "Some description"}]
+        with tempfile.TemporaryDirectory() as t:
+            with open(os.path.join(t, "test_schema_2021-01-01.json"), mode="w") as f:
+                json.dump(data, f)
+
+            gsc.generate_csv(schema_dir=t)
             gsc.generate_latest_files()
-            self.assertTrue(os.path.exists("schemas/test_schema_latest.csv"))
+            self.assertTrue(os.path.exists(os.path.join(t, "schemas", "test_schema_latest.csv")))

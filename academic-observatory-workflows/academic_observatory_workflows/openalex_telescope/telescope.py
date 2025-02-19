@@ -594,9 +594,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         task_add_dataset_release = add_dataset_release(xcom_entity_index, dag_params)
         task_cleanup_workflow = cleanup_workflow(dag_params)
-        task_dag_run_complete = EmptyOperator(
-            task_id=external_task_id,
-        )
+        task_dag_run_complete = EmptyOperator(task_id=external_task_id)
 
         (
             sensor
