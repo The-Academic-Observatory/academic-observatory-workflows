@@ -13,6 +13,13 @@ RUN mkdir /app/fixtures
 RUN mkdir /app/fixtures/crossref_metadata
 COPY academic-observatory-workflows/academic_observatory_workflows/crossref_metadata_telescope/tests/fixtures/crossref_metadata.json.tar.gz /app/fixtures/crossref_metadata
 
+# Unpaywall
+RUN mkdir /app/fixtures/unpaywall
+COPY academic-observatory-workflows/academic_observatory_workflows/unpaywall_telescope/tests/fixtures/unpaywall_snapshot_2023-04-25T083002.jsonl.gz /app/fixtures/unpaywall
+COPY academic-observatory-workflows/academic_observatory_workflows/unpaywall_telescope/tests/fixtures/changed_dois_with_versions_2023-04-25T080001.jsonl.gz /app/fixtures/unpaywall
+COPY academic-observatory-workflows/academic_observatory_workflows/unpaywall_telescope/tests/fixtures/changed_dois_with_versions_2023-04-26T080001.jsonl.gz /app/fixtures/unpaywall
+COPY academic-observatory-workflows/academic_observatory_workflows/unpaywall_telescope/tests/fixtures/changed_dois_with_versions_2023-04-27T080001.jsonl.gz /app/fixtures/unpaywall
+
 # Expose the ports the app runs on
 EXPOSE 5080 
 

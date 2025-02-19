@@ -117,9 +117,6 @@ def create_dag(dag_params: DagParams) -> DAG:
     """Construct a PubMed Telescope instance."""
 
     kubernetes_task_params = gke_make_kubernetes_task_params(dag_params.gke_params)
-    if dag_params.test_run:
-        kubernetes_task_params["image_pull_policy"] = "Never"
-    kubernetes_task_params["log_events_on_failure"] = False
 
     @dag(
         dag_id=dag_params.dag_id,
@@ -165,7 +162,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             return tasks.short_circuit(release)
 
-        @task
+        @task(trigger_rule=TriggerRule.ALL_SUCCESS)
         def create_snapshot(release: dict, **context):
             """Create a snapshot of main table as a backup just in case something happens when applying the upserts and deletes."""
 
@@ -193,6 +190,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 container_resources=gke_make_container_resources(
                     {"memory": "4G", "cpu": "4"}, dag_params.gke_params.gke_resource_overrides.get("baseline_download")
                 ),
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 **kubernetes_task_params,
             )
             def baseline_download(release: dict, dag_params, **context):
@@ -213,6 +211,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("baseline_upload_downloaded"),
                 ),
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 **kubernetes_task_params,
             )
             def baseline_upload_downloaded(release: dict, **context):
@@ -228,6 +227,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     {"memory": "16G", "cpu": "16"},
                     dag_params.gke_params.gke_resource_overrides.get("baseline_transform"),
                 ),
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 **kubernetes_task_params,
             )
             def baseline_transform(release: dict, dag_params, **context):
@@ -246,6 +246,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("baseline_upload_transformed"),
                 ),
+                trigger_rule=TriggerRule.ALL_SUCCESS,
                 **kubernetes_task_params,
             )
             def baseline_upload_transformed(release: dict, **context):
@@ -255,7 +256,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 tasks.baseline_upload_transformed(release)
 
-            @task(task_id="bq_load")
+            @task(task_id="bq_load", trigger_rule=TriggerRule.ALL_SUCCESS)
             def baseline_bq_load(release: dict, **context):
                 """Ingest the baseline table from GCS to BQ using a file pattern."""
 
@@ -291,6 +292,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_download"),
                 ),
+                trigger_rule=TriggerRule.NONE_FAILED,
                 **kubernetes_task_params,
             )
             def updatefiles_download(release: dict, dag_params, **context):
@@ -317,6 +319,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_upload_downloaded"),
                 ),
+                trigger_rule=TriggerRule.NONE_FAILED,
                 **kubernetes_task_params,
             )
             def updatefiles_upload_downloaded(release: dict, **context):
@@ -333,6 +336,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     {"memory": "8G", "cpu": "8"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_transform"),
                 ),
+                trigger_rule=TriggerRule.NONE_FAILED,
                 **kubernetes_task_params,
             )
             def updatefiles_transform(release: dict, dag_params, **context):
@@ -350,9 +354,10 @@ def create_dag(dag_params: DagParams) -> DAG:
                 task_id="merge_upserts_deletes",
                 name=f"{dag_params.dag_id}-updatefiles-merge-upserts-deletes",
                 container_resources=gke_make_container_resources(
-                    {"memory": "16G", "cpu": "16"},
+                    {"memory": "8G", "cpu": "8"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_merge_upserts_deletes"),
                 ),
+                trigger_rule=TriggerRule.NONE_FAILED,
                 **kubernetes_task_params,
             )
             def updatefiles_merge_upserts_deletes(release: dict, updatefiles, dag_params, **context):
@@ -369,6 +374,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_upload_merged_upsert_records"),
                 ),
+                trigger_rule=TriggerRule.NONE_FAILED,
                 **kubernetes_task_params,
             )
             def updatefiles_upload_merged_upsert_records(release: dict, **context):
@@ -378,7 +384,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 tasks.updatefiles_upload_merged_upsert_records(release)
 
-            @task(task_id="bq_load_upsert_table")
+            @task(task_id="bq_load_upsert_table", trigger_rule=TriggerRule.NONE_FAILED)
             def updatefiles_bq_load_upsert_table(release: dict, **context):
                 """Ingest the upsert records from GCS to BQ using a glob pattern."""
 
@@ -390,7 +396,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     upsert_table_description=dag_params.upsert_table_description,
                 )
 
-            @task(task_id="bq_upsert_records")
+            @task(task_id="bq_upsert_records", trigger_rule=TriggerRule.NONE_FAILED)
             def updatefiles_bq_upsert_records(release: dict, **context):
                 """
                 Upsert records into the main table.
@@ -414,6 +420,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     {"memory": "4G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_upload_merged_delete_records"),
                 ),
+                trigger_rule=TriggerRule.NONE_FAILED,
                 **kubernetes_task_params,
             )
             def updatefiles_upload_merged_delete_records(release: dict, **context):
@@ -423,7 +430,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 tasks.updatefiles_upload_merged_delete_records(release)
 
-            @task(task_id="bq_load_delete_table")
+            @task(task_id="bq_load_delete_table", trigger_rule=TriggerRule.NONE_FAILED)
             def updatefiles_bq_load_delete_table(release: dict, **context):
                 """Ingest delete records from GCS to BQ."""
 
@@ -435,7 +442,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                     delete_table_description=dag_params.delete_table_description,
                 )
 
-            @task(task_id="bq_delete_records")
+            @task(task_id="bq_delete_records", trigger_rule=TriggerRule.NONE_FAILED)
             def updatefiles_bq_delete_records(release: dict, **context):
                 """
                 Removed records from the main table that are specified in delete table.
@@ -478,7 +485,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 >> task_bq_delete_records
             )
 
-        @task(trigger_rule=TriggerRule.ALL_DONE)
+        @task(trigger_rule=TriggerRule.NONE_FAILED)
         def add_dataset_releases(release: dict, **context):
             """Adds release information to the API."""
 

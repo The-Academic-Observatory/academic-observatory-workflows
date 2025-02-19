@@ -16,4 +16,5 @@ docker tag academic-observatory us-docker.pkg.dev/${PROJECT_NAME}/academic-obser
 docker push us-docker.pkg.dev/${PROJECT_NAME}/academic-observatory/academic-observatory
 
 # Deploy using Astro
+astro workspace switch Academic\ Observatory
 astro deploy -i academic-observatory -f ${DEPLOYMENT_ID}
