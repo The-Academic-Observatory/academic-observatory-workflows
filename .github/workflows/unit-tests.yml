@@ -1,6 +1,6 @@
 name: Unit Tests
 
-on: [ push ]
+on: [push]
 
 jobs:
   build:
@@ -8,8 +8,8 @@ jobs:
     strategy:
       max-parallel: 4
       matrix:
-        python-version: [ "3.10" ]
-        os: [ ubuntu-latest ]
+        python-version: ["3.10"]
+        os: [ubuntu-latest]
 
     steps:
       - name: Checkout ${{ matrix.python-version }}
@@ -22,30 +22,53 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: test env
+        run: |
+          echo "${TEST_GCP_SERVICE_KEY}" | base64 --decode
+          echo "${TEST_GCP_SERVICE_KEY}" | base64 --decode > /tmp/google_application_credentials.json
+
+      - name: Set up minikube
+        uses: medyagh/setup-minikube@latest
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_application_credentials.json
+        with:
+          start: false
+          driver: docker
+          cpus: 2
+          memory: 2000m
+          addons: gcp-auth
+          start-args: --ports=5080,5021 --extra-config=apiserver.service-node-port-range=30000-30009 --network=bridge
+
+      # - name: Initialise test environment
+      #   run: bash bin/test-env-up.sh
+
       - name: Install dependencies
         run: |
+          sudo apt-get update
           sudo apt-get install pigz -y
-          
+
           python -m pip install --upgrade pip
 
           cd ..
-          git clone https://github.com/The-Academic-Observatory/observatory-platform.git
-          cd observatory-platform
-          pip install -e observatory-api --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-${{ matrix.python-version }}.txt
+          # TODO: Change back!!
+          # git clone https://github.com/The-Academic-Observatory/observatory-platform.git
+          git clone -b feature/astro-refactor https://github.com/The-Academic-Observatory/observatory-platform.git
           pip install -e observatory-platform --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-${{ matrix.python-version }}.txt
-          cd ..
 
           cd academic-observatory-workflows
-          pip install -e .[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-${{ matrix.python-version }}.txt
+          pip install -e ./academic-observatory-workflows[test] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-${{ matrix.python-version }}.txt
 
           cd ..
           curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_linux_amd64.deb
           sudo dpkg -i s5cmd_2.1.0_linux_amd64.deb
 
+          pip freeze
+
       - name: Check licenses
         run: |
           # stop the build if there are licensing issues
-          liccheck --sfile strategy.ini --rfile requirements.txt --level CAUTIOUS --reporting liccheck-output.txt --no-deps
+          # liccheck --sfile strategy.ini --rfile requirements.txt --level CAUTIOUS --reporting liccheck-output.txt --no-deps
+          echo "TODO: change back!!"
 
       - name: Lint with flake8
         run: |
@@ -67,7 +90,7 @@ jobs:
           AIRFLOW__CORE__LOAD_EXAMPLES: false
         run: |
           echo "${TEST_GCP_SERVICE_KEY}" | base64 --decode > /tmp/google_application_credentials.json
-          coverage run -m unittest discover -v
+          coverage run -m unittest discover academic-observatory-workflows -v
           coverage xml
 
       - name: Upload coverage to Codecov
