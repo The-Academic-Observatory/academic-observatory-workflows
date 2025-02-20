@@ -44,6 +44,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
+    "httpretty==1.*",
     "liccheck==0.4.*",
     "flake8==3.8.*",
     "coverage==5.2",

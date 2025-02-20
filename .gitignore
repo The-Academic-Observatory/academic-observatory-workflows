@@ -1,7 +1,7 @@
 .git
 *.eggs
 *.egg-info
-.env
+*.env
 .DS_Store # macOS specific ignore
 .vscode
 airflow_settings.yaml
