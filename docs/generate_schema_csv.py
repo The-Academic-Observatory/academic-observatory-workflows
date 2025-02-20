@@ -133,5 +133,6 @@ def generate_latest_files():
 
 
 if __name__ == "__main__":
-    generate_csv(schema_dir="../academic_observatory_workflows/database/schema")
-    generate_latest_files()
+    pass
+    # generate_csv(schema_dir="../academic_observatory_workflows/database/schema")
+    # generate_latest_files()
