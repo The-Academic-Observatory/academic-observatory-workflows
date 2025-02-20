@@ -46,7 +46,7 @@ FIXTURES_FOLDER = project_path("crossref_metadata_telescope", "tests", "fixtures
 SCHEMA_FOLDER = project_path("crossref_metadata_telescope", "schema")
 
 
-class TestFetchRelease(unittest.TestCase):
+class TestTasks(unittest.TestCase):
 
     @provide_session
     def test_fetch_release(self, session=None):
@@ -116,8 +116,6 @@ class TestFetchRelease(unittest.TestCase):
                     data_interval_end=pendulum.datetime(2024, 1, 31),
                 )
 
-
-class TestCheckReleaseExists(unittest.TestCase):
     def test_check_release_exists(self):
         """Test the 'check_release_exists' task with different responses."""
 
@@ -144,6 +142,196 @@ class TestCheckReleaseExists(unittest.TestCase):
 
             exists = tasks.check_release_exists(data_interval_start, mock_api_key)
             self.assertFalse(exists)
+
+    def test_upload_downloaded(self):
+        """Tests that the upload_downloaded function uploads to the GCS download bucket"""
+
+        snapshot_date = pendulum.datetime(2024, 1, 1)
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        release = CrossrefMetadataRelease(
+            cloud_workspace=env.cloud_workspace,
+            snapshot_date=snapshot_date,
+            dag_id="crossref_metadata",
+            run_id="run_id",
+            data_interval_start=pendulum.now(),
+            data_interval_end=pendulum.now(),
+        )
+        download_path = os.path.join(FIXTURES_FOLDER, "crossref_metadata.json.tar.gz")
+        with env.create():
+            shutil.copy(download_path, release.download_file_path)
+            tasks.upload_downloaded(release.to_dict())
+            blob_name = gcs_blob_name_from_path(release.download_file_path)
+            self.assert_blob_exists(env.download_bucket, blob_name)
+            self.assert_blob_integrity(env.download_bucket, blob_name, release.download_file_path)
+
+    def test_extract(self):
+        """Tests the extract function
+
+        NOTE: If this fails locally, you may need to install pigz with `sudo apt-get install pigz`
+        """
+
+        snapshot_date = pendulum.datetime(2024, 1, 1)
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        release = CrossrefMetadataRelease(
+            cloud_workspace=env.cloud_workspace,
+            snapshot_date=snapshot_date,
+            dag_id="crossref_metadata",
+            run_id="run_id",
+            data_interval_start=pendulum.now(),
+            data_interval_end=pendulum.now(),
+        )
+        download_path = os.path.join(FIXTURES_FOLDER, "crossref_metadata.json.tar.gz")
+        with env.create():
+            shutil.copy(download_path, release.download_file_path)
+            tasks.extract(release.to_dict())
+            self.assertEqual(len(os.listdir(release.extract_folder)), 1)  # The crossref_metadata folder
+            self.assertEqual(len(os.listdir(os.path.join(release.extract_folder, "crossref_metadata"))), 5)  # jsons
+
+    def test_upload_transformed(self):
+        """Tests that the upload_transformed function uploads to the GCS transform bucket"""
+
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        snapshot_date = pendulum.datetime(2024, 1, 1)
+        release = CrossrefMetadataRelease(
+            cloud_workspace=env.cloud_workspace,
+            snapshot_date=snapshot_date,
+            dag_id="crossref_metadata",
+            run_id="run_id",
+            data_interval_start=pendulum.now(),
+            data_interval_end=pendulum.now(),
+        )
+
+        with env.create():
+            # Set up some files
+            files = [
+                os.path.join(release.transform_folder, str(uuid.uuid4())) + ".jsonl",
+                os.path.join(release.transform_folder, str(uuid.uuid4())) + ".jsonl",
+                os.path.join(release.transform_folder, str(uuid.uuid4())) + ".json",  # Should not be uploaded
+            ]
+            for f in files:
+                Path(f).touch()
+            blob_names = [gcs_blob_name_from_path(f) for f in files]
+
+            # Run the upload function
+            tasks.upload_transformed(release.to_dict())
+
+            # Check files exist/do not exist
+            self.assert_blob_exists(env.transform_bucket, blob_names[0])
+            self.assert_blob_exists(env.transform_bucket, blob_names[1])
+            bucket = self.storage_client.get_bucket(env.transform_bucket)
+            blob = bucket.blob(blob_names[2])
+            self.assertFalse(blob.exists())
+
+            # Check file integrity
+            self.assert_blob_integrity(env.transform_bucket, blob_names[0], files[0])
+            self.assert_blob_integrity(env.transform_bucket, blob_names[1], files[1])
+
+    def test_bq_load(self):
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        dataset_id = env.add_dataset(prefix="crossref_metadata_test")
+
+        snapshot_date = pendulum.datetime(2024, 1, 1)
+        release = CrossrefMetadataRelease(
+            cloud_workspace=env.cloud_workspace,
+            snapshot_date=snapshot_date,
+            dag_id="crossref_metadata",
+            run_id="run_id",
+            data_interval_start=pendulum.now(),
+            data_interval_end=pendulum.now(),
+        )
+        transformed_data_file = os.path.join(FIXTURES_FOLDER, "single_item_transformed.jsonl")
+        with env.create():
+            # upload the transformed files to the bucket
+            file_paths = [
+                os.path.join(release.transform_folder, "row_1.jsonl"),
+                os.path.join(release.transform_folder, "row_2.jsonl"),
+                os.path.join(release.transform_folder, "row_3.json"),
+            ]
+            shutil.copy(transformed_data_file, file_paths[0])
+            shutil.copy(transformed_data_file, file_paths[1])
+            shutil.copy(transformed_data_file, file_paths[2])
+            success = gcs_upload_files(bucket_name=release.cloud_workspace.transform_bucket, file_paths=file_paths)
+            self.assertTrue(success)
+
+            tasks.bq_load(
+                release.to_dict(),
+                bq_dataset_id=dataset_id,
+                bq_table_name="crossref_metadata",
+                dataset_description="",
+                table_description="",
+                schema_folder=SCHEMA_FOLDER,
+            )
+            table_id = bq_sharded_table_id(
+                release.cloud_workspace.output_project_id, dataset_id, "crossref_metadata", release.snapshot_date
+            )
+            self.assert_table_integrity(table_id, expected_rows=2)
+
+    def test_add_dataset_release(self):
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        api_dataset_id = env.add_dataset(prefix="crossref_metadata_test_api")
+        now = pendulum.now()
+        snapshot_date = pendulum.datetime(2024, 1, 1)
+
+        release = CrossrefMetadataRelease(
+            cloud_workspace=env.cloud_workspace,
+            snapshot_date=snapshot_date,
+            dag_id="crossref_metadata",
+            run_id="run_id",
+            data_interval_start=snapshot_date,
+            data_interval_end=snapshot_date.end_of("month"),
+        )
+        with env.create():
+            expected_api_release = {
+                "dag_id": "crossref_metadata",
+                "entity_id": "crossref_metadata",
+                "dag_run_id": "run_id",
+                "created": datetime_normalise(now),
+                "modified": datetime_normalise(now),
+                "data_interval_start": "2024-01-01T00:00:00+00:00",
+                "data_interval_end": "2024-01-31T23:59:59+00:00",
+                "snapshot_date": "2024-01-01T00:00:00+00:00",
+                "partition_date": None,
+                "changefile_start_date": None,
+                "changefile_end_date": None,
+                "sequence_start": None,
+                "sequence_end": None,
+                "extra": {},
+            }
+            api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_dataset_id)
+
+            # Should not be any releases in the API before the task is run
+            self.assertEqual(len(api.get_dataset_releases(dag_id=release.dag_id, entity_id="crossref_metadata")), 0)
+            with patch("academic_observatory_workflows.crossref_metadata_telescope.tasks.pendulum.now") as mock_now:
+                mock_now.return_value = now
+                tasks.add_dataset_release(release.to_dict(), api_bq_dataset_id=api_dataset_id)
+
+            # Should be one release in the API
+            api_releases = api.get_dataset_releases(dag_id=release.dag_id, entity_id="crossref_metadata")
+        self.assertEqual(len(api_releases), 1)
+        self.assertEqual(expected_api_release, api_releases[0].to_dict())
+
+    def test_cleanup_workflow(self):
+        """Test the cleanup_workflow function"""
+
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        with env.create():
+            release = CrossrefMetadataRelease(
+                cloud_workspace=env.cloud_workspace,
+                snapshot_date=pendulum.datetime(2024, 1, 1),
+                dag_id="crossref_metadata",
+                run_id="run_id",
+                data_interval_start=pendulum.datetime(2024, 1, 1),
+                data_interval_end=pendulum.datetime(2024, 1, 1).end_of("month"),
+            )
+            # Create the folders
+            workflow_folder = release.workflow_folder
+            release.download_folder
+            release.transform_folder
+            release.extract_folder
+
+            # Run cleanup and make sure the folders are gone
+            tasks.cleanup_workflow(release.to_dict())
+            self.assert_cleanup(workflow_folder)
 
 
 class TestDownload(SandboxTestCase):
@@ -190,58 +378,6 @@ class TestDownload(SandboxTestCase):
             )
             with self.assertRaisesRegex(AirflowException, "The CROSSREF_METADATA_API_KEY"):
                 tasks.download(release.to_dict())
-
-
-class TestUploadDownloaded(SandboxTestCase):
-
-    download_path = os.path.join(FIXTURES_FOLDER, "crossref_metadata.json.tar.gz")
-    snapshot_date = pendulum.datetime(2024, 1, 1)
-
-    def test_upload_downloaded(self):
-        """Tests that the upload_downloaded function uploads to the GCS download bucket"""
-
-        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
-        release = CrossrefMetadataRelease(
-            cloud_workspace=env.cloud_workspace,
-            snapshot_date=self.snapshot_date,
-            dag_id="crossref_metadata",
-            run_id="run_id",
-            data_interval_start=pendulum.now(),
-            data_interval_end=pendulum.now(),
-        )
-        with env.create():
-            shutil.copy(self.download_path, release.download_file_path)
-            tasks.upload_downloaded(release.to_dict())
-            blob_name = gcs_blob_name_from_path(release.download_file_path)
-            self.assert_blob_exists(env.download_bucket, blob_name)
-            self.assert_blob_integrity(env.download_bucket, blob_name, release.download_file_path)
-
-
-class TestExtract(unittest.TestCase):
-
-    snapshot_date = pendulum.datetime(2024, 1, 1)
-    download_path = os.path.join(FIXTURES_FOLDER, "crossref_metadata.json.tar.gz")
-
-    def test_extract(self):
-        """Tests the extract function
-
-        NOTE: If this fails locally, you may need to install pigz with `sudo apt-get install pigz`
-        """
-
-        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
-        release = CrossrefMetadataRelease(
-            cloud_workspace=env.cloud_workspace,
-            snapshot_date=self.snapshot_date,
-            dag_id="crossref_metadata",
-            run_id="run_id",
-            data_interval_start=pendulum.now(),
-            data_interval_end=pendulum.now(),
-        )
-        with env.create():
-            shutil.copy(self.download_path, release.download_file_path)
-            tasks.extract(release.to_dict())
-            self.assertEqual(len(os.listdir(release.extract_folder)), 1)  # The crossref_metadata folder
-            self.assertEqual(len(os.listdir(os.path.join(release.extract_folder, "crossref_metadata"))), 5)  # jsons
 
 
 class TestTransforms(unittest.TestCase):
@@ -347,163 +483,3 @@ class TestTransforms(unittest.TestCase):
         expected = {"hello_world": {"hello_world": [{"date_parts": [2021, 1, 1]}, {"date_parts": []}]}}
         actual = tasks.transform_item(item)
         self.assertEqual(expected, actual)
-
-
-class TestUploadTransformed(SandboxTestCase):
-
-    snapshot_date = pendulum.datetime(2024, 1, 1)
-
-    def test_upload_transformed(self):
-        """Tests that the upload_transformed function uploads to the GCS transform bucket"""
-
-        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
-        release = CrossrefMetadataRelease(
-            cloud_workspace=env.cloud_workspace,
-            snapshot_date=self.snapshot_date,
-            dag_id="crossref_metadata",
-            run_id="run_id",
-            data_interval_start=pendulum.now(),
-            data_interval_end=pendulum.now(),
-        )
-
-        with env.create():
-            # Set up some files
-            files = [
-                os.path.join(release.transform_folder, str(uuid.uuid4())) + ".jsonl",
-                os.path.join(release.transform_folder, str(uuid.uuid4())) + ".jsonl",
-                os.path.join(release.transform_folder, str(uuid.uuid4())) + ".json",  # Should not be uploaded
-            ]
-            for f in files:
-                Path(f).touch()
-            blob_names = [gcs_blob_name_from_path(f) for f in files]
-
-            # Run the upload function
-            tasks.upload_transformed(release.to_dict())
-
-            # Check files exist/do not exist
-            self.assert_blob_exists(env.transform_bucket, blob_names[0])
-            self.assert_blob_exists(env.transform_bucket, blob_names[1])
-            bucket = self.storage_client.get_bucket(env.transform_bucket)
-            blob = bucket.blob(blob_names[2])
-            self.assertFalse(blob.exists())
-
-            # Check file integrity
-            self.assert_blob_integrity(env.transform_bucket, blob_names[0], files[0])
-            self.assert_blob_integrity(env.transform_bucket, blob_names[1], files[1])
-
-
-class TestBqLoad(SandboxTestCase):
-
-    snapshot_date = pendulum.datetime(2024, 1, 1)
-    transformed_data_file = os.path.join(FIXTURES_FOLDER, "single_item_transformed.jsonl")
-
-    def test_bq_load(self):
-        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
-        dataset_id = env.add_dataset(prefix="crossref_metadata_test")
-
-        release = CrossrefMetadataRelease(
-            cloud_workspace=env.cloud_workspace,
-            snapshot_date=self.snapshot_date,
-            dag_id="crossref_metadata",
-            run_id="run_id",
-            data_interval_start=pendulum.now(),
-            data_interval_end=pendulum.now(),
-        )
-        with env.create():
-            # upload the transformed files to the bucket
-            file_paths = [
-                os.path.join(release.transform_folder, "row_1.jsonl"),
-                os.path.join(release.transform_folder, "row_2.jsonl"),
-                os.path.join(release.transform_folder, "row_3.json"),
-            ]
-            shutil.copy(self.transformed_data_file, file_paths[0])
-            shutil.copy(self.transformed_data_file, file_paths[1])
-            shutil.copy(self.transformed_data_file, file_paths[2])
-            success = gcs_upload_files(bucket_name=release.cloud_workspace.transform_bucket, file_paths=file_paths)
-            self.assertTrue(success)
-
-            tasks.bq_load(
-                release.to_dict(),
-                bq_dataset_id=dataset_id,
-                bq_table_name="crossref_metadata",
-                dataset_description="",
-                table_description="",
-                schema_folder=SCHEMA_FOLDER,
-            )
-            table_id = bq_sharded_table_id(
-                release.cloud_workspace.output_project_id, dataset_id, "crossref_metadata", release.snapshot_date
-            )
-            self.assert_table_integrity(table_id, expected_rows=2)
-
-
-class TestAddDatasetRelease(unittest.TestCase):
-
-    snapshot_date = pendulum.datetime(2024, 1, 1)
-
-    def test_add_dataset_release(self):
-        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
-        api_dataset_id = env.add_dataset(prefix="crossref_metadata_test_api")
-        now = pendulum.now()
-
-        release = CrossrefMetadataRelease(
-            cloud_workspace=env.cloud_workspace,
-            snapshot_date=self.snapshot_date,
-            dag_id="crossref_metadata",
-            run_id="run_id",
-            data_interval_start=self.snapshot_date,
-            data_interval_end=self.snapshot_date.end_of("month"),
-        )
-        with env.create():
-            expected_api_release = {
-                "dag_id": "crossref_metadata",
-                "entity_id": "crossref_metadata",
-                "dag_run_id": "run_id",
-                "created": datetime_normalise(now),
-                "modified": datetime_normalise(now),
-                "data_interval_start": "2024-01-01T00:00:00+00:00",
-                "data_interval_end": "2024-01-31T23:59:59+00:00",
-                "snapshot_date": "2024-01-01T00:00:00+00:00",
-                "partition_date": None,
-                "changefile_start_date": None,
-                "changefile_end_date": None,
-                "sequence_start": None,
-                "sequence_end": None,
-                "extra": {},
-            }
-            api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_dataset_id)
-
-            # Should not be any releases in the API before the task is run
-            self.assertEqual(len(api.get_dataset_releases(dag_id=release.dag_id, entity_id="crossref_metadata")), 0)
-            with patch("academic_observatory_workflows.crossref_metadata_telescope.tasks.pendulum.now") as mock_now:
-                mock_now.return_value = now
-                tasks.add_dataset_release(release.to_dict(), api_bq_dataset_id=api_dataset_id)
-
-            # Should be one release in the API
-            api_releases = api.get_dataset_releases(dag_id=release.dag_id, entity_id="crossref_metadata")
-        self.assertEqual(len(api_releases), 1)
-        self.assertEqual(expected_api_release, api_releases[0].to_dict())
-
-
-class TestCleanupWorkflow(SandboxTestCase):
-    def test_cleanup_workflow(self):
-        """Test the cleanup_workflow function"""
-
-        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
-        with env.create():
-            release = CrossrefMetadataRelease(
-                cloud_workspace=env.cloud_workspace,
-                snapshot_date=pendulum.datetime(2024, 1, 1),
-                dag_id="crossref_metadata",
-                run_id="run_id",
-                data_interval_start=pendulum.datetime(2024, 1, 1),
-                data_interval_end=pendulum.datetime(2024, 1, 1).end_of("month"),
-            )
-            # Create the folders
-            workflow_folder = release.workflow_folder
-            release.download_folder
-            release.transform_folder
-            release.extract_folder
-
-            # Run cleanup and make sure the folders are gone
-            tasks.cleanup_workflow(release.to_dict())
-            self.assert_cleanup(workflow_folder)

@@ -117,13 +117,7 @@ class OrcidTestRecords:
     timestamp_fields = ["submission_date", "last_modified_date", "created_date"]
 
 
-class TestFetchRelease(unittest.TestCase):
-
-    dag_id = "test_orcid"
-    run_id = "test_orcid_run"
-    bq_main_table_name = "test_orcid"
-    bq_upsert_table_name = "test_orcid_upsert"
-    bq_delete_table_name = "test_orcid_delete"
+class TestTasks(SandboxTestCase):
 
     def test_fetch_release(self):
         """Tests the fetch_release function. Runs the function once for first run functionality, then again."""
@@ -132,21 +126,26 @@ class TestFetchRelease(unittest.TestCase):
         env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
         bq_dataset_id = env.add_dataset()
         api_bq_dataset_id = env.add_dataset()
+        dag_id = "test_orcid"
+        run_id = "test_orcid_run"
+        bq_main_table_name = "test_orcid"
+        bq_upsert_table_name = "test_orcid_upsert"
+        bq_delete_table_name = "test_orcid_delete"
         with env.create():
             with patch("academic_observatory_workflows.orcid_telescope.tasks.is_first_dag_run") as mock_ifdr:
                 mock_ifdr.return_value = True
                 actual_release = tasks.fetch_release(
-                    dag_id=self.dag_id,
-                    run_id=self.run_id,
+                    dag_id=dag_id,
+                    run_id=run_id,
                     dag_run=MagicMock(),
                     data_interval_start=data_interval_start,
                     data_interval_end=data_interval_end,
                     cloud_workspace=env.cloud_workspace,
                     api_bq_dataset_id=api_bq_dataset_id,
                     bq_dataset_id=bq_dataset_id,
-                    bq_main_table_name=self.bq_main_table_name,
-                    bq_upsert_table_name=self.bq_upsert_table_name,
-                    bq_delete_table_name=self.bq_delete_table_name,
+                    bq_main_table_name=bq_main_table_name,
+                    bq_upsert_table_name=bq_upsert_table_name,
+                    bq_delete_table_name=bq_delete_table_name,
                 )
 
             expected_release = {
@@ -169,9 +168,9 @@ class TestFetchRelease(unittest.TestCase):
             api = DatasetAPI(bq_project_id=env.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
             release = OrcidRelease.from_dict(actual_release)
             dataset_release = DatasetRelease(
-                dag_id=self.dag_id,
+                dag_id=dag_id,
                 entity_id="orcid",
-                dag_run_id=self.run_id,
+                dag_run_id=run_id,
                 created=pendulum.now(),
                 modified=pendulum.now(),
                 changefile_start_date=release.start_date,
@@ -184,17 +183,17 @@ class TestFetchRelease(unittest.TestCase):
             data_interval_start = pendulum.datetime(2023, 6, 8)
             data_interval_end = pendulum.datetime(2023, 6, 15)
             actual_release = tasks.fetch_release(
-                dag_id=self.dag_id,
-                run_id=self.run_id,
+                dag_id=dag_id,
+                run_id=run_id,
                 dag_run=MagicMock(),
                 data_interval_start=data_interval_start,
                 data_interval_end=data_interval_end,
                 cloud_workspace=env.cloud_workspace,
                 api_bq_dataset_id=api_bq_dataset_id,
                 bq_dataset_id=bq_dataset_id,
-                bq_main_table_name=self.bq_main_table_name,
-                bq_upsert_table_name=self.bq_upsert_table_name,
-                bq_delete_table_name=self.bq_delete_table_name,
+                bq_main_table_name=bq_main_table_name,
+                bq_upsert_table_name=bq_upsert_table_name,
+                bq_delete_table_name=bq_delete_table_name,
             )
 
             expected_release = {
@@ -212,6 +211,283 @@ class TestFetchRelease(unittest.TestCase):
                 "is_first_run": False,
             }
             self.assertEqual(expected_release, actual_release)
+
+    def test_create_main_table_snapshot_first_run(self):
+        """Test that the main table snapshot is not created for the first run"""
+        with SandboxEnvironment().create():
+            release = dummy_release()
+            release.is_first_run = True
+            with self.assertRaises(AirflowSkipException):
+                tasks.bq_create_main_table_snapshot(release.to_dict(), snapshot_expiry_days=31)
+
+    def test_create_main_table_snapshot_second_run(self):
+        """Test that the main table snapshot is created for subsequent runs"""
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        bq_dataset_id = env.add_dataset()
+
+        with env.create():
+            release = OrcidRelease(
+                dag_id="test_orcid",
+                run_id="test_orcid_run",
+                bq_dataset_id=bq_dataset_id,
+                bq_main_table_name="test_orcid",
+                bq_upsert_table_name="test_orcid_upsert",
+                bq_delete_table_name="test_orcid_delete",
+                cloud_workspace=env.cloud_workspace,
+                start_date=pendulum.now(),
+                end_date=pendulum.now(),
+                prev_release_end=pendulum.now(),
+                prev_latest_modified_record=pendulum.now(),
+                is_first_run=False,
+            )
+
+            # Create the main table to be snapshotted
+            content = [{"test": "test_1"}]
+            bq.bq_load_from_memory(release.bq_main_table_id, records=content)
+
+            # Run the task and check output
+            tasks.bq_create_main_table_snapshot(release.to_dict(), snapshot_expiry_days=31)
+            self.assertTrue(bq.bq_table_exists(release.bq_snapshot_table_id))
+            self.assert_table_content(
+                table_id=release.bq_snapshot_table_id, expected_content=content, primary_key="test"
+            )
+
+    def test_download(self):
+        """Tests the download function works as intended"""
+
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        with env.create():
+            release = OrcidRelease(
+                dag_id="test_orcid",
+                run_id="test_orcid_run",
+                bq_dataset_id="test_dataset",
+                bq_main_table_name="test_orcid",
+                bq_upsert_table_name="test_orcid_upsert",
+                bq_delete_table_name="test_orcid_delete",
+                cloud_workspace=env.cloud_workspace,
+                start_date=pendulum.datetime(2024, 1, 1),
+                end_date=pendulum.datetime(2024, 1, 1),
+                prev_release_end=pendulum.now(),
+                prev_latest_modified_record=pendulum.now(),
+                is_first_run=False,
+            )
+
+            # Upload the files to the bucket
+            records = OrcidTestRecords.first_run_records[:-1]
+            for record in records:
+                orcid = record["orcid"]
+                batch_name = record["batch"]
+                blob_name = f"summaries/{batch_name}/{orcid}.xml"
+                gcs_upload_file(bucket_name=env.download_bucket, blob_name=blob_name, file_path=record["path"])
+
+                # Create the manifest file for the batch
+                batch = OrcidBatch(release.download_folder, release.transform_folder, batch_name)
+                with open(batch.manifest_file, "w", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=tasks.MANIFEST_HEADER)
+                    writer.writeheader()
+                    writer.writerow(
+                        {
+                            tasks.MANIFEST_HEADER[0]: env.download_bucket,
+                            tasks.MANIFEST_HEADER[1]: blob_name,
+                            tasks.MANIFEST_HEADER[2]: datetime.datetime.min,
+                        }
+                    )
+
+            # Run the task
+            with patch(
+                "academic_observatory_workflows.orcid_telescope.tasks.OrcidRelease.orcid_batches"
+            ) as mock_batches:
+                mock_batches.return_value = [
+                    OrcidBatch(release.download_folder, release.transform_folder, r["batch"]) for r in records
+                ]
+                tasks.download(release.to_dict())
+
+            # Make assertions
+            self.assertEqual(len(release.downloaded_records), 3)
+
+    def test_transform(self):
+        """Tests that a set of files is transformed as expected"""
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        with env.create():
+            release = dummy_release()
+
+            # Set up the data
+            records = OrcidTestRecords.first_run_records[:-1]
+            for record in records:
+                orcid = record["orcid"]
+                batch_name = record["batch"]
+                blob_name = f"summaries/{batch_name}/{orcid}.xml"
+                batch = OrcidBatch(release.download_folder, release.transform_folder, batch_name)
+
+                # Copy the test file
+                shutil.copy(record["path"], batch.download_batch_dir)
+
+                # Create the manifest file
+                with open(batch.manifest_file, "w", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=tasks.MANIFEST_HEADER)
+                    writer.writeheader()
+                    writer.writerow(
+                        {
+                            tasks.MANIFEST_HEADER[0]: env.download_bucket,
+                            tasks.MANIFEST_HEADER[1]: blob_name,
+                            tasks.MANIFEST_HEADER[2]: datetime.datetime.min,
+                        }
+                    )
+
+            # Perform the transform task
+            relevant_batches = [
+                OrcidBatch(release.download_folder, release.transform_folder, r["batch"]) for r in records
+            ]
+            with patch(
+                "academic_observatory_workflows.orcid_telescope.tasks.OrcidRelease.orcid_batches"
+            ) as mock_batches:
+                mock_batches.return_value = relevant_batches
+                tasks.transform(release.to_dict(), max_workers=2)
+
+            # Make assertions
+            self.assertEqual(len(release.upsert_files), 3)
+            for b in relevant_batches:
+                self.assertEqual(os.path.exists(b.transform_upsert_file), True)
+                actual_transformed_data = sorted(load_jsonl(b.transform_upsert_file), key=lambda i: i["path"])
+                expected_transformed_data = sorted(
+                    load_jsonl(os.path.join(FIXTURES_FOLDER, "first_run", f"{b.batch_str}_upsert.jsonl")),
+                    key=lambda i: i["path"],
+                )
+                self.assertEqual(expected_transformed_data, actual_transformed_data)
+
+    def test_transform_orcid_record_valid_record(self):
+        """Tests that a valid ORCID record with 'record' section is transformed correctly"""
+        for asset in OrcidTestRecords.first_run_records:
+            orcid = asset["orcid"]
+            path = asset["path"]
+            transformed_record = tasks.transform_orcid_record(path)
+            self.assertIsInstance(transformed_record, dict)
+            self.assertEqual(transformed_record["orcid_identifier"]["path"], orcid)
+
+    def test_transform_orcid_record_error_record(self):
+        """Tests that an ORCID record with 'error' section is transformed correctly"""
+        error_record = OrcidTestRecords.second_run_records[1]
+        orcid = error_record["orcid"]
+        path = error_record["path"]
+        transformed_record = tasks.transform_orcid_record(path)
+        self.assertIsInstance(transformed_record, str)
+        self.assertEqual(transformed_record, orcid)
+
+    def test_transform_orcid_record_invalid_key_record(self):
+        """Tests that an ORCID record with no 'error' or 'record' section raises a Key Error"""
+        invaid_key_record = OrcidTestRecords.invalid_key_orcid
+        path = invaid_key_record["path"]
+        with self.assertRaises(KeyError):
+            tasks.transform_orcid_record(path)
+
+    def test_transform_orcid_record_mismatched_orcid(self):
+        """Tests that a ValueError is raised if the ORCID in the file name does not match the ORCID in the record"""
+        mismatched_orcid = OrcidTestRecords.mismatched_orcid
+        path = mismatched_orcid["path"]
+        with self.assertRaisesRegex(ValueError, "does not match ORCID in record"):
+            tasks.transform_orcid_record(path)
+
+    def test_add_dataset_release(self):
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        api_dataset_id = env.add_dataset(prefix="orcid_test_api")
+        now = pendulum.now()
+
+        with env.create():
+            release = OrcidRelease(
+                dag_id="test_orcid",
+                run_id="test_orcid_run",
+                bq_dataset_id="test_dataset",
+                bq_main_table_name="test_orcid",
+                bq_upsert_table_name="test_orcid_upsert",
+                bq_delete_table_name="test_orcid_delete",
+                cloud_workspace=env.cloud_workspace,
+                start_date=pendulum.datetime(2024, 1, 1),
+                end_date=pendulum.datetime(2024, 1, 1),
+                prev_release_end=pendulum.now(),
+                prev_latest_modified_record=pendulum.now(),
+                is_first_run=False,
+            )
+            expected_api_release = {
+                "dag_id": "test_orcid",
+                "entity_id": "orcid",
+                "dag_run_id": "test_orcid_run",
+                "created": datetime_normalise(now),
+                "modified": datetime_normalise(now),
+                "data_interval_start": None,
+                "data_interval_end": None,
+                "snapshot_date": None,
+                "partition_date": None,
+                "changefile_start_date": "2024-01-01T00:00:00+00:00",
+                "changefile_end_date": "2024-01-01T00:00:00+00:00",
+                "sequence_start": None,
+                "sequence_end": None,
+                "extra": {"latest_modified_record_date": datetime_normalise(now)},
+            }
+            api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_dataset_id)
+
+            # Should not be any releases in the API before the task is run
+            self.assertEqual(len(api.get_dataset_releases(dag_id=release.dag_id, entity_id="orcid")), 0)
+            with patch("academic_observatory_workflows.orcid_telescope.tasks.pendulum.now") as mock_now, patch(
+                "academic_observatory_workflows.orcid_telescope.tasks.latest_modified_record_date"
+            ) as mock_last_date:
+                mock_now.return_value = now
+                mock_last_date.return_value = datetime_normalise(now)
+                tasks.add_dataset_release(release.to_dict(), api_bq_dataset_id=api_dataset_id)
+
+            # Should be one release in the API
+            api_releases = api.get_dataset_releases(dag_id=release.dag_id, entity_id="orcid")
+        self.assertEqual(len(api_releases), 1)
+        self.assertEqual(expected_api_release, api_releases[0].to_dict())
+
+    def test_latest_modified_record_date(self):
+        """Tests that the latest_modified_record_date function returns the correct date"""
+        # Create a temporary manifest file for the test
+        with SandboxEnvironment(
+            project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location
+        ).create():
+            release = dummy_release()
+            with open(release.master_manifest_file, "w") as f:
+                f.write(",".join(tasks.MANIFEST_HEADER))
+                f.write("\n")
+                f.write("gs://test-bucket,folder/0000-0000-0000-0001.xml,2023-06-03T00:00:00Z\n")
+                f.write("gs://test-bucket,folder/0000-0000-0000-0002.xml,2023-06-03T00:00:00Z\n")
+                f.write("gs://test-bucket,folder/0000-0000-0000-0003.xml,2023-06-02T00:00:00Z\n")
+                f.write("gs://test-bucket,folder/0000-0000-0000-0004.xml,2023-06-01T00:00:00Z\n")
+
+            # Call the function and assert the result
+            expected_date = datetime_normalise("2023-06-03T00:00:00Z")
+            actual_date = tasks.latest_modified_record_date(release.to_dict())
+            self.assertEqual(actual_date, expected_date)
+
+    def test_orcid_batch_names(self):
+        """Tests that the orcid_batch_names function returns the expected results"""
+        batch_names = orcid_batch_names()
+
+        # Test that the function returns a list
+        self.assertIsInstance(batch_names, list)
+        self.assertEqual(len(batch_names), 1100)
+        self.assertTrue(all(isinstance(element, str) for element in batch_names))
+        self.assertEqual(len(set(batch_names)), len(batch_names))
+        # Test that the batch names match the OrcidBatch regex
+        for batch_name in batch_names:
+            self.assertTrue(re.match(BATCH_REGEX, batch_name))
+
+    def test_cleanup_workflow(self):
+        """Test the cleanup_workflow function"""
+
+        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        with env.create():
+            release = dummy_release()
+
+            # Create the folders
+            workflow_folder = release.workflow_folder
+            release.download_folder
+            release.transform_folder
+            release.extract_folder
+
+            # Run cleanup and make sure the folders are gone
+            tasks.cleanup_workflow(release.to_dict())
+            self.assert_cleanup(workflow_folder)
 
 
 class TestTransferOrcid(unittest.TestCase):
@@ -255,51 +531,8 @@ class TestTransferOrcid(unittest.TestCase):
                 )
 
 
-class TestCreateMainTableSnapshot(SandboxTestCase):
-    def test_create_main_table_snapshot_first_run(self):
-        """Test that the main table snapshot is not created for the first run"""
-        with SandboxEnvironment().create():
-            release = dummy_release()
-            release.is_first_run = True
-            with self.assertRaises(AirflowSkipException):
-                tasks.bq_create_main_table_snapshot(release.to_dict(), snapshot_expiry_days=31)
-
-    def test_create_main_table_snapshot_second_run(self):
-        """Test that the main table snapshot is created for subsequent runs"""
-        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
-        bq_dataset_id = env.add_dataset()
-
-        with env.create():
-            release = OrcidRelease(
-                dag_id="test_orcid",
-                run_id="test_orcid_run",
-                bq_dataset_id=bq_dataset_id,
-                bq_main_table_name="test_orcid",
-                bq_upsert_table_name="test_orcid_upsert",
-                bq_delete_table_name="test_orcid_delete",
-                cloud_workspace=env.cloud_workspace,
-                start_date=pendulum.now(),
-                end_date=pendulum.now(),
-                prev_release_end=pendulum.now(),
-                prev_latest_modified_record=pendulum.now(),
-                is_first_run=False,
-            )
-
-            # Create the main table to be snapshotted
-            content = [{"test": "test_1"}]
-            bq.bq_load_from_memory(release.bq_main_table_id, records=content)
-
-            # Run the task and check output
-            tasks.bq_create_main_table_snapshot(release.to_dict(), snapshot_expiry_days=31)
-            self.assertTrue(bq.bq_table_exists(release.bq_snapshot_table_id))
-            self.assert_table_content(
-                table_id=release.bq_snapshot_table_id, expected_content=content, primary_key="test"
-            )
-
-
 class TestCreateOrcidManifest(unittest.TestCase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def setUp(self):
         self.list_blobs_path = "academic_observatory_workflows.orcid_telescope.tasks.gcs_list_blobs"
         self.test_batch_str = "12X"
         self.bucket_name = "test-bucket"
@@ -442,255 +675,3 @@ class TestCreateOrcidManifest(unittest.TestCase):
                 reader = csv.DictReader(f)
                 rows = list(reader)
             self.assertEqual(len(rows), 0)
-
-
-class TestDownload(unittest.TestCase):
-    def test_download(self):
-        """Tests the download function works as intended"""
-
-        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
-        with env.create():
-            release = OrcidRelease(
-                dag_id="test_orcid",
-                run_id="test_orcid_run",
-                bq_dataset_id="test_dataset",
-                bq_main_table_name="test_orcid",
-                bq_upsert_table_name="test_orcid_upsert",
-                bq_delete_table_name="test_orcid_delete",
-                cloud_workspace=env.cloud_workspace,
-                start_date=pendulum.datetime(2024, 1, 1),
-                end_date=pendulum.datetime(2024, 1, 1),
-                prev_release_end=pendulum.now(),
-                prev_latest_modified_record=pendulum.now(),
-                is_first_run=False,
-            )
-
-            # Upload the files to the bucket
-            records = OrcidTestRecords.first_run_records[:-1]
-            for record in records:
-                orcid = record["orcid"]
-                batch_name = record["batch"]
-                blob_name = f"summaries/{batch_name}/{orcid}.xml"
-                gcs_upload_file(bucket_name=env.download_bucket, blob_name=blob_name, file_path=record["path"])
-
-                # Create the manifest file for the batch
-                batch = OrcidBatch(release.download_folder, release.transform_folder, batch_name)
-                with open(batch.manifest_file, "w", newline="") as f:
-                    writer = csv.DictWriter(f, fieldnames=tasks.MANIFEST_HEADER)
-                    writer.writeheader()
-                    writer.writerow(
-                        {
-                            tasks.MANIFEST_HEADER[0]: env.download_bucket,
-                            tasks.MANIFEST_HEADER[1]: blob_name,
-                            tasks.MANIFEST_HEADER[2]: datetime.datetime.min,
-                        }
-                    )
-
-            # Run the task
-            with patch(
-                "academic_observatory_workflows.orcid_telescope.tasks.OrcidRelease.orcid_batches"
-            ) as mock_batches:
-                mock_batches.return_value = [
-                    OrcidBatch(release.download_folder, release.transform_folder, r["batch"]) for r in records
-                ]
-                tasks.download(release.to_dict())
-
-            # Make assertions
-            self.assertEqual(len(release.downloaded_records), 3)
-
-
-class TestTransform(unittest.TestCase):
-    def test_transform(self):
-        """Tests that a set of files is transformed as expected"""
-        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
-        with env.create():
-            release = dummy_release()
-
-            # Set up the data
-            records = OrcidTestRecords.first_run_records[:-1]
-            for record in records:
-                orcid = record["orcid"]
-                batch_name = record["batch"]
-                blob_name = f"summaries/{batch_name}/{orcid}.xml"
-                batch = OrcidBatch(release.download_folder, release.transform_folder, batch_name)
-
-                # Copy the test file
-                shutil.copy(record["path"], batch.download_batch_dir)
-
-                # Create the manifest file
-                with open(batch.manifest_file, "w", newline="") as f:
-                    writer = csv.DictWriter(f, fieldnames=tasks.MANIFEST_HEADER)
-                    writer.writeheader()
-                    writer.writerow(
-                        {
-                            tasks.MANIFEST_HEADER[0]: env.download_bucket,
-                            tasks.MANIFEST_HEADER[1]: blob_name,
-                            tasks.MANIFEST_HEADER[2]: datetime.datetime.min,
-                        }
-                    )
-
-            # Perform the transform task
-            relevant_batches = [
-                OrcidBatch(release.download_folder, release.transform_folder, r["batch"]) for r in records
-            ]
-            with patch(
-                "academic_observatory_workflows.orcid_telescope.tasks.OrcidRelease.orcid_batches"
-            ) as mock_batches:
-                mock_batches.return_value = relevant_batches
-                tasks.transform(release.to_dict(), max_workers=2)
-
-            # Make assertions
-            self.assertEqual(len(release.upsert_files), 3)
-            for b in relevant_batches:
-                self.assertEqual(os.path.exists(b.transform_upsert_file), True)
-                actual_transformed_data = sorted(load_jsonl(b.transform_upsert_file), key=lambda i: i["path"])
-                expected_transformed_data = sorted(
-                    load_jsonl(os.path.join(FIXTURES_FOLDER, "first_run", f"{b.batch_str}_upsert.jsonl")),
-                    key=lambda i: i["path"],
-                )
-                self.assertEqual(expected_transformed_data, actual_transformed_data)
-
-    def test_transform_orcid_record_valid_record(self):
-        """Tests that a valid ORCID record with 'record' section is transformed correctly"""
-        for asset in OrcidTestRecords.first_run_records:
-            orcid = asset["orcid"]
-            path = asset["path"]
-            transformed_record = tasks.transform_orcid_record(path)
-            self.assertIsInstance(transformed_record, dict)
-            self.assertEqual(transformed_record["orcid_identifier"]["path"], orcid)
-
-    def test_transform_orcid_record_error_record(self):
-        """Tests that an ORCID record with 'error' section is transformed correctly"""
-        error_record = OrcidTestRecords.second_run_records[1]
-        orcid = error_record["orcid"]
-        path = error_record["path"]
-        transformed_record = tasks.transform_orcid_record(path)
-        self.assertIsInstance(transformed_record, str)
-        self.assertEqual(transformed_record, orcid)
-
-    def test_transform_orcid_record_invalid_key_record(self):
-        """Tests that an ORCID record with no 'error' or 'record' section raises a Key Error"""
-        invaid_key_record = OrcidTestRecords.invalid_key_orcid
-        path = invaid_key_record["path"]
-        with self.assertRaises(KeyError):
-            tasks.transform_orcid_record(path)
-
-    def test_transform_orcid_record_mismatched_orcid(self):
-        """Tests that a ValueError is raised if the ORCID in the file name does not match the ORCID in the record"""
-        mismatched_orcid = OrcidTestRecords.mismatched_orcid
-        path = mismatched_orcid["path"]
-        with self.assertRaisesRegex(ValueError, "does not match ORCID in record"):
-            tasks.transform_orcid_record(path)
-
-
-class TestAddDatasetRelease(unittest.TestCase):
-
-    snapshot_date = pendulum.datetime(2024, 1, 1)
-
-    def test_add_dataset_release(self):
-        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
-        api_dataset_id = env.add_dataset(prefix="orcid_test_api")
-        now = pendulum.now()
-
-        with env.create():
-            release = OrcidRelease(
-                dag_id="test_orcid",
-                run_id="test_orcid_run",
-                bq_dataset_id="test_dataset",
-                bq_main_table_name="test_orcid",
-                bq_upsert_table_name="test_orcid_upsert",
-                bq_delete_table_name="test_orcid_delete",
-                cloud_workspace=env.cloud_workspace,
-                start_date=pendulum.datetime(2024, 1, 1),
-                end_date=pendulum.datetime(2024, 1, 1),
-                prev_release_end=pendulum.now(),
-                prev_latest_modified_record=pendulum.now(),
-                is_first_run=False,
-            )
-            expected_api_release = {
-                "dag_id": "test_orcid",
-                "entity_id": "orcid",
-                "dag_run_id": "test_orcid_run",
-                "created": datetime_normalise(now),
-                "modified": datetime_normalise(now),
-                "data_interval_start": None,
-                "data_interval_end": None,
-                "snapshot_date": None,
-                "partition_date": None,
-                "changefile_start_date": "2024-01-01T00:00:00+00:00",
-                "changefile_end_date": "2024-01-01T00:00:00+00:00",
-                "sequence_start": None,
-                "sequence_end": None,
-                "extra": {"latest_modified_record_date": datetime_normalise(now)},
-            }
-            api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_dataset_id)
-
-            # Should not be any releases in the API before the task is run
-            self.assertEqual(len(api.get_dataset_releases(dag_id=release.dag_id, entity_id="orcid")), 0)
-            with patch("academic_observatory_workflows.orcid_telescope.tasks.pendulum.now") as mock_now, patch(
-                "academic_observatory_workflows.orcid_telescope.tasks.latest_modified_record_date"
-            ) as mock_last_date:
-                mock_now.return_value = now
-                mock_last_date.return_value = datetime_normalise(now)
-                tasks.add_dataset_release(release.to_dict(), api_bq_dataset_id=api_dataset_id)
-
-            # Should be one release in the API
-            api_releases = api.get_dataset_releases(dag_id=release.dag_id, entity_id="orcid")
-        self.assertEqual(len(api_releases), 1)
-        self.assertEqual(expected_api_release, api_releases[0].to_dict())
-
-
-class TestLatestModifiedRecordDate(unittest.TestCase):
-    def test_latest_modified_record_date(self):
-        """Tests that the latest_modified_record_date function returns the correct date"""
-        # Create a temporary manifest file for the test
-        with SandboxEnvironment(
-            project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location
-        ).create():
-            release = dummy_release()
-            with open(release.master_manifest_file, "w") as f:
-                f.write(",".join(tasks.MANIFEST_HEADER))
-                f.write("\n")
-                f.write("gs://test-bucket,folder/0000-0000-0000-0001.xml,2023-06-03T00:00:00Z\n")
-                f.write("gs://test-bucket,folder/0000-0000-0000-0002.xml,2023-06-03T00:00:00Z\n")
-                f.write("gs://test-bucket,folder/0000-0000-0000-0003.xml,2023-06-02T00:00:00Z\n")
-                f.write("gs://test-bucket,folder/0000-0000-0000-0004.xml,2023-06-01T00:00:00Z\n")
-
-            # Call the function and assert the result
-            expected_date = datetime_normalise("2023-06-03T00:00:00Z")
-            actual_date = tasks.latest_modified_record_date(release.to_dict())
-            self.assertEqual(actual_date, expected_date)
-
-
-class TestOrcidBatchNames(unittest.TestCase):
-    def test_orcid_batch_names(self):
-        """Tests that the orcid_batch_names function returns the expected results"""
-        batch_names = orcid_batch_names()
-
-        # Test that the function returns a list
-        self.assertIsInstance(batch_names, list)
-        self.assertEqual(len(batch_names), 1100)
-        self.assertTrue(all(isinstance(element, str) for element in batch_names))
-        self.assertEqual(len(set(batch_names)), len(batch_names))
-        # Test that the batch names match the OrcidBatch regex
-        for batch_name in batch_names:
-            self.assertTrue(re.match(BATCH_REGEX, batch_name))
-
-
-class TestCleanupWorkflow(SandboxTestCase):
-    def test_cleanup_workflow(self):
-        """Test the cleanup_workflow function"""
-
-        env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
-        with env.create():
-            release = dummy_release()
-
-            # Create the folders
-            workflow_folder = release.workflow_folder
-            release.download_folder
-            release.transform_folder
-            release.extract_folder
-
-            # Run cleanup and make sure the folders are gone
-            tasks.cleanup_workflow(release.to_dict())
-            self.assert_cleanup(workflow_folder)

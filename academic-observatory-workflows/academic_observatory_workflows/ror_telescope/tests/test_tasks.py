@@ -10,8 +10,7 @@ from academic_observatory_workflows.ror_telescope.tasks import list_ror_records,
 FIXTURES_FOLDER = project_path("ror_telescope", "tests", "fixtures")
 
 
-class TestListRorRecords(unittest.TestCase):
-    ror_conceptrecid = 6347574
+class TestTasks(unittest.TestCase):
 
     def test_list_ror_records(self):
         """Test that list_ror_records returns correct records"""
@@ -21,6 +20,7 @@ class TestListRorRecords(unittest.TestCase):
         # It should just return 2023-03-30, 2023-03-16 as end_date is exclusive
         start_date = pendulum.datetime(2023, 3, 16)
         end_date = pendulum.datetime(2023, 4, 12)
+        ror_conceptrecid = 6347574
 
         with vcr.use_cassette(os.path.join(FIXTURES_FOLDER, "list_ror_records.yaml")):
             records = list_ror_records(self.ror_conceptrecid, start_date, end_date)
@@ -41,8 +41,6 @@ class TestListRorRecords(unittest.TestCase):
                 records,
             )
 
-
-class TestIsLatLngValid(unittest.TestCase):
     def test_is_lat_lng_valid(self):
         """Test that lat lng valid"""
 
@@ -51,8 +49,6 @@ class TestIsLatLngValid(unittest.TestCase):
         self.assertFalse(is_lat_lng_valid(90.1, 180.1))
         self.assertFalse(is_lat_lng_valid(-90.1, -180.1))
 
-
-class TestTransformRor(unittest.TestCase):
     def test_transform_ror(self):
         """Test that ROR transforms, i.e. invalid data is removed"""
 
