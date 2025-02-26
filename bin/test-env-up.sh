@@ -21,9 +21,6 @@ fi
 # Authenticate minikube with gcp
 if [ -f .env ]; then # Source the .env file
     source .env
-else
-    echo ".env file not found."
-    exit 1
 fi
 if [ -z "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
     echo "GOOGLE_APPLICATION_CREDENTIALS is not set in '.env'. This is required to run the tests."
@@ -32,7 +29,8 @@ fi
 export GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS
 
 # Check if minikube is running, if not, start it
-minikube status || minikube start --ports=5080,5021 --extra-config=apiserver.service-node-port-range=30000-30009 --network=bridge
+minikube delete --all --purge
+minikube start --ports=5080,5021 --extra-config=apiserver.service-node-port-range=30000-30009 --network=bridge --wait-timeout=2m0s --force
 minikube addons enable gcp-auth
 
 # Run the compose commands to spin up the servers

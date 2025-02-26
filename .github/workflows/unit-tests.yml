@@ -17,36 +17,20 @@ jobs:
         with:
           lfs: true
 
+      - name: Set up GCP Service Account Credentials
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.TEST_GCP_SERVICE_KEY }} # Store your GCP service account key as a GitHub secret
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: test env
-        run: |
-          echo "${TEST_GCP_SERVICE_KEY}" | base64 --decode
-          echo "${TEST_GCP_SERVICE_KEY}" | base64 --decode > /tmp/google_application_credentials.json
-
-      - name: Set up minikube
-        uses: medyagh/setup-minikube@latest
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_application_credentials.json
-        with:
-          start: false
-          driver: docker
-          cpus: 2
-          memory: 2000m
-          addons: gcp-auth
-          start-args: --ports=5080,5021 --extra-config=apiserver.service-node-port-range=30000-30009 --network=bridge
-
-      # - name: Initialise test environment
-      #   run: bash bin/test-env-up.sh
-
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install pigz -y
-
           python -m pip install --upgrade pip
 
           cd ..
@@ -64,11 +48,28 @@ jobs:
 
           pip freeze
 
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+      - name: Install Minikube
+        run: |
+          curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+          chmod +x minikube
+          sudo mv minikube /usr/local/bin/
+
+      - name: Set up Minikube
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_application_credentials.json
+        run: |
+          echo "${{ secrets.TEST_GCP_SERVICE_KEY }}" | base64 --decode > /tmp/google_application_credentials.json
+          bash bin/test-env-up.sh
+
       - name: Check licenses
         run: |
           # stop the build if there are licensing issues
-          # liccheck --sfile strategy.ini --rfile requirements.txt --level CAUTIOUS --reporting liccheck-output.txt --no-deps
-          echo "TODO: change back!!"
+          liccheck --sfile strategy.ini --rfile requirements.txt --level CAUTIOUS --reporting liccheck-output.txt --no-deps
 
       - name: Lint with flake8
         run: |
@@ -89,7 +90,6 @@ jobs:
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
           AIRFLOW__CORE__LOAD_EXAMPLES: false
         run: |
-          echo "${TEST_GCP_SERVICE_KEY}" | base64 --decode > /tmp/google_application_credentials.json
           coverage run -m unittest discover academic-observatory-workflows -v
           coverage xml
 
