@@ -26,8 +26,8 @@ USER astro
 
 # Install Observatory Platform
 RUN git clone --branch feature/astro-refactor https://github.com/The-Academic-Observatory/observatory-platform.git
-RUN pip install -e ./observatory-platform[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-3.10.txt
+RUN pip install ./observatory-platform[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-3.10.txt
 
 # Install Academic Observatory Workflows
 COPY academic-observatory-workflows ./academic-observatory-workflows
-RUN pip install -e ./academic-observatory-workflows --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-3.10.txt
+RUN pip install ./academic-observatory-workflows --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-3.10.txt

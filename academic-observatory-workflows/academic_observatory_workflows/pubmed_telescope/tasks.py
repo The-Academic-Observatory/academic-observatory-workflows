@@ -757,7 +757,7 @@ def cleanup_workflow(release: dict) -> None:
     """
     Cleanup files from this workflow run.
 
-    Delete local download files, tranform files and current task instance.
+    Delete local download files, transform files and current task instance.
     """
 
     release = PubMedRelease.from_dict(release)

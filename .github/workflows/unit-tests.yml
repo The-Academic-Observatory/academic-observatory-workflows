@@ -22,32 +22,6 @@ jobs:
         with:
           credentials_json: ${{ secrets.TEST_GCP_SERVICE_KEY }} # Store your GCP service account key as a GitHub secret
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install pigz -y
-          python -m pip install --upgrade pip
-
-          cd ..
-          # TODO: Change back!!
-          # git clone https://github.com/The-Academic-Observatory/observatory-platform.git
-          git clone -b feature/astro-refactor https://github.com/The-Academic-Observatory/observatory-platform.git
-          pip install -e observatory-platform --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-${{ matrix.python-version }}.txt
-
-          cd academic-observatory-workflows
-          pip install -e ./academic-observatory-workflows[test] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-${{ matrix.python-version }}.txt
-
-          cd ..
-          curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_linux_amd64.deb
-          sudo dpkg -i s5cmd_2.1.0_linux_amd64.deb
-
-          pip freeze
-
       - name: Install kubectl
         run: |
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -65,6 +39,33 @@ jobs:
         run: |
           echo "${{ secrets.TEST_GCP_SERVICE_KEY }}" | base64 --decode > /tmp/google_application_credentials.json
           bash bin/test-env-up.sh
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install pigz -y
+          python -m pip install --upgrade pip
+
+          cd ..
+          # TODO: Change back!!
+          # git clone https://github.com/The-Academic-Observatory/observatory-platform.git
+          git clone -b feature/astro-refactor https://github.com/The-Academic-Observatory/observatory-platform.git
+          pip install observatory-platform[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-${{ matrix.python-version }}.txt
+
+          cd academic-observatory-workflows
+          pip install ./academic-observatory-workflows[test] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-${{ matrix.python-version }}.txt
+
+          cd ..
+          curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_linux_amd64.deb
+          sudo dpkg -i s5cmd_2.1.0_linux_amd64.deb
+
+          pip freeze
+          airflow db init
 
       - name: Check licenses
         run: |
