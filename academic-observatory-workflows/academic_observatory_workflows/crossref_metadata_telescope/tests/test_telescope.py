@@ -131,6 +131,7 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
                 gke_volume_name=TestConfig.gke_volume_name,
                 gke_volume_path=TestConfig.gke_volume_path,
                 gke_resource_overrides=task_resources,
+                gke_startup_timeout_seconds=120,
                 test_run=True,
             )
 
