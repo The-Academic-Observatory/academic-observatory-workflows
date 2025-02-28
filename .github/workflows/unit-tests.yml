@@ -70,6 +70,7 @@ jobs:
       - name: Check licenses
         run: |
           # stop the build if there are licensing issues
+          pip freeze > requirements.txt
           liccheck --sfile strategy.ini --rfile requirements.txt --level CAUTIOUS --reporting liccheck-output.txt --no-deps
 
       - name: Lint with flake8
