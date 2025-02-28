@@ -23,7 +23,6 @@ from unittest.mock import patch
 import uuid
 
 from airflow.exceptions import AirflowException
-from airflow.utils.session import provide_session
 import httpretty
 import pendulum
 from tempfile import TemporaryDirectory
@@ -46,12 +45,11 @@ FIXTURES_FOLDER = project_path("crossref_metadata_telescope", "tests", "fixtures
 SCHEMA_FOLDER = project_path("crossref_metadata_telescope", "schema")
 
 
-class TestTasks(unittest.TestCase):
+class TestTasks(SandboxTestCase):
 
-    @provide_session
-    def test_fetch_release(self, session=None):
+    def test_fetch_release(self):
         """Tests the fetch_release function"""
-
+        SandboxEnvironment().init_airflow_db()
         clear_airflow_connections()
         upsert_airflow_connection(conn_id="crossref_metadata", conn_type="http")
 
@@ -89,10 +87,10 @@ class TestTasks(unittest.TestCase):
         }
         self.assertEqual(release, expected_release)
 
-    @provide_session
-    def test_fetch_release_400(self, session=None):
+    def test_fetch_release_400(self):
         """Tests the fetch_release function fails appropriately"""
 
+        SandboxEnvironment().init_airflow_db()
         clear_airflow_connections()
         upsert_airflow_connection(conn_id="crossref_metadata", conn_type="http")
 

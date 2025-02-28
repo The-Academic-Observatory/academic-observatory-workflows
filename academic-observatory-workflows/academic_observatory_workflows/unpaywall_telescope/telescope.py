@@ -490,7 +490,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         if dag_params.test_run:
             sensor = EmptyOperator(task_id="wait_for_prev_dag_run")
         else:
-            sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id, task_id=external_task_id)
+            sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id, external_task_id=external_task_id)
         task_check_dependencies = check_dependencies(airflow_conns=[dag_params.unpaywall_conn_id])
         xcom_release_id = fetch_release()
         task_short_circuit = short_circuit(xcom_release_id)

@@ -44,12 +44,14 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
+    "httpretty==1.*",
     "liccheck==0.4.*",
     "flake8==3.8.*",
     "coverage==5.2",
     "vcrpy>=6,<7",
     "Faker==8.1.*",
-    "boto3>=1.15.0,<2"
+    "boto3>=1.15.0,<2",
+    "toml>=0.10.0"
 ]
 
 [project.urls]

@@ -109,7 +109,7 @@ def fetch_release(
                 "fetch_releases: there should be at least 1 DatasetRelease in the Observatory API after the first DAG run"
             )
         prev_release = api.get_latest_dataset_release(dag_id=dag_id, entity_id="orcid", date_key="changefile_end_date")
-        prev_latest_modified_record = pendulum.parse(json.loads(prev_release.extra)["latest_modified_record_date"])
+        prev_latest_modified_record = pendulum.parse(prev_release.extra["latest_modified_record_date"])
         logging.info(f"Proceeding with previous latest modified record date: {prev_latest_modified_record}")
         prev_release_end = prev_release.changefile_end_date
 

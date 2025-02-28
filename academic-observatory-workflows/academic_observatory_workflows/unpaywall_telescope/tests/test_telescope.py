@@ -45,7 +45,7 @@ class TestUnpaywallTelescope(SandboxTestCase):
     def test_dag_structure(self):
         """Test that the DAG has the correct structure."""
 
-        dag = create_dag(DagParams(dag_id=self.dag_id, cloud_workspace=self.fake_cloud_workspace, test_run=True))
+        dag = create_dag(DagParams(dag_id=self.dag_id, cloud_workspace=self.fake_cloud_workspace))
         self.assert_dag_structure(
             {
                 "wait_for_prev_dag_run": {"check_dependencies"},

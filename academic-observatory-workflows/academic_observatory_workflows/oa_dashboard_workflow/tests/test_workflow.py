@@ -401,6 +401,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
                 bq_agg_dataset_id=bq_dataset_id,
                 bq_settings_dataset_id=bq_dataset_id_settings,
                 bq_oa_dashboard_dataset_id=bq_dataset_id_oa_dashboard,
+                retries=0,
             )
             dag = create_dag(dag_params)
             env.add_connection(Connection(conn_id=github_conn_id, uri=f"http://:{github_token}@"))

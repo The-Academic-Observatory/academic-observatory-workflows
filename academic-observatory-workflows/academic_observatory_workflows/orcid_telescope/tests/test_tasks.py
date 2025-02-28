@@ -432,7 +432,11 @@ class TestTasks(SandboxTestCase):
             ) as mock_last_date:
                 mock_now.return_value = now
                 mock_last_date.return_value = datetime_normalise(now)
-                tasks.add_dataset_release(release.to_dict(), api_bq_dataset_id=api_dataset_id)
+                tasks.add_dataset_release(
+                    release.to_dict(),
+                    api_bq_dataset_id=api_dataset_id,
+                    latest_modified_date=mock_last_date.return_value,
+                )
 
             # Should be one release in the API
             api_releases = api.get_dataset_releases(dag_id=release.dag_id, entity_id="orcid")

@@ -499,7 +499,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             """
             Cleanup files from this workflow run.
 
-            Delete local download files, tranform files and current task instance.
+            Delete local download files, transform files and current task instance.transform
             """
 
             from academic_observatory_workflows.pubmed_telescope import tasks
@@ -510,7 +510,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         if dag_params.test_run:
             sensor = EmptyOperator(task_id="wait_for_prev_dag_run")
         else:
-            sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id, task_id=external_task_id)
+            sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id, external_task_id=external_task_id)
         task_check_dependencies = check_dependencies()
         xcom_release = fetch_release()
         task_shortcircuit = short_circuit(xcom_release)
