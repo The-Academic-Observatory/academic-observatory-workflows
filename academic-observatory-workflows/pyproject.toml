@@ -50,7 +50,8 @@ test = [
     "coverage==5.2",
     "vcrpy>=6,<7",
     "Faker==8.1.*",
-    "boto3>=1.15.0,<2"
+    "boto3>=1.15.0,<2",
+    "toml>=0.10.0"
 ]
 
 [project.urls]

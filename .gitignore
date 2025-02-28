@@ -1,4 +1,7 @@
 .git
+.liccheck_requirements.txt
+liccheck-output.txt
+.coverage
 *.eggs
 *.egg-info
 *.env
