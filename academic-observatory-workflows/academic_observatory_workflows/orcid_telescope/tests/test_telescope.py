@@ -189,8 +189,7 @@ class TestOrcidTelescope(SandboxTestCase):
             task_resources = {
                 "create_manifests": {"memory": "2G", "cpu": "2"},
                 "latest_modified_record_date": {"memory": "2G", "cpu": "2"},
-                "download": {"memory": "2G", "cpu": "2"},
-                "transform": {"memory": "2G", "cpu": "2"},
+                "download-transform": {"memory": "2G", "cpu": "2"},
                 "upload_transformed": {"memory": "2G", "cpu": "2"},
                 "bq_load_main_table": {"memory": "2G", "cpu": "2"},
                 "bq_load_upsert_table": {"memory": "2G", "cpu": "2"},

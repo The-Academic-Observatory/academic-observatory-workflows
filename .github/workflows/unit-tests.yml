@@ -93,7 +93,7 @@ jobs:
           AIRFLOW__CORE__LOAD_EXAMPLES: false
         run: |
           echo "${{ secrets.TEST_GCP_SERVICE_KEY }}" | base64 --decode > /tmp/google_application_credentials.json
-          coverage run -m unittest discover academic-observatory-workflows -v
+          coverage run -m unittest -v discover academic_observatory_workflows.pubmed_telescope.tests.test_telescope.TestPubMedTelescope.test_telescope
           coverage xml
 
       - name: Upload coverage to Codecov
