@@ -42,7 +42,6 @@ jobs:
 
       - name: Debug minikube
         run: |
-          eval $(minikube docker-env)
           echo "docker ps"
           docker ps
           echo "docker network ls"
@@ -51,7 +50,8 @@ jobs:
           docker network inspect bridge
           echo "cat /etc/hosts"
           cat /etc/hosts
-          echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal
+          echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
+          sleep 5
           echo "curl host.minikube.internal:5080"
           curl host.minikube.internal:5080
           echo "curl ftp://host.minikube.internal:5021"

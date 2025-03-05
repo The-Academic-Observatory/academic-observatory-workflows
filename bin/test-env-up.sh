@@ -48,6 +48,9 @@ fi
 kubectl delete --ignore-not-found -f bin/test-konfig.yaml
 kubectl apply -f bin/test-konfig.yaml
 
+eval $(minikube docker-env --unset)
+echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
+
 echo ""
 echo "########################### Minikube cluster running ###########################"
 echo "######################### Here are some useful commands ########################"
