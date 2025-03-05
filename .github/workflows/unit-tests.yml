@@ -42,6 +42,7 @@ jobs:
 
       - name: Debug minikube
         run: |
+          eval $(minikube docker-env)
           echo "docker ps"
           docker ps
           echo "docker network ls"
