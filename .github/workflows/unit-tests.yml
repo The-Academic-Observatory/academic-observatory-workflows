@@ -51,10 +51,11 @@ jobs:
           docker network inspect bridge
           echo "cat /etc/hosts"
           cat /etc/hosts
-          # echo "curl host.minikube.internal:5080"
-          # curl host.minikube.internal:5080
-          # echo "curl ftp://host.minikube.internal:5021"
-          # curl ftp://host.minikube.internal:5021
+          echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal
+          echo "curl host.minikube.internal:5080"
+          curl host.minikube.internal:5080
+          echo "curl ftp://host.minikube.internal:5021"
+          curl ftp://host.minikube.internal:5021
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5

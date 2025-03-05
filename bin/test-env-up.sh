@@ -33,16 +33,16 @@ minikube delete --all --purge
 minikube start --ports=5080,5021 --extra-config=apiserver.service-node-port-range=30000-30009 --network=bridge --wait-timeout=2m0s --force
 minikube addons enable gcp-auth
 
+# Run the compose commands to spin up the servers
+docker compose -f test-env-compose.yaml build
+docker compose -f test-env-compose.yaml down
+docker compose -f test-env-compose.yaml up -d
+
 # Use the minikube docker daemon to build Academic Observatory workflows image
 eval $(minikube docker-env)
 if [ "$1" != "--no-build" ]; then
     docker build --no-cache -t academic-observatory:test .
 fi
-
-# Run the compose commands to spin up the servers
-docker compose -f test-env-compose.yaml build
-docker compose -f test-env-compose.yaml down
-docker compose -f test-env-compose.yaml up -d
 
 # (Re)Deploy kubernetes config items
 kubectl delete --ignore-not-found -f bin/test-konfig.yaml
