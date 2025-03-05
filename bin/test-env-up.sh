@@ -50,6 +50,7 @@ kubectl apply -f bin/test-konfig.yaml
 
 # Unset the minikube docker environment
 eval $(minikube docker-env --unset)
+echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
 
 echo ""
 echo "########################### Minikube cluster running ###########################"

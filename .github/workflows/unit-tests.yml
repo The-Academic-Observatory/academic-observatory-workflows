@@ -38,8 +38,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_application_credentials.json
         run: |
           echo "${{ secrets.TEST_GCP_SERVICE_KEY }}" | base64 --decode > /tmp/google_application_credentials.json
-          bash bin/test-env-up.sh
-          echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
+          sudo bash bin/test-env-up.sh
 
       - name: Debug minikube
         run: |
