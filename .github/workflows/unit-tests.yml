@@ -55,10 +55,10 @@ jobs:
           # TODO: Change back!!
           # git clone https://github.com/The-Academic-Observatory/observatory-platform.git
           git clone -b feature/astro-refactor https://github.com/The-Academic-Observatory/observatory-platform.git
-          pip install ./observatory-platform[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-${{ matrix.python-version }}.txt
+          pip install -e ./observatory-platform[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-${{ matrix.python-version }}.txt
 
           cd academic-observatory-workflows
-          pip install ./academic-observatory-workflows[test] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-${{ matrix.python-version }}.txt
+          pip install -e ./academic-observatory-workflows[test] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-${{ matrix.python-version }}.txt
 
           cd ..
           curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_linux_amd64.deb
@@ -93,7 +93,7 @@ jobs:
           AIRFLOW__CORE__LOAD_EXAMPLES: false
         run: |
           echo "${{ secrets.TEST_GCP_SERVICE_KEY }}" | base64 --decode > /tmp/google_application_credentials.json
-          coverage run -m unittest -v discover academic_observatory_workflows.pubmed_telescope.tests.test_telescope.TestPubMedTelescope.test_telescope
+          coverage run -m unittest -v academic_observatory_workflows.pubmed_telescope.tests.test_telescope.TestPubMedTelescope.test_telescope
           coverage xml
 
       - name: Upload coverage to Codecov
