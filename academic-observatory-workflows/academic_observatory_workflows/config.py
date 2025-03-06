@@ -69,6 +69,7 @@ class TestConfig:
         extra=json.dumps(
             {
                 "extra__kubernetes__namespace": "default",
+                # KUBE_CONFIG_DEFAULT_LOCATION defined in kubernets module as os.environ.get('KUBECONFIG', '~/.kube/config')
                 "extra__kubernetes__kube_config_path": kubernetes.config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION,
                 "extra__kubernetes__context": "minikube",
             }
