@@ -46,7 +46,7 @@ jobs:
           # eval $(minikube docker-env)
           # Avoid permission issues 
           sudo chown $USER ~/.kube/config
-          sudo chown $USER ~/.minikube/client.key
+          sudo chown $USER ~/.minikube/profiles/minikube/client.key
 
       - name: Debug minikube
         run: |
