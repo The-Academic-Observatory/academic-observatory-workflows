@@ -39,8 +39,9 @@ jobs:
         run: |
           echo "${{ secrets.TEST_GCP_SERVICE_KEY }}" | base64 --decode > /tmp/google_application_credentials.json
           sudo -E bash bin/test-env-up.sh
-          cat ~/.kube/config >> ~/kubeconfig
-          export KUBECONFIG="~/kubeconfig"
+          sudo chown -R $USER ~/.kube
+          # cat ~/.kube/config >> ~/kubeconfig
+          # export KUBECONFIG="~/kubeconfig"
 
       - name: Debug minikube
         run: |
