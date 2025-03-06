@@ -32,6 +32,7 @@ export GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS
 minikube delete --all --purge
 minikube start --ports=5080,5021 --extra-config=apiserver.service-node-port-range=30000-30009 --network=bridge --wait-timeout=2m0s --force
 minikube addons enable gcp-auth
+sudo -E echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
 
 # Run the compose commands to spin up the servers
 docker compose -f test-env-compose.yaml build
@@ -47,6 +48,9 @@ fi
 # (Re)Deploy kubernetes config items
 kubectl delete --ignore-not-found -f bin/test-konfig.yaml
 kubectl apply -f bin/test-konfig.yaml
+
+# # Unset the minikube docker environment
+# eval $(minikube docker-env --unset)
 
 echo ""
 echo "########################### Minikube cluster running ###########################"
