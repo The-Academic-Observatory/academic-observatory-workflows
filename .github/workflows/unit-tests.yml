@@ -45,8 +45,8 @@ jobs:
           # sudo -E echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
           # eval $(minikube docker-env)
           # Avoid permission issues 
-          sudo chmod -R 644 ~/.kube
-          sudo chmod -R 644 ~/.minikube
+          sudo chown $USER ~/.kube/config
+          sudo chown $USER ~/.minikube/client.key
 
       - name: Debug minikube
         run: |
