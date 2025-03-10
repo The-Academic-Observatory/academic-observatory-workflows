@@ -290,7 +290,10 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.cleanup_workflow(release)
 
         external_task_id = "dag_run_complete"
-        sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id, external_task_id=external_task_id)
+        if dag_params.test_run:
+            sensor = EmptyOperator(task_id="wait_for_prev_dag_run")
+        else:
+            sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id, external_task_id=external_task_id)
         task_check_dependencies = check_dependencies(airflow_conns=[dag_params.aws_orcid_conn_id])
         xcom_release = fetch_release()
         task_create_dataset = create_dataset(xcom_release, dag_params)
