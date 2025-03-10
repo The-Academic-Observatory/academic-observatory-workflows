@@ -33,9 +33,6 @@ minikube delete --all --purge
 minikube start --ports=5080,5021 --extra-config=apiserver.service-node-port-range=30000-30009 --network=bridge --wait-timeout=2m0s --force
 minikube addons enable gcp-auth
 
-# Manually add the minikube host alias because it sometimes doens't work and google won't fix it
-# https://github.com/kubernetes/minikube/issues/8439
-sudo -E echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
 
 # Run the compose commands to spin up the servers
 docker compose -f test-env-compose.yaml build

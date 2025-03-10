@@ -38,11 +38,17 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_application_credentials.json
         run: |
           echo "${{ secrets.TEST_GCP_SERVICE_KEY }}" | base64 --decode > /tmp/google_application_credentials.json
-          sudo -E bash bin/test-env-up.sh
+          bash bin/test-env-up.sh
+
+          # Manually add the minikube host alias because it sometimes doens't work and google won't fix it
+          # https://github.com/kubernetes/minikube/issues/8439
+          eval $(minikube docker-env --unset)
+          sudo -E echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
+          eval $(minikube docker-env)
 
           # Avoid permission issues because we ran with sudo
-          sudo chown $USER ~/.kube/config
-          sudo chown $USER ~/.minikube/profiles/minikube/client.key
+          # sudo chown $USER ~/.kube/config
+          # sudo chown $USER ~/.minikube/profiles/minikube/client.key
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
