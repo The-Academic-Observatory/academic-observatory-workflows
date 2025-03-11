@@ -47,10 +47,6 @@ jobs:
           echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
           eval $(minikube docker-env)
 
-          # Avoid permission issues because we ran with sudo
-          # sudo chown $USER ~/.kube/config
-          # sudo chown $USER ~/.minikube/profiles/minikube/client.key
-
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
