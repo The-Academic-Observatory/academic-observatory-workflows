@@ -43,7 +43,8 @@ jobs:
           # Manually add the minikube host alias because it sometimes doens't work and google won't fix it
           # https://github.com/kubernetes/minikube/issues/8439
           eval $(minikube docker-env --unset)
-          sudo -E echo $(minikube ssh sudo grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
+          sudo chown $USER /etc/hosts
+          echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
           eval $(minikube docker-env)
 
           # Avoid permission issues because we ran with sudo
