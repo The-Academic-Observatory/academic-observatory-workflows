@@ -757,7 +757,7 @@ def cleanup_workflow(release: dict) -> None:
     """
     Cleanup files from this workflow run.
 
-    Delete local download files, tranform files and current task instance.
+    Delete local download files, transform files and current task instance.
     """
 
     release = PubMedRelease.from_dict(release)
@@ -766,6 +766,7 @@ def cleanup_workflow(release: dict) -> None:
 
 
 def login_to_ftp(host: str, port: int) -> FTP:
+    logging.info(f"Attempting to connect to FTP server: {host}:{port}")
     ftp_conn = FTP()
     ftp_conn.connect(host=host, port=port)
     ftp_conn.login()  # Anonymous login (publicly available data)

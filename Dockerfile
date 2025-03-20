@@ -30,4 +30,4 @@ RUN pip install -e ./observatory-platform[tests] --constraint https://raw.github
 
 # Install Academic Observatory Workflows
 COPY academic-observatory-workflows ./academic-observatory-workflows
-RUN pip install -e ./academic-observatory-workflows --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-3.10.txt
+RUN pip install -e ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-3.10.txt

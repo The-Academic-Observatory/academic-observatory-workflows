@@ -44,12 +44,14 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
+    "httpretty==1.*",
     "liccheck==0.4.*",
     "flake8==3.8.*",
     "coverage==5.2",
     "vcrpy>=6,<7",
     "Faker==8.1.*",
-    "boto3>=1.15.0,<2"
+    "boto3>=1.15.0,<2",
+    "toml>=0.10.0"
 ]
 
 [project.urls]
@@ -58,3 +60,9 @@ test = [
 "Documentation" = "https://academic-observatory-workflows.readthedocs.io/en/latest/"
 "Source" = "https://github.com/The-Academic-Observatory/academic-observatory-workflows"
 "Repository" = "https://github.com/The-Academic-Observatory/academic-observatory-workflows"
+
+[tool.setuptools.packages.find]
+include = ["academic_observatory_workflows"]
+
+[tool.setuptools.package-data]
+"academic_observatory_workflows" = ["**/schema/*.json"]

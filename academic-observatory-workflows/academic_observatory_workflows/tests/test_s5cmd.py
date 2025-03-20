@@ -5,11 +5,12 @@ import unittest
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 from google.auth import default
-from observatory_platform.files import list_files
-from observatory_platform.google.gcs import gcs_blob_uri, gcs_hmac_key, gcs_list_blobs, gcs_upload_files
-from observatory_platform.sandbox.sandbox_environment import ObservatoryEnvironment, ObservatoryTestCase
 
 from academic_observatory_workflows.s5cmd import S5Cmd, S5CmdCpConfig
+from observatory_platform.files import list_files
+from observatory_platform.google.gcs import gcs_blob_uri, gcs_hmac_key, gcs_list_blobs, gcs_upload_files
+from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
+from observatory_platform.sandbox.test_utils import SandboxTestCase
 
 
 class TestS5CmdCpConfig(unittest.TestCase):
@@ -21,7 +22,7 @@ class TestS5CmdCpConfig(unittest.TestCase):
         self.assertEqual(str(cfg), "--flatten --no-clobber --if-size-differ --if-source-newer")
 
 
-class TestS5Cmd(ObservatoryTestCase):
+class TestS5Cmd(SandboxTestCase):
     """Tests for the ORCID telescope"""
 
     def __init__(self, *args, **kwargs):
@@ -32,7 +33,7 @@ class TestS5Cmd(ObservatoryTestCase):
 
     def test_download_from_bucket(self):
         """Tests that files can be downloaded from a bucket"""
-        env = ObservatoryEnvironment(self.project_id, self.data_location)
+        env = SandboxEnvironment(self.project_id, self.data_location)
         bucket = env.add_bucket()
 
         with env.create():
@@ -60,7 +61,7 @@ class TestS5Cmd(ObservatoryTestCase):
 
     def test_download_failures(self):
         """Tests that errors are raised when download could not be performed"""
-        env = ObservatoryEnvironment(self.project_id, self.data_location)
+        env = SandboxEnvironment(self.project_id, self.data_location)
         bucket = env.add_bucket()
 
         with env.create():
@@ -100,7 +101,7 @@ class TestS5Cmd(ObservatoryTestCase):
 
     def test_upload_to_bucket(self):
         """Tests that files can be uploaded to a bucket"""
-        env = ObservatoryEnvironment(self.project_id, self.data_location)
+        env = SandboxEnvironment(self.project_id, self.data_location)
         bucket = env.add_bucket()
 
         # Upload some files to the bucket
@@ -131,7 +132,7 @@ class TestS5Cmd(ObservatoryTestCase):
     def test_upload_failures(self):
         """Tests that errors are raised when upload could not be performed"""
 
-        env = ObservatoryEnvironment(self.project_id, self.data_location)
+        env = SandboxEnvironment(self.project_id, self.data_location)
         bucket = env.add_bucket()
 
         with env.create():

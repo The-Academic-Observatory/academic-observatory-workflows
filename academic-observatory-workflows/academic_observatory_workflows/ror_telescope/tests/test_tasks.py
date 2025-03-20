@@ -23,7 +23,7 @@ class TestTasks(unittest.TestCase):
         ror_conceptrecid = 6347574
 
         with vcr.use_cassette(os.path.join(FIXTURES_FOLDER, "list_ror_records.yaml")):
-            records = list_ror_records(self.ror_conceptrecid, start_date, end_date)
+            records = list_ror_records(ror_conceptrecid, start_date, end_date)
             self.assertEqual(2, len(records))
             self.assertEqual(
                 [
