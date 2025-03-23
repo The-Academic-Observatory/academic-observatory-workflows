@@ -59,9 +59,8 @@ jobs:
           python -m pip install --upgrade pip
 
           cd ..
-          # TODO: Change back!!
-          # git clone https://github.com/The-Academic-Observatory/observatory-platform.git
-          git clone -b feature/astro-refactor https://github.com/The-Academic-Observatory/observatory-platform.git
+          # Add -b feature/my-branch to run tests for a feature branch
+          git clone https://github.com/The-Academic-Observatory/observatory-platform.git
           pip install -e ./observatory-platform[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-no-providers-${{ matrix.python-version }}.txt
 
           cd academic-observatory-workflows
