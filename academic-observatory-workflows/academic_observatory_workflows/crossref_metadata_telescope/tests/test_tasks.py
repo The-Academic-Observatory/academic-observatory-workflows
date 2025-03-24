@@ -46,6 +46,7 @@ SCHEMA_FOLDER = project_path("crossref_metadata_telescope", "schema")
 
 
 class TestTasks(SandboxTestCase):
+    maxDiff = None
 
     def test_fetch_release(self):
         """Tests the fetch_release function"""
@@ -267,7 +268,7 @@ class TestTasks(SandboxTestCase):
     def test_add_dataset_release(self):
         env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
         api_dataset_id = env.add_dataset(prefix="crossref_metadata_test_api")
-        now = pendulum.now()
+        now = pendulum.now("UTC")
         snapshot_date = pendulum.datetime(2024, 1, 1)
 
         release = CrossrefMetadataRelease(
@@ -283,11 +284,11 @@ class TestTasks(SandboxTestCase):
                 "dag_id": "crossref_metadata",
                 "entity_id": "crossref_metadata",
                 "dag_run_id": "run_id",
-                "created": datetime_normalise(now),
-                "modified": datetime_normalise(now),
-                "data_interval_start": "2024-01-01T00:00:00+00:00",
-                "data_interval_end": "2024-01-31T23:59:59+00:00",
-                "snapshot_date": "2024-01-01T00:00:00+00:00",
+                "created": now.to_iso8601_string(),
+                "modified": now.to_iso8601_string(),
+                "data_interval_start": "2024-01-01T00:00:00Z",
+                "data_interval_end": "2024-01-31T23:59:59Z",
+                "snapshot_date": "2024-01-01T00:00:00Z",
                 "partition_date": None,
                 "changefile_start_date": None,
                 "changefile_end_date": None,

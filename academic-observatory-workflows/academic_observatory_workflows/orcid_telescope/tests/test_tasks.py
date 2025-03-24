@@ -118,6 +118,7 @@ class OrcidTestRecords:
 
 
 class TestTasks(SandboxTestCase):
+    maxDiff = None
 
     def test_fetch_release(self):
         """Tests the fetch_release function. Runs the function once for first run functionality, then again."""
@@ -182,19 +183,21 @@ class TestTasks(SandboxTestCase):
             # Check that fetch_release behaves differently now
             data_interval_start = pendulum.datetime(2023, 6, 8)
             data_interval_end = pendulum.datetime(2023, 6, 15)
-            actual_release = tasks.fetch_release(
-                dag_id=dag_id,
-                run_id=run_id,
-                dag_run=MagicMock(),
-                data_interval_start=data_interval_start,
-                data_interval_end=data_interval_end,
-                cloud_workspace=env.cloud_workspace,
-                api_bq_dataset_id=api_bq_dataset_id,
-                bq_dataset_id=bq_dataset_id,
-                bq_main_table_name=bq_main_table_name,
-                bq_upsert_table_name=bq_upsert_table_name,
-                bq_delete_table_name=bq_delete_table_name,
-            )
+            with patch("academic_observatory_workflows.orcid_telescope.tasks.is_first_dag_run") as mock_ifdr:
+                mock_ifdr.return_value = False
+                actual_release = tasks.fetch_release(
+                    dag_id=dag_id,
+                    run_id=run_id,
+                    dag_run=MagicMock(),
+                    data_interval_start=data_interval_start,
+                    data_interval_end=data_interval_end,
+                    cloud_workspace=env.cloud_workspace,
+                    api_bq_dataset_id=api_bq_dataset_id,
+                    bq_dataset_id=bq_dataset_id,
+                    bq_main_table_name=bq_main_table_name,
+                    bq_upsert_table_name=bq_upsert_table_name,
+                    bq_delete_table_name=bq_delete_table_name,
+                )
 
             expected_release = {
                 "dag_id": "test_orcid",
@@ -390,7 +393,7 @@ class TestTasks(SandboxTestCase):
     def test_add_dataset_release(self):
         env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
         api_dataset_id = env.add_dataset(prefix="orcid_test_api")
-        now = pendulum.now()
+        now = pendulum.now("UTC")
 
         with env.create():
             release = OrcidRelease(
@@ -411,14 +414,14 @@ class TestTasks(SandboxTestCase):
                 "dag_id": "test_orcid",
                 "entity_id": "orcid",
                 "dag_run_id": "test_orcid_run",
-                "created": datetime_normalise(now),
-                "modified": datetime_normalise(now),
+                "created": now.to_iso8601_string(),
+                "modified": now.to_iso8601_string(),
                 "data_interval_start": None,
                 "data_interval_end": None,
                 "snapshot_date": None,
                 "partition_date": None,
-                "changefile_start_date": "2024-01-01T00:00:00+00:00",
-                "changefile_end_date": "2024-01-01T00:00:00+00:00",
+                "changefile_start_date": "2024-01-01T00:00:00Z",
+                "changefile_end_date": "2024-01-01T00:00:00Z",
                 "sequence_start": None,
                 "sequence_end": None,
                 "extra": {"latest_modified_record_date": datetime_normalise(now)},

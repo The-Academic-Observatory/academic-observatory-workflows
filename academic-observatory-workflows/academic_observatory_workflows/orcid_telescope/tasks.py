@@ -95,7 +95,7 @@ def fetch_release(
     releases = api.get_dataset_releases(dag_id=dag_id, entity_id="orcid", date_key="changefile_end_date")
     is_first_run = is_first_dag_run(dag_run)
 
-    # Determine the modication cutoff for the new release
+    # Determine the modification cutoff for the new release
     if is_first_run:
         if not len(releases) == 0:
             raise ValueError(
