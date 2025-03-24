@@ -1,8 +1,8 @@
-venv
+astro
+.git
+.env
+airflow_settings.yaml
+logs/
 .venv
-tests
-notebooks
-dist
-.github
-*.pkrvars.hcl
-*.tfvars
+airflow.db
+airflow.cfg
