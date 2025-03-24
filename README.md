@@ -29,3 +29,9 @@ The workflows include: Crossref Events, Crossref Fundref, Crossref Metadata, Geo
 
 ## Documentation
 For detailed documentation about the Academic Observatory see the Read the Docs website [https://academic-observatory-workflows.readthedocs.io](https://academic-observatory-workflows.readthedocs.io)
+
+## Installation
+Install using pip. From the root directory:
+```bash
+pip install -e ./academic-observatory-workflows[test] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-no-providers-3.10.txt
+```

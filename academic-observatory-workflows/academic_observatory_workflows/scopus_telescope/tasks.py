@@ -377,7 +377,7 @@ class ScopusUtility:
     """Handles the SCOPUS interactions."""
 
     @staticmethod
-    def build_query(*, institution_ids: List[str], period: Type[pendulum.Period]) -> str:
+    def build_query(*, institution_ids: List[str], period: Type[pendulum.Interval]) -> str:
         """Build a SCOPUS API query.
 
         :param institution_ids: List of Institutional ID to query, e.g, ["60031226"] (Curtin University)
@@ -408,7 +408,7 @@ class ScopusUtility:
         *,
         worker: ScopusUtilWorker,
         conn: str,
-        period: Type[pendulum.Period],
+        period: Type[pendulum.Interval],
         institution_ids: List[str],
         download_dir: str,
     ):

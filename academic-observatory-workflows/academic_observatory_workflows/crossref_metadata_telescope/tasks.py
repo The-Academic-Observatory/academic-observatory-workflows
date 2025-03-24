@@ -84,7 +84,7 @@ def fetch_release(
     ).to_dict()
 
 
-def download(release: dict, base_url: str = "https://api.crossref.org/") -> None:
+def download(release: dict, base_url: str = "https://api.crossref.org") -> None:
     """Task to Download the crossref metadata dataset.
     Expects the api key to be set as an environment variable named CROSSREF_METADATA_API_KEY
 
@@ -267,7 +267,7 @@ def cleanup_workflow(release: dict) -> None:
     cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
 
 
-def make_snapshot_url(snapshot_date: pendulum.DateTime, base_url: str = "https://api.crossref.org/") -> str:
+def make_snapshot_url(snapshot_date: pendulum.DateTime, base_url: str = "https://api.crossref.org") -> str:
     """Creates the url to the snapshot
 
     :param snashot_date: The date of the snapshot
