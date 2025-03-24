@@ -238,7 +238,7 @@ def fetch_release(
         # Only return list of updatefiles that are within the required release period.
         file_upload_ftp = ftp_conn.sendcmd("MDTM {}".format(file))[4:]
         file_upload_date = pendulum.from_format(file_upload_ftp, "YYYYMMDDHHmmss")
-        if file_upload_date in pendulum.period(release_interval_start, data_interval_end):
+        if file_upload_date in data_interval_end.diff(release_interval_start):
             # Grab metadata and path of the file.
             file_index = int(re.findall("\d{4}", file)[0])
             path_on_ftp = updatefiles_path + file

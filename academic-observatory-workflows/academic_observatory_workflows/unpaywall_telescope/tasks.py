@@ -16,30 +16,30 @@
 
 from __future__ import annotations
 
-import os
-import logging
-import re
 import datetime
+import logging
+import os
+import re
 from typing import List
-from airflow.models import DagRun
 
+import pendulum
+import pendulum.parsing.exceptions
 from airflow.exceptions import AirflowException
+from airflow.models import DagRun
 from airflow.operators.bash import BashOperator
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
-import pendulum
 
 from academic_observatory_workflows.unpaywall_telescope.release import Changefile, UnpaywallRelease
 from observatory_platform.airflow.airflow import get_airflow_connection_password, is_first_dag_run
-from observatory_platform.dataset_api import DatasetRelease, DatasetAPI
-from observatory_platform.google.bigquery import bq_load_table, bq_snapshot, bq_upsert_records
+from observatory_platform.airflow.release import release_from_bucket, release_to_bucket
+from observatory_platform.airflow.workflow import cleanup, CloudWorkspace
+from observatory_platform.dataset_api import DatasetAPI, DatasetRelease
 from observatory_platform.files import clean_dir, find_replace_file, gunzip_files, list_files, merge_update_files
+from observatory_platform.google.bigquery import bq_load_table, bq_snapshot, bq_upsert_records
 from observatory_platform.google.gcs import gcs_upload_files
-from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.http_download import download_file, download_files, DownloadInfo
-from observatory_platform.airflow.workflow import cleanup
 from observatory_platform.url_utils import get_filename_from_http_header, get_http_response_json
-from observatory_platform.airflow.release import release_to_bucket, release_from_bucket
 
 # See https://unpaywall.org/products/data-feed for details of available APIs
 UNPAYWALL_BASE_URL = "https://api.unpaywall.org"
@@ -453,11 +453,17 @@ def get_unpaywall_changefiles(url: str) -> List[Changefile]:
 
 
 def unpaywall_filename_to_datetime(file_name: str) -> pendulum.DateTime:
-    """Parses a release date from a file name.
+    """Parses a release date from a file name, e.g. 2023-04-25T080001
 
     :param file_name: Unpaywall release file name (contains date string).
     :return: date.
     """
 
-    date = re.search(r"\d{4}-\d{2}-\d{2}(T\d{6})?", file_name).group()
-    return pendulum.parse(date)
+    date_string = re.search(r"\d{4}-\d{2}-\d{2}(T\d{6})?", file_name).group()
+
+    try:
+        # Try to parse full date time
+        return pendulum.from_format(date_string, "YYYY-MM-DDTHHmmss")
+    except ValueError:
+        # Try to just parse date
+        return pendulum.from_format(date_string, "YYYY-MM-DD")

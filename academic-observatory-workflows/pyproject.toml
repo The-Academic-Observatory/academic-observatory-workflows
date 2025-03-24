@@ -42,12 +42,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = [
+tests = [
     "httpretty>=1,<2",
     "liccheck>=0.4,<1",
     "flake8>=3,<4",
     "coverage>=5,<6",
-    "vcrpy>=6,<7",
+    "vcrpy>=7,<8",
     "Faker>=37,<38",
     "boto3>=1.15.0,<2",
     "toml>=0.10.0"

@@ -208,7 +208,7 @@ class TestScopusUtilWorker(unittest.TestCase):
 
     def test_build_query(self):
         institution_ids = ["60031226"]
-        period = pendulum.period(pendulum.datetime(2021, 1, 1), pendulum.datetime(2021, 2, 1))
+        period = pendulum.datetime(2021, 2, 1).diff(pendulum.datetime(2021, 1, 1))
         query = ScopusUtility.build_query(institution_ids=institution_ids, period=period)
 
     def test_make_query(self):
@@ -230,7 +230,7 @@ class TestScopusUtilWorker(unittest.TestCase):
         worker.client.retrieve = MagicMock()
         results = [{}] * (ScopusClient.MAX_RESULTS + 1)
         worker.client.retrieve.return_value = results, 2000, 10
-        period = pendulum.period(pendulum.date(2021, 1, 1), pendulum.date(2021, 2, 1))
+        period = pendulum.date(2021, 2, 1).diff(pendulum.date(2021, 1, 1))
         institution_ids = ["123"]
         ScopusUtility.download_period(
             worker=worker, conn=conn, period=period, institution_ids=institution_ids, download_dir="/tmp"
@@ -309,7 +309,7 @@ class TestScopusUtilWorker(unittest.TestCase):
         conn = "conn"
         queue = Queue()
         now = pendulum.now("UTC")
-        queue.put(pendulum.period(now, now))
+        queue.put(now.diff(now))
         event = Event()
         institution_ids = ["123"]
 
@@ -345,7 +345,7 @@ class TestScopusUtilWorker(unittest.TestCase):
 
         conn = "conn"
         queue = Queue()
-        queue.put(pendulum.period(now, now))
+        queue.put(now.diff(now))
         event = Event()
         institution_ids = ["123"]
 
@@ -378,8 +378,8 @@ class TestScopusUtilWorker(unittest.TestCase):
         m_download.side_effect = AirflowException("Some other error")
         conn = "conn"
         queue = Queue()
-        queue.put(pendulum.period(now, now))
-        queue.put(pendulum.period(now, now))
+        queue.put(now.diff(now))
+        queue.put(now.diff(now))
         event = Event()
         institution_ids = ["123"]
 
@@ -408,7 +408,7 @@ class TestScopusUtilWorker(unittest.TestCase):
         m_download.return_value = None
 
         for _ in range(4):
-            queue.put(pendulum.period(now, now))
+            queue.put(now.diff(now))
 
         workers = [
             ScopusUtilWorker(client_id=i, client=None, quota_reset_date=now, quota_remaining=10) for i in range(2)
