@@ -181,10 +181,7 @@ class DagParams:
         self.max_fetch_threads = max_fetch_threads
         self.start_date = start_date
         self.schedule = schedule
-
-        if sensor_dag_ids is None:
-            self.sensor_dag_ids = SENSOR_DAG_IDS
-
+        self.sensor_dag_ids = sensor_dag_ids if sensor_dag_ids is not None else SENSOR_DAG_IDS
         self.max_active_runs = max_active_runs
         self.retries = retries
 

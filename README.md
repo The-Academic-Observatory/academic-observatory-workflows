@@ -35,3 +35,9 @@ Install using pip. From the root directory:
 ```bash
 pip install -e ./academic-observatory-workflows[test] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-no-providers-3.10.txt
 ```
+
+## Deployment
+To deploy the project to Astronomer.io:
+```bash
+./bin/deploy.sh gcp-project-id astro-deployment-id
+```
