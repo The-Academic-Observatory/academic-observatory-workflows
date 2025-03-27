@@ -71,7 +71,7 @@ class DagParams:
         orcid_bucket: str = "ao-orcid",
         orcid_summaries_prefix: str = "orcid_summaries",
         bq_dataset_id: str = "orcid",
-        api_bq_dataset_id: str = "orcid",
+        api_bq_dataset_id: str = "dataset_api",
         bq_main_table_name: str = "orcid",
         bq_upsert_table_name: str = "orcid_upsert",
         bq_delete_table_name: str = "orcid_delete",

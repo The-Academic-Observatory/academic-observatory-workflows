@@ -68,7 +68,7 @@ class DagParams:
         cloud_workspace: CloudWorkspace,
         bq_dataset_id: str = "crossref_metadata",
         bq_table_name: str = "crossref_metadata",
-        api_bq_dataset_id: str = "crossref_metadata",
+        api_bq_dataset_id: str = "dataset_api",
         schema_folder: str = project_path("crossref_metadata_telescope", "schema"),
         dataset_description: str = (
             "The Crossref Metadata Plus dataset: https://www.crossref.org/services/metadata-retrieval/metadata-plus/"

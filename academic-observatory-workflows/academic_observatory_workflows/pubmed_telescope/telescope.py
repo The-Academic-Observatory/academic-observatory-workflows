@@ -63,7 +63,7 @@ class DagParams:
         dag_id: str,
         cloud_workspace: CloudWorkspace,
         bq_dataset_id: str = "pubmed",
-        api_bq_dataset_id: str = "pubmed",
+        api_bq_dataset_id: str = "dataset_api",
         bq_main_table_name: str = "pubmed",
         bq_upsert_table_name: str = "pubmed_upsert",
         bq_delete_table_name: str = "pubmed_delete",
