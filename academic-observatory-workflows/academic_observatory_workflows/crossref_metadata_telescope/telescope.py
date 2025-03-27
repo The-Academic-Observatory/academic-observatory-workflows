@@ -160,12 +160,12 @@ def create_dag(dag_params: DagParams) -> DAG:
             from academic_observatory_workflows.crossref_metadata_telescope import tasks
 
             tasks.download(release, base_url=dag_params.crossref_base_url)
-            tasks.upload_download(release, base_url=dag_params.crossref_base_url)
+            tasks.upload_downloaded(release)
 
         @task.kubernetes(
             name=f"{dag_params.dag_id}-transform",
             container_resources=gke_make_container_resources(
-                {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("transform")
+                {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("extract_transform")
             ),
             **kubernetes_task_params,
         )

@@ -111,7 +111,7 @@ def fetch_release(
     ftp_server_url: str,
     ftp_port: int,
     reset_ftp_counter: int,
-) -> Dict:
+) -> str:
     """Get a list of all files to process for this release.
 
     Determine if workflow needs to redownload the baseline files again because of a new yearly release.

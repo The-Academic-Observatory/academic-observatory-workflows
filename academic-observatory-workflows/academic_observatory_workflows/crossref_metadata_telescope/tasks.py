@@ -120,7 +120,8 @@ def upload_downloaded(release: dict) -> None:
     success = gcs_upload_files(
         bucket_name=release.cloud_workspace.download_bucket, file_paths=[release.download_file_path]
     )
-    set_task_state(success, "upload_downloaded", release)
+    if not success:
+        raise AirflowException(f"Error uploading file: {release.download_file_path}")
 
 
 def extract(release: Union[dict, CrossrefMetadataRelease], **context) -> None:
@@ -187,7 +188,8 @@ def upload_transformed(release: Union[dict, CrossrefMetadataRelease]) -> None:
         release = CrossrefMetadataRelease.from_dict(release)
     files_list = list_files(release.transform_folder, release.transform_files_regex)
     success = gcs_upload_files(bucket_name=release.cloud_workspace.transform_bucket, file_paths=files_list)
-    set_task_state(success, "upload_transformed", release)
+    if not success:
+        raise AirflowException(f"Error uploading files: {files_list}")
 
 
 def bq_load(

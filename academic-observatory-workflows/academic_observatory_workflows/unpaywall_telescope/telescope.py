@@ -220,12 +220,12 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.load_snapshot_upload_downloaded(release_id, cloud_workspace=dag_params.cloud_workspace)
 
             @task.kubernetes(
-                task_id="extract-transform",
+                task_id="extract_transform",
                 trigger_rule=TriggerRule.ALL_SUCCESS,
                 name=f"{dag_params.dag_id}-load-snapshot-extract",
                 container_resources=gke_make_container_resources(
                     {"memory": "16G", "cpu": "16"},
-                    dag_params.gke_params.gke_resource_overrides.get("load_snapshot_extract"),
+                    dag_params.gke_params.gke_resource_overrides.get("load_snapshot_extract_transform"),
                 ),
                 **kubernetes_task_params,
             )
@@ -238,7 +238,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 from observatory_platform.airflow.release import release_from_bucket
                 from observatory_platform.google.gcs import gcs_download_blob, gcs_blob_name_from_path
 
-                release = release_from_bucket(release_id)
+                release = release_from_bucket(dag_params.cloud_workspace.download_bucket, release_id)
                 release = UnpaywallRelease.from_dict(release)
                 blob_name = gcs_blob_name_from_path(release.snapshot_download_file_path)
                 success = gcs_download_blob(
@@ -303,12 +303,12 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
-                task_id="extract",
+                task_id="extract_transform",
                 trigger_rule=TriggerRule.NONE_FAILED,
                 name=f"{dag_params.dag_id}-load-changefiles-extract",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
-                    dag_params.gke_params.gke_resource_overrides.get("load_changefiles_extract"),
+                    dag_params.gke_params.gke_resource_overrides.get("load_changefiles_extract_transform"),
                 ),
                 **kubernetes_task_params,
             )
@@ -321,7 +321,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 from observatory_platform.google.gcs import gcs_download_blob, gcs_blob_name_from_path
                 from observatory_platform.airflow.release import release_from_bucket
 
-                release = release_from_bucket(release_id)
+                release = release_from_bucket(dag_params.cloud_workspace.download_bucket, release_id)
                 release = UnpaywallRelease.from_dict(release)
                 files_list = [changefile.download_file_path for changefile in release.changefiles]
                 for file_path in files_list:
