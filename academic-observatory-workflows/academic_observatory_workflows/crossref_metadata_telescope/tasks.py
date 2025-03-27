@@ -21,8 +21,7 @@ import json
 import logging
 import os
 import shutil
-import urllib
-from typing import Optional
+from typing import Optional, Union
 
 from airflow.hooks.base import BaseHook
 from airflow.exceptions import AirflowException
@@ -124,10 +123,11 @@ def upload_downloaded(release: dict) -> None:
     set_task_state(success, "upload_downloaded", release)
 
 
-def extract(release, **context) -> None:
+def extract(release: Union[dict, CrossrefMetadataRelease], **context) -> None:
     """Task to extract the downloaded metadata."""
 
-    release = CrossrefMetadataRelease.from_dict(release)
+    if isinstance(release, dict):
+        release = CrossrefMetadataRelease.from_dict(release)
     op = BashOperator(
         task_id="extract",
         bash_command=f'tar -xv -I "pigz -d" -f { release.download_file_path } -C { release.extract_folder }',
@@ -137,7 +137,7 @@ def extract(release, **context) -> None:
 
 
 def transform(
-    release: dict,
+    release: Union[dict, CrossrefMetadataRelease],
     *,
     batch_size: int,
     max_processes: Optional[int] = None,
@@ -149,7 +149,8 @@ def transform(
     :param batch_size: the number of files to send to ProcessPoolExecutor at one time.
     """
 
-    release = CrossrefMetadataRelease.from_dict(release)
+    if isinstance(release, dict):
+        release = CrossrefMetadataRelease.from_dict(release)
     if max_processes == None:
         max_processes = os.cpu_count()
 
@@ -179,10 +180,11 @@ def transform(
                     logging.info(f"Transformed {finished} files")
 
 
-def upload_transformed(release: dict) -> None:
+def upload_transformed(release: Union[dict, CrossrefMetadataRelease]) -> None:
     """Task to upload the transformed data to Cloud Storage."""
 
-    release = CrossrefMetadataRelease.from_dict(release)
+    if isinstance(release, dict):
+        release = CrossrefMetadataRelease.from_dict(release)
     files_list = list_files(release.transform_folder, release.transform_files_regex)
     success = gcs_upload_files(bucket_name=release.cloud_workspace.transform_bucket, file_paths=files_list)
     set_task_state(success, "upload_transformed", release)

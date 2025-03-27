@@ -25,8 +25,10 @@ from airflow.models import Pool
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.crossref_fundref_telescope import tasks
+from academic_observatory_workflows.crossref_fundref_telescope.release import CrossrefFundrefRelease
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.workflow import CloudWorkspace
+from observatory_platform.google.gcs import gcs_download_blob
 
 
 @dataclass
@@ -131,29 +133,23 @@ def create_dag(dag_params: DagParams) -> DAG:
                 """Task to download the data"""
 
                 tasks.download(release)
-
-            @task
-            def upload_downloaded(release: dict, **context):
-                """Task to upload the downloaded data to GCS"""
-
                 tasks.upload_downloaded(release)
 
             @task
-            def extract(release: dict, **context):
-                """Task to extract the data"""
-
-                tasks.extract(release)
-
-            @task
-            def transform(release: dict, **context):
+            def extract_transform(release: dict, **context):
                 """Task to transform the data"""
 
+                release = CrossrefFundrefRelease.from_dict(release)
+                success = gcs_download_blob(
+                    release.cloud_workspace.download_bucket,
+                    blob_name=release.download_blob_uri,
+                    file_path=release.download_file_path,
+                )
+                if not success:
+                    raise RuntimeError(f"Error downloading blob: {release.download_blob_uri}")
+
+                tasks.extract(release)
                 tasks.transform(release)
-
-            @task
-            def upload_transformed(release: dict, **context):
-                """Task to upload the transformed data to GCS"""
-
                 tasks.upload_transformed(release)
 
             @task
@@ -183,10 +179,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             (
                 download(data)
-                >> upload_downloaded(data)
-                >> extract(data)
-                >> transform(data)
-                >> upload_transformed(data)
+                >> extract_transform(data)
                 >> bq_load(data, dag_params)
                 >> add_dataset_releases(data, dag_params)
                 >> cleanup_workflow(data)

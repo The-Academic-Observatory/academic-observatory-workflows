@@ -160,19 +160,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             from academic_observatory_workflows.crossref_metadata_telescope import tasks
 
             tasks.download(release, base_url=dag_params.crossref_base_url)
-
-        @task.kubernetes(
-            name=f"{dag_params.dag_id}-extract",
-            container_resources=gke_make_container_resources(
-                {"memory": "4G", "cpu": "4"}, dag_params.gke_params.gke_resource_overrides.get("extract")
-            ),
-            **kubernetes_task_params,
-        )
-        def extract(release: dict, **context):
-            """Extracts the compressed data"""
-            from academic_observatory_workflows.crossref_metadata_telescope import tasks
-
-            tasks.extract(release, **context)
+            tasks.upload_download(release, base_url=dag_params.crossref_base_url)
 
         @task.kubernetes(
             name=f"{dag_params.dag_id}-transform",
@@ -181,24 +169,24 @@ def create_dag(dag_params: DagParams) -> DAG:
             ),
             **kubernetes_task_params,
         )
-        def transform(release: dict, dag_params, **context):
+        def extract_transform(release: dict, dag_params, **context):
             """Task to transform the CrossrefMetadataRelease release for a given month.
             Each extracted file is transformed."""
             from academic_observatory_workflows.crossref_metadata_telescope import tasks
+            from academic_observatory_workflows.crossref_metadata_telescope.release import CrossrefMetadataRelease
+            from observatory_platform.google.gcs import gcs_download_blob
 
+            release = CrossrefMetadataRelease.from_dict(release)
+            success = gcs_download_blob(
+                bucket_name=release.cloud_workspace.download_bucket,
+                blob_name=release.download_blob_name,
+                file_path=release.download_file_path,
+            )
+            if not success:
+                raise RuntimeError(f"Error downloading blob: {release.download_blob_name}")
+
+            tasks.extract(release, **context)
             tasks.transform(release, max_processes=dag_params.max_processes, batch_size=dag_params.batch_size)
-
-        @task.kubernetes(
-            name=f"{dag_params.dag_id}-upload-transformed",
-            container_resources=gke_make_container_resources(
-                {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("upload_transformed")
-            ),
-            **kubernetes_task_params,
-        )
-        def upload_transformed(release: dict, dag_params, **context) -> None:
-            """Uploads the transformed data to cloud storage"""
-            from academic_observatory_workflows.crossref_metadata_telescope import tasks
-
             tasks.upload_transformed(release)
 
         @task
@@ -233,9 +221,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         )
         xcom_release = fetch_release(dag_params)
         task_download = download(xcom_release, dag_params)
-        task_extract = extract(xcom_release)
-        task_transform = transform(xcom_release, dag_params)
-        task_upload_transformed = upload_transformed(xcom_release, dag_params)
+        task_transform = extract_transform(xcom_release, dag_params)
         task_bq_load = bq_load(xcom_release, dag_params)
         task_add_dataset_release = add_dataset_release(xcom_release, dag_params)
         task_cleanup_workflow = cleanup_workflow(xcom_release)
@@ -253,9 +239,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> xcom_release
             >> task_create_storage
             >> task_download
-            >> task_extract
             >> task_transform
-            >> task_upload_transformed
             >> task_bq_load
             >> task_delete_storage
             >> task_add_dataset_release

@@ -204,21 +204,6 @@ def create_dag(dag_params: DagParams) -> DAG:
                     reset_ftp_counter=dag_params.reset_ftp_counter,
                     max_download_attempt=dag_params.max_download_attempt,
                 )
-
-            @task.kubernetes(
-                task_id="upload_downloaded",
-                name=f"{dag_params.dag_id}-baseline-upload-downloaded",
-                container_resources=gke_make_container_resources(
-                    {"memory": "4G", "cpu": "4"},
-                    dag_params.gke_params.gke_resource_overrides.get("baseline_upload_downloaded"),
-                ),
-                trigger_rule=TriggerRule.ALL_SUCCESS,
-                **kubernetes_task_params,
-            )
-            def baseline_upload_downloaded(release: dict, **context):
-                """Upload downloaded baseline files to GCS."""
-                from academic_observatory_workflows.pubmed_telescope import tasks
-
                 tasks.baseline_upload_downloaded(release)
 
             @task.kubernetes(
@@ -235,26 +220,22 @@ def create_dag(dag_params: DagParams) -> DAG:
                 """
                 Transform the *.xml.gz files downloaded from PubMed into usable json files for BigQuery import.
                 """
-
                 from academic_observatory_workflows.pubmed_telescope import tasks
+                from academic_observatory_workflows.pubmed_telescope.release import PubMedRelease
+                from observatory_platform.google.gcs import gcs_download_blob, gcs_blob_name_from_path
+
+                release = PubMedRelease.from_dict(release)
+                file_paths = [datafile.download_file_path for datafile in release.baseline_files]
+                for file_path in file_paths:
+                    success = gcs_download_blob(
+                        bucket=release.download_bucket,
+                        blob_name=gcs_blob_name_from_path(file_path),
+                        file_path=file_path,
+                    )
+                    if not success:
+                        raise RuntimeError(f"Error downloading file: {file_path}")
 
                 tasks.baseline_transform(release, max_processes=dag_params.max_processes)
-
-            @task.kubernetes(
-                task_id="upload_transformed",
-                name=f"{dag_params.dag_id}-baseline-upload-transformed",
-                container_resources=gke_make_container_resources(
-                    {"memory": "4G", "cpu": "4"},
-                    dag_params.gke_params.gke_resource_overrides.get("baseline_upload_transformed"),
-                ),
-                trigger_rule=TriggerRule.ALL_SUCCESS,
-                **kubernetes_task_params,
-            )
-            def baseline_upload_transformed(release: dict, **context):
-                """Upload transformed baseline files to GCS."""
-
-                from academic_observatory_workflows.pubmed_telescope import tasks
-
                 tasks.baseline_upload_transformed(release)
 
             @task(task_id="bq_load", trigger_rule=TriggerRule.ALL_SUCCESS)
@@ -271,12 +252,10 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             task_download = baseline_download(xcom, dag_params)
-            task_upload_downloaded = baseline_upload_downloaded(xcom)
             task_transform = baseline_transform(xcom, dag_params)
-            task_upload_transformed = baseline_upload_transformed(xcom)
             task_bq_load = baseline_bq_load(xcom)
 
-            (task_download >> task_upload_downloaded >> task_transform >> task_upload_transformed >> task_bq_load)
+            (task_download >> task_transform >> task_bq_load)
 
         @task.branch
         def branch_updatefiles_or_storage_delete(release: dict, **context):
@@ -312,22 +291,6 @@ def create_dag(dag_params: DagParams) -> DAG:
                     reset_ftp_counter=dag_params.reset_ftp_counter,
                     max_download_attempt=dag_params.max_download_attempt,
                 )
-
-            @task.kubernetes(
-                task_id="upload_downloaded",
-                name=f"{dag_params.dag_id}-updatefiles-upload-downloaded",
-                container_resources=gke_make_container_resources(
-                    {"memory": "4G", "cpu": "4"},
-                    dag_params.gke_params.gke_resource_overrides.get("updatefiles_upload_downloaded"),
-                ),
-                trigger_rule=TriggerRule.NONE_FAILED,
-                **kubernetes_task_params,
-            )
-            def updatefiles_upload_downloaded(release: dict, **context):
-                """Upload downloaded updatefiles files to GCS."""
-
-                from academic_observatory_workflows.pubmed_telescope import tasks
-
                 tasks.updatefiles_upload_downloaded(release)
 
             @task.kubernetes(
@@ -348,41 +311,23 @@ def create_dag(dag_params: DagParams) -> DAG:
                 """
 
                 from academic_observatory_workflows.pubmed_telescope import tasks
+                from academic_observatory_workflows.pubmed_telescope.release import PubMedRelease
+                from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_download_blob
 
-                return tasks.updatefiles_transform(release, max_processes=dag_params.max_processes)
+                release = PubMedRelease.from_dict(release)
+                datafiles_to_upload = [datafile.download_file_path for datafile in release.updatefiles]
+                for file_path in datafiles_to_upload:
+                    blob = gcs_blob_name_from_path(file_path)
+                    success = gcs_download_blob(
+                        bucket_name=release.cloud_workspace.download_bucket,
+                        blob_name=blob,
+                        file_path=file_path,
+                    )
+                    if not success:
+                        raise RuntimeError(f"Error downloading blob: {blob}")
 
-            @task.kubernetes(
-                task_id="merge_upserts_deletes",
-                name=f"{dag_params.dag_id}-updatefiles-merge-upserts-deletes",
-                container_resources=gke_make_container_resources(
-                    {"memory": "8G", "cpu": "8"},
-                    dag_params.gke_params.gke_resource_overrides.get("updatefiles_merge_upserts_deletes"),
-                ),
-                trigger_rule=TriggerRule.NONE_FAILED,
-                **kubernetes_task_params,
-            )
-            def updatefiles_merge_upserts_deletes(release: dict, updatefiles, dag_params, **context):
-                """Merge the upserts and deletes for this release period."""
-
-                from academic_observatory_workflows.pubmed_telescope import tasks
-
+                updatefiles = tasks.updatefiles_transform(release, max_processes=dag_params.max_processes)
                 tasks.updatefiles_merge_upserts_deletes(release, updatefiles, max_processes=dag_params.max_processes)
-
-            @task.kubernetes(
-                task_id="upload_merged_upsert_records",
-                name=f"{dag_params.dag_id}-updatefiles-upload-merged-upsert-records",
-                container_resources=gke_make_container_resources(
-                    {"memory": "4G", "cpu": "4"},
-                    dag_params.gke_params.gke_resource_overrides.get("updatefiles_upload_merged_upsert_records"),
-                ),
-                trigger_rule=TriggerRule.NONE_FAILED,
-                **kubernetes_task_params,
-            )
-            def updatefiles_upload_merged_upsert_records(release: dict, **context):
-                """Upload the merged upsert records to GCS."""
-
-                from academic_observatory_workflows.pubmed_telescope import tasks
-
                 tasks.updatefiles_upload_merged_upsert_records(release)
 
             @task(task_id="bq_load_upsert_table", trigger_rule=TriggerRule.NONE_FAILED)
@@ -461,12 +406,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             task_download = updatefiles_download(xcom, dag_params)
-            task_upload_downloaded = updatefiles_upload_downloaded(xcom)
             task_transform_xcom_updatefiles = updatefiles_transform(xcom, dag_params)
-            task_merge_upserts_deletes = updatefiles_merge_upserts_deletes(
-                xcom, task_transform_xcom_updatefiles, dag_params
-            )
-            task_upload_merged_upsert_records = updatefiles_upload_merged_upsert_records(xcom)
             task_bq_load_upsert_table = updatefiles_bq_load_upsert_table(xcom)
             task_bq_upsert_records = updatefiles_bq_upsert_records(xcom)
             task_upload_merged_delete_records = updatefiles_upload_merged_delete_records(xcom)
@@ -475,10 +415,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             (
                 task_download
-                >> task_upload_downloaded
                 >> task_transform_xcom_updatefiles
-                >> task_merge_upserts_deletes
-                >> task_upload_merged_upsert_records
                 >> task_bq_load_upsert_table
                 >> task_bq_upsert_records
                 >> task_upload_merged_delete_records
