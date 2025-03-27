@@ -32,6 +32,7 @@ from academic_observatory_workflows.pubmed_telescope.datafile import Datafile
 from academic_observatory_workflows.pubmed_telescope.release import PubMedRelease
 from observatory_platform.dataset_api import DatasetRelease, DatasetAPI
 from observatory_platform.airflow.airflow import is_first_dag_run
+from observatory_platform.airflow.release import release_to_bucket
 from observatory_platform.files import get_chunks, save_jsonl_gz, yield_jsonl
 from observatory_platform.google.gcs import gcs_upload_files
 from observatory_platform.airflow.workflow import CloudWorkspace, cleanup
@@ -292,17 +293,21 @@ def fetch_release(
 
     logging.info("DATAFILES:")
     logging.info(files_to_download)
-    return PubMedRelease(
-        dag_id=dag_id,
-        run_id=run_id,
-        cloud_workspace=cloud_workspace,
-        bq_dataset_id=bq_dataset_id,
-        start_date=release_interval_start,
-        end_date=data_interval_end,
-        year_first_run=year_first_run,
-        datafile_list=files_to_download,
-        baseline_upload_date=baseline_upload_date,
-    ).to_dict()
+    id = release_to_bucket(
+        PubMedRelease(
+            dag_id=dag_id,
+            run_id=run_id,
+            cloud_workspace=cloud_workspace,
+            bq_dataset_id=bq_dataset_id,
+            start_date=release_interval_start,
+            end_date=data_interval_end,
+            year_first_run=year_first_run,
+            datafile_list=files_to_download,
+            baseline_upload_date=baseline_upload_date,
+        ).to_dict(),
+        cloud_workspace.download_bucket,
+    )
+    return id
 
 
 def short_circuit(release: dict) -> bool:
