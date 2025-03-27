@@ -10,11 +10,13 @@ fi
 PROJECT_NAME="$1"
 DEPLOYMENT_ID="$2"
 
+# Setup auth with Docker so that Docker can download and upload images from the Google Cloud Artifact Registry
+gcloud auth configure-docker us-docker.pkg.dev
+
 # Build, tag, and push the Docker image with the specified project name
 docker build --no-cache -t academic-observatory .
 docker tag academic-observatory us-docker.pkg.dev/${PROJECT_NAME}/academic-observatory/academic-observatory
 docker push us-docker.pkg.dev/${PROJECT_NAME}/academic-observatory/academic-observatory
 
 # Deploy using Astro
-astro workspace switch Academic\ Observatory
 astro deploy -i academic-observatory -f ${DEPLOYMENT_ID}

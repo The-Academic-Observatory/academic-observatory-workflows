@@ -37,6 +37,80 @@ pip install -e ./academic-observatory-workflows[test] --constraint https://raw.g
 ```
 
 ## Deployment
+These instructions show how to deploy the workflows to Google Cloud and Astronomer.io.
+
+### Prerequisites
+You should have set up the following resources already:
+* A Google Cloud Project.
+* A Google Cloud Shell instance, which pre-installs gsutil, gcloud and kubectl.
+* A GKE Autopilot Cluster.
+* An Astonomer.io Airflow deployment, using Google Cloud.
+* Installed the Astronomer.io CLI: https://www.astronomer.io/docs/astro/cli/install-cli
+* Installed yq: https://github.com/mikefarah/yq (don't use sudo apt install yq, it installs the wrong tool)
+
+The GKE Autopilot Cluster, Astonomer.io deployment and the Google Cloud buckets (that you create with the below script),
+should all be in the same region. The Cloud Storage buckets should be in a single region, not a dual or multi region,
+otherwise you will pay network costs for replication.
+
+### Setup Google Cloud Project
+In a Google Cloud Shell, run the following script to set up your Google Cloud Project:
+```bash
+./bin/setup-gcloud-project.sh gcp-project-id gke-cluster-name gke-namespace gcp-download-bucket-name gcp-transform-bucket-name
+```
+
+The script outputs information that you need for subequent steps:
+* AO Astro Service Account: required to set up the 'Customer Managed Identity' in Astronomer.io.
+* Kube Config Path: required to configure the gke_cluster Airflow Connection.
+
+## Astronomer.io Customer Managed Identity
+The AO Astro Service Account needs to be attached to the Astronomer.io deployment as a "Customer Managed Identity".
+
+Please follow these steps to set it up: https://www.astronomer.io/docs/astro/authorize-deployments-to-your-cloud/?tab=gcp#setup
+
+Step 6 is not necessary.
+
+### Astronomer.io Airflow Variables and Connections
+The Airflow workflows are configured with a config file that is stored as an Airflow Variable. Copy
+`config-example.yaml` to `config-prod.yaml` and customise the settings.
+
+Then deploy your config with the following command:
+```bash
+./bin/deploy-config astro-deployment-id gcp-project-id config-prod.yaml
+```
+
+You will also need to create the following Airflow Connections, depending on what workflows you are using:
+
+| Connection ID             | Type         | Login    | Password | Host     | Namespace | Kube config (JSON format) | Notes                                                                                                                              |
+|---------------------------|--------------|----------|----------|----------|-----------|---------------------------|------------------------------------------------------------------------------------------------------------------------------------|
+| aws_openalex              | aws          | required | required |          |           |                           | OpenAlex Telescope                                                                                                                 |
+| aws_orcid                 | aws          | required | required |          |           |                           | ORCID Telescope                                                                                                                    |
+| crossref_metadata         | http         |          | required |          |           |                           | Crossref Metadata Telescope                                                                                                        |
+| oa_dashboard_github_token | http         |          | required |          |           |                           | OA Dashboard Workflow                                                                                                              |
+| oa_dashboard_zenodo_token | http         |          | required |          |           |                           | OA Dashboard Workflow                                                                                                              |
+| scopus_key_1              | http         |          | required |          |           |                           | Scopus Telescope                                                                                                                   |
+| unpaywall                 | http         |          | required |          |           |                           | Unpaywall Telescope                                                                                                                |
+| slack                     | slackwebhook |          | required | required |           |                           | Enables failure notifications to be sent to Slack                                                                                  |
+| gke_cluster               | kubernetes   |          |          |          | required  | required                  | Enables communication with the GKE Autopilot Cluster. <br/> Required for Crossref Metadata, OpenAlex, PubMed, ORCID and Unpaywall. |
+
+### Kubernetes Secrets
+Kubernetes Pods can't access Airflow Connections, so some workflows that need access to secrets, need them to be stored
+as Kubernetes secrets as well. You can create them with the below commands.
+
+Create Unpaywall API key secret:
+```bash
+kubectl create secret generic unpaywall \
+  --from-literal=api-key=value \
+  --namespace my-gke-namespace
+```
+
+Create Crossref Metadata API secret:
+```bash
+kubectl create secret generic crossref-metadata \
+  --from-literal=api-key=value \
+  --namespace my-gke-namespace
+```
+
+### Deploy code to the Astronomer.io deployment
 To deploy the project to Astronomer.io:
 ```bash
 ./bin/deploy.sh gcp-project-id astro-deployment-id

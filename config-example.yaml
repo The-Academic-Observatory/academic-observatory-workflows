@@ -1,0 +1,94 @@
+cloud_workspaces:
+  - workspace: &my_gcp_environment
+      project_id: my-gcp-project-id
+      download_bucket: my-gcp-download-bucket
+      transform_bucket: my-gcp-transform-bucket
+      data_location: us # For BigQuery
+
+workflows:
+  - dag_id: "crossref_fundref"
+    name: "Crossref Fundref Telescope"
+    class_name: "academic_observatory_workflows.crossref_fundref_telescope.telescope"
+    cloud_workspace: *my_gcp_environment
+    kwargs:
+      schedule: "15 0 8 * *"
+
+  - dag_id: "crossref_metadata"
+    name: "Crossref Metadata Telescope"
+    class_name: "academic_observatory_workflows.crossref_metadata_telescope.telescope"
+    cloud_workspace: *my_gcp_environment
+    kwargs:
+      schedule: "15 0 8 * *"
+
+  - dag_id: "orcid"
+    name: "Orcid Telescope"
+    class_name: "academic_observatory_workflows.orcid_telescope.telescope"
+    cloud_workspace: *my_gcp_environment
+    kwargs:
+      schedule: "15 0 8 * *"
+      orcid_bucket: "my-gcp-orcid-bucket"
+
+  - dag_id: "openalex"
+    name: "OpenAlex Telescope"
+    class_name: "academic_observatory_workflows.openalex_telescope.telescope"
+    cloud_workspace: *my_gcp_environment
+    kwargs:
+      schedule: "15 0 8 * *"
+
+  - dag_id: "pubmed"
+    name: "PubMed Telescope"
+    class_name: "academic_observatory_workflows.pubmed_telescope.telescope"
+    cloud_workspace: *my_gcp_environment
+    kwargs:
+      schedule: "15 0 8 * *"
+
+  - dag_id: "ror"
+    name: "ROR Telescope"
+    class_name: "academic_observatory_workflows.ror_telescope.telescope"
+    cloud_workspace: *my_gcp_environment
+    kwargs:
+      schedule: "15 0 8 * *"
+
+  - dag_id: "unpaywall"
+    name: "Unpaywall Telescope"
+    class_name: "academic_observatory_workflows.unpaywall_telescope.telescope"
+    cloud_workspace: *my_gcp_environment
+    kwargs:
+      schedule: "15 0 8 * *"
+
+  - dag_id: "doi"
+    name: "DOI Workflow"
+    class_name: "academic_observatory_workflows.doi_workflow.workflow"
+    cloud_workspace: *my_gcp_environment
+    kwargs:
+      sensor_dag_ids:
+        [
+          "crossref_fundref",
+          "crossref_metadata",
+          "openalex",
+          "ror",
+          "unpaywall",
+          "pubmed",
+          "orcid",
+        ]
+      schedule: "15 0 8 * *"
+
+  - dag_id: "oa_dashboard_workflow"
+    name: "Open Access Dashboard Workflow"
+    class_name: "academic_observatory_workflows.oa_dashboard_workflow.workflow"
+    cloud_workspace: *my_gcp_environment
+    kwargs:
+      data_bucket: "my-gcp-data-bucket"
+      conceptrecid: 0000000 # The conceptrecid of the Zenodo record where the
+      schedule: "15 0 8 * *"
+
+  - dag_id: "scopus_my_institution"
+    name: "My Institution's Scopus Telescope"
+    class_name: "academic_observatory_workflows.scopus_telescope.telescope"
+    cloud_workspace: *my_gcp_environment
+    kwargs:
+      scopus_conn_ids: ["scopus_key_1", "scopus_key_2", "scopus_key_3"]
+      earliest_date: "1966-01-01"
+      institution_ids: ["00000000"] # Your institution's scopus ID
+      view: "STANDARD"
+      schedule: "15 0 8 * *"
