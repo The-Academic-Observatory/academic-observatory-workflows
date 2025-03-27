@@ -82,7 +82,7 @@ class DagParams:
         upsert_table_description="""PubmedArticle upserts - Includes all the metadata associated with a journal article citation, both the metadata to describe the published article, i.e. <MedlineCitation>, and additional metadata often pertaining to the publication's history or processing at NLM, i.e. <PubMedData>.""",
         delete_table_description="""PubmedArticle deletes - Indicates one or more <PubmedArticle> or <PubmedBookArticle> that have been deleted. PMIDs in DeleteCitation will typically have been found to be duplicate citations, or citations to content that was determined to be out-of-scope for PubMed. It is possible that a PMID would appear in DeleteCitation without having been distributed in a previous file. This would happen if the creation and deletion of the record take place on the same day.""",
         test_run: bool = False,
-        gke_volume_size: str = "1000Mi",
+        gke_volume_size: str = "1000Gi",
         gke_namespace: str = "coki-astro",
         gke_volume_name: str = "pubmed",
         **kwargs,
