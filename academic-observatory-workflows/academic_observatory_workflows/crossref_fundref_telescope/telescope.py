@@ -142,11 +142,11 @@ def create_dag(dag_params: DagParams) -> DAG:
                 release = CrossrefFundrefRelease.from_dict(release)
                 success = gcs_download_blob(
                     release.cloud_workspace.download_bucket,
-                    blob_name=release.download_blob_uri,
+                    blob_name=release.download_blob_name,
                     file_path=release.download_file_path,
                 )
                 if not success:
-                    raise RuntimeError(f"Error downloading blob: {release.download_blob_uri}")
+                    raise RuntimeError(f"Error downloading blob: {release.download_blob_name}")
 
                 tasks.extract(release)
                 tasks.transform(release)

@@ -247,7 +247,7 @@ class TestPubMedTelescope(SandboxTestCase):
                 retries=0,
                 max_download_attempt=1,
                 ftp_port=TestConfig.ftp_port,
-                ftp_server_url="localhost",
+                ftp_server_url=TestConfig.ftp_host_url,
                 gke_image=TestConfig.gke_image,
                 gke_namespace=TestConfig.gke_namespace,
                 gke_resource_overrides=task_resources,
