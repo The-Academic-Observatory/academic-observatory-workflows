@@ -205,6 +205,7 @@ class TestOrcidTelescope(SandboxTestCase):
                 max_workers=2,
                 gke_image=TestConfig.gke_image,
                 gke_namespace=TestConfig.gke_namespace,
+                gke_volume_size="500Mi",
                 gke_resource_overrides=task_resources,
                 test_run=True,
             )
