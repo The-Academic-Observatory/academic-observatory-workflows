@@ -142,6 +142,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             from academic_observatory_workflows.pubmed_telescope import tasks
 
+            ftp_server_url = "localhost" if dag_params.test_run else dag_params.ftp_server_url
             return tasks.fetch_release(
                 dag_id=dag_params.dag_id,
                 cloud_workspace=dag_params.cloud_workspace,
@@ -150,7 +151,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 data_interval_end=context["data_interval_end"],
                 bq_dataset_id=dag_params.bq_dataset_id,
                 api_bq_dataset_id=dag_params.api_bq_dataset_id,
-                ftp_server_url=dag_params.ftp_server_url,
+                ftp_server_url=ftp_server_url,
                 ftp_port=dag_params.ftp_port,
                 reset_ftp_counter=dag_params.reset_ftp_counter,
             )
@@ -238,7 +239,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 file_paths = [datafile.download_file_path for datafile in release.baseline_files]
                 for file_path in file_paths:
                     success = gcs_download_blob(
-                        bucket=release.download_bucket,
+                        bucket=dag_params.cloud_workspace.download_bucket,
                         blob_name=gcs_blob_name_from_path(file_path),
                         file_path=file_path,
                     )
@@ -447,7 +448,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.add_dataset_releases(release, api_bq_dataset_id=dag_params.api_bq_dataset_id)
 
         @task
-        def cleanup_workflow(release_id: str, dag_params, **context):
+        def cleanup_workflow(release_id: str, **context):
             """
             Cleanup files from this workflow run.
 
@@ -483,7 +484,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
         )
         task_add_dataset_releases = add_dataset_releases(xcom_release_id, dag_params)
-        task_cleanup_workflow = cleanup_workflow(xcom_release_id, dag_params)
+        task_cleanup_workflow = cleanup_workflow(xcom_release_id)
         task_dag_run_complete = EmptyOperator(task_id=external_task_id)
 
         (
