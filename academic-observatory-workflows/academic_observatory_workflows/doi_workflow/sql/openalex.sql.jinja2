@@ -18,11 +18,11 @@
  # Uses basic heuristic that favours high ror id count. Tie break with arbitrary selection.
  #}
 WITH
-ror_case1 as (SELECT id, upper(trim(doi)) doi, 0 as ror_count,  FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.works` where doi is not null and authorships is null),
-ror_case2 as (SELECT id, upper(trim(doi)) doi, 0 as ror_count,  FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.works` where doi is not null and array_length(authorships) = 0),
-ror_case3 as (SELECT id, upper(trim(doi)) doi, 0 as ror_count,  FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.works`, unnest(authorships) auths where doi is not null and array_length(authorships) > 0 and auths.institutions is null),
-ror_case4 as (SELECT id, upper(trim(doi)) doi, 0 as ror_count,  FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.works`, unnest(authorships) auths where doi is not null and array_length(authorships) > 0 and array_length(auths.institutions) = 0),
-ror_case5 as (SELECT work.id id, upper(trim(doi)) doi, count(inst.ror) ror_count,  FROM `{{ openalex.project_id }}.{{ openalex.dataset_id }}.works` work, unnest(authorships) auths, unnest(institutions) inst where doi is not null and array_length(authorships) > 0 and array_length(auths.institutions) > 0 group by upper(trim(doi)), work.id
+ror_case1 as (SELECT id, upper(trim(doi)) doi, 0 as ror_count,  FROM `{{ openalex_works.project_id }}.{{ openalex_works.dataset_id }}.{{ openalex_works.table_id }}` where doi is not null and authorships is null),
+ror_case2 as (SELECT id, upper(trim(doi)) doi, 0 as ror_count,  FROM `{{ openalex_works.project_id }}.{{ openalex_works.dataset_id }}.{{ openalex_works.table_id }}` where doi is not null and array_length(authorships) = 0),
+ror_case3 as (SELECT id, upper(trim(doi)) doi, 0 as ror_count,  FROM `{{ openalex_works.project_id }}.{{ openalex_works.dataset_id }}.{{ openalex_works.table_id }}`, unnest(authorships) auths where doi is not null and array_length(authorships) > 0 and auths.institutions is null),
+ror_case4 as (SELECT id, upper(trim(doi)) doi, 0 as ror_count,  FROM `{{ openalex_works.project_id }}.{{ openalex_works.dataset_id }}.{{ openalex_works.table_id }}`, unnest(authorships) auths where doi is not null and array_length(authorships) > 0 and array_length(auths.institutions) = 0),
+ror_case5 as (SELECT work.id id, upper(trim(doi)) doi, count(inst.ror) ror_count,  FROM `{{ openalex_works.project_id }}.{{ openalex_works.dataset_id }}.{{ openalex_works.table_id }}` work, unnest(authorships) auths, unnest(institutions) inst where doi is not null and array_length(authorships) > 0 and array_length(auths.institutions) > 0 group by upper(trim(doi)), work.id
 ),
 ror_cases_merged as (
 SELECT * FROM ror_case1
@@ -41,10 +41,10 @@ FROM ror_cases_merged
 group by doi)
 
 SELECT
-  UPPER(TRIM(SUBSTRING(openalex.doi, 17))) as doi,
-  openalex.* EXCEPT(doi)
+  UPPER(TRIM(SUBSTRING(openalex_works.doi, 17))) as doi,
+  openalex_works.* EXCEPT(doi)
 FROM
-`{{ openalex.project_id }}.{{ openalex.dataset_id }}.works` openalex
+`{{ openalex_works.project_id }}.{{ openalex_works.dataset_id }}.{{ openalex_works.table_id }}` openalex_works
 INNER JOIN
 ror_filtered
-ON openalex.id = ror_filtered.id
+ON openalex_works.id = ror_filtered.id

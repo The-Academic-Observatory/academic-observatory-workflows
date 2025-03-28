@@ -6,3 +6,5 @@ logs/
 .venv
 airflow.db
 airflow.cfg
+config-prod.yaml
+config-example.yaml

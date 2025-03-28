@@ -1399,7 +1399,7 @@ def bq_load_observatory_dataset(
             ),
             Table(
                 "works",
-                False,
+                True,
                 dataset_id_all,
                 openalex,
                 bq_find_schema(path=project_path("openalex_telescope", "schema"), table_name="works"),

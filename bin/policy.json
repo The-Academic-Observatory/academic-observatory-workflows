@@ -1,0 +1,9 @@
+[
+  {
+    "name": "keep-last-10",
+    "action": {"type": "Keep"},
+    "mostRecentVersions": {
+      "keepCount": 10
+     }
+   }
+]

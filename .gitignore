@@ -16,3 +16,4 @@ webserver_config.py
 airflow.cfg
 airflow.db
 docker-compose.override.yml
+config-*.yaml

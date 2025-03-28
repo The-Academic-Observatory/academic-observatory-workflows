@@ -69,7 +69,7 @@ class DagParams:
         cloud_workspace: CloudWorkspace,
         bq_dataset_id: str = "unpaywall",
         bq_table_name: str = "unpaywall",
-        api_bq_dataset_id: str = "unpaywall",
+        api_bq_dataset_id: str = "dataset_api",
         schema_folder: str = project_path("unpaywall_telescope", "schema"),
         dataset_description: str = "Unpaywall Data Feed: https://unpaywall.org/products/data-feed",
         table_description: str = "Unpaywall Data Feed: https://unpaywall.org/products/data-feed",
@@ -83,7 +83,7 @@ class DagParams:
         max_active_runs: int = 1,
         retries: int = 3,
         test_run: bool = False,
-        gke_volume_size: str = "500Gi",
+        gke_volume_size: str = "1000Gi",
         gke_namespace: str = "coki-astro",
         gke_volume_name: str = "unpaywall",
         **kwargs,
@@ -219,22 +219,6 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             @task.kubernetes(
-                task_id="upload_downloaded",
-                trigger_rule=TriggerRule.ALL_SUCCESS,
-                name=f"{dag_params.dag_id}-load-snapshot-upload_downloaded",
-                container_resources=gke_make_container_resources(
-                    {"memory": "4G", "cpu": "4"},
-                    dag_params.gke_params.gke_resource_overrides.get("load_snapshot_upload_downloaded"),
-                ),
-                **kubernetes_task_params,
-            )
-            def load_snapshot_upload_downloaded(release_id: str, dag_params, **context):
-                """Upload the downloaded snapshot for the given release."""
-                from academic_observatory_workflows.unpaywall_telescope import tasks
-
-                tasks.load_snapshot_upload_downloaded(release_id, cloud_workspace=dag_params.cloud_workspace)
-
-            @task.kubernetes(
                 task_id="extract",
                 trigger_rule=TriggerRule.ALL_SUCCESS,
                 name=f"{dag_params.dag_id}-load-snapshot-extract",
@@ -313,7 +297,6 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             task_download = load_snapshot_download(data, dag_params)
-            task_upload_downloaded = load_snapshot_upload_downloaded(data, dag_params)
             task_extract = load_snapshot_extract(data, dag_params)
             task_transform = load_snapshot_transform(data, dag_params)
             task_split_main_table_file = load_snapshot_split_main_table_file(data, dag_params)
@@ -322,7 +305,6 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             (
                 task_download
-                >> task_upload_downloaded
                 >> task_extract
                 >> task_transform
                 >> task_split_main_table_file
@@ -354,24 +336,6 @@ def create_dag(dag_params: DagParams) -> DAG:
                     cloud_workspace=dag_params.cloud_workspace,
                     http_header=dag_params.http_header,
                     base_url=dag_params.unpaywall_base_url,
-                )
-
-            @task.kubernetes(
-                task_id="upload_downloaded",
-                trigger_rule=TriggerRule.NONE_FAILED,
-                name=f"{dag_params.dag_id}-load-changefiles-upload-downloaded",
-                container_resources=gke_make_container_resources(
-                    {"memory": "4G", "cpu": "4"},
-                    dag_params.gke_params.gke_resource_overrides.get("load_changefiles_upload_downloaded"),
-                ),
-                **kubernetes_task_params,
-            )
-            def load_changefiles_upload_downloaded(release_id: str, dag_params, **context):
-                """Upload the downloaded changefiles for the given release."""
-                from academic_observatory_workflows.unpaywall_telescope import tasks
-
-                tasks.load_changefiles_upload_downloaded(
-                    release_id=release_id, cloud_workspace=dag_params.cloud_workspace
                 )
 
             @task.kubernetes(
@@ -453,7 +417,6 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             task_download = load_changefiles_download(data, dag_params)
-            task_upload_downloaded = load_changefiles_upload_downloaded(data, dag_params)
             task_extract = load_changefiles_extract(data, dag_params)
             task_transform = load_changefiles_transform(data, dag_params)
             task_upload = load_changefiles_upload(data, dag_params)
@@ -462,7 +425,6 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             (
                 task_download
-                >> task_upload_downloaded
                 >> task_extract
                 >> task_transform
                 >> task_upload

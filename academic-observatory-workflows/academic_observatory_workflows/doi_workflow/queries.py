@@ -165,7 +165,7 @@ def make_sql_queries(
             ),
             SQLQuery(
                 "openalex",
-                inputs={"openalex": Table(input_project_id, dataset_id_openalex, "works", sharded=False)},
+                inputs={"openalex_works": Table(input_project_id, dataset_id_openalex, "works", sharded=True)},
                 output_table=Table(output_project_id, dataset_id_observatory_intermediate, "openalex"),
                 output_clustering_fields=["doi"],
             ),

@@ -54,7 +54,7 @@ class DagParams:
         cloud_workspace: CloudWorkspace,
         bq_dataset_id: str = "ror",
         bq_table_name: str = "ror",
-        api_bq_dataset_id: str = "ror",
+        api_bq_dataset_id: str = "dataset_api",
         schema_folder: str = project_path("ror_telescope", "schema"),
         dataset_description: str = "The Research Organization Registry (ROR) database: https://ror.org/",
         table_description: str = "The Research Organization Registry (ROR) database: https://ror.org/",

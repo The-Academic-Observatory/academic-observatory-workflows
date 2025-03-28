@@ -58,7 +58,7 @@ class DagParams:
         earliest_date: pendulum.DateTime = pendulum.datetime(1800, 1, 1),
         bq_dataset_id: str = "scopus",
         bq_table_name: str = "scopus",
-        api_bq_dataset_id: str = "scopus",
+        api_bq_dataset_id: str = "dataset_api",
         schema_folder: str = project_path("scopus_telescope", "schema"),
         dataset_description: str = "The Scopus citation database: https://www.scopus.com",
         table_description: str = "The Scopus citation database: https://www.scopus.com",
