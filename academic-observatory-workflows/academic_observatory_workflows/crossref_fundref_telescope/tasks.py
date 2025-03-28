@@ -6,7 +6,7 @@ import random
 import shutil
 import tarfile
 import xml.etree.ElementTree as ET
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import pendulum
 from airflow.exceptions import AirflowException, AirflowSkipException
@@ -138,10 +138,11 @@ def upload_downloaded(release: Dict) -> None:
         raise AirflowException(f"Error uploading file {release.download_file_path} to bucket: {release.download_uri}")
 
 
-def extract(release: Dict) -> None:
+def extract(release: Union[Dict, CrossrefFundrefRelease]) -> None:
     """Task to extract a Fundref data release"""
 
-    release = CrossrefFundrefRelease.from_dict(release)
+    if isinstance(release, dict):
+        release = CrossrefFundrefRelease.from_dict(release)
     logging.info(f"Extracting file: {release.download_file_path}")
     with tarfile.open(release.download_file_path, "r:gz") as tar:
         for member in tar.getmembers():
@@ -155,10 +156,11 @@ def extract(release: Dict) -> None:
     logging.info(f"File extracted to: {release.extract_file_path}")
 
 
-def transform(release: Dict) -> None:
+def transform(release: Union[Dict, CrossrefFundrefRelease]) -> None:
     """Task to transform a Fundref data release"""
 
-    release = CrossrefFundrefRelease.from_dict(release)
+    if isinstance(release, dict):
+        release = CrossrefFundrefRelease.from_dict(release)
 
     # Parse RDF funders data
     logging.info(f"Transforming file: {release.extract_file_path}")
@@ -168,10 +170,11 @@ def transform(release: Dict) -> None:
     logging.info(f"Saved transformed file to: {release.transform_file_path}")
 
 
-def upload_transformed(release: Dict) -> None:
+def upload_transformed(release: Union[Dict, CrossrefFundrefRelease]) -> None:
     """Task to upload the downloaded Fundref data to GCS bucket"""
 
-    release = CrossrefFundrefRelease.from_dict(release)
+    if isinstance(release, dict):
+        release = CrossrefFundrefRelease.from_dict(release)
     logging.info(f"Uploading file to bucket: {release.cloud_workspace.transform_bucket}")
     success = gcs_upload_file(
         bucket_name=release.cloud_workspace.transform_bucket,

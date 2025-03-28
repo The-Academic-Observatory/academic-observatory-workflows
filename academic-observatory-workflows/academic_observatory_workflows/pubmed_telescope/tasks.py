@@ -16,7 +16,6 @@ from typing import Dict, List, Set, Tuple, Union, Optional
 import pendulum
 from airflow import AirflowException
 from airflow.models import DagRun
-from airflow.models.taskinstance import TaskInstance
 from Bio import Entrez
 from Bio.Entrez.Parser import (
     DictionaryElement,
@@ -33,6 +32,7 @@ from academic_observatory_workflows.pubmed_telescope.datafile import Datafile
 from academic_observatory_workflows.pubmed_telescope.release import PubMedRelease
 from observatory_platform.dataset_api import DatasetRelease, DatasetAPI
 from observatory_platform.airflow.airflow import is_first_dag_run
+from observatory_platform.airflow.release import release_to_bucket
 from observatory_platform.files import get_chunks, save_jsonl_gz, yield_jsonl
 from observatory_platform.google.gcs import gcs_upload_files
 from observatory_platform.airflow.workflow import CloudWorkspace, cleanup
@@ -111,7 +111,7 @@ def fetch_release(
     ftp_server_url: str,
     ftp_port: int,
     reset_ftp_counter: int,
-) -> Dict:
+) -> str:
     """Get a list of all files to process for this release.
 
     Determine if workflow needs to redownload the baseline files again because of a new yearly release.
@@ -293,17 +293,21 @@ def fetch_release(
 
     logging.info("DATAFILES:")
     logging.info(files_to_download)
-    return PubMedRelease(
-        dag_id=dag_id,
-        run_id=run_id,
-        cloud_workspace=cloud_workspace,
-        bq_dataset_id=bq_dataset_id,
-        start_date=release_interval_start,
-        end_date=data_interval_end,
-        year_first_run=year_first_run,
-        datafile_list=files_to_download,
-        baseline_upload_date=baseline_upload_date,
-    ).to_dict()
+    id = release_to_bucket(
+        PubMedRelease(
+            dag_id=dag_id,
+            run_id=run_id,
+            cloud_workspace=cloud_workspace,
+            bq_dataset_id=bq_dataset_id,
+            start_date=release_interval_start,
+            end_date=data_interval_end,
+            year_first_run=year_first_run,
+            datafile_list=files_to_download,
+            baseline_upload_date=baseline_upload_date,
+        ).to_dict(),
+        cloud_workspace.download_bucket,
+    )
+    return id
 
 
 def short_circuit(release: dict) -> bool:
@@ -405,14 +409,15 @@ def updatefiles_upload_downloaded(release: dict) -> None:
         raise AirflowException("updatefiles.upload_downloaded: failed to upload files to cloud storage bucket")
 
 
-def baseline_transform(release: dict, max_processes: Optional[int] = None) -> None:
+def baseline_transform(release: Union[dict, PubMedRelease], max_processes: Optional[int] = None) -> None:
     """
     Transform the *.xml.gz files downloaded from PubMed into usable json files for BigQuery import.
 
     :param max_proceses: The max number of processes to use for multiprocessing
     """
 
-    release = PubMedRelease.from_dict(release)
+    if isinstance(release, dict):
+        release = PubMedRelease.from_dict(release)
     if max_processes == None:
         max_processes = os.cpu_count()
 
@@ -435,15 +440,15 @@ def baseline_transform(release: dict, max_processes: Optional[int] = None) -> No
                 assert filename, f"Unable to transform baseline file: {filename}"
 
 
-def updatefiles_transform(release: dict, max_processes: Optional[int] = None) -> List[Dict]:
+def updatefiles_transform(release: Union[dict, PubMedRelease], max_processes: Optional[int] = None) -> List[Dict]:
     """
     Transform the *.xml.gz files downloaded from PubMed's FTP server into usable json-like files for BigQuery import.
     This is a multithreaded and pulls the PubmedArticle records from the downloaded XML files.
 
     :param max_processes: The number of processes to use for multithreading
     """
-
-    release = PubMedRelease.from_dict(release)
+    if isinstance(release, dict):
+        release = PubMedRelease.from_dict(release)
     if max_processes == None:
         max_processes = os.cpu_count()
 
@@ -472,15 +477,12 @@ def updatefiles_transform(release: dict, max_processes: Optional[int] = None) ->
 
     return [updatefile.to_dict() for updatefile in updatefiles]
 
-    # ti: TaskInstance["ti"]
-    # updatefile_list = [updatefile.to_dict() for updatefile in updatefiles]
-    # ti.xcom_push(key="updatefile_list", value=updatefile_list)
 
-
-def baseline_upload_transformed(release: dict) -> None:
+def baseline_upload_transformed(release: Union[dict, PubMedRelease]) -> None:
     """Upload transformed baseline files to GCS."""
 
-    release = PubMedRelease.from_dict(release)
+    if isinstance(release, dict):
+        release = PubMedRelease.from_dict(release)
     file_paths = [datafile.transform_baseline_file_path for datafile in release.baseline_files]
 
     success = gcs_upload_files(
@@ -492,14 +494,15 @@ def baseline_upload_transformed(release: dict) -> None:
 
 
 def updatefiles_merge_upserts_deletes(
-    release: dict, updatefiles: List[Dict], max_processes: Optional[int] = None
+    release: Union[dict, PubMedRelease], updatefiles: List[Dict], max_processes: Optional[int] = None
 ) -> None:
     """Merge the upserts and deletes for this release period.
 
     :param max_processes: The number of processes to use for multithreading
     """
 
-    release = PubMedRelease.from_dict(release)
+    if isinstance(release, dict):
+        release = PubMedRelease.from_dict(release)
     updatefiles = [PubmedUpdatefile.from_dict(updatefile) for updatefile in updatefiles]
     if max_processes == None:
         max_processes = os.cpu_count()
@@ -536,10 +539,11 @@ def updatefiles_merge_upserts_deletes(
                 logging.info(f"Finished writing out upserts to file: {future.result()}")
 
 
-def updatefiles_upload_merged_upsert_records(release: dict) -> None:
+def updatefiles_upload_merged_upsert_records(release: Union[dict, PubMedRelease]) -> None:
     """Upload the merged upsert records to GCS."""
 
-    release = PubMedRelease.from_dict(release)
+    if isinstance(release, dict):
+        release = PubMedRelease.from_dict(release)
     file_paths = [datafile.merged_upsert_file_path for datafile in release.updatefiles]
     logging.info(f"Uploading files: {file_paths}")
     success = gcs_upload_files(

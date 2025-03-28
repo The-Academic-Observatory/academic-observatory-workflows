@@ -123,7 +123,6 @@ class TestOrcidTelescope(SandboxTestCase):
                     "create_manifests",
                     "latest_modified_record_date",
                     "download_transform",
-                    "upload_transformed",
                     "bq_load_main_table",
                     "bq_load_upsert_table",
                     "bq_load_delete_table",
@@ -138,8 +137,7 @@ class TestOrcidTelescope(SandboxTestCase):
                 "gke_create_storage": ["create_manifests"],
                 "create_manifests": ["latest_modified_record_date"],
                 "latest_modified_record_date": ["download_transform", "add_dataset_release"],
-                "download_transform": ["upload_transformed"],
-                "upload_transformed": ["gke_delete_storage"],
+                "download_transform": ["gke_delete_storage"],
                 "gke_delete_storage": ["bq_load_main_table"],
                 "bq_load_main_table": ["bq_load_upsert_table"],
                 "bq_load_upsert_table": ["bq_load_delete_table"],
@@ -190,10 +188,6 @@ class TestOrcidTelescope(SandboxTestCase):
                 "create_manifests": {"memory": "2G", "cpu": "2"},
                 "latest_modified_record_date": {"memory": "2G", "cpu": "2"},
                 "download_transform": {"memory": "2G", "cpu": "2"},
-                "upload_transformed": {"memory": "2G", "cpu": "2"},
-                "bq_load_main_table": {"memory": "2G", "cpu": "2"},
-                "bq_load_upsert_table": {"memory": "2G", "cpu": "2"},
-                "bq_load_delete_table": {"memory": "2G", "cpu": "2"},
             }
             test_params = DagParams(
                 dag_id="test_orcid",
