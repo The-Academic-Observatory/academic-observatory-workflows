@@ -148,8 +148,6 @@ class TestUnpaywallTelescope(SandboxTestCase):
                 unpaywall_base_url=f"http://{TestConfig.http_host_url}:{TestConfig.http_port}/unpaywall/1",  # Add /1/ for proper routing in the http-server
                 gke_image=TestConfig.gke_image,
                 gke_namespace=TestConfig.gke_namespace,
-                gke_volume_name=TestConfig.gke_volume_name,
-                gke_volume_path=TestConfig.gke_volume_path,
                 gke_resource_overrides=task_resources,
                 test_run=True,
             )

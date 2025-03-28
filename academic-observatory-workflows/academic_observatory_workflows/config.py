@@ -61,8 +61,6 @@ class TestConfig:
     ftp_port: int = 5021
     gke_image: str = "academic-observatory:test"
     gke_namespace: str = "default"
-    gke_volume_name: str = "ao-pvc"
-    gke_volume_path: str = "/home/astro/data"
     gke_cluster_connection: dict = dict(
         conn_id="gke_cluster",
         conn_type="kubernetes",
