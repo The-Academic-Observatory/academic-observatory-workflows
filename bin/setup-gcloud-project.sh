@@ -37,6 +37,9 @@ ARTIFACT_REPO_REGION="us"
 BQ_PER_USER_PER_DAY=$((10 * 1024 * 1024)) # 10 TiB in MiB
 BQ_PER_PROJECT_PER_DAY=$((10 * 1024 * 1024)) # 10 TiB in MiB
 
+# Get the path of the script directory so that we can call other scripts within the same folder
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Parse optional arguments
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -104,35 +107,35 @@ fi
 echo "Enable Google Cloud APIs"
 gcloud services enable storage.googleapis.com \
 artifactregistry.googleapis.com \
-bigquery.googleapis.com --project=$PROJECT_ID
+bigquery.googleapis.com --project="$PROJECT_ID"
 
 echo "Set BigQuery Quota"
 gcloud alpha services quota update \
-  --consumer=projects/$PROJECT_ID \
+  --consumer=projects/"$PROJECT_ID" \
   --service bigquery.googleapis.com \
   --metric bigquery.googleapis.com/quota/query/usage \
-  --value $BQ_PER_USER_PER_DAY --unit 1/d/{project}/{user} --force
+  --value "$BQ_PER_USER_PER_DAY" --unit "1/d/{project}/{user}" --force
 
 gcloud alpha services quota update \
-  --consumer=projects/$PROJECT_ID \
+  --consumer=projects/"$PROJECT_ID" \
   --service bigquery.googleapis.com \
   --metric bigquery.googleapis.com/quota/query/usage \
-  --value $BQ_PER_PROJECT_PER_DAY --unit 1/d/{project} --force
+  --value "$BQ_PER_PROJECT_PER_DAY" --unit "1/d/{project}" --force
 
 ###########################################
 ### Create Artifact Registry
 ###########################################
 
 ARTIFACT_REPO_NAME=$PROJECT_ID
-gcloud artifacts repositories create $ARTIFACT_REPO_NAME \
+gcloud artifacts repositories create "$ARTIFACT_REPO_NAME" \
   --repository-format=docker \
-  --location=$ARTIFACT_REPO_REGION \
+  --location="$ARTIFACT_REPO_REGION" \
   --description="The AO artifact registry where images for GKE are stored" \
-  --project=$PROJECT_ID
+  --project="$PROJECT_ID"
 
-gcloud artifacts repositories set-cleanup-policies $ARTIFACT_REPO_NAME \
-  --location=$ARTIFACT_REPO_REGION \
-  --project=$PROJECT_ID \
+gcloud artifacts repositories set-cleanup-policies "$ARTIFACT_REPO_NAME" \
+  --location="$ARTIFACT_REPO_REGION" \
+  --project="$PROJECT_ID" \
   --policy=policy.json
 
 ###########################################
@@ -141,13 +144,13 @@ gcloud artifacts repositories set-cleanup-policies $ARTIFACT_REPO_NAME \
 
 echo "Authenticate with GKE Cluster: $GKE_CLUSTER_NAME"
 KUBE_CONFIG_PATH="kube-config.json"
-gcloud container clusters get-credentials $GKE_CLUSTER_NAME --project $PROJECT_ID --region $GKE_CLUSTER_REGION
+gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --project "$PROJECT_ID" --region "$GKE_CLUSTER_REGION"
 
 echo "Created GKE Cluster Namespace: $GKE_NAMESPACE"
-kubectl create namespace $GKE_NAMESPACE
+kubectl create namespace "$GKE_NAMESPACE"
 
 echo "Set GKE Cluster Context: $GKE_NAMESPACE"
-kubectl config set-context --current --namespace=$GKE_NAMESPACE
+kubectl config set-context --current --namespace="$GKE_NAMESPACE"
 
 echo "Convert Kube Config to JSON: $KUBE_CONFIG_PATH"
 cat ~/.kube/config | yq eval -o=json > $KUBE_CONFIG_PATH
@@ -157,20 +160,20 @@ cat ~/.kube/config | yq eval -o=json > $KUBE_CONFIG_PATH
 ###########################################
 
 echo "Create GCS bucket '$DOWNLOAD_BUCKET_NAME' and add lifecycle rules"
-gcloud storage buckets create gs://$DOWNLOAD_BUCKET_NAME --location=$GCS_REGION --project=$PROJECT_ID
-gcloud storage buckets update gs://$DOWNLOAD_BUCKET_NAME --lifecycle-file=lifecycle.json --project=$PROJECT_ID
+gcloud storage buckets create "gs://$DOWNLOAD_BUCKET_NAME" --location="$GCS_REGION" --project="$PROJECT_ID"
+gcloud storage buckets update "gs://$DOWNLOAD_BUCKET_NAME" --lifecycle-file=lifecycle.json --project="$PROJECT_ID"
 
 echo "Create GCS bucket '$TRANSFORM_BUCKET_NAME' and add lifecycle rules"
-gcloud storage buckets create gs://$TRANSFORM_BUCKET_NAME --location=$GCS_REGION --project=$PROJECT_ID
-gcloud storage buckets update gs://$TRANSFORM_BUCKET_NAME --lifecycle-file=lifecycle.json --project=$PROJECT_ID
+gcloud storage buckets create "gs://$TRANSFORM_BUCKET_NAME" --location="$GCS_REGION" --project="$PROJECT_ID"
+gcloud storage buckets update "gs://$TRANSFORM_BUCKET_NAME" --lifecycle-file=lifecycle.json --project="$PROJECT_ID"
 
 ######################################
 ### AO Astro Role and Service Account
 ######################################
 
 echo "Create AO Astro IAM role"
-ROLE_NAME="AOAstroRole"
-gcloud iam roles create $ROLE_NAME --project=$PROJECT_ID \
+ASTRO_ROLE_NAME="AOAstroRole"
+gcloud iam roles create "$ASTRO_ROLE_NAME" --project="$PROJECT_ID" \
  --title="AO Astro Role" \
  --description="Gives Astro permissions to specific Google Cloud resources" \
  --permissions=bigquery.datasets.create,\
@@ -187,10 +190,6 @@ bigquery.tables.updateData,\
 storagetransfer.jobs.create,\
 storagetransfer.operations.list,\
 storagetransfer.projects.getServiceAccount,\
-storage.objects.list,\
-storage.hmacKeys.create,\
-storage.hmacKeys.delete,\
-storage.hmacKeys.update,\
 container.pods.create,\
 container.pods.delete,\
 container.pods.update,\
@@ -200,37 +199,24 @@ container.pods.getLogs,\
 container.pods.exec,\
 container.events.list,\
 container.persistentVolumeClaims.create,\
-container.persistentVolumeClaims.delete,\
-compute.disks.create,\
-compute.disks.delete
+container.persistentVolumeClaims.delete
 
 echo "Create AO Astro Service Account"
 AO_ASTRO_SERVICE_ACCOUNT_NAME="ao-astro"
 AO_ASTRO_SERVICE_ACCOUNT="$AO_ASTRO_SERVICE_ACCOUNT_NAME@$PROJECT_ID.iam.gserviceaccount.com"
 AO_ASTRO_SERVICE_ACCOUNT_DISPLAY_NAME="AO Astro Service Account"
-gcloud iam service-accounts create $AO_ASTRO_SERVICE_ACCOUNT_NAME \
-  --project=$PROJECT_ID \
+gcloud iam service-accounts create "$AO_ASTRO_SERVICE_ACCOUNT_NAME" \
+  --project="$PROJECT_ID" \
   --description="The AO Astro Service Account" \
   --display-name="$AO_ASTRO_SERVICE_ACCOUNT_DISPLAY_NAME"
 
-echo "Add $ROLE_NAME Role to $AO_ASTRO_SERVICE_ACCOUNT_DISPLAY_NAME"
-gcloud projects add-iam-policy-binding $PROJECT_ID \
+echo "Add $ASTRO_ROLE_NAME Role to $AO_ASTRO_SERVICE_ACCOUNT_DISPLAY_NAME"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$AO_ASTRO_SERVICE_ACCOUNT" \
-  --role=projects/$PROJECT_ID/roles/$ROLE_NAME
+  --role="projects/$PROJECT_ID/roles/$ASTRO_ROLE_NAME"
 
-echo "Give $AO_ASTRO_SERVICE_ACCOUNT_DISPLAY_NAME permission to access bucket '$DOWNLOAD_BUCKET_NAME'"
-gsutil iam ch \
-serviceAccount:$AO_ASTRO_SERVICE_ACCOUNT:roles/storage.legacyBucketReader \
-serviceAccount:$AO_ASTRO_SERVICE_ACCOUNT:roles/storage.objectCreator \
-serviceAccount:$AO_ASTRO_SERVICE_ACCOUNT:roles/storage.objectViewer \
-gs://$DOWNLOAD_BUCKET_NAME
-
-echo "Give $AO_ASTRO_SERVICE_ACCOUNT_DISPLAY_NAME permission to access bucket '$TRANSFORM_BUCKET_NAME' "
-gsutil iam ch \
-serviceAccount:$AO_ASTRO_SERVICE_ACCOUNT:roles/storage.legacyBucketReader \
-serviceAccount:$AO_ASTRO_SERVICE_ACCOUNT:roles/storage.objectCreator \
-serviceAccount:$AO_ASTRO_SERVICE_ACCOUNT:roles/storage.objectViewer \
-gs://$TRANSFORM_BUCKET_NAME
+"$SCRIPT_DIR"/setup-bucket-permissions.sh "$DOWNLOAD_BUCKET_NAME" "$AO_ASTRO_SERVICE_ACCOUNT"
+"$SCRIPT_DIR"/setup-bucket-permissions.sh "$TRANSFORM_BUCKET_NAME" "$AO_ASTRO_SERVICE_ACCOUNT"
 
 ###########################################
 ### GKE Service Account
@@ -238,38 +224,38 @@ gs://$TRANSFORM_BUCKET_NAME
 
 # Enables GKE pods to access storage buckets
 
+echo "Create AO GKE IAM role"
+GKE_ROLE_NAME="AOGKERole"
+gcloud iam roles create "$GKE_ROLE_NAME" --project="$PROJECT_ID" \
+ --title="AO GKE Role" \
+ --description="Gives GKE pods permissions to specific Google Cloud resources" \
+ --permissions=storage.hmacKeys.create,\
+storage.hmacKeys.delete,\
+storage.hmacKeys.update
+
 AO_GKE_SERVICE_ACCOUNT_NAME="ao-gke"
 AO_GKE_SERVICE_ACCOUNT="$AO_GKE_SERVICE_ACCOUNT_NAME@$PROJECT_ID.iam.gserviceaccount.com"
 AO_GKE_SERVICE_ACCOUNT_DISPLAY_NAME="AO GKE Service Account"
-gcloud iam service-accounts create $AO_GKE_SERVICE_ACCOUNT_NAME \
-  --project=$PROJECT_ID \
+gcloud iam service-accounts create "$AO_GKE_SERVICE_ACCOUNT_NAME" \
+  --project="$PROJECT_ID" \
   --description="The AO GKE Service Account" \
   --display-name="$AO_GKE_SERVICE_ACCOUNT_DISPLAY_NAME"
 
-gcloud iam service-accounts create $AO_GKE_SERVICE_ACCOUNT_NAME \
-    --project=$PROJECT_ID
+echo "Add $GKE_ROLE_NAME Role to $AO_GKE_SERVICE_ACCOUNT_DISPLAY_NAME"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$AO_GKE_SERVICE_ACCOUNT" \
+  --role="projects/$PROJECT_ID/roles/$GKE_ROLE_NAME"
 
-gcloud iam service-accounts add-iam-policy-binding $AO_GKE_SERVICE_ACCOUNT_NAME@$PROJECT_ID.iam.gserviceaccount.com \
+gcloud iam service-accounts add-iam-policy-binding "$AO_GKE_SERVICE_ACCOUNT_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
     --role roles/iam.workloadIdentityUser \
     --member "serviceAccount:$PROJECT_ID.svc.id.goog[$GKE_NAMESPACE/default]"
 
 kubectl annotate serviceaccount default \
-    --namespace $GKE_NAMESPACE \
-    iam.gke.io/gcp-service-account=$AO_GKE_SERVICE_ACCOUNT_NAME@$PROJECT_ID.iam.gserviceaccount.com
+    --namespace "$GKE_NAMESPACE" \
+    iam.gke.io/gcp-service-account="$AO_GKE_SERVICE_ACCOUNT_NAME@$PROJECT_ID.iam.gserviceaccount.com"
 
-echo "Give $AO_GKE_SERVICE_ACCOUNT_DISPLAY_NAME permission to access bucket '$DOWNLOAD_BUCKET_NAME'"
-gsutil iam ch \
-serviceAccount:$AO_GKE_SERVICE_ACCOUNT:roles/storage.legacyBucketReader \
-serviceAccount:$AO_GKE_SERVICE_ACCOUNT:roles/storage.objectCreator \
-serviceAccount:$AO_GKE_SERVICE_ACCOUNT:roles/storage.objectViewer \
-gs://$DOWNLOAD_BUCKET_NAME
-
-echo "Give $AO_GKE_SERVICE_ACCOUNT_DISPLAY_NAME permission to access bucket '$TRANSFORM_BUCKET_NAME' "
-gsutil iam ch \
-serviceAccount:$AO_GKE_SERVICE_ACCOUNT:roles/storage.legacyBucketReader \
-serviceAccount:$AO_GKE_SERVICE_ACCOUNT:roles/storage.objectCreator \
-serviceAccount:$AO_GKE_SERVICE_ACCOUNT:roles/storage.objectViewer \
-gs://$TRANSFORM_BUCKET_NAME
+"$SCRIPT_DIR"/setup-bucket-permissions.sh "$DOWNLOAD_BUCKET_NAME" "$AO_GKE_SERVICE_ACCOUNT"
+"$SCRIPT_DIR"/setup-bucket-permissions.sh "$TRANSFORM_BUCKET_NAME" "$AO_GKE_SERVICE_ACCOUNT"
 
 echo ""
 echo "$AO_ASTRO_SERVICE_ACCOUNT_DISPLAY_NAME: $AO_ASTRO_SERVICE_ACCOUNT"

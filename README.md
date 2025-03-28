@@ -62,6 +62,11 @@ The script outputs information that you need for subequent steps:
 * AO Astro Service Account: required to set up the 'Customer Managed Identity' in Astronomer.io.
 * Kube Config Path: required to configure the gke_cluster Airflow Connection.
 
+If you are using additional buckets, then you can enable GKE and or Astro to access them with the following command:
+```bash
+./bin/setup-bucket-permissions.sh bucket-name service-account-email
+```
+
 ## Astronomer.io Customer Managed Identity
 The AO Astro Service Account needs to be attached to the Astronomer.io deployment as a "Customer Managed Identity".
 

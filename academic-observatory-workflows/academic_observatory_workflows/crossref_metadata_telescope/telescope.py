@@ -162,19 +162,6 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.download(release, base_url=dag_params.crossref_base_url)
 
         @task.kubernetes(
-            name=f"{dag_params.dag_id}-upload-download",
-            container_resources=gke_make_container_resources(
-                {"memory": "2Gi", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("upload_downloaded")
-            ),
-            **kubernetes_task_params,
-        )
-        def upload_downloaded(release: dict, **context):
-            """Upload downloaded data to Cloud Storage."""
-            from academic_observatory_workflows.crossref_metadata_telescope import tasks
-
-            tasks.upload_downloaded(release)
-
-        @task.kubernetes(
             name=f"{dag_params.dag_id}-extract",
             container_resources=gke_make_container_resources(
                 {"memory": "4G", "cpu": "4"}, dag_params.gke_params.gke_resource_overrides.get("extract")
@@ -246,7 +233,6 @@ def create_dag(dag_params: DagParams) -> DAG:
         )
         xcom_release = fetch_release(dag_params)
         task_download = download(xcom_release, dag_params)
-        task_upload_downloaded = upload_downloaded(xcom_release)
         task_extract = extract(xcom_release)
         task_transform = transform(xcom_release, dag_params)
         task_upload_transformed = upload_transformed(xcom_release, dag_params)
@@ -267,7 +253,6 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> xcom_release
             >> task_create_storage
             >> task_download
-            >> task_upload_downloaded
             >> task_extract
             >> task_transform
             >> task_upload_transformed
