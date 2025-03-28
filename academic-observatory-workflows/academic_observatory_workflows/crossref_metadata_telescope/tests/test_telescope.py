@@ -56,7 +56,6 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
                 "fetch_release": [
                     "gke_create_storage",
                     "download",
-                    "upload_downloaded",
                     "extract",
                     "transform",
                     "upload_transformed",

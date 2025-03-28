@@ -67,7 +67,7 @@ If you are using additional buckets, then you can enable GKE and or Astro to acc
 ./bin/setup-bucket-permissions.sh bucket-name service-account-email
 ```
 
-## Astronomer.io Customer Managed Identity
+### Astronomer.io Customer Managed Identity
 The AO Astro Service Account needs to be attached to the Astronomer.io deployment as a "Customer Managed Identity".
 
 Please follow these steps to set it up: https://www.astronomer.io/docs/astro/authorize-deployments-to-your-cloud/?tab=gcp#setup

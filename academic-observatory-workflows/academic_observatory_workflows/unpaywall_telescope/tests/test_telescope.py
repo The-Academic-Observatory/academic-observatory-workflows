@@ -57,7 +57,6 @@ class TestUnpaywallTelescope(SandboxTestCase):
                     "load_snapshot.upload_main_table_files",
                     "load_snapshot.split_main_table_file",
                     "load_snapshot.transform",
-                    "load_snapshot.upload_downloaded",
                     "load_changefiles.download",
                     "branch",
                     "cleanup_workflow",
@@ -129,13 +128,11 @@ class TestUnpaywallTelescope(SandboxTestCase):
 
             task_resources = {
                 "load_snapshot_download": {"memory": "2G", "cpu": "2"},
-                "load_snapshot_upload_downloaded": {"memory": "2G", "cpu": "2"},
                 "load_snapshot_extract": {"memory": "2G", "cpu": "2"},
                 "load_snapshot_transform": {"memory": "2G", "cpu": "2"},
                 "load_snapshot_split_main_table_file": {"memory": "2G", "cpu": "2"},
                 "load_snapshot_upload_main_table_files": {"memory": "2G", "cpu": "2"},
                 "load_changefiles_download": {"memory": "2G", "cpu": "2"},
-                "load_changefiles_upload_downloaded": {"memory": "2G", "cpu": "2"},
                 "load_changefiles_extract": {"memory": "2G", "cpu": "2"},
                 "load_changefiles_transform": {"memory": "2G", "cpu": "2"},
                 "load_changefiles_upload": {"memory": "2G", "cpu": "2"},
