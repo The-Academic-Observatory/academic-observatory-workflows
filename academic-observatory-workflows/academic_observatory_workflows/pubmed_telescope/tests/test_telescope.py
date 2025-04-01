@@ -268,9 +268,8 @@ class TestPubMedTelescope(SandboxTestCase):
                 ftp_server_url=TestConfig.ftp_host_url,
                 gke_image=TestConfig.gke_image,
                 gke_namespace=TestConfig.gke_namespace,
-                gke_volume_name=TestConfig.gke_volume_name,
-                gke_volume_path=TestConfig.gke_volume_path,
                 gke_resource_overrides=task_resources,
+                gke_volume_size="500Mi",
                 test_run=True,
             )
             api = DatasetAPI(bq_project_id=env.cloud_workspace.project_id, bq_dataset_id=test_params.api_bq_dataset_id)

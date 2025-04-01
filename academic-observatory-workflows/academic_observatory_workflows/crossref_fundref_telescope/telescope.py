@@ -56,7 +56,7 @@ class DagParams:
         cloud_workspace: CloudWorkspace,
         bq_dataset_id: str = "crossref_fundref",
         bq_table_name: str = "crossref_fundref",
-        api_bq_dataset_id: str = "crossref_fundref",
+        api_bq_dataset_id: str = "dataset_api",
         schema_folder: str = project_path("crossref_fundref_telescope", "schema"),
         dataset_description: str = "The Crossref Funder Registry dataset: https://www.crossref.org/services/funder-registry/",
         table_description: str = "The Crossref Funder Registry dataset: https://www.crossref.org/services/funder-registry/",
