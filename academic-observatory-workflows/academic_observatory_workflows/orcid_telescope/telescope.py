@@ -88,7 +88,7 @@ class DagParams:
         max_active_runs: int = 1,
         retries: int = 3,
         test_run: bool = False,
-        gke_volume_size: str = "1000Gi",
+        gke_volume_size: str = "1000Gi", # Only required for full download, ~550 Gi for uncompressed files and then less for compressed transformed files.
         gke_namespace: str = "coki-astro",
         gke_volume_name: str = "orcid",
         **kwargs,
