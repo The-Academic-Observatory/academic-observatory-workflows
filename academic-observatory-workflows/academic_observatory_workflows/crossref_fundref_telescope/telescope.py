@@ -141,7 +141,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 release = CrossrefFundrefRelease.from_dict(release)
                 success = gcs_download_blob(
-                    release.cloud_workspace.download_bucket,
+                    bucket_name=release.cloud_workspace.download_bucket,
                     blob_name=release.download_blob_name,
                     file_path=release.download_file_path,
                 )

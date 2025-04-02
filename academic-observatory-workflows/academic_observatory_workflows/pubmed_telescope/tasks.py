@@ -654,10 +654,11 @@ def updatefiles_bq_upsert_records(release: dict, main_table_name: str, upsert_ta
     bq.bq_upsert_records(main_table_id=main_table_id, upsert_table_id=upsert_table_id, primary_key=keys_to_match_on)
 
 
-def updatefiles_upload_merged_delete_records(release: dict) -> None:
+def updatefiles_upload_merged_delete_records(release: Union[dict, PubMedRelease]) -> None:
     """Upload the merged delete records to GCS."""
 
-    release = PubMedRelease.from_dict(release)
+    if isinstance(release, dict):
+        release = PubMedRelease.from_dict(release)
     file_paths = [release.merged_delete_file_path]
 
     success = gcs_upload_files(
