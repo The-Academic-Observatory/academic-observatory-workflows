@@ -249,7 +249,6 @@ class TestPubMedTelescope(SandboxTestCase):
                 "updatefiles_upload_merged_upsert_records": {"memory": "2G", "cpu": "2"},
                 "updatefiles_upload_merged_delete_records": {"memory": "2G", "cpu": "2"},
             }
-            # ftp_server_url = "localhost"
             test_params = DagParams(
                 dag_id="test_pubmed",
                 cloud_workspace=env.cloud_workspace,
