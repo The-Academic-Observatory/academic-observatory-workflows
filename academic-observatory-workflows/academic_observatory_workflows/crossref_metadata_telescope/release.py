@@ -1,9 +1,7 @@
 import os
 import pendulum
-
 from observatory_platform.airflow.release import SnapshotRelease
 from observatory_platform.airflow.workflow import CloudWorkspace
-from observatory_platform.google.gcs import gcs_blob_name_from_path
 
 
 class CrossrefMetadataRelease(SnapshotRelease):
@@ -38,10 +36,6 @@ class CrossrefMetadataRelease(SnapshotRelease):
     @property
     def download_file_path(self):
         return os.path.join(self.download_folder, self.download_file_name)
-
-    @property
-    def download_blob_name(self):
-        return gcs_blob_name_from_path(self.download_file_path)
 
     @staticmethod
     def from_dict(dict_: dict):

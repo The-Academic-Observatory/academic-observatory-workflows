@@ -56,14 +56,18 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
                 "fetch_release": [
                     "gke_create_storage",
                     "download",
-                    "extract_transform",
+                    "extract",
+                    "transform",
+                    "upload_transformed",
                     "bq_load",
                     "add_dataset_release",
                     "cleanup_workflow",
                 ],
                 "gke_create_storage": ["download"],
-                "download": ["extract_transform"],
-                "extract_transform": ["bq_load"],
+                "download": ["extract"],
+                "extract": ["transform"],
+                "transform": ["upload_transformed"],
+                "upload_transformed": ["bq_load"],
                 "bq_load": ["gke_delete_storage"],
                 "gke_delete_storage": ["add_dataset_release"],
                 "add_dataset_release": ["cleanup_workflow"],
@@ -108,7 +112,9 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
 
             task_resources = {
                 "download": {"memory": "2G", "cpu": "2"},
-                "extract_transform": {"memory": "2G", "cpu": "2"},
+                "extract": {"memory": "2G", "cpu": "2"},
+                "transform": {"memory": "2G", "cpu": "2"},
+                "upload_transformed": {"memory": "2G", "cpu": "2"},
             }
             test_params = DagParams(
                 dag_id="test_crossref_metadata",

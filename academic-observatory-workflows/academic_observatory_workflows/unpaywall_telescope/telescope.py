@@ -217,43 +217,72 @@ def create_dag(dag_params: DagParams) -> DAG:
                     http_header=dag_params.http_header,
                     base_url=dag_params.unpaywall_base_url,
                 )
-                tasks.load_snapshot_upload_downloaded(release_id, cloud_workspace=dag_params.cloud_workspace)
 
             @task.kubernetes(
-                task_id="extract_transform",
+                task_id="extract",
                 trigger_rule=TriggerRule.ALL_SUCCESS,
                 name=f"{dag_params.dag_id}-load-snapshot-extract",
                 container_resources=gke_make_container_resources(
                     {"memory": "16G", "cpu": "16"},
-                    dag_params.gke_params.gke_resource_overrides.get("load_snapshot_extract_transform"),
+                    dag_params.gke_params.gke_resource_overrides.get("load_snapshot_extract"),
                 ),
                 **kubernetes_task_params,
             )
-            def load_snapshot_extract_transform(release_id: str, dag_params, **context):
-                """Gunzip the downloaded Unpaywall snapshot.
-                Transform the snapshot into the main table file. Find and replace the 'authenticated-orcid' string in the jsonl to 'authenticated_orcid'.
-                """
+            def load_snapshot_extract(release_id: str, dag_params, **context):
+                """Gunzip the downloaded Unpaywall snapshot."""
                 from academic_observatory_workflows.unpaywall_telescope import tasks
-                from academic_observatory_workflows.unpaywall_telescope.release import UnpaywallRelease
-                from observatory_platform.airflow.release import release_from_bucket
-                from observatory_platform.google.gcs import gcs_download_blob, gcs_blob_name_from_path
-
-                release = release_from_bucket(dag_params.cloud_workspace.download_bucket, release_id)
-                release = UnpaywallRelease.from_dict(release)
-                blob_name = gcs_blob_name_from_path(release.snapshot_download_file_path)
-                success = gcs_download_blob(
-                    bucket_name=release.cloud_workspace.download_bucket,
-                    blob_name=blob_name,
-                    file_path=release.snapshot_download_file_path,
-                )
-                if not success:
-                    raise RuntimeError(f"Error downloading blob: {blob_name}")
 
                 tasks.load_snapshot_extract(release_id, cloud_workspace=dag_params.cloud_workspace)
+
+            @task.kubernetes(
+                task_id="transform",
+                trigger_rule=TriggerRule.ALL_SUCCESS,
+                name=f"{dag_params.dag_id}-load-snapshot-transform",
+                container_resources=gke_make_container_resources(
+                    {"memory": "16G", "cpu": "16"},
+                    dag_params.gke_params.gke_resource_overrides.get("load_snapshot_transform"),
+                ),
+                **kubernetes_task_params,
+            )
+            def load_snapshot_transform(release_id: str, dag_params, **context):
+                """Transform the snapshot into the main table file. Find and replace the 'authenticated-orcid' string in the
+                jsonl to 'authenticated_orcid'."""
+                from academic_observatory_workflows.unpaywall_telescope import tasks
+
                 tasks.load_snapshot_transform(release_id, cloud_workspace=dag_params.cloud_workspace)
+
+            @task.kubernetes(
+                task_id="split_main_table_file",
+                trigger_rule=TriggerRule.ALL_SUCCESS,
+                name=f"{dag_params.dag_id}-load-snapshot-split-main-table_file",
+                container_resources=gke_make_container_resources(
+                    {"memory": "4G", "cpu": "4"},
+                    dag_params.gke_params.gke_resource_overrides.get("load_snapshot_split_main_table_file"),
+                ),
+                **kubernetes_task_params,
+            )
+            def load_snapshot_split_main_table_file(release_id: str, dag_params, **context):
+                """Split main table into multiple smaller files"""
+                from academic_observatory_workflows.unpaywall_telescope import tasks
+
                 tasks.load_snapshot_split_main_table_file(
                     release_id, cloud_workspace=dag_params.cloud_workspace, **context
                 )
+
+            @task.kubernetes(
+                task_id="upload_main_table_files",
+                trigger_rule=TriggerRule.ALL_SUCCESS,
+                name=f"{dag_params.dag_id}-load-snapshot-upload-main-table_files",
+                container_resources=gke_make_container_resources(
+                    {"memory": "4G", "cpu": "4"},
+                    dag_params.gke_params.gke_resource_overrides.get("load_snapshot_upload_main_table_files"),
+                ),
+                **kubernetes_task_params,
+            )
+            def load_snapshot_upload_main_table_files(release_id: str, dag_params, **context) -> None:
+                """Upload the main table files to Cloud Storage."""
+                from academic_observatory_workflows.unpaywall_telescope import tasks
+
                 tasks.load_snapshot_upload_main_table_files(release_id, cloud_workspace=dag_params.cloud_workspace)
 
             @task(task_id="bq_load")
@@ -268,10 +297,20 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             task_download = load_snapshot_download(data, dag_params)
-            task_extract_transform = load_snapshot_extract_transform(data, dag_params)
+            task_extract = load_snapshot_extract(data, dag_params)
+            task_transform = load_snapshot_transform(data, dag_params)
+            task_split_main_table_file = load_snapshot_split_main_table_file(data, dag_params)
+            task_upload_main_table_files = load_snapshot_upload_main_table_files(data, dag_params)
             task_bq_load = load_snapshot_bq_load(data, dag_params)
 
-            (task_download >> task_extract_transform >> task_bq_load)
+            (
+                task_download
+                >> task_extract
+                >> task_transform
+                >> task_split_main_table_file
+                >> task_upload_main_table_files
+                >> task_bq_load
+            )
 
         @task_group
         def load_changefiles(data: dict):
@@ -298,49 +337,62 @@ def create_dag(dag_params: DagParams) -> DAG:
                     http_header=dag_params.http_header,
                     base_url=dag_params.unpaywall_base_url,
                 )
-                tasks.load_changefiles_upload_downloaded(
-                    release_id=release_id, cloud_workspace=dag_params.cloud_workspace
-                )
 
             @task.kubernetes(
-                task_id="extract_transform",
+                task_id="extract",
                 trigger_rule=TriggerRule.NONE_FAILED,
                 name=f"{dag_params.dag_id}-load-changefiles-extract",
                 container_resources=gke_make_container_resources(
                     {"memory": "8G", "cpu": "8"},
-                    dag_params.gke_params.gke_resource_overrides.get("load_changefiles_extract_transform"),
+                    dag_params.gke_params.gke_resource_overrides.get("load_changefiles_extract"),
                 ),
                 **kubernetes_task_params,
             )
-            def load_changefiles_extract_transform(release_id: str, dag_params, **context):
-                """Task to gunzip the downloaded Unpaywall changefiles.
-                Task to transform the Unpaywall changefiles merging them into the upsert file.
-                """
+            def load_changefiles_extract(release_id: str, dag_params, **context):
+                """Task to gunzip the downloaded Unpaywall changefiles."""
                 from academic_observatory_workflows.unpaywall_telescope import tasks
-                from academic_observatory_workflows.unpaywall_telescope.release import UnpaywallRelease
-                from observatory_platform.google.gcs import gcs_download_blob, gcs_blob_name_from_path
-                from observatory_platform.airflow.release import release_from_bucket
-
-                release = release_from_bucket(dag_params.cloud_workspace.download_bucket, release_id)
-                release = UnpaywallRelease.from_dict(release)
-                files_list = [changefile.download_file_path for changefile in release.changefiles]
-                for file_path in files_list:
-                    blob_name = gcs_blob_name_from_path(file_path)
-                    success = gcs_download_blob(
-                        bucket_name=release.cloud_workspace.download_bucket, blob_name=blob_name, file_path=file_path
-                    )
-                    if not success:
-                        raise RuntimeError(f"Error downloading blob: {blob_name}")
 
                 tasks.load_changefiles_extract(
                     release_id,
                     cloud_workspace=dag_params.cloud_workspace,
                 )
+
+            @task.kubernetes(
+                task_id="transform",
+                trigger_rule=TriggerRule.NONE_FAILED,
+                name=f"{dag_params.dag_id}-load-changefiles-transform",
+                container_resources=gke_make_container_resources(
+                    {"memory": "8G", "cpu": "8"},
+                    dag_params.gke_params.gke_resource_overrides.get("load_changefiles_transform"),
+                ),
+                **kubernetes_task_params,
+            )
+            def load_changefiles_transform(release_id: str, dag_params, **context):
+                """Task to transform the Unpaywall changefiles merging them into the upsert file.
+                Find and replace the 'authenticated-orcid' string in the jsonl to 'authenticated_orcid'."""
+                from academic_observatory_workflows.unpaywall_telescope import tasks
+
                 tasks.load_changefiles_transform(
                     release_id=release_id,
                     cloud_workspace=dag_params.cloud_workspace,
                     primary_key=dag_params.primary_key,
                 )
+
+            @task.kubernetes(
+                task_id="upload",
+                trigger_rule=TriggerRule.NONE_FAILED,
+                name=f"{dag_params.dag_id}-load-changefiles-upload",
+                container_resources=gke_make_container_resources(
+                    {"memory": "4G", "cpu": "4"},
+                    dag_params.gke_params.gke_resource_overrides.get("load_changefiles_upload"),
+                ),
+                **kubernetes_task_params,
+            )
+            def load_changefiles_upload(release_id: str, dag_params, **context) -> None:
+                """Upload the transformed data to Cloud Storage.
+                :raises AirflowException: Raised if the files to be uploaded are not found."""
+                from academic_observatory_workflows.unpaywall_telescope import tasks
+
                 tasks.load_changefiles_upload(release_id=release_id, cloud_workspace=dag_params.cloud_workspace)
 
             @task(task_id="bq_load")
@@ -365,11 +417,20 @@ def create_dag(dag_params: DagParams) -> DAG:
                 )
 
             task_download = load_changefiles_download(data, dag_params)
-            task_extract_transform = load_changefiles_extract_transform(data, dag_params)
+            task_extract = load_changefiles_extract(data, dag_params)
+            task_transform = load_changefiles_transform(data, dag_params)
+            task_upload = load_changefiles_upload(data, dag_params)
             task_bq_load = load_changefiles_bq_load(data, dag_params)
             task_bq_upsert = load_changefiles_bq_upsert(data, dag_params)
 
-            (task_download >> task_extract_transform >> task_bq_load >> task_bq_upsert)
+            (
+                task_download
+                >> task_extract
+                >> task_transform
+                >> task_upload
+                >> task_bq_load
+                >> task_bq_upsert
+            )
 
         @task
         def add_dataset_release(release_id: str, dag_params: DagParams, **context) -> None:

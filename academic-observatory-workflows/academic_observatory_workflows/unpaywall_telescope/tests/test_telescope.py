@@ -21,7 +21,6 @@ import pendulum
 
 from observatory_platform.dataset_api import DatasetAPI
 from observatory_platform.airflow.airflow import clear_airflow_connections, upsert_airflow_connection
-from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.unpaywall_telescope.telescope import create_dag, DagParams
 
 from academic_observatory_workflows.config import project_path, TestConfig
@@ -51,29 +50,39 @@ class TestUnpaywallTelescope(SandboxTestCase):
                 "wait_for_prev_dag_run": {"check_dependencies"},
                 "check_dependencies": {"fetch_release"},
                 "fetch_release": {
-                    "short_circuit",
-                    "bq_create_main_table_snapshot",
-                    "branch",
-                    "load_snapshot.download",
-                    "load_snapshot.extract_transform",
-                    "load_snapshot.bq_load",
-                    "load_changefiles.download",
-                    "load_changefiles.extract_transform",
-                    "load_changefiles.bq_load",
                     "load_changefiles.bq_upsert",
-                    "add_dataset_release",
+                    "load_snapshot.bq_load",
+                    "load_snapshot.download",
+                    "load_snapshot.upload_main_table_files",
+                    "load_snapshot.split_main_table_file",
+                    "load_snapshot.transform",
+                    "load_changefiles.download",
+                    "branch",
                     "cleanup_workflow",
+                    "short_circuit",
+                    "load_changefiles.transform",
+                    "add_dataset_release",
+                    "load_changefiles.extract",
+                    "load_changefiles.upload",
+                    "bq_create_main_table_snapshot",
+                    "load_changefiles.bq_load",
+                    "load_snapshot.extract",
                 },
                 "short_circuit": {"create_dataset"},
                 "create_dataset": {"bq_create_main_table_snapshot"},
                 "bq_create_main_table_snapshot": {"gke_create_storage"},
                 "gke_create_storage": {"branch"},
                 "branch": {"load_snapshot.download", "load_changefiles.download"},
-                "load_snapshot.download": {"load_snapshot.extract_transform"},
-                "load_snapshot.extract_transform": {"load_snapshot.bq_load"},
+                "load_snapshot.download": {"load_snapshot.extract"},
+                "load_snapshot.extract": {"load_snapshot.transform"},
+                "load_snapshot.transform": {"load_snapshot.split_main_table_file"},
+                "load_snapshot.split_main_table_file": {"load_snapshot.upload_main_table_files"},
+                "load_snapshot.upload_main_table_files": {"load_snapshot.bq_load"},
                 "load_snapshot.bq_load": {"load_changefiles.download"},
-                "load_changefiles.download": {"load_changefiles.extract_transform"},
-                "load_changefiles.extract_transform": {"load_changefiles.bq_load"},
+                "load_changefiles.download": {"load_changefiles.extract"},
+                "load_changefiles.extract": {"load_changefiles.transform"},
+                "load_changefiles.transform": {"load_changefiles.upload"},
+                "load_changefiles.upload": {"load_changefiles.bq_load"},
                 "load_changefiles.bq_load": {"load_changefiles.bq_upsert"},
                 "load_changefiles.bq_upsert": {"merge_branches"},
                 "merge_branches": {"gke_delete_storage"},
@@ -118,9 +127,14 @@ class TestUnpaywallTelescope(SandboxTestCase):
 
             task_resources = {
                 "load_snapshot_download": {"memory": "2G", "cpu": "2"},
-                "load_snapshot_extract_transform": {"memory": "2G", "cpu": "2"},
+                "load_snapshot_extract": {"memory": "2G", "cpu": "2"},
+                "load_snapshot_transform": {"memory": "2G", "cpu": "2"},
+                "load_snapshot_split_main_table_file": {"memory": "2G", "cpu": "2"},
+                "load_snapshot_upload_main_table_files": {"memory": "2G", "cpu": "2"},
                 "load_changefiles_download": {"memory": "2G", "cpu": "2"},
-                "load_changefiles_extract_transform": {"memory": "2G", "cpu": "2"},
+                "load_changefiles_extract": {"memory": "2G", "cpu": "2"},
+                "load_changefiles_transform": {"memory": "2G", "cpu": "2"},
+                "load_changefiles_upload": {"memory": "2G", "cpu": "2"},
             }
             start_date = pendulum.datetime(2021, 7, 2)
             test_params = DagParams(
