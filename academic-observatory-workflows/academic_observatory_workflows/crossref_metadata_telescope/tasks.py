@@ -21,7 +21,6 @@ import json
 import logging
 import os
 import shutil
-import urllib
 from typing import Optional
 
 from airflow.hooks.base import BaseHook
@@ -33,7 +32,6 @@ from natsort import natsorted
 import pendulum
 
 from academic_observatory_workflows.crossref_metadata_telescope.release import CrossrefMetadataRelease
-from observatory_platform.airflow.release import set_task_state
 from observatory_platform.airflow.workflow import cleanup, CloudWorkspace
 from observatory_platform.dataset_api import DatasetRelease, DatasetAPI
 from observatory_platform.files import clean_dir, get_chunks, list_files
@@ -121,7 +119,8 @@ def upload_downloaded(release: dict) -> None:
     success = gcs_upload_files(
         bucket_name=release.cloud_workspace.download_bucket, file_paths=[release.download_file_path]
     )
-    set_task_state(success, "upload_downloaded", release)
+    if not success:
+        raise AirflowException(f"Error uploading file: {release.download_file_path}")
 
 
 def extract(release, **context) -> None:
@@ -185,7 +184,8 @@ def upload_transformed(release: dict) -> None:
     release = CrossrefMetadataRelease.from_dict(release)
     files_list = list_files(release.transform_folder, release.transform_files_regex)
     success = gcs_upload_files(bucket_name=release.cloud_workspace.transform_bucket, file_paths=files_list)
-    set_task_state(success, "upload_transformed", release)
+    if not success:
+        raise AirflowException(f"Error uploading files: {files_list}")
 
 
 def bq_load(
@@ -233,7 +233,8 @@ def bq_load(
         table_description=table_description,
         ignore_unknown_values=True,
     )
-    set_task_state(success, "bq_load", release)
+    if not success:
+        raise AirflowException(f"Error loading files into BigQuery")
 
 
 def add_dataset_release(release: dict, *, api_bq_dataset_id: str) -> None:

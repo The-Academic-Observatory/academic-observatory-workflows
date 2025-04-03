@@ -21,7 +21,6 @@ import pendulum
 
 from observatory_platform.dataset_api import DatasetAPI
 from observatory_platform.airflow.airflow import clear_airflow_connections, upsert_airflow_connection
-from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.unpaywall_telescope.telescope import create_dag, DagParams
 
 from academic_observatory_workflows.config import project_path, TestConfig

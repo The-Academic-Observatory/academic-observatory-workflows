@@ -112,7 +112,6 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
 
             task_resources = {
                 "download": {"memory": "2G", "cpu": "2"},
-                "upload_downloaded": {"memory": "2G", "cpu": "2"},
                 "extract": {"memory": "2G", "cpu": "2"},
                 "transform": {"memory": "2G", "cpu": "2"},
                 "upload_transformed": {"memory": "2G", "cpu": "2"},

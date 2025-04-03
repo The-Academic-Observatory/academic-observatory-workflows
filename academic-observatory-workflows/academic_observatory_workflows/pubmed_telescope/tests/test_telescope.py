@@ -20,8 +20,7 @@ from typing import Dict, List
 
 import pendulum
 
-from academic_observatory_workflows.config import project_path
-from observatory_platform.google.bigquery import bq_run_query, bq_sharded_table_id, bq_table_id
+from observatory_platform.google.bigquery import bq_run_query, bq_table_id
 from observatory_platform.airflow.workflow import Workflow
 
 from academic_observatory_workflows.config import project_path, TestConfig
@@ -169,13 +168,11 @@ class TestPubMedTelescope(SandboxTestCase):
                     "create_snapshot",
                     "branch_baseline_or_updatefiles",
                     "baseline.download",
-                    "baseline.upload_downloaded",
                     "baseline.transform",
                     "baseline.upload_transformed",
                     "baseline.bq_load",
                     "branch_updatefiles_or_storage_delete",
                     "updatefiles.download",
-                    "updatefiles.upload_downloaded",
                     "updatefiles.transform",
                     "updatefiles.merge_upserts_deletes",
                     "updatefiles.upload_merged_upsert_records",
@@ -191,14 +188,12 @@ class TestPubMedTelescope(SandboxTestCase):
                 "create_snapshot": ["gke_create_storage"],
                 "gke_create_storage": ["branch_baseline_or_updatefiles"],
                 "branch_baseline_or_updatefiles": ["baseline.download", "updatefiles.download"],
-                "baseline.download": ["baseline.upload_downloaded"],
-                "baseline.upload_downloaded": ["baseline.transform"],
+                "baseline.download": ["baseline.transform"],
                 "baseline.transform": ["baseline.upload_transformed"],
                 "baseline.upload_transformed": ["baseline.bq_load"],
                 "baseline.bq_load": ["branch_updatefiles_or_storage_delete"],
                 "branch_updatefiles_or_storage_delete": ["updatefiles.download", "gke_delete_storage"],
-                "updatefiles.download": ["updatefiles.upload_downloaded"],
-                "updatefiles.upload_downloaded": ["updatefiles.transform"],
+                "updatefiles.download": ["updatefiles.transform"],
                 "updatefiles.transform": ["updatefiles.merge_upserts_deletes"],
                 "updatefiles.merge_upserts_deletes": ["updatefiles.upload_merged_upsert_records"],
                 "updatefiles.upload_merged_upsert_records": ["updatefiles.bq_load_upsert_table"],
@@ -246,11 +241,9 @@ class TestPubMedTelescope(SandboxTestCase):
             # Make an http server to serve the test files
             task_resources = {
                 "baseline_download": {"memory": "2G", "cpu": "2"},
-                "baseline_upload_downloaded": {"memory": "2G", "cpu": "2"},
                 "baseline_transform": {"memory": "2G", "cpu": "2"},
                 "baseline_upload_transformed": {"memory": "2G", "cpu": "2"},
                 "updatefiles_download": {"memory": "2G", "cpu": "2"},
-                "updatefiles_upload_downloaded": {"memory": "2G", "cpu": "2"},
                 "updatefiles_transform": {"memory": "2G", "cpu": "2"},
                 "updatefiles_merge_upserts_deletes": {"memory": "2G", "cpu": "2"},
                 "updatefiles_upload_merged_upsert_records": {"memory": "2G", "cpu": "2"},

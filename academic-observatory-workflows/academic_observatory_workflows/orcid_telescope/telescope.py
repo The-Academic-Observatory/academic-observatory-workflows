@@ -88,7 +88,7 @@ class DagParams:
         max_active_runs: int = 1,
         retries: int = 3,
         test_run: bool = False,
-        gke_volume_size: str = "1000Gi",
+        gke_volume_size: str = "1000Gi", # Only required for full download, ~550 Gi for uncompressed files and then less for compressed transformed files.
         gke_namespace: str = "coki-astro",
         gke_volume_name: str = "orcid",
         **kwargs,
@@ -216,21 +216,34 @@ def create_dag(dag_params: DagParams) -> DAG:
             return tasks.latest_modified_record_date(release)
 
         @task.kubernetes(
-            name=f"{dag_params.dag_id}-download-transform",
+            name=f"{dag_params.dag_id}-download",
             container_resources=gke_make_container_resources(
-                {"memory": "64G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("download_transform")
+                {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("download")
             ),
             **kubernetes_task_params,
         )
-        def download_transform(release: dict, dag_params, **context):
-            """Reads each batch's manifest and downloads the files from the gcs bucket.
-            The download and transform tasks are merged to avoid mounting a disk with millions of files."""
+        def download(release: dict, dag_params, **context):
+            """Reads each batch's manifest and downloads the files from the gcs bucket."""
 
             from academic_observatory_workflows.orcid_telescope import tasks
 
             tasks.download(release)
+
+        @task.kubernetes(
+            name=f"{dag_params.dag_id}-transform",
+            container_resources=gke_make_container_resources(
+                {"memory": "16G", "cpu": "16"}, dag_params.gke_params.gke_resource_overrides.get("transform")
+            ),
+            **kubernetes_task_params,
+        )
+        def transform(release: dict, dag_params, **context):
+            """Transforms files. It used to take a long time to mount the volume as the init container was
+            chowning all the files. This has been removed and we are now using security rules which only changes
+            the ownership of all files if there is a root mismatch."""
+
+            from academic_observatory_workflows.orcid_telescope import tasks
+
             tasks.transform(release, max_workers=dag_params.max_workers)
-            tasks.clean_downloads(release)
 
         @task.kubernetes(
             name=f"{dag_params.dag_id}-upload-transformed",
@@ -306,7 +319,8 @@ def create_dag(dag_params: DagParams) -> DAG:
         )
         task_create_manifests = create_manifests(xcom_release, dag_params)
         xcom_latest_modified_date = latest_modified_record_date(xcom_release)
-        task_download_transform = download_transform(xcom_release, dag_params)
+        task_download = download(xcom_release, dag_params)
+        task_transform = transform(xcom_release, dag_params)
         task_upload_transformed = upload_transformed(xcom_release)
         task_delete_storage = gke_delete_storage.override(trigger_rule=TriggerRule.NONE_FAILED)(
             volume_name=dag_params.gke_params.gke_volume_name,
@@ -331,7 +345,8 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> task_create_storage
             >> task_create_manifests
             >> xcom_latest_modified_date
-            >> task_download_transform
+            >> task_download
+            >> task_transform
             >> task_upload_transformed
             >> task_delete_storage
             >> task_bq_load_main_table
