@@ -38,7 +38,7 @@ class Datafile:
         self.path_on_ftp = path_on_ftp
         self.datafile_date = datafile_date
         self.datafile_release: DatafileRelease = datafile_release
-        self.file_type = "jsonl.gz"
+        self.file_type = "jsonl"
 
     def __eq__(self, other):
         if isinstance(other, Datafile):
@@ -83,7 +83,7 @@ class Datafile:
     @property
     def transform_baseline_file_path(self):
         assert self.datafile_release is not None, "Datafile.transform_baseline_path: self.datafile_release is None"
-        return os.path.join(self.datafile_release.transform_folder, f"baseline_{self.filename[:-7]}.jsonl.gz")
+        return os.path.join(self.datafile_release.transform_folder, f"baseline_{self.filename[:-7]}.jsonl")
 
     @property
     def transform_upsert_file_path(self):
@@ -98,4 +98,4 @@ class Datafile:
     @property
     def merged_upsert_file_path(self):
         assert self.datafile_release is not None, "Datafile.merged_upsert_path: self.datafile_release is None"
-        return os.path.join(self.datafile_release.transform_folder, f"upsert_merged_{self.filename[:-7]}.jsonl.gz")
+        return os.path.join(self.datafile_release.transform_folder, f"upsert_merged_{self.filename[:-7]}.jsonl")

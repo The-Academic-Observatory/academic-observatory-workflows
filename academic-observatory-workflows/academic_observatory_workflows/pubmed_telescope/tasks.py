@@ -7,13 +7,16 @@ import logging
 import os
 import random
 import re
-import time
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from dataclasses import dataclass
 from ftplib import error_reply, FTP
-from typing import Dict, List, Set, Tuple, Union, Optional
+from io import BytesIO
+from typing import Dict, List, Optional, Set, Tuple, Union
 
+import jsonlines
+import lxml
 import pendulum
+import time
 from airflow import AirflowException
 from airflow.models import DagRun
 from Bio import Entrez
@@ -22,20 +25,20 @@ from Bio.Entrez.Parser import (
     ListElement,
     OrderedListElement,
     StringElement,
-    ValidationError,
 )
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
+from lxml import etree
 
 import observatory_platform.google.bigquery as bq
 from academic_observatory_workflows.pubmed_telescope.datafile import Datafile
 from academic_observatory_workflows.pubmed_telescope.release import PubMedRelease
-from observatory_platform.dataset_api import DatasetRelease, DatasetAPI
 from observatory_platform.airflow.airflow import is_first_dag_run
 from observatory_platform.airflow.release import release_to_bucket
-from observatory_platform.files import get_chunks, save_jsonl_gz, yield_jsonl
+from observatory_platform.airflow.workflow import cleanup, CloudWorkspace
+from observatory_platform.dataset_api import DatasetAPI, DatasetRelease
+from observatory_platform.files import get_chunks, save_jsonl, yield_jsonl
 from observatory_platform.google.gcs import gcs_upload_files
-from observatory_platform.airflow.workflow import CloudWorkspace, cleanup
 
 
 @dataclass
@@ -464,7 +467,6 @@ def updatefiles_transform(release: dict, max_processes: Optional[int] = None) ->
             for datafile in chunk:
                 input_path = datafile.download_file_path
                 upsert_path = datafile.transform_upsert_file_path
-
                 futures.append(executor.submit(transform_pubmed, input_path, upsert_path))
 
             for future in as_completed(futures):
@@ -511,7 +513,7 @@ def updatefiles_merge_upserts_deletes(
 
     # Save deletes
     data = [delete.to_dict() for delete in deletes]
-    save_jsonl_gz(release.merged_delete_file_path, data)
+    save_jsonl(release.merged_delete_file_path, data)
 
     # Save final upserts
     for i, chunk in enumerate(get_chunks(input_list=release.updatefiles, chunk_size=max_processes)):
@@ -908,13 +910,7 @@ def load_datafile(input_path: str) -> List[Dict]:
     with gzip.open(input_path, "rb") as f_in:
         # Use the BioPython package for reading in the Pubmed XML files.
         # This package also checks against its own DTD schema defined in the XML header.
-        data = Entrez.read(f_in, validate=True)
-
-    # Need pull out XML attributes from the Biopython data classes.
-    data = add_attributes(data)
-
-    #  Remove unwanted nested list structure from the Pubmed dictionary.
-    data = change_pubmed_list_structure(data)
+        data = Entrez.read(f_in, validate=False)
 
     return data
 
@@ -953,6 +949,18 @@ def parse_deletes(data: Dict) -> Union[List, List[Dict]]:
         return []
 
 
+def parse_pubmed_element(elem, validate=False):
+    elem_bytes = etree.tostring(elem, encoding="utf-8")
+    wrapped_xml = (
+        b"<?xml version='1.0' encoding='utf-8'?>"
+        b"<!DOCTYPE PubmedArticleSet PUBLIC '-//NLM//DTD PubMedArticle, 1st January 2023//EN' "
+        b"'https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_230101.dtd'>"
+        b"<PubmedArticleSet>" + elem_bytes + b"</PubmedArticleSet>"
+    )
+    record_handle = BytesIO(wrapped_xml)
+    return Entrez.read(record_handle, validate=validate)
+
+
 def transform_pubmed(input_path: str, upsert_path: str) -> Union[bool, str, PubmedUpdatefile]:
     """
     Convert a single Pubmed XML file to JSONL, pulling out any of the Pubmed the upserts and or deletes.
@@ -963,31 +971,57 @@ def transform_pubmed(input_path: str, upsert_path: str) -> Union[bool, str, Pubm
     :return: filename of the baseline file or a PubmedUpdatefile object if it is an updatefile.
     """
 
-    try:
-        data = load_datafile(input_path)
-    except ValidationError:
-        logging.info(f"Fields in XML are not valid against it's own DTD file - {input_path}")
-        return False
+    # Stream records to preserve memory
+    # TODO: replace Entrez.read with something more standardised and memory efficient
+    upsert_keys = []
+    delete_keys = []
+    with open(upsert_path, mode="w") as f:
+        with jsonlines.Writer(f) as writer:
+            with gzip.open(input_path, "rb") as file:
+                try:
+                    context = etree.iterparse(file, events=("end",), tag=("PubmedArticle", "DeleteCitation"))
+                    for event, elem in context:
+                        record = parse_pubmed_element(elem, validate=False)
 
-    upserts = parse_articles(data)
-    logging.info(f"Pulled out {len(upserts)} upserts from file, writing to file: {upsert_path}")
+                        # Pull out XML attributes from the Biopython data classes.
+                        data = add_attributes(record)
 
-    # Save upserts to file.
-    save_pubmed_jsonl(upsert_path, upserts)
+                        # Remove unwanted nested list structure from the Pubmed dictionary.
+                        data = change_pubmed_list_structure(data)
+
+                        if len(record.get("PubmedArticle", [])) > 0:
+                            # Get PubmedArticle
+                            data = data["PubmedArticle"][0]
+
+                            # Save upsert to file.
+                            writer.write(data)
+
+                            # Append PMID to upsert keys
+                            pmid = PMID.from_dict(data["MedlineCitation"]["PMID"])
+                            upsert_keys.append(pmid)
+
+                        if len(record.get("DeleteCitation", [])) > 0:
+                            data = data["DeleteCitation"]["PMID"][0]
+                            pmid = PMID.from_dict(data)
+                            delete_keys.append(pmid)
+
+                        # Clear memory
+                        elem.clear()
+                        while elem.getprevious() is not None:
+                            del elem.getparent()[0]
+
+                except lxml.etree.XMLSyntaxError as e:
+                    logging.info(f"Error parsing XML file - {input_path}")
+                    return False
 
     # Pull out keys of upserts and deletes from an updatefile. This is not required for baseline files.
     if "upsert" in upsert_path:
-        delete_keys = parse_deletes(data)
         logging.info(f"Pulled out {len(delete_keys)} deletes from file.")
-
-        upsert_keys = [record["MedlineCitation"]["PMID"] for record in upserts]
-
         return PubmedUpdatefile(
             name=os.path.basename(input_path),
-            upserts=[PMID.from_dict(record) for record in upsert_keys],
-            deletes=[PMID.from_dict(record) for record in delete_keys],
+            upserts=upsert_keys,
+            deletes=delete_keys,
         )
-
     return os.path.basename(input_path)
 
 
