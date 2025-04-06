@@ -231,7 +231,11 @@ gcloud iam roles create "$GKE_ROLE_NAME" --project="$PROJECT_ID" \
  --description="Gives GKE pods permissions to specific Google Cloud resources" \
  --permissions=storage.hmacKeys.create,\
 storage.hmacKeys.delete,\
-storage.hmacKeys.update
+storage.hmacKeys.update,\
+bigquery.jobs.create,\
+bigquery.tables.get,\
+bigquery.tables.getData,\
+bigquery.datasets.get
 
 AO_GKE_SERVICE_ACCOUNT_NAME="ao-gke"
 AO_GKE_SERVICE_ACCOUNT="$AO_GKE_SERVICE_ACCOUNT_NAME@$PROJECT_ID.iam.gserviceaccount.com"
