@@ -13,7 +13,6 @@ from academic_observatory_workflows.pubmed_telescope.tasks import (
     add_attributes,
     change_pubmed_list_structure,
     download_datafiles,
-    load_datafile,
     merge_upserts_and_deletes,
     parse_articles,
     parse_deletes,
