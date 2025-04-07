@@ -904,23 +904,6 @@ def download_datafiles(
     return download_success
 
 
-def load_datafile(input_path: str) -> List[Dict]:
-    """Read in a Pubmed XML file and return it in a well-defined dictionary/json object.
-
-    :param input_path: Path to the Pubmed xml.gz file.
-    :return data: A list of Pubmed records.
-    """
-
-    logging.info(f"Reading in file - {input_path}")
-
-    with gzip.open(input_path, "rb") as f_in:
-        # Use the BioPython package for reading in the Pubmed XML files.
-        # This package also checks against its own DTD schema defined in the XML header.
-        data = Entrez.read(f_in, validate=False)
-
-    return data
-
-
 def save_pubmed_jsonl(output_path: str, data: List[Dict]):
     """Save a Pubmed jsonl to file using the custom encoder.
 
