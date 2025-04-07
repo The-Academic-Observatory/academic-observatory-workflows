@@ -23,12 +23,11 @@ from unittest.mock import patch
 
 import pendulum
 from airflow.models.connection import Connection
-from airflow.operators.empty import EmptyOperator
 from airflow.utils.state import State
 from deepdiff import DeepDiff
 
 import academic_observatory_workflows.oa_dashboard_workflow.workflow
-from academic_observatory_workflows.config import project_path
+from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.oa_dashboard_workflow.tasks import (
     clean_url,
     data_file_pattern,
@@ -40,6 +39,7 @@ from academic_observatory_workflows.oa_dashboard_workflow.tasks import (
     make_logo_url,
     OaDashboardRelease,
     yield_data_glob,
+    ZenodoVersion,
 )
 from academic_observatory_workflows.tests.test_zenodo import MockZenodo
 from observatory_platform.airflow.workflow import Workflow
@@ -218,6 +218,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
                     "check_dependencies": ["create_dataset"],
                     "create_dataset": ["fetch_release"],
                     "fetch_release": [
+                        "gke_create_storage",
                         "upload_institution_ids",
                         "create_entity_tables",
                         "add_wiki_descriptions_country",
@@ -227,12 +228,14 @@ class TestOaDashboardWorkflow(SandboxTestCase):
                         "export_tables",
                         "download_data",
                         "make_draft_zenodo_version",
+                        "fetch_zenodo_versions",
                         "build_datasets",
                         "publish_zenodo_version",
                         "upload_dataset",
                         "repository_dispatch",
                         "cleanup_workflow",
                     ],
+                    "gke_create_storage": ["upload_institution_ids"],
                     "upload_institution_ids": ["create_entity_tables"],
                     "create_entity_tables": ["add_wiki_descriptions_country"],
                     "add_wiki_descriptions_country": ["add_wiki_descriptions_institution"],
@@ -241,11 +244,13 @@ class TestOaDashboardWorkflow(SandboxTestCase):
                     "download_institution_logos": ["export_tables"],
                     "export_tables": ["download_data"],
                     "download_data": ["make_draft_zenodo_version"],
-                    "make_draft_zenodo_version": ["build_datasets"],
-                    "build_datasets": ["publish_zenodo_version"],
-                    "publish_zenodo_version": ["upload_dataset"],
-                    "upload_dataset": ["repository_dispatch"],
-                    "repository_dispatch": ["cleanup_workflow"],
+                    "make_draft_zenodo_version": ["fetch_zenodo_versions"],
+                    "fetch_zenodo_versions": ["build_datasets"],
+                    "build_datasets": ["upload_dataset"],
+                    "upload_dataset": ["publish_zenodo_version"],
+                    "publish_zenodo_version": ["repository_dispatch"],
+                    "repository_dispatch": ["gke_delete_storage"],
+                    "gke_delete_storage": ["cleanup_workflow"],
                     "cleanup_workflow": [],
                 },
                 dag,
@@ -347,6 +352,115 @@ class TestOaDashboardWorkflow(SandboxTestCase):
                 snapshot_date=snapshot_date,
             )
 
+    def test_tasks(self):
+        """Test data generation and transform tasks."""
+
+        snapshot_date = pendulum.datetime(2021, 11, 21)
+        env = SandboxEnvironment(project_id=self.project_id, data_location=self.data_location)
+        bq_dataset_id = env.add_dataset("data")
+        bq_dataset_id_settings = env.add_dataset("settings")
+        bq_dataset_id_oa_dashboard = env.add_dataset("oa_dashboard")
+        data_bucket = env.add_bucket()
+        with env.create() as t:
+            # Setup dependencies
+            # Upload fake data to BigQuery
+            self.setup_tables(
+                dataset_id_all=bq_dataset_id,
+                dataset_id_settings=bq_dataset_id_settings,
+                bucket_name=env.download_bucket,
+                snapshot_date=snapshot_date,
+            )
+
+            # Upload fake cached zip files file to bucket
+            for file_name in ["images-base.zip", "images.zip"]:
+                file_path = os.path.join(FIXTURES_FOLDER, file_name)
+                gcs_upload_file(bucket_name=data_bucket, blob_name=file_name, file_path=file_path)
+
+            # Setup workflow and connections
+            entity_types = ["country", "institution"]
+            cloud_workspace = env.cloud_workspace
+
+            # Mocked and expected data
+            release = OaDashboardRelease(
+                dag_id=self.dag_id,
+                run_id="manual__2021-11-21T0000000000-000000000",
+                input_project_id=env.cloud_workspace.input_project_id,
+                output_project_id=env.cloud_workspace.output_project_id,
+                snapshot_date=snapshot_date,
+                bq_ror_dataset_id=bq_dataset_id,
+                bq_agg_dataset_id=bq_dataset_id,
+                bq_settings_dataset_id=bq_dataset_id_settings,
+                bq_oa_dashboard_dataset_id=bq_dataset_id_oa_dashboard,
+            )
+
+            # Run tasks
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
+
+            tasks.upload_institution_ids(release=release)
+            tasks.create_entity_tables(
+                release=release,
+                entity_types=entity_types,
+                start_year=tasks.START_YEAR,
+                end_year=tasks.END_YEAR,
+                inclusion_thresholds=tasks.INCLUSION_THRESHOLD,
+            )
+            tasks.add_wiki_descriptions(release=release, entity_type="country")
+            tasks.add_wiki_descriptions(release=release, entity_type="institution")
+            tasks.download_assets(release=release, bucket_name=data_bucket)
+            tasks.download_institution_logos(release=release)
+            tasks.export_tables(
+                release=release,
+                entity_types=entity_types,
+                download_bucket=cloud_workspace.download_bucket,
+            )
+            tasks.download_data(release=release, download_bucket=cloud_workspace.download_bucket)
+            tasks.build_datasets(
+                release=release,
+                entity_types=entity_types,
+                zenodo_versions=[
+                    ZenodoVersion(release_date=pendulum.datetime(2021, 1, 1), download_url="https://example.com")
+                ],
+                start_year=tasks.START_YEAR,
+                end_year=tasks.END_YEAR,
+                readme_text=tasks.README,
+            )
+
+            # Check that full dataset zip file exists
+            for file_name in ["data.zip", "images.zip", "coki-oa-dataset.zip"]:
+                latest_file = os.path.join(release.transform_folder, "out", file_name)
+                print(f"\t{latest_file}")
+                self.assertTrue(os.path.isfile(latest_file))
+
+            # Check that assets downloaded
+            for file_name in ["images.zip", "images-base.zip"]:
+                path = os.path.join(release.download_folder, file_name)
+                self.assertTrue(os.path.isfile(path))
+
+            # Check that data downloaded
+            for file_name in ["country-data-000000000000.jsonl.gz", "institution-data-000000000000.jsonl.gz"]:
+                path = os.path.join(release.download_folder, file_name)
+                self.assertTrue(os.path.isfile(path))
+
+            # Check that the data is as expected
+            for entity_type in entity_types:
+                file_path = os.path.join(FIXTURES_FOLDER, "expected", f"{entity_type}.json")
+                with open(file_path, "r") as f:
+                    expected_data = json.load(f)
+                actual_data = list(yield_data_glob(data_file_pattern(release.download_folder, entity_type)))
+                diff = DeepDiff(expected_data, actual_data, ignore_order=False, significant_digits=4)
+                all_matched = True
+                for diff_type, changes in diff.items():
+                    log_diff(diff_type, changes)
+                assert all_matched, "Rows in actual content do not match expected content"
+
+            # Check that data is transformed
+            build_folder = os.path.join(release.transform_folder, "build")
+            expected_files = make_expected_build_files(build_folder)
+            print("Checking expected transformed files")
+            for file in expected_files:
+                print(f"\t{file}")
+                self.assertTrue(os.path.isfile(file))
+
     @patch("academic_observatory_workflows.oa_dashboard_workflow.tasks.Zenodo")
     @patch("academic_observatory_workflows.oa_dashboard_workflow.tasks.trigger_repository_dispatch")
     def test_workflow(self, mock_trigger_repository_dispatch, mock_zenodo):
@@ -392,6 +506,14 @@ class TestOaDashboardWorkflow(SandboxTestCase):
             zenodo_conn_id = "oa_dashboard_zenodo_token"
             entity_types = ["country", "institution"]
             version = "v10"
+            task_resources = {
+                "download_assets": {"memory": "2G", "cpu": "2"},
+                "download_institution_logos": {"memory": "2G", "cpu": "2"},
+                "download_data": {"memory": "2G", "cpu": "2"},
+                "build_datasets": {"memory": "2G", "cpu": "2"},
+                "publish_zenodo_version": {"memory": "2G", "cpu": "2"},
+                "upload_dataset": {"memory": "2G", "cpu": "2"},
+            }
             dag_params = DagParams(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
@@ -402,22 +524,20 @@ class TestOaDashboardWorkflow(SandboxTestCase):
                 bq_settings_dataset_id=bq_dataset_id_settings,
                 bq_oa_dashboard_dataset_id=bq_dataset_id_oa_dashboard,
                 retries=0,
+                gke_image=TestConfig.gke_image,
+                gke_namespace=TestConfig.gke_namespace,
+                gke_resource_overrides=task_resources,
+                gke_volume_size="100Mi",
+                gke_startup_timeout_seconds=120,
             )
             dag = create_dag(dag_params)
             env.add_connection(Connection(conn_id=github_conn_id, uri=f"http://:{github_token}@"))
             env.add_connection(Connection(conn_id=zenodo_conn_id, uri=f"http://:{zenodo_token}@"))
+            env.add_connection(Connection(**TestConfig.gke_cluster_connection))
 
             ##########
             # Run DAG
             ##########
-
-            # Prevent cleanup so that file assertions can be made
-            task_id = "cleanup_workflow"
-            empty_task = EmptyOperator(task_id=task_id, start_date=dag_params.start_date)
-            dag.task_dict[task_id] = empty_task
-            dag.task_dict[task_id].dag = dag
-            upstream_task = dag.get_task("repository_dispatch")
-            empty_task.set_upstream(upstream_task)
 
             # Run DAG
             dag_run = dag.test(execution_date=snapshot_date, session=env.session)
@@ -427,59 +547,12 @@ class TestOaDashboardWorkflow(SandboxTestCase):
             # Assert results
             ##########
 
-            # Mocked and expected data
-            release = OaDashboardRelease(
-                dag_id=self.dag_id,
-                run_id=dag_run.run_id,
-                input_project_id=env.cloud_workspace.input_project_id,
-                output_project_id=env.cloud_workspace.output_project_id,
-                snapshot_date=snapshot_date,
-                bq_ror_dataset_id=bq_dataset_id,
-                bq_agg_dataset_id=bq_dataset_id,
-                bq_settings_dataset_id=bq_dataset_id_settings,
-                bq_oa_dashboard_dataset_id=bq_dataset_id_oa_dashboard,
-            )
-
-            # Check that assets downloaded
-            for file_name in ["images.zip", "images-base.zip"]:
-                path = os.path.join(release.download_folder, file_name)
-                self.assertTrue(os.path.isfile(path))
-
-            # Check that data downloaded
-            for file_name in ["country-data-000000000000.jsonl.gz", "institution-data-000000000000.jsonl.gz"]:
-                path = os.path.join(release.download_folder, file_name)
-                self.assertTrue(os.path.isfile(path))
-
-            # Check that the data is as expected
-            for entity_type in entity_types:
-                file_path = os.path.join(FIXTURES_FOLDER, "expected", f"{entity_type}.json")
-                with open(file_path, "r") as f:
-                    expected_data = json.load(f)
-                actual_data = list(yield_data_glob(data_file_pattern(release.download_folder, entity_type)))
-                diff = DeepDiff(expected_data, actual_data, ignore_order=False, significant_digits=4)
-                all_matched = True
-                for diff_type, changes in diff.items():
-                    log_diff(diff_type, changes)
-                assert all_matched, "Rows in actual content do not match expected content"
-
-            # Check that data is transformed
-            build_folder = os.path.join(release.transform_folder, "build")
-            expected_files = make_expected_build_files(build_folder)
-            print("Checking expected transformed files")
-            for file in expected_files:
-                print(f"\t{file}")
-                self.assertTrue(os.path.isfile(file))
-
-            # Check that full dataset zip file exists
-            for file_name in ["data.zip", "images.zip", "coki-oa-dataset.zip"]:
-                latest_file = os.path.join(release.transform_folder, "out", file_name)
-                print(f"\t{latest_file}")
-                self.assertTrue(os.path.isfile(latest_file))
-
             # Check that data is uploaded to bucket
             blob_name = f"{version}/data.zip"
             self.assert_blob_exists(data_bucket, blob_name)
             blob_name = f"{version}/images.zip"
+            self.assert_blob_exists(data_bucket, blob_name)
+            blob_name = f"{version}/coki-oa-dataset.zip"
             self.assert_blob_exists(data_bucket, blob_name)
 
             # Check that repository dispatch called

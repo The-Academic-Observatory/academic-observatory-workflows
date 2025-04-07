@@ -13,7 +13,6 @@ from academic_observatory_workflows.pubmed_telescope.tasks import (
     add_attributes,
     change_pubmed_list_structure,
     download_datafiles,
-    load_datafile,
     merge_upserts_and_deletes,
     parse_articles,
     parse_deletes,
@@ -97,14 +96,6 @@ class TestPubMedUtils(SandboxTestCase):
 
                 for datafile in datafiles_to_download:
                     self.assertTrue(os.path.exists(datafile.download_file_path))
-
-    def test_load_datafile(self):
-        """Test that a Pubmed datafile can be read in and parsed."""
-
-        xml_file_path = os.path.join(FIXTURES_FOLDER, "baseline", "pubmed22n0001.xml.gz")
-        data = load_datafile(input_path=xml_file_path)
-
-        self.assertTrue(data)
 
     def test_save_pubmed_jsonl(self):
         """Test that data can be saved from to a json.gz or a .jsonl file correctly."""

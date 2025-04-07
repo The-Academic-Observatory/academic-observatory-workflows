@@ -19,7 +19,6 @@ import dataclasses
 import glob
 import json
 import logging
-import math
 import os
 import os.path
 import os.path
@@ -33,6 +32,7 @@ from zipfile import ZipFile
 
 import google.cloud.bigquery as bigquery
 import jsonlines
+import math
 import numpy as np
 import pendulum
 from airflow.exceptions import AirflowException
@@ -60,6 +60,38 @@ from observatory_platform.google.gcs import (
     gcs_upload_file,
 )
 from observatory_platform.jinja2_utils import render_template
+
+INCLUSION_THRESHOLD = {"country": 5, "institution": 50}
+MAX_REPOSITORIES = 200
+START_YEAR = 2000
+END_YEAR = pendulum.now().year - 1
+
+
+README = """# COKI Open Access Dataset
+The COKI Open Access Dataset measures open access performance for {{ n_countries }} countries and {{ n_institutions }} institutions
+and is available in JSON Lines format. The data is visualised at the COKI Open Access Dashboard: https://open.coki.ac/.
+
+## Licence
+[COKI Open Access Dataset](https://open.coki.ac/data/) © {{ year }} by [Curtin University](https://www.curtin.edu.au/)
+is licenced under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+
+## Citing
+To cite the COKI Open Access Dashboard please use the following citation:
+> Diprose, J., Hosking, R., Rigoni, R., Roelofs, A., Chien, T., Napier, K., Wilson, K., Huang, C., Handcock, R., Montgomery, L., & Neylon, C. (2023). A User-Friendly Dashboard for Tracking Global Open Access Performance. The Journal of Electronic Publishing 26(1). doi: https://doi.org/10.3998/jep.3398
+
+If you use the website code, please cite it as below:
+> James P. Diprose, Richard Hosking, Richard Rigoni, Aniek Roelofs, Kathryn R. Napier, Tuan-Yow Chien, Alex Massen-Hane, Katie S. Wilson, Lucy Montgomery, & Cameron Neylon. (2022). COKI Open Access Website. Zenodo. https://doi.org/10.5281/zenodo.6374486
+
+If you use this dataset, please cite it as below:
+> Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Lucy Montgomery, & Cameron Neylon. (2022). COKI Open Access Dataset [Data set]. Zenodo. https://doi.org/10.5281/zenodo.6399463
+
+## Attributions
+The COKI Open Access Dataset contains information from:
+* [Open Alex](https://openalex.org/) which is made available under a [CC0 licence](https://creativecommons.org/publicdomain/zero/1.0/).
+* [Crossref Metadata](https://www.crossref.org/documentation/metadata-plus/) via the Metadata Plus program. Bibliographic metadata is made available without copyright restriction and Crossref generated data with a [CC0 licence](https://creativecommons.org/share-your-work/public-domain/cc0/). See [metadata licence information](https://www.crossref.org/documentation/retrieve-metadata/rest-api/rest-api-metadata-license-information/) for more details.
+* [Unpaywall](https://unpaywall.org/). The [Unpaywall Data Feed](https://unpaywall.org/products/data-feed) is used under license. Data is freely available from Unpaywall via the API, data dumps and as a data feed.
+* [Research Organization Registry](https://ror.org/) which is made available under a [CC0 licence](https://creativecommons.org/share-your-work/public-domain/cc0/).
+"""
 
 
 def upload_institution_ids(*, release: OaDashboardRelease):
@@ -224,16 +256,11 @@ def make_draft_zenodo_version(*, zenodo_conn_id: str, zenodo_host: str, conceptr
     make_draft_version(zenodo, conceptrecid)
 
 
-def build_datasets(
+def fetch_zenodo_versions(
     *,
-    release: OaDashboardRelease,
-    entity_types: list[str],
     zenodo_conn_id: str,
     zenodo_host: str,
     conceptrecid: int,
-    start_year: int,
-    end_year: int,
-    readme_text: str,
 ):
     # Get versions
     zenodo_token = get_airflow_connection_password(zenodo_conn_id)
@@ -245,10 +272,21 @@ def build_datasets(
         ZenodoVersion(
             pendulum.parse(version["created"]),
             f"https://zenodo.org/record/{version['id']}/files/coki-oa-dataset.zip?download=1",
-        )
+        ).to_dict()
         for version in res.json()
     ]
+    return zenodo_versions
 
+
+def build_datasets(
+    *,
+    release: OaDashboardRelease,
+    entity_types: list[str],
+    zenodo_versions: list[ZenodoVersion],
+    start_year: int,
+    end_year: int,
+    readme_text: str,
+):
     # Save OA Dashboard dataset
     build_data_path = os.path.join(release.build_path, "data")
     save_oa_dashboard_dataset(
@@ -262,7 +300,15 @@ def build_datasets(
     shutil.make_archive(os.path.join(release.out_path, "coki-oa-dataset"), "zip", coki_dataset_path)
 
 
-def publish_zenodo_version(*, release: OaDashboardRelease, zenodo_conn_id: str, zenodo_host: str, conceptrecid: int):
+def publish_zenodo_version(
+    *,
+    release: OaDashboardRelease,
+    version: str,
+    bucket_name: str,
+    zenodo_conn_id: str,
+    zenodo_host: str,
+    conceptrecid: int,
+):
     zenodo_token = get_airflow_connection_password(zenodo_conn_id)
     zenodo = Zenodo(host=zenodo_host, access_token=zenodo_token)
     res = zenodo.get_versions(conceptrecid, all_versions=0)
@@ -273,14 +319,22 @@ def publish_zenodo_version(*, release: OaDashboardRelease, zenodo_conn_id: str, 
     if draft["state"] != "unsubmitted":
         raise AirflowException(f"Latest version is not a draft: {draft_id}")
 
-    file_path = os.path.join(release.out_path, "coki-oa-dataset.zip")
+    # Download latest Zenodo version from bucket
+    file_name = "coki-oa-dataset.zip"
+    file_path = os.path.join(release.out_path, file_name)
+    blob_name = f"{version}/{file_name}"
+    success = gcs_download_blob(bucket_name=bucket_name, blob_name=blob_name, file_path=file_path)
+    if not success:
+        raise AirflowException(f"publish_zenodo_version: unable to download gs://{bucket_name}/{blob_name}")
+
+    # Publish new version
     publish_new_version(zenodo, draft_id, file_path)
 
 
 def upload_dataset(*, release: OaDashboardRelease, version: str, bucket_name: str):
     # gcs_upload_file should always rewrite a new version of latest.zip if it exists
     # object versioning on the bucket will keep the previous versions
-    for file_name in ["data.zip", "images.zip"]:
+    for file_name in ["data.zip", "images.zip", "coki-oa-dataset.zip"]:
         blob_name = f"{version}/{file_name}"
         file_path = os.path.join(release.out_path, file_name)
         gcs_upload_file(bucket_name=bucket_name, blob_name=blob_name, file_path=file_path, check_blob_hash=False)
@@ -299,6 +353,10 @@ def repository_dispatch(*, github_conn_id: str):
 class ZenodoVersion:
     release_date: pendulum.DateTime
     download_url: str
+
+    @staticmethod
+    def from_dict(dict_: dict) -> ZenodoVersion:
+        return ZenodoVersion(release_date=pendulum.parse(dict_["release_date"]), download_url=dict_["download_url"])
 
     def to_dict(self) -> Dict:
         return {"release_date": self.release_date.strftime("%Y-%m-%d"), "download_url": self.download_url}

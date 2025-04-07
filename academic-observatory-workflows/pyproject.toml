@@ -38,7 +38,8 @@ dependencies = [
     "biopython>=1.81,<2",
     "glom>=23.0.0,<24",
     "bigquery-schema-generator>=1.6.1,<2",
-    "deepdiff>=8,<9"
+    "deepdiff>=8,<9",
+    "lxml>=5,<6"
 ]
 
 [project.optional-dependencies]

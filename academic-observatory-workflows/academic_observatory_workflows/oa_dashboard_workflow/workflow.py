@@ -24,45 +24,12 @@ from airflow.decorators import dag, task
 from airflow.models.baseoperator import chain
 from airflow.sensors.external_task import ExternalTaskSensor
 
-import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
-from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.release import make_snapshot_date
-from observatory_platform.airflow.tasks import check_dependencies
+from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
 from observatory_platform.airflow.workflow import cleanup, CloudWorkspace
 from observatory_platform.google.bigquery import bq_create_dataset
-
-INCLUSION_THRESHOLD = {"country": 5, "institution": 50}
-MAX_REPOSITORIES = 200
-START_YEAR = 2000
-END_YEAR = pendulum.now().year - 1
-
-
-README = """# COKI Open Access Dataset
-The COKI Open Access Dataset measures open access performance for {{ n_countries }} countries and {{ n_institutions }} institutions
-and is available in JSON Lines format. The data is visualised at the COKI Open Access Dashboard: https://open.coki.ac/.
-
-## Licence
-[COKI Open Access Dataset](https://open.coki.ac/data/) © {{ year }} by [Curtin University](https://www.curtin.edu.au/)
-is licenced under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-
-## Citing
-To cite the COKI Open Access Dashboard please use the following citation:
-> Diprose, J., Hosking, R., Rigoni, R., Roelofs, A., Chien, T., Napier, K., Wilson, K., Huang, C., Handcock, R., Montgomery, L., & Neylon, C. (2023). A User-Friendly Dashboard for Tracking Global Open Access Performance. The Journal of Electronic Publishing 26(1). doi: https://doi.org/10.3998/jep.3398
-
-If you use the website code, please cite it as below:
-> James P. Diprose, Richard Hosking, Richard Rigoni, Aniek Roelofs, Kathryn R. Napier, Tuan-Yow Chien, Alex Massen-Hane, Katie S. Wilson, Lucy Montgomery, & Cameron Neylon. (2022). COKI Open Access Website. Zenodo. https://doi.org/10.5281/zenodo.6374486
-
-If you use this dataset, please cite it as below:
-> Richard Hosking, James P. Diprose, Aniek Roelofs, Tuan-Yow Chien, Lucy Montgomery, & Cameron Neylon. (2022). COKI Open Access Dataset [Data set]. Zenodo. https://doi.org/10.5281/zenodo.6399463
-
-## Attributions
-The COKI Open Access Dataset contains information from:
-* [Open Alex](https://openalex.org/) which is made available under a [CC0 licence](https://creativecommons.org/publicdomain/zero/1.0/).
-* [Crossref Metadata](https://www.crossref.org/documentation/metadata-plus/) via the Metadata Plus program. Bibliographic metadata is made available without copyright restriction and Crossref generated data with a [CC0 licence](https://creativecommons.org/share-your-work/public-domain/cc0/). See [metadata licence information](https://www.crossref.org/documentation/retrieve-metadata/rest-api/rest-api-metadata-license-information/) for more details.
-* [Unpaywall](https://unpaywall.org/). The [Unpaywall Data Feed](https://unpaywall.org/products/data-feed) is used under license. Data is freely available from Unpaywall via the API, data dumps and as a data feed.
-* [Research Organization Registry](https://ror.org/) which is made available under a [CC0 licence](https://creativecommons.org/share-your-work/public-domain/cc0/).
-"""
+from observatory_platform.google.gke import gke_make_container_resources, gke_make_kubernetes_task_params, GkeParams
 
 
 class DagParams:
@@ -86,6 +53,9 @@ class DagParams:
         schedule: Optional[str] = "@weekly",
         max_active_runs: int = 1,
         retries: int = 3,
+        gke_volume_size: str = "200Gi",
+        gke_namespace: str = "coki-astro",
+        gke_volume_name: str = "oa-dashboard-workflow",
         **kwargs,
     ):
         """Create the OaDashboardWorkflow, which generates data files for the COKI Open Access Dashboard.
@@ -111,6 +81,10 @@ class DagParams:
         :param schedule: the schedule interval.
         :param max_active_runs: the maximum number of DAG runs that can be run at once.
         :param retries: the number of times to retry a task.
+        :param gke_namespace: The cluster namespace to use.
+        :param gke_volume_name: The name of the persistent volume to create
+        :param gke_volume_size: The amount of storage to request for the persistent volume
+        :param kwargs: Takes kwargs for building a GkeParams object.
 
         The figure below illustrates the data files produced by this workflow:
         .
@@ -179,9 +153,14 @@ class DagParams:
         self.schedule = schedule
         self.max_active_runs = max_active_runs
         self.retries = retries
+        self.gke_params = GkeParams(
+            gke_volume_size=gke_volume_size, gke_namespace=gke_namespace, gke_volume_name=gke_volume_name, **kwargs
+        )
 
 
 def create_dag(dag_params: DagParams) -> DAG:
+    kubernetes_task_params = gke_make_kubernetes_task_params(dag_params.gke_params)
+
     @dag(
         dag_id=dag_params.dag_id,
         start_date=dag_params.start_date,
@@ -197,8 +176,11 @@ def create_dag(dag_params: DagParams) -> DAG:
     )
     def oa_dashboard_workflow():
         @task
-        def fetch_release(**context):
+        def fetch_release(dag_params, **context):
             """Fetch a release"""
+
+            from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
+
             snapshot_date = make_snapshot_date(**context)
             release = OaDashboardRelease(
                 dag_id=dag_params.dag_id,
@@ -215,7 +197,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             return release.to_dict()
 
         @task
-        def create_dataset(**context):
+        def create_dataset(dag_params, **context):
             """Make BigQuery datasets."""
 
             bq_create_dataset(
@@ -226,49 +208,80 @@ def create_dag(dag_params: DagParams) -> DAG:
             )
 
         @task
-        def upload_institution_ids(release: dict, **context):
+        def upload_institution_ids(release: dict, dag_params, **context):
             """Upload the institution IDs to BigQuery"""
+
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
+            from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 
             release = OaDashboardRelease.from_dict(release)
             tasks.upload_institution_ids(release=release)
 
         @task
-        def create_entity_tables(release: dict, **context):
+        def create_entity_tables(release: dict, dag_params, **context):
             """Create the country and institution tables"""
+
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
+            from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 
             release = OaDashboardRelease.from_dict(release)
             tasks.create_entity_tables(
                 release=release,
                 entity_types=dag_params.entity_types,
-                start_year=START_YEAR,
-                end_year=END_YEAR,
-                inclusion_thresholds=INCLUSION_THRESHOLD,
+                start_year=tasks.START_YEAR,
+                end_year=tasks.END_YEAR,
+                inclusion_thresholds=tasks.INCLUSION_THRESHOLD,
             )
 
         @task
-        def add_wiki_descriptions(release: dict, entity_type: str, **context):
+        def add_wiki_descriptions(release: dict, entity_type: str, dag_params, **context):
             """Download wiki descriptions and update indexes."""
+
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
+            from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 
             release = OaDashboardRelease.from_dict(release)
             tasks.add_wiki_descriptions(release=release, entity_type=entity_type)
 
-        @task
-        def download_assets(release: dict, **context):
+        @task.kubernetes(
+            name=f"{dag_params.dag_id}-download-assets",
+            container_resources=gke_make_container_resources(
+                {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("download_assets")
+            ),
+            **kubernetes_task_params,
+        )
+        def download_assets(release: dict, dag_params, **context):
             """Download assets"""
+
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
+            from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 
             release = OaDashboardRelease.from_dict(release)
             tasks.download_assets(release=release, bucket_name=dag_params.data_bucket)
 
-        @task
-        def download_institution_logos(release: dict, **context):
+        @task.kubernetes(
+            name=f"{dag_params.dag_id}-download-institution-logos",
+            container_resources=gke_make_container_resources(
+                {"memory": "4G", "cpu": "2"},
+                dag_params.gke_params.gke_resource_overrides.get("download_institution_logos"),
+            ),
+            **kubernetes_task_params,
+        )
+        def download_institution_logos(release: dict, dag_params, **context):
             """Download logos and update indexes."""
+
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
+            from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 
             release = OaDashboardRelease.from_dict(release)
             tasks.download_institution_logos(release=release)
 
         @task
-        def export_tables(release: dict, **context):
+        def export_tables(release: dict, dag_params, **context):
             """Export and download the queried data"""
+
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
+            from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 
             release = OaDashboardRelease.from_dict(release)
             tasks.export_tables(
@@ -277,16 +290,27 @@ def create_dag(dag_params: DagParams) -> DAG:
                 download_bucket=dag_params.cloud_workspace.download_bucket,
             )
 
-        @task
-        def download_data(release: dict, **context):
+        @task.kubernetes(
+            name=f"{dag_params.dag_id}-download-data",
+            container_resources=gke_make_container_resources(
+                {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("download_data")
+            ),
+            **kubernetes_task_params,
+        )
+        def download_data(release: dict, dag_params, **context):
             """Download the queried data."""
+
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
+            from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 
             release = OaDashboardRelease.from_dict(release)
             tasks.download_data(release=release, download_bucket=dag_params.cloud_workspace.download_bucket)
 
         @task
-        def make_draft_zenodo_version(release: dict, **context):
+        def make_draft_zenodo_version(release: dict, dag_params, **context):
             """Make a draft Zenodo version of the dataset."""
+
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
 
             tasks.make_draft_zenodo_version(
                 zenodo_conn_id=dag_params.zenodo_conn_id,
@@ -295,90 +319,138 @@ def create_dag(dag_params: DagParams) -> DAG:
             )
 
         @task
-        def build_datasets(release: dict, **context):
+        def fetch_zenodo_versions(release: dict, dag_params, **context):
+            """Make a draft Zenodo version of the dataset."""
+
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
+
+            return tasks.fetch_zenodo_versions(
+                zenodo_conn_id=dag_params.zenodo_conn_id,
+                zenodo_host=dag_params.zenodo_host,
+                conceptrecid=dag_params.conceptrecid,
+            )
+
+        @task.kubernetes(
+            name=f"{dag_params.dag_id}-build-datasets",
+            container_resources=gke_make_container_resources(
+                {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("build_datasets")
+            ),
+            **kubernetes_task_params,
+        )
+        def build_datasets(release: dict, zenodo_versions: list[dict], dag_params, **context):
             """Transform the queried data into the final format for the open access website."""
 
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
+            from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
+            from academic_observatory_workflows.oa_dashboard_workflow.tasks import ZenodoVersion
+
+            # Build dataset
             release = OaDashboardRelease.from_dict(release)
             tasks.build_datasets(
                 release=release,
                 entity_types=dag_params.entity_types,
-                zenodo_conn_id=dag_params.zenodo_conn_id,
-                zenodo_host=dag_params.zenodo_host,
-                conceptrecid=dag_params.conceptrecid,
-                start_year=START_YEAR,
-                end_year=END_YEAR,
-                readme_text=README,
+                zenodo_versions=[ZenodoVersion.from_dict(v) for v in zenodo_versions],
+                start_year=tasks.START_YEAR,
+                end_year=tasks.END_YEAR,
+                readme_text=tasks.README,
             )
 
-        @task
-        def publish_zenodo_version(release: dict, **context):
-            """Publish the new Zenodo version of the dataset."""
-
-            release = OaDashboardRelease.from_dict(release)
-            tasks.publish_zenodo_version(
-                release=release,
-                zenodo_conn_id=dag_params.zenodo_conn_id,
-                zenodo_host=dag_params.zenodo_host,
-                conceptrecid=dag_params.conceptrecid,
-            )
-
-        @task
-        def upload_dataset(release: dict, **context):
+        @task.kubernetes(
+            name=f"{dag_params.dag_id}-upload-dataset",
+            container_resources=gke_make_container_resources(
+                {"memory": "2G", "cpu": "2"}, dag_params.gke_params.gke_resource_overrides.get("upload_dataset")
+            ),
+            **kubernetes_task_params,
+        )
+        def upload_dataset(release: dict, dag_params, **context):
             """Publish the dataset produced by this workflow."""
+
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
+            from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 
             release = OaDashboardRelease.from_dict(release)
             tasks.upload_dataset(release=release, version=dag_params.version, bucket_name=dag_params.data_bucket)
 
         @task
-        def repository_dispatch(release: dict, **context):
+        def publish_zenodo_version(release: dict, dag_params, **context):
+            """Publish the new Zenodo version of the dataset."""
+
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
+            from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
+
+            release = OaDashboardRelease.from_dict(release)
+            tasks.publish_zenodo_version(
+                release=release,
+                version=dag_params.version,
+                bucket_name=dag_params.data_bucket,
+                zenodo_conn_id=dag_params.zenodo_conn_id,
+                zenodo_host=dag_params.zenodo_host,
+                conceptrecid=dag_params.conceptrecid,
+            )
+
+        @task
+        def repository_dispatch(release: dict, dag_params, **context):
             """Trigger a Github repository_dispatch to trigger new website builds."""
+
+            import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
+            from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 
             release = OaDashboardRelease.from_dict(release)
             tasks.repository_dispatch(github_conn_id=dag_params.github_conn_id)
 
         @task
-        def cleanup_workflow(release: dict, **context):
-            """Delete all files and folders associated with this release."""
+        def cleanup_workflow(release: dict, dag_params, **context):
+            """Cleanup old Xcoms."""
 
-            release = OaDashboardRelease.from_dict(release)
-            cleanup(dag_id=dag_params.dag_id, workflow_folder=release.workflow_folder)
+            cleanup(dag_id=dag_params.dag_id)
 
         # Define task connections
         task_doi_sensor = ExternalTaskSensor(
             task_id=f"{dag_params.doi_dag_id}_sensor", external_dag_id=dag_params.doi_dag_id, mode="reschedule"
         )
         task_check_dependencies = check_dependencies(
-            airflow_conns=[dag_params.github_conn_id, dag_params.zenodo_conn_id]
+            airflow_conns=[dag_params.github_conn_id, dag_params.zenodo_conn_id, dag_params.gke_params.gke_conn_id]
         )
-        task_create_dataset = create_dataset()
-        xcom_release = fetch_release()
-        task_upload_institution_ids = upload_institution_ids(xcom_release)
-        task_create_entity_tables = create_entity_tables(xcom_release)
+        task_create_dataset = create_dataset(dag_params)
+        xcom_release = fetch_release(dag_params)
+        task_create_storage = gke_create_storage(
+            volume_name=dag_params.gke_params.gke_volume_name,
+            volume_size=dag_params.gke_params.gke_volume_size,
+            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+        )
+        task_upload_institution_ids = upload_institution_ids(xcom_release, dag_params)
+        task_create_entity_tables = create_entity_tables(xcom_release, dag_params)
 
         tasks_wiki = []
         for entity_type in dag_params.entity_types:
             tasks_wiki.append(
                 add_wiki_descriptions.override(task_id=f"add_wiki_descriptions_{entity_type}")(
-                    xcom_release, entity_type
+                    xcom_release, entity_type, dag_params
                 )
             )
 
-        task_download_assets = download_assets(xcom_release)
-        task_download_institution_logos = download_institution_logos(xcom_release)
-        task_export_tables = export_tables(xcom_release)
-        task_download_data = download_data(xcom_release)
-        task_make_draft_zenodo_version = make_draft_zenodo_version(xcom_release)
-        task_build_datasets = build_datasets(xcom_release)
-        task_publish_zenodo_version = publish_zenodo_version(xcom_release)
-        task_upload_dataset = upload_dataset(xcom_release)
-        task_repository_dispatch = repository_dispatch(xcom_release)
-        task_cleanup_workflow = cleanup_workflow(xcom_release)
+        task_download_assets = download_assets(xcom_release, dag_params)
+        task_download_institution_logos = download_institution_logos(xcom_release, dag_params)
+        task_export_tables = export_tables(xcom_release, dag_params)
+        task_download_data = download_data(xcom_release, dag_params)
+        task_make_draft_zenodo_version = make_draft_zenodo_version(xcom_release, dag_params)
+        task_fetch_zenodo_versions = fetch_zenodo_versions(xcom_release, dag_params)
+        task_build_datasets = build_datasets(xcom_release, task_fetch_zenodo_versions, dag_params)
+        task_upload_dataset = upload_dataset(xcom_release, dag_params)
+        task_publish_zenodo_version = publish_zenodo_version(xcom_release, dag_params)
+        task_repository_dispatch = repository_dispatch(xcom_release, dag_params)
+        task_delete_storage = gke_delete_storage(
+            volume_name=dag_params.gke_params.gke_volume_name,
+            kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+        )
+        task_cleanup_workflow = cleanup_workflow(xcom_release, dag_params)
 
         chain(
             task_doi_sensor,
             task_check_dependencies,
             task_create_dataset,
             xcom_release,
+            task_create_storage,
             task_upload_institution_ids,
             task_create_entity_tables,
             *tasks_wiki,
@@ -387,10 +459,12 @@ def create_dag(dag_params: DagParams) -> DAG:
             task_export_tables,
             task_download_data,
             task_make_draft_zenodo_version,
+            task_fetch_zenodo_versions,
             task_build_datasets,
-            task_publish_zenodo_version,
             task_upload_dataset,
+            task_publish_zenodo_version,
             task_repository_dispatch,
+            task_delete_storage,
             task_cleanup_workflow,
         )
 

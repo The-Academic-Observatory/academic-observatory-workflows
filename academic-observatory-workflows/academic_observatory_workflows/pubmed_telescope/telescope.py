@@ -318,7 +318,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 task_id="transform",
                 name=f"{dag_params.dag_id}-updatefiles-transform",
                 container_resources=gke_make_container_resources(
-                    {"memory": "8G", "cpu": "8"},
+                    {"memory": "16G", "cpu": "16"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_transform"),
                 ),
                 trigger_rule=TriggerRule.NONE_FAILED,
@@ -343,7 +343,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 task_id="merge_upserts_deletes",
                 name=f"{dag_params.dag_id}-updatefiles-merge-upserts-deletes",
                 container_resources=gke_make_container_resources(
-                    {"memory": "8G", "cpu": "8"},
+                    {"memory": "16G", "cpu": "4"},
                     dag_params.gke_params.gke_resource_overrides.get("updatefiles_merge_upserts_deletes"),
                 ),
                 trigger_rule=TriggerRule.NONE_FAILED,

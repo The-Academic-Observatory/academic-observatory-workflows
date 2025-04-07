@@ -18,12 +18,6 @@
             "type": "RECORD",
             "fields": [
               {
-                "name": "Minute",
-                "description": "Contains the numeric value for the minute in a date.",
-                "mode": "NULLABLE",
-                "type": "INTEGER"
-              },
-              {
                 "name": "Hour",
                 "description": "Contains the numeric value for the hour in a date.",
                 "mode": "NULLABLE",
@@ -606,12 +600,6 @@
                 "description": "Introduced in 1999, this element includes copyright statement information associated with the publication's abstract or summary. Publishers or authors may still claim copyright on abstracts in records lacking <CopyrightInformation>. See <Abstract> for more copyright-related information.",
                 "mode": "NULLABLE",
                 "type": "STRING"
-              },
-              {
-                "name": "AbstractText",
-                "description": "Contains the text of the abstract or summary associated with the publication.",
-                "mode": "NULLABLE",
-                "type": "STRING"
               }
             ]
           },
@@ -1138,11 +1126,6 @@
         "mode": "REPEATED",
         "type": "RECORD",
         "fields": [
-          {
-            "name": "AbstractText",
-            "mode": "NULLABLE",
-            "type": "STRING"
-          },
           {
             "name": "CopyrightInformation",
             "description": "Introduced in 1999, this element includes copyright statement information associated with the publication's abstract or summary. Publishers or authors may still claim copyright on abstracts in records lacking <CopyrightInformation>. See <Abstract> for more copyright-related information.",
