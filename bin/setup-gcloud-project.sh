@@ -222,7 +222,7 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
 ### GKE Service Account
 ###########################################
 
-# Enables GKE pods to access storage buckets
+# Enables GKE pods to access storage buckets, BigQuery and use HMAC keys
 
 echo "Create AO GKE IAM role"
 GKE_ROLE_NAME="AOGKERole"
@@ -233,8 +233,11 @@ gcloud iam roles create "$GKE_ROLE_NAME" --project="$PROJECT_ID" \
 storage.hmacKeys.delete,\
 storage.hmacKeys.update,\
 bigquery.jobs.create,\
+bigquery.tables.create,\
 bigquery.tables.get,\
 bigquery.tables.getData,\
+bigquery.tables.update,\
+bigquery.tables.updateData,\
 bigquery.datasets.get
 
 AO_GKE_SERVICE_ACCOUNT_NAME="ao-gke"
