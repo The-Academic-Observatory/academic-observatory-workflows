@@ -262,7 +262,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         @task.kubernetes(
             name=f"{dag_params.dag_id}-download-institution-logos",
             container_resources=gke_make_container_resources(
-                {"memory": "2G", "cpu": "2"},
+                {"memory": "4G", "cpu": "2"},
                 dag_params.gke_params.gke_resource_overrides.get("download_institution_logos"),
             ),
             **kubernetes_task_params,
