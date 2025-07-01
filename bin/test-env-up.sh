@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo -pipefail
 
 usage() {
     echo "This script builds and starts the Academic Observatory test environment"
@@ -12,7 +12,7 @@ usage() {
 }
 if [ "$1" == "--help" ]; then
     usage
-elif [ "$1" != "--no-build" ] && [ "$1" != "--help" ] && [ ! -z "$1" ]; then
+elif [ "$1" != "--no-build" ] && [ "$1" != "--help" ] && [ -n "$1" ]; then
     echo "Invalid argument: $1"
     usage
 fi
@@ -28,6 +28,9 @@ if [ -z "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
 fi
 export GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS
 
+# Kill anything that's using our ports
+sudo fuser -k 5080/tcp || true
+sudo fuser -k 5021/tcp || true
 # Check if minikube is running, if not, start it
 minikube delete --all --purge
 minikube start --ports=5080,5021 --extra-config=apiserver.service-node-port-range=30000-30009 --network=bridge --wait-timeout=2m0s --force
@@ -40,7 +43,7 @@ docker compose -f test-env-compose.yaml down
 docker compose -f test-env-compose.yaml up -d
 
 # Use the minikube docker daemon to build Academic Observatory workflows image
-eval $(minikube docker-env)
+eval "$(minikube docker-env)"
 if [ "$1" != "--no-build" ]; then
     docker build --no-cache -t academic-observatory:test .
 fi
