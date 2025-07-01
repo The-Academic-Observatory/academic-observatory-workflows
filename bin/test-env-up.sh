@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo -pipefail
+set -euxo -pipefail
 
 usage() {
     echo "This script builds and starts the Academic Observatory test environment"
@@ -41,10 +41,30 @@ minikube start \
     --wait=all \
     --wait-timeout=2m0s \
     --force
+minikube update-context
+
+echo "=== DEBUG: minikube status ==="
+minikube status
+
+echo "=== DEBUG: Minikube kubeconfig contents ==="
+cat "$HOME/.kube/config"
 
 # Ensure correct context is used
 export KUBECONFIG="$HOME/.kube/config"
 kubectl config use-context minikube
+
+echo "=== DEBUG: kubectl current context ==="
+kubectl config current-context || echo "No current context set"
+
+echo "=== DEBUG: kubectl config view (minified) ==="
+kubectl config view --minify || echo "No config found"
+
+echo "=== DEBUG: kubeconfig file exists? ==="
+ls -l "$HOME/.kube/config" || echo "Missing ~/.kube/config"
+
+echo "=== DEBUG: trying to reach cluster ==="
+kubectl cluster-info || echo "cluster-info failed"
+
 
 # Wait until the API is ready
 for _ in {1..30}; do
@@ -72,7 +92,7 @@ fi
 # (Re)Deploy kubernetes config items
 kubectl delete --ignore-not-found -f bin/test-konfig.yaml
 kubectl apply -f bin/test-konfig.yaml
-kubectl cluster-info
+kubectl cluster-info dump
 
 echo ""
 echo "########################### Minikube cluster running ###########################"
