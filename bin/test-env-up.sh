@@ -31,18 +31,39 @@ export GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS
 # Kill anything that's using our ports
 sudo fuser -k 5080/tcp || true
 sudo fuser -k 5021/tcp || true
-# Check if minikube is running, if not, start it
+
+# Delete and start Minikube
 minikube delete --all --purge
-minikube start --ports=5080,5021 --extra-config=apiserver.service-node-port-range=30000-30009 --network=bridge --wait=all --wait-timeout=2m0s --force
+minikube start \
+    --ports=5080,5021 \
+    --extra-config=apiserver.service-node-port-range=30000-30009 \
+    --network=bridge \
+    --wait=all \
+    --wait-timeout=2m0s \
+    --force
+
+# Ensure correct context is used
+export KUBECONFIG="$HOME/.kube/config"
+kubectl config use-context minikube
+
+# Wait until the API is ready
+for _ in {1..30}; do
+    if kubectl get nodes &>/dev/null; then
+        echo "Kubernetes API is ready."
+        break
+    fi
+    echo "Waiting for Kubernetes API..." && sleep 2
+done
+
+# Enable addons
 minikube addons enable gcp-auth
 
-
-# Run the compose commands to spin up the servers
+# Run docker-compose services
 docker compose -f test-env-compose.yaml build
 docker compose -f test-env-compose.yaml down
 docker compose -f test-env-compose.yaml up -d
 
-# Use the minikube docker daemon to build Academic Observatory workflows image
+# Use the minikube Docker daemon
 eval "$(minikube docker-env)"
 if [ "$1" != "--no-build" ]; then
     docker build --no-cache -t academic-observatory:test .
