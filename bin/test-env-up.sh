@@ -33,7 +33,7 @@ sudo fuser -k 5080/tcp || true
 sudo fuser -k 5021/tcp || true
 # Check if minikube is running, if not, start it
 minikube delete --all --purge
-minikube start --ports=5080,5021 --extra-config=apiserver.service-node-port-range=30000-30009 --network=bridge --wait-timeout=2m0s --force
+minikube start --ports=5080,5021 --extra-config=apiserver.service-node-port-range=30000-30009 --network=bridge --wait=all --wait-timeout=2m0s --force
 minikube addons enable gcp-auth
 
 
@@ -51,6 +51,7 @@ fi
 # (Re)Deploy kubernetes config items
 kubectl delete --ignore-not-found -f bin/test-konfig.yaml
 kubectl apply -f bin/test-konfig.yaml
+kubectl cluster-info
 
 echo ""
 echo "########################### Minikube cluster running ###########################"
