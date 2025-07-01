@@ -10,13 +10,14 @@ usage() {
     echo "--help      Display this help message"
     exit 1
 }
-if [ "$1" == "--help" ]; then
+
+arg="${1:-}"
+if [ "$arg" == "--help" ]; then
     usage
-elif [ "$1" != "--no-build" ] && [ "$1" != "--help" ] && [ -n "$1" ]; then
-    echo "Invalid argument: $1"
+elif [ "$arg" != "--no-build" ] && [ -n "$arg" ]; then
+    echo "Invalid argument: $arg"
     usage
 fi
-
 
 # Authenticate minikube with gcp
 if [ -f .env ]; then # Source the .env file
@@ -40,7 +41,8 @@ minikube start \
     --network=bridge \
     --wait=all \
     --wait-timeout=2m0s \
-    --force
+    --force \
+    --driver=docker
 minikube update-context
 
 echo "=== DEBUG: minikube status ==="
