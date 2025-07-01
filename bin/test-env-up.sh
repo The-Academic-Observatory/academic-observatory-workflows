@@ -89,10 +89,10 @@ for _ in {1..30}; do
 done
 
 # Ensure correct context is used
-if [ -n "${remote}" ]; then
-    export KUBECONFIG="$HOME/.kube/config"
-    kubectl config use-context minikube
+export KUBECONFIG="$HOME/.kube/config"
+kubectl config use-context minikube
 
+if [ -n "${remote}" ]; then
     # Enable addons
     minikube addons enable gcp-auth
 fi
