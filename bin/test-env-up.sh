@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euxo -pipefail
+set -euxo pipefail
 
 usage() {
     echo "This script builds and starts the Academic Observatory test environment"
