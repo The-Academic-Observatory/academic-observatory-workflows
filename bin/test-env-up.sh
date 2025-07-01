@@ -30,15 +30,14 @@ fi
 export GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS
 
 # Kill anything that's using our ports
-sudo fuser -k 5080/tcp || true
-sudo fuser -k 5021/tcp || true
+# sudo fuser -k 5080/tcp || true
+# sudo fuser -k 5021/tcp || true
 
 # Delete and start Minikube
 minikube delete --all --purge
 minikube start \
     --ports=5080,5021 \
     --extra-config=apiserver.service-node-port-range=30000-30009 \
-    --network=bridge \
     --wait=all \
     --wait-timeout=2m0s \
     --force \
