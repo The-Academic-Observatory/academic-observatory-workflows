@@ -39,7 +39,7 @@ jobs:
       #     sudo mv minikube /usr/local/bin/
       #
       - name: Set up Minikube
-        uses: kubernetes-action/minikube-start@master
+        uses: medyagh/setup-minikube@latest
         with:
           kubernetes-version: v1.33.1
           driver: docker
