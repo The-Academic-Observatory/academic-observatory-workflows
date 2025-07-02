@@ -90,6 +90,9 @@ done
 
 # Ensure correct context is used
 export KUBECONFIG="$HOME/.kube/config"
+export AIRFLOW__KUBERNETES__DELETE_WORKER_PODS=True
+export AIRFLOW__KUBERNETES__WORKER_PODS_CREATION_BATCH_SIZE=1
+export AIRFLOW__KUBERNETES__POD_MANAGER_ENABLE_ASYNC=False
 kubectl config use-context minikube
 
 if [ "${remote}" = "false" ]; then
