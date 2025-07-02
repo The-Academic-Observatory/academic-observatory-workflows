@@ -25,9 +25,7 @@ RUN curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_
 USER astro
 
 # Install Observatory Platform
-# RUN git clone https://github.com/The-Academic-Observatory/observatory-platform.git
-# TODO: change back to main branch
-RUN git clone --branch k8s_provider_version https://github.com/The-Academic-Observatory/observatory-platform.git --single-branch
+RUN git clone https://github.com/The-Academic-Observatory/observatory-platform.git
 RUN pip install -e ./observatory-platform[tests] --constraint  https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-no-providers-3.10.txt
 
 # Install Academic Observatory Workflows
