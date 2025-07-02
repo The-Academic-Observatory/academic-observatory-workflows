@@ -45,13 +45,6 @@ jobs:
           driver: docker
           addons: gcp-auth
 
-      - name: Debug Minikube status and context
-        run: |
-          minikube status
-          kubectl config view --minify
-          kubectl cluster-info
-          kubectl config current-context
-
       - name: Run test environment setup
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_application_credentials.json
@@ -65,6 +58,17 @@ jobs:
           sudo chown $USER /etc/hosts
           echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
           eval $(minikube docker-env)
+
+      - name: Debug Minikube status and context
+        run: |
+          echo "\nMinikube Status:"
+          minikube status
+          echo "\nKubectl config:"
+          kubectl config view --minify
+          echo "\nKubectl cluster info:"
+          kubectl cluster-info
+          echo "\nKubectl context:"
+          kubectl config current-context
 
       # - name: Set up Minikube
       #   env:
@@ -128,7 +132,7 @@ jobs:
           AIRFLOW__CORE__LOAD_EXAMPLES: false
         run: |
           echo "${{ secrets.TEST_GCP_SERVICE_KEY }}" | base64 --decode > /tmp/google_application_credentials.json
-          coverage run -m unittest discover ./academic-observatory-workflows -v
+          coverage run -m unittest discover ./academic-observatory-workflows -v -f
           coverage xml
 
       - name: Upload coverage to Codecov

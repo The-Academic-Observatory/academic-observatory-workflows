@@ -61,6 +61,7 @@ if [ -z "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
     exit 1
 fi
 export GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS
+export USE_NATIVE_LOOP="false" # asyncio issue fix
 
 # Kill anything that's using our ports
 sudo fuser -k 5080/tcp || true
