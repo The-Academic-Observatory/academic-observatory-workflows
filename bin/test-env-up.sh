@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euxo pipefail
+set -euo pipefail
 
 usage() {
     echo "This script builds and starts the Academic Observatory test environment"
@@ -60,11 +60,6 @@ if [ -z "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
     echo "GOOGLE_APPLICATION_CREDENTIALS is not set in '.env'. This is required to run the tests."
     exit 1
 fi
-export USE_NATIVE_LOOP="false" # asyncio issue fix
-
-# Kill anything that's using our ports
-sudo fuser -k 5080/tcp || true
-sudo fuser -k 5021/tcp || true
 
 # Delete and start Minikube
 if [ "${remote}" = "false" ]; then
@@ -96,7 +91,7 @@ if [ "${remote}" = "false" ]; then
     minikube addons enable gcp-auth
 fi
 
-# Run docker-compose services
+# Run the compose commands to spin up the servers
 docker compose -f test-env-compose.yaml build
 docker compose -f test-env-compose.yaml down
 docker compose -f test-env-compose.yaml up -d
