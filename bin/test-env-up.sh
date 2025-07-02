@@ -104,7 +104,7 @@ docker compose -f test-env-compose.yaml up -d
 
 # Use the minikube Docker daemon
 eval "$(minikube docker-env)"
-if [ "${nobuild}" = "true" ]; then
+if [ "${nobuild}" = "false" ]; then
     docker build --no-cache -t academic-observatory:test .
 fi
 
