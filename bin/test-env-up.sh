@@ -60,7 +60,6 @@ if [ -z "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
     echo "GOOGLE_APPLICATION_CREDENTIALS is not set in '.env'. This is required to run the tests."
     exit 1
 fi
-export GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS
 export USE_NATIVE_LOOP="false" # asyncio issue fix
 
 # Kill anything that's using our ports
@@ -68,7 +67,7 @@ sudo fuser -k 5080/tcp || true
 sudo fuser -k 5021/tcp || true
 
 # Delete and start Minikube
-if [ -n "${remote}" ]; then
+if [ "${remote}" = "false" ]; then
     minikube delete --all --purge
     minikube start \
         --ports=5080,5021 \
@@ -93,7 +92,7 @@ done
 export KUBECONFIG="$HOME/.kube/config"
 kubectl config use-context minikube
 
-if [ -n "${remote}" ]; then
+if [ "${remote}" = "false" ]; then
     # Enable addons
     minikube addons enable gcp-auth
 fi
@@ -105,7 +104,7 @@ docker compose -f test-env-compose.yaml up -d
 
 # Use the minikube Docker daemon
 eval "$(minikube docker-env)"
-if [ -n "${nobuild}" ]; then
+if [ "${nobuild}" = "true" ]; then
     docker build --no-cache -t academic-observatory:test .
 fi
 
