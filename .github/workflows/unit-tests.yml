@@ -93,7 +93,8 @@ jobs:
 
           cd ..
           # Add -b feature/my-branch to run tests for a feature branch
-          git clone https://github.com/The-Academic-Observatory/observatory-platform.git
+          # TODO: change back to main branch
+          git clone --branch k8s_provider_version  https://github.com/The-Academic-Observatory/observatory-platform.git
           pip install -e ./observatory-platform[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-no-providers-${{ matrix.python-version }}.txt
 
           cd academic-observatory-workflows
@@ -103,7 +104,7 @@ jobs:
           curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_linux_amd64.deb
           sudo dpkg -i s5cmd_2.1.0_linux_amd64.deb
 
-          pip freeze
+          pip freeze # for debugging
           airflow db init
 
       - name: Check licenses
