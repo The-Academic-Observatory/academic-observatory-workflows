@@ -27,6 +27,13 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Set up Minikube
+        uses: medyagh/setup-minikube@latest
+        with:
+          kubernetes-version: v1.33.1
+          driver: docker
+          addons: gcp-auth
+
       - name: Run test environment setup
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_application_credentials.json
