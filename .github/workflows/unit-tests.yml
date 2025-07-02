@@ -27,24 +27,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # - name: Install kubectl
-      #   run: |
-      #     curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-      #     sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-      #
-      # - name: Install Minikube
-      #   run: |
-      #     curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-      #     chmod +x minikube
-      #     sudo mv minikube /usr/local/bin/
-      #
-      - name: Set up Minikube
-        uses: medyagh/setup-minikube@latest
-        with:
-          kubernetes-version: v1.33.1
-          driver: docker
-          addons: gcp-auth
-
       - name: Run test environment setup
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_application_credentials.json
@@ -69,21 +51,6 @@ jobs:
           kubectl cluster-info
           echo "\nKubectl context:"
           kubectl config current-context
-
-      # - name: Set up Minikube
-      #   env:
-      #     GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_application_credentials.json
-      #   run: |
-      #     echo "${{ secrets.TEST_GCP_SERVICE_KEY }}" | base64 --decode > /tmp/google_application_credentials.json
-      #     bash bin/test-env-up.sh
-      #
-      #     # Manually add the minikube host alias because it sometimes doens't work and google won't fix it
-      #     # https://github.com/kubernetes/minikube/issues/8439
-      #     eval $(minikube docker-env --unset)
-      #     sudo chown $USER /etc/hosts
-      #     echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
-      #     eval $(minikube docker-env)
-      #
 
       - name: Install dependencies
         run: |
