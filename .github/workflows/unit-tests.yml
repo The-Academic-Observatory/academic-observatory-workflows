@@ -22,23 +22,24 @@ jobs:
         with:
           credentials_json: ${{ secrets.TEST_GCP_SERVICE_KEY }} # Store your GCP service account key as a GitHub secret
 
-      - name: Install kubectl
-        run: |
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-
-      - name: Install Minikube
-        run: |
-          curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-          chmod +x minikube
-          sudo mv minikube /usr/local/bin/
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Set up Minikube
+        uses: medyagh/setup-minikube@latest
+        with:
+          kubernetes-version: v1.33.1
+          driver: docker
+          addons: gcp-auth
+
+      - name: Run test environment setup
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_application_credentials.json
         run: |
           echo "${{ secrets.TEST_GCP_SERVICE_KEY }}" | base64 --decode > /tmp/google_application_credentials.json
-          bash bin/test-env-up.sh
+          bash bin/test-env-up.sh --remote
 
           # Manually add the minikube host alias because it sometimes doens't work and google won't fix it
           # https://github.com/kubernetes/minikube/issues/8439
@@ -47,10 +48,16 @@ jobs:
           echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
           eval $(minikube docker-env)
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+      - name: Debug Minikube status and context
+        run: |
+          echo "\nMinikube Status:"
+          minikube status
+          echo "\nKubectl config:"
+          kubectl config view --minify
+          echo "\nKubectl cluster info:"
+          kubectl cluster-info
+          echo "\nKubectl context:"
+          kubectl config current-context
 
       - name: Install dependencies
         run: |
@@ -60,7 +67,7 @@ jobs:
 
           cd ..
           # Add -b feature/my-branch to run tests for a feature branch
-          git clone https://github.com/The-Academic-Observatory/observatory-platform.git
+          git clone  https://github.com/The-Academic-Observatory/observatory-platform.git
           pip install -e ./observatory-platform[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-no-providers-${{ matrix.python-version }}.txt
 
           cd academic-observatory-workflows
@@ -70,7 +77,7 @@ jobs:
           curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_linux_amd64.deb
           sudo dpkg -i s5cmd_2.1.0_linux_amd64.deb
 
-          pip freeze
+          pip freeze # for debugging
           airflow db init
 
       - name: Check licenses
@@ -99,7 +106,7 @@ jobs:
           AIRFLOW__CORE__LOAD_EXAMPLES: false
         run: |
           echo "${{ secrets.TEST_GCP_SERVICE_KEY }}" | base64 --decode > /tmp/google_application_credentials.json
-          coverage run -m unittest discover ./academic-observatory-workflows -v
+          coverage run -m unittest discover ./academic-observatory-workflows -v 
           coverage xml
 
       - name: Upload coverage to Codecov
