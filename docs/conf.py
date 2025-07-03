@@ -13,8 +13,6 @@
 # import os
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
-import os
-import shutil
 from pathlib import Path
 
 from recommonmark.transform import AutoStructify
@@ -24,7 +22,7 @@ from generate_schema_csv import generate_csv, generate_latest_files
 # -- Project information -----------------------------------------------------
 
 project = "Academic Observatory Workflows"
-copyright = "2020-2021 Curtin University"
+copyright = "2020-2025 Curtin University"
 author = "Curtin University"
 
 # -- General configuration ---------------------------------------------------
@@ -33,7 +31,6 @@ author = "Curtin University"
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    "pbr.sphinxext",
     "sphinx_rtd_theme",
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
@@ -43,7 +40,7 @@ extensions = [
 
 # Auto API settings: https://github.com/readthedocs/sphinx-autoapi
 autoapi_type = "python"
-autoapi_dirs = ["../academic_observatory_workflows"]
+autoapi_dirs = ["../academic-observatory-workflows/academic_observatory_workflows"]
 autoapi_ignore = ["*fixtures/*.py"]
 autoapi_add_toctree_entry = True
 autoapi_python_use_implicit_namespaces = True
