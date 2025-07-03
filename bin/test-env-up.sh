@@ -70,7 +70,8 @@ if [ "${remote}" = "false" ]; then
         --wait=all \
         --wait-timeout=2m0s \
         --force \
-        --driver=docker
+        --driver=docker \
+        --network=bridge
     minikube update-context
 fi
 
