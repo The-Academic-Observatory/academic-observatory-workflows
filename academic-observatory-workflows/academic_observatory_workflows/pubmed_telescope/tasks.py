@@ -982,7 +982,7 @@ def transform_pubmed(input_path: str, upsert_path: str) -> Union[bool, str, Pubm
 
                 try:
                     context = etree.iterparse(file, events=("end",), tag=("PubmedArticle", "DeleteCitation"))
-                    for event, elem in context:
+                    for _, elem in context:
                         try:
                             record = parse_pubmed_element(elem, validate=False, ignore_errors=True)
                         except Exception as e:
@@ -1129,6 +1129,8 @@ def add_attributes(obj: Union[StringElement, DictionaryElement, ListElement, Ord
                 new[key] = add_attributes(obj.attributes[key])
         else:
             new = str(obj)
+            if new == "null":  # We want null values to be Nones so they're not interpreted as strings by BigQuery
+                new = None
 
         return new
 
@@ -1187,7 +1189,7 @@ bad_list_fields = {
 
 
 def change_pubmed_list_structure(
-    obj: Union[dict, list, str, DictionaryElement, ListElement, StringElement]
+    obj: Union[dict, list, str, DictionaryElement, ListElement, StringElement],
 ) -> Union[dict, list, str, DictionaryElement, ListElement, StringElement]:
     """Recursively travel down the Pubmed data tree to move the specified fields
     up one level to make it easier to query in Bigquery.
