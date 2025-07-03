@@ -247,12 +247,6 @@
     "fields": [
       {
         "mode": "NULLABLE",
-        "name": "evidence",
-        "type": "STRING",
-        "description": "How we found this OA location. Used for debugging. Don’t depend on the exact contents of this for anything, because values are subject to change without warning."
-      },
-      {
-        "mode": "NULLABLE",
         "name": "host_type",
         "type": "STRING",
         "description": "The type of host that serves this OA location. There are two possible values: 'publisher' means this location is served by the article’s publisher (in practice, this usually means it is hosted on the same domain the DOI resolves to). 'repository' means this location is served by an Open Access repository. Preprint servers are considered repositories even if the DOI resolves there."
@@ -280,12 +274,6 @@
         "name": "pmh_id",
         "type": "STRING",
         "description": "OAI-PMH endpoint where we found this location. This is primarily for internal debugging. It's null for locations that weren't found using OAI-PMH."
-      },
-      {
-        "mode": "NULLABLE",
-        "name": "updated",
-        "type": "TIMESTAMP",
-        "description": "Time when the data for this location was last updated. Returned as an ISO8601-formatted timestamp. Example: 2017-08-17T23:43:27.753663"
       },
       {
         "mode": "NULLABLE",
@@ -580,3 +568,4 @@
     "description": "List of OA Location objects associated with this resource that are not yet available. This list includes locations that we expect to be available in the future based on information like license metadata and journals' delayed OA policies. They do not affect the resource's oa_status and cannot be the best_oa_location or first_oa_location."
   }
 ]
+
