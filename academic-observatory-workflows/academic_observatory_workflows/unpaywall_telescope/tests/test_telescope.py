@@ -166,7 +166,7 @@ class TestUnpaywallTelescope(SandboxTestCase):
             upsert_airflow_connection(conn_id="unpaywall", conn_type="http", password="secret")
             upsert_airflow_connection(**TestConfig.gke_cluster_connection)
             with patch("academic_observatory_workflows.unpaywall_telescope.tasks.get_http_response_json") as cfs, patch(
-                "academic_observatory_workflows.unpaywall_telescope.tasks.get_filename_from_http_header"
+                "academic_observatory_workflows.unpaywall_telescope.tasks.get_snapshot_file_name"
             ) as ss:
                 cfs.return_value = {
                     "list": [{"filename": "changed_dois_with_versions_2023-04-25T080001.jsonl.gz", "filetype": "jsonl"}]
@@ -192,7 +192,7 @@ class TestUnpaywallTelescope(SandboxTestCase):
             data_interval_start = pendulum.datetime(2023, 4, 26)
             data_interval_end = data_interval_start.end_of("day")
             with patch("academic_observatory_workflows.unpaywall_telescope.tasks.get_http_response_json") as cfs, patch(
-                "academic_observatory_workflows.unpaywall_telescope.tasks.get_filename_from_http_header"
+                "academic_observatory_workflows.unpaywall_telescope.tasks.get_snapshot_file_name"
             ) as ss:
                 cfs.return_value = {"list": []}
                 ss.return_value = "filename"
@@ -210,7 +210,7 @@ class TestUnpaywallTelescope(SandboxTestCase):
             data_interval_start = pendulum.datetime(2023, 4, 27)
             data_interval_end = data_interval_start.end_of("day")
             with patch("academic_observatory_workflows.unpaywall_telescope.tasks.get_http_response_json") as cfs, patch(
-                "academic_observatory_workflows.unpaywall_telescope.tasks.get_filename_from_http_header"
+                "academic_observatory_workflows.unpaywall_telescope.tasks.get_snapshot_file_name"
             ) as ss:
                 cfs.return_value = {
                     "list": [

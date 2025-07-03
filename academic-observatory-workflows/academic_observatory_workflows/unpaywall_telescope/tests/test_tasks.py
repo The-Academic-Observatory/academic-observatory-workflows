@@ -144,12 +144,19 @@ class TestUnpaywallUtils(SandboxTestCase):
             filter_query_parameters=["api_key"],
         ):
             filename = get_snapshot_file_name(UNPAYWALL_BASE_URL, os.getenv("UNPAYWALL_API_KEY", "my-api-key"))
-            self.assertEqual("unpaywall_snapshot_2023-04-25T083002.jsonl.gz", filename)
+            self.assertEqual("unpaywall_snapshot_2025-07-02T154512.jsonl.gz", filename)
+
+        with vcr.use_cassette(
+            os.path.join(FIXTURES_FOLDER, "get_snapshot_file_name_missing_location.yaml"),
+            filter_query_parameters=["api_key"],
+        ):
+            with self.assertRaisesRegex(AirflowException, 'Missing "location"'):
+                get_snapshot_file_name(UNPAYWALL_BASE_URL, os.getenv("UNPAYWALL_API_KEY", "my-api-key"))
 
         # An invalid API key
         with vcr.use_cassette(
             os.path.join(FIXTURES_FOLDER, "get_snapshot_file_name_failure.yaml"),
             filter_query_parameters=["api_key"],
         ):
-            with self.assertRaises(AirflowException):
+            with self.assertRaisesRegex(AirflowException, "Unexpected status code"):
                 get_snapshot_file_name(UNPAYWALL_BASE_URL, "invalid-api-key")
