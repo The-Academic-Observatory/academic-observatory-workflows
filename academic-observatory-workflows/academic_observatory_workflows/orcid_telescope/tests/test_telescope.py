@@ -202,7 +202,7 @@ class TestOrcidTelescope(SandboxTestCase):
                 retries=0,
                 bq_dataset_id=bq_dataset_id,
                 api_bq_dataset_id=api_bq_dataset_id,
-                max_workers=2,
+                max_workers=os.cpu_count() * 2 - 1,
                 gke_image=TestConfig.gke_image,
                 gke_namespace=TestConfig.gke_namespace,
                 gke_volume_size="500Mi",
