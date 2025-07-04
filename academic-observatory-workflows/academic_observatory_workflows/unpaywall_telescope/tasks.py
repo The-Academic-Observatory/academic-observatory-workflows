@@ -20,10 +20,11 @@ import datetime
 import logging
 import os
 import re
+import requests
 from typing import List
+from urllib.parse import urlparse
 
 import pendulum
-import pendulum.parsing.exceptions
 from airflow.exceptions import AirflowException
 from airflow.models import DagRun
 from airflow.operators.bash import BashOperator
@@ -39,7 +40,7 @@ from observatory_platform.files import clean_dir, find_replace_file, gunzip_file
 from observatory_platform.google.bigquery import bq_load_table, bq_snapshot, bq_upsert_records
 from observatory_platform.google.gcs import gcs_upload_files
 from observatory_platform.http_download import download_file, download_files, DownloadInfo
-from observatory_platform.url_utils import get_filename_from_http_header, get_http_response_json
+from observatory_platform.url_utils import get_http_response_json
 
 # See https://unpaywall.org/products/data-feed for details of available APIs
 UNPAYWALL_BASE_URL = "https://api.unpaywall.org"
@@ -420,13 +421,27 @@ def snapshot_url(base_url: str, api_key: str) -> str:
 
 
 def get_snapshot_file_name(base_url: str, api_key: str) -> str:
-    """Get the Unpaywall snapshot filename.
+    """Get the Unpaywall snapshot filename. Raises errors if reponses from unpaywall are unexpected.
 
+    :param base_url: The Unpaywall feed base url
+    :param api_key: The Unpaywall feed api key
     :return: Snapshot file date.
     """
 
     url = snapshot_url(base_url, api_key)
-    return get_filename_from_http_header(url)
+
+    response = requests.head(url)
+    if response.status_code != 302:  # Expect a redirect attempt
+        raise AirflowException(f"Unexpected status code: url={response.url}, status_code={response.status_code}")
+    if not response.headers.get("location"):  # The filename is in the "location" header item that points to AWS
+        raise AirflowException(
+            f'Could not determine filename. Missing "location" in header: {response.headers.items()}'
+        )
+
+    parsed_url = urlparse(response.headers["location"])
+    fname = parsed_url.path.split("/")[-1]
+    logging.info(f"Found snapshot filename: {fname}")
+    return fname
 
 
 def changefiles_url(base_url: str, api_key: str):
