@@ -14,7 +14,7 @@ DEPLOYMENT_ID="$2"
 gcloud auth configure-docker us-docker.pkg.dev
 
 # Build, tag, and push the Docker image with the specified project name
-docker build --no-cache -t academic-observatory .
+docker build --no-cache -t academic-observatory:latest .
 docker tag academic-observatory us-docker.pkg.dev/${PROJECT_ID}/academic-observatory/academic-observatory
 docker push us-docker.pkg.dev/${PROJECT_ID}/academic-observatory/academic-observatory
 
