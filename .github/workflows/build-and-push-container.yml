@@ -1,0 +1,41 @@
+name: Build and Push Docker Image to Artifact Registry
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+env:
+  REPOSITORY_NAME: academic-observatory # The name of the Artifact Registry repository
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.TEST_GCP_SERVICE_KEY }}
+
+      - name: Configure Docker for Google Artifact Registry
+        run: |
+          gcloud auth configure-docker us-docker.pkg.dev
+
+      - name: Build Docker Image
+        run: docker build --no-cache -t academic-observatory:latest -t academic-observatory:$GITHUB_REF_NAME .
+
+      - name: Tag and Push Docker Image
+        run: |
+          IMAGE_REMOTE_PATH=us-docker.pkg.dev/academic-observatory/${REPOSITORY_NAME}/academic-observatory 
+
+          docker tag academic-observatory:latest ${IMAGE_REMOTE_PATH}:latest
+          docker tag academic-observatory:$GITHUB_REF_NAME ${IMAGE_REMOTE_PATH}:$GITHUB_REF_NAME
+
+          docker push ${IMAGE_REMOTE_PATH}:latest
+          docker push ${IMAGE_REMOTE_PATH}:$GITHUB_REF_NAME
