@@ -2,8 +2,6 @@ name: Astronomer CI - Deploy code
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
 

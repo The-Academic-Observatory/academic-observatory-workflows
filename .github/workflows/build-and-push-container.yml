@@ -2,8 +2,6 @@ name: Build and Push Docker Image to Artifact Registry
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
 
