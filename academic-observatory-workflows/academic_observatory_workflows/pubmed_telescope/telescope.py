@@ -357,7 +357,9 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 release = release_from_bucket(dag_params.cloud_workspace.download_bucket, release_id)
                 updatefiles_data = release_from_bucket(dag_params.cloud_workspace.download_bucket, updatefiles_id)
-                tasks.updatefiles_merge_upserts_deletes(release, updatefiles_data, max_processes=dag_params.max_processes)
+                tasks.updatefiles_merge_upserts_deletes(
+                    release, updatefiles_data, max_processes=dag_params.max_processes
+                )
 
             @task.kubernetes(
                 task_id="upload_merged_upsert_records",
@@ -465,7 +467,9 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             task_download = updatefiles_download(xcom, dag_params)
             task_transform_xcom_updatefiles = updatefiles_transform(xcom, dag_params)
-            task_merge_upserts_deletes = updatefiles_merge_upserts_deletes(xcom, task_transform_xcom_updatefiles, dag_params)
+            task_merge_upserts_deletes = updatefiles_merge_upserts_deletes(
+                xcom, task_transform_xcom_updatefiles, dag_params
+            )
             task_upload_merged_upsert_records = updatefiles_upload_merged_upsert_records(xcom, dag_params)
             task_bq_load_upsert_table = updatefiles_bq_load_upsert_table(xcom, dag_params)
             task_bq_upsert_records = updatefiles_bq_upsert_records(xcom, dag_params)
@@ -530,11 +534,13 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_delete_storage = gke_delete_storage(
             volume_name=dag_params.gke_params.gke_volume_name,
             kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+            trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
         )
         task_add_dataset_releases = add_dataset_releases(xcom_release_id, dag_params)
         task_cleanup_workflow = cleanup_workflow(xcom_release_id, dag_params)
         task_dag_run_complete = EmptyOperator(task_id=external_task_id)
 
+        # Define DAG structure
         (
             sensor
             >> task_check_dependencies
@@ -543,16 +549,20 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> task_create_snapshot
             >> task_create_storage
             >> task_branch_baseline_or_updatefiles
-            >> task_group_baseline
-            >> task_branch_updatefiles_or_storage_delete
-            >> task_group_updatefiles
-            >> task_delete_storage
-            >> task_add_dataset_releases
-            >> task_cleanup_workflow
-            >> task_dag_run_complete
         )
 
+        # Branching logic for baseline or updatefiles
+        task_branch_baseline_or_updatefiles >> task_group_baseline >> task_branch_updatefiles_or_storage_delete
         task_branch_baseline_or_updatefiles >> task_group_updatefiles
+
+        # Branching logic for updatefiles or skipping to storage deletion
+        task_branch_updatefiles_or_storage_delete >> task_group_updatefiles
         task_branch_updatefiles_or_storage_delete >> task_delete_storage
+
+        # Task group updatefiles is followed by delete_storage
+        task_group_updatefiles >> task_delete_storage
+
+        # Final steps of the DAG
+        (task_delete_storage >> task_add_dataset_releases >> task_cleanup_workflow >> task_dag_run_complete)
 
     return pubmed()
