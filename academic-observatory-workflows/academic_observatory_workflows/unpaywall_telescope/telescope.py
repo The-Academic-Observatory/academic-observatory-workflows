@@ -423,14 +423,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             task_bq_load = load_changefiles_bq_load(data, dag_params)
             task_bq_upsert = load_changefiles_bq_upsert(data, dag_params)
 
-            (
-                task_download
-                >> task_extract
-                >> task_transform
-                >> task_upload
-                >> task_bq_load
-                >> task_bq_upsert
-            )
+            (task_download >> task_extract >> task_transform >> task_upload >> task_bq_load >> task_bq_upsert)
 
         @task
         def add_dataset_release(release_id: str, dag_params: DagParams, **context) -> None:
