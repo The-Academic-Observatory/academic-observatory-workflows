@@ -1,6 +1,6 @@
 import os
 
-from flask import Flask, send_file, request, abort
+from flask import Flask, Response, send_file, request, abort, url_for
 
 app = Flask(__name__)
 
@@ -15,11 +15,33 @@ def crossref_metadata_download():
 
 
 @app.route("/unpaywall/1/feed/snapshot")
-def unpaywall_snapshot():
+def unpaywall_snapshot_redirect():
     api_key = request.args.get("api_key")
     if api_key != "secret":
+        print(f"Unauthorized access attempt with api_key: {api_key}")
         abort(403)
-    filepath = os.path.join(FIXTURES_DIR, "unpaywall/unpaywall_snapshot_2023-04-25T083002.jsonl.gz")
+
+    filename = "unpaywall_snapshot_2023-04-25T083002.jsonl.gz"
+    redirect_url = url_for("serve_unpaywall_file", filename=filename, _external=True)
+    print(f"Redirecting to: {redirect_url} for filename: {filename}")
+
+    # Create a Response object for the redirect. The status code is 302 (Found) for a temporary redirect.
+    response = Response(status=302)
+    response.headers["Location"] = redirect_url
+    return response
+
+
+@app.route("/unpaywall/download/<filename>")
+def serve_unpaywall_file(filename):
+    # You might add checks here for tokens, expiry, or specific referrer if needed
+    # for security in a production environment.
+    print(f"Attempting to serve file: {filename}")
+    filepath = os.path.join(FIXTURES_DIR, "unpaywall", filename)
+
+    if not os.path.exists(filepath):
+        print(f"File not found: {filepath}")
+        abort(404)  # File not found
+
     return send_file(filepath, as_attachment=True)
 
 

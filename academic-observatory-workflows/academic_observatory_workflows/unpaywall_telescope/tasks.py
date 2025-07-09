@@ -187,9 +187,17 @@ def load_snapshot_download(release_id: str, cloud_workspace: CloudWorkspace, htt
     api_key = os.environ.get("UNPAYWALL_API_KEY")
     if not api_key:
         raise AirflowException("API key 'UNPAYWALL_API_KEY' not found")
-    url = snapshot_url(base_url, api_key)
+
+    # Assert that the date on the filename matches the snapshot date stored in the release object as there is a
+    # small chance that the snapshot changed between when we collated the releases and when we downloaded the snapshot
+    snapshot_date = unpaywall_filename_to_datetime(get_snapshot_file_name(base_url, api_key))
+    if not release.snapshot_release.snapshot_date == snapshot_date:
+        raise AirflowException(
+            f"download: release snapshot_date {release.snapshot_release.snapshot_date} != snapshot_date of current snapshot file {snapshot_date}. This can happen because the snapshot was updated between fetch_release() and download()"
+        )
+
     success, download_info = download_file(
-        url=url,
+        url=snapshot_url(base_url, api_key),
         headers=http_header,
         prefix_dir=release.snapshot_release.download_folder,
         read_buffer_size=2**23,
@@ -197,17 +205,8 @@ def load_snapshot_download(release_id: str, cloud_workspace: CloudWorkspace, htt
     if not success:
         raise AirflowException("download: failed to download snapshot")
 
-    # Assert that the date on the filename matches the snapshot date stored in the release object as there is a
-    # small chance that the snapshot changed between when we collated the releases and when we downloaded the snapshot
-    file_path = download_info.file_path
-    file_name = os.path.basename(file_path)
-    snapshot_date = unpaywall_filename_to_datetime(file_name)
-    assert (
-        release.snapshot_release.snapshot_date == snapshot_date
-    ), f"download: release snapshot_date {release.snapshot_release.snapshot_date} != snapshot_date of downloaded file {file_path}"
-
     # Rename file so that it is easier to deal with
-    os.rename(file_path, release.snapshot_download_file_path)
+    os.rename(download_info.file_path, release.snapshot_download_file_path)
 
 
 def load_snapshot_upload_downloaded(release_id: str, cloud_workspace: CloudWorkspace):
@@ -474,7 +473,10 @@ def unpaywall_filename_to_datetime(file_name: str) -> pendulum.DateTime:
     :return: date.
     """
 
-    date_string = re.search(r"\d{4}-\d{2}-\d{2}(T\d{6})?", file_name).group()
+    date_string_re = re.search(r"\d{4}-\d{2}-\d{2}(T\d{6})?", file_name)
+    if not date_string_re:
+        raise AirflowException(f"Could not find date in file name: {file_name}")
+    date_string = date_string_re.group()
 
     try:
         # Try to parse full date time
