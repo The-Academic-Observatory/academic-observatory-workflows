@@ -275,14 +275,6 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             (task_download >> task_transform >> task_upload_transformed >> task_bq_load)
 
-        @task.branch
-        def branch_updatefiles_or_storage_delete(release_id: str, dag_params, **context):
-            from academic_observatory_workflows.pubmed_telescope import tasks
-            from observatory_platform.airflow.release import release_from_bucket
-
-            release = release_from_bucket(dag_params.cloud_workspace.download_bucket, release_id)
-            return tasks.branch_updatefiles_or_storage_delete(release)
-
         @task_group
         def updatefiles(xcom: dict, **context):
             @task.kubernetes(
@@ -529,7 +521,6 @@ def create_dag(dag_params: DagParams) -> DAG:
         )
         task_branch_baseline_or_updatefiles = branch_baseline_or_updatefiles(xcom_release_id, dag_params)
         task_group_baseline = baseline(xcom_release_id)
-        task_branch_updatefiles_or_storage_delete = branch_updatefiles_or_storage_delete(xcom_release_id, dag_params)
         task_group_updatefiles = updatefiles(xcom_release_id)
         task_delete_storage = gke_delete_storage(
             volume_name=dag_params.gke_params.gke_volume_name,
@@ -539,6 +530,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_add_dataset_releases = add_dataset_releases(xcom_release_id, dag_params)
         task_cleanup_workflow = cleanup_workflow(xcom_release_id, dag_params)
         task_dag_run_complete = EmptyOperator(task_id=external_task_id)
+        task_merge_branches = EmptyOperator(task_id="merge_branches")
 
         # Define DAG structure
         (
@@ -549,20 +541,19 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> task_create_snapshot
             >> task_create_storage
             >> task_branch_baseline_or_updatefiles
+            >> [task_group_baseline, task_group_updatefiles]
         )
 
-        # Branching logic for baseline or updatefiles
-        task_branch_baseline_or_updatefiles >> task_group_baseline >> task_branch_updatefiles_or_storage_delete
-        task_branch_baseline_or_updatefiles >> task_group_updatefiles
-
-        # Branching logic for updatefiles or skipping to storage deletion
-        task_branch_updatefiles_or_storage_delete >> task_group_updatefiles
-        task_branch_updatefiles_or_storage_delete >> task_delete_storage
-
-        # Task group updatefiles is followed by delete_storage
-        task_group_updatefiles >> task_delete_storage
+        task_group_baseline >> task_group_updatefiles
+        task_group_updatefiles >> task_merge_branches
 
         # Final steps of the DAG
-        (task_delete_storage >> task_add_dataset_releases >> task_cleanup_workflow >> task_dag_run_complete)
+        (
+            task_merge_branches
+            >> task_delete_storage
+            >> task_add_dataset_releases
+            >> task_cleanup_workflow
+            >> task_dag_run_complete
+        )
 
     return pubmed()
