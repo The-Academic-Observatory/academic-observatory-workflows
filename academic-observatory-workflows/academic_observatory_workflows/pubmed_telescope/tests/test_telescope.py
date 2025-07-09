@@ -180,7 +180,6 @@ class TestPubMedTelescope(SandboxTestCase):
                     "updatefiles.upload_merged_delete_records",
                     "updatefiles.bq_load_delete_table",
                     "updatefiles.bq_delete_records",
-                    "merge_branches",
                     "add_dataset_releases",
                     "cleanup_workflow",
                 ],
