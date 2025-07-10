@@ -331,13 +331,6 @@ def branch_baseline_or_updatefiles(release: dict) -> None:
     return "updatefiles.download"
 
 
-def branch_updatefiles_or_storage_delete(release: dict) -> None:
-    release = PubMedRelease.from_dict(release)
-    if release.updatefiles:
-        return "updatefiles.download"
-    return "gke_delete_storage"
-
-
 def baseline_download(
     release: dict, ftp_server_url: str, ftp_port: str, reset_ftp_counter: int, max_download_attempt: int
 ) -> None:

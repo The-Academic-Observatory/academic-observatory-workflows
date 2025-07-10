@@ -275,14 +275,6 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             (task_download >> task_transform >> task_upload_transformed >> task_bq_load)
 
-        @task.branch
-        def branch_updatefiles_or_storage_delete(release_id: str, dag_params, **context):
-            from academic_observatory_workflows.pubmed_telescope import tasks
-            from observatory_platform.airflow.release import release_from_bucket
-
-            release = release_from_bucket(dag_params.cloud_workspace.download_bucket, release_id)
-            return tasks.branch_updatefiles_or_storage_delete(release)
-
         @task_group
         def updatefiles(xcom: dict, **context):
             @task.kubernetes(
@@ -357,7 +349,9 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 release = release_from_bucket(dag_params.cloud_workspace.download_bucket, release_id)
                 updatefiles_data = release_from_bucket(dag_params.cloud_workspace.download_bucket, updatefiles_id)
-                tasks.updatefiles_merge_upserts_deletes(release, updatefiles_data, max_processes=dag_params.max_processes)
+                tasks.updatefiles_merge_upserts_deletes(
+                    release, updatefiles_data, max_processes=dag_params.max_processes
+                )
 
             @task.kubernetes(
                 task_id="upload_merged_upsert_records",
@@ -465,7 +459,9 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             task_download = updatefiles_download(xcom, dag_params)
             task_transform_xcom_updatefiles = updatefiles_transform(xcom, dag_params)
-            task_merge_upserts_deletes = updatefiles_merge_upserts_deletes(xcom, task_transform_xcom_updatefiles, dag_params)
+            task_merge_upserts_deletes = updatefiles_merge_upserts_deletes(
+                xcom, task_transform_xcom_updatefiles, dag_params
+            )
             task_upload_merged_upsert_records = updatefiles_upload_merged_upsert_records(xcom, dag_params)
             task_bq_load_upsert_table = updatefiles_bq_load_upsert_table(xcom, dag_params)
             task_bq_upsert_records = updatefiles_bq_upsert_records(xcom, dag_params)
@@ -525,16 +521,18 @@ def create_dag(dag_params: DagParams) -> DAG:
         )
         task_branch_baseline_or_updatefiles = branch_baseline_or_updatefiles(xcom_release_id, dag_params)
         task_group_baseline = baseline(xcom_release_id)
-        task_branch_updatefiles_or_storage_delete = branch_updatefiles_or_storage_delete(xcom_release_id, dag_params)
         task_group_updatefiles = updatefiles(xcom_release_id)
         task_delete_storage = gke_delete_storage(
             volume_name=dag_params.gke_params.gke_volume_name,
             kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
+            trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
         )
         task_add_dataset_releases = add_dataset_releases(xcom_release_id, dag_params)
         task_cleanup_workflow = cleanup_workflow(xcom_release_id, dag_params)
         task_dag_run_complete = EmptyOperator(task_id=external_task_id)
+        task_merge_branches = EmptyOperator(task_id="merge_branches")
 
+        # Define DAG structure
         (
             sensor
             >> task_check_dependencies
@@ -543,16 +541,19 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> task_create_snapshot
             >> task_create_storage
             >> task_branch_baseline_or_updatefiles
-            >> task_group_baseline
-            >> task_branch_updatefiles_or_storage_delete
-            >> task_group_updatefiles
+            >> [task_group_baseline, task_group_updatefiles]
+        )
+
+        task_group_baseline >> task_group_updatefiles
+        task_group_updatefiles >> task_merge_branches
+
+        # Final steps of the DAG
+        (
+            task_merge_branches
             >> task_delete_storage
             >> task_add_dataset_releases
             >> task_cleanup_workflow
             >> task_dag_run_complete
         )
-
-        task_branch_baseline_or_updatefiles >> task_group_updatefiles
-        task_branch_updatefiles_or_storage_delete >> task_delete_storage
 
     return pubmed()
