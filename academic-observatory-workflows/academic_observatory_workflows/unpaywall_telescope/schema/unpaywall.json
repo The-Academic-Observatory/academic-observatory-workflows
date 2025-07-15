@@ -69,6 +69,18 @@
         "mode": "NULLABLE",
         "name": "id",
         "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "evidence",
+        "type": "STRING",
+        "description": "Deprecated"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "updated",
+        "type": "STRING",
+        "description": "Deprecated"
       }
     ],
     "mode": "NULLABLE",
@@ -83,7 +95,7 @@
     "description": "Indicates the data collection approaches used for this resource. Possible values: '1' First-generation hybrid detection. Uses only data from the Crossref API to determine hybrid status. Does a good job for Elsevier articles and a few other publishers, but most publishers are not checked for hybrid. '2' Second-generation hybrid detection. Uses additional sources, checks all publishers for hybrid. Gets about 10x as much hybrid. data_standard==2 is the version used in the paper we wrote about the dataset."
   },
   {
-    "mode": "REQUIRED",
+    "mode": "NULLABLE",
     "name": "doi",
     "type": "STRING",
     "description": "The DOI of this resource. This is always lowercase."
@@ -212,6 +224,18 @@
         "mode": "NULLABLE",
         "name": "id",
         "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "evidence",
+        "type": "STRING",
+        "description": "Deprecated"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "updated",
+        "type": "STRING",
+        "description": "Deprecated"
       }
     ],
     "mode": "REPEATED",
@@ -271,14 +295,14 @@
       },
       {
         "mode": "NULLABLE",
-        "name": "version",
-        "type": "STRING",
-        "description": "The content version accessible at this location. We use the DRIVER Guidelines v2.0 VERSION standard (https://wiki.surfnet.nl/display/DRIVERguidelines/DRIVER-VERSION+Mappings) to define versions of a given article; see those docs for complete definitions of terms."
+        "name": "repository_institution",
+        "type": "STRING"
       },
       {
         "mode": "NULLABLE",
-        "name": "repository_institution",
-        "type": "STRING"
+        "name": "version",
+        "type": "STRING",
+        "description": "The content version accessible at this location. We use the DRIVER Guidelines v2.0 VERSION standard (https://wiki.surfnet.nl/display/DRIVERguidelines/DRIVER-VERSION+Mappings) to define versions of a given article; see those docs for complete definitions of terms."
       },
       {
         "mode": "NULLABLE",
@@ -289,6 +313,18 @@
         "mode": "NULLABLE",
         "name": "id",
         "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "updated",
+        "type": "STRING",
+        "description": "Deprecated"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "evidence",
+        "type": "STRING",
+        "description": "Deprecated"
       }
     ],
     "mode": "NULLABLE",
@@ -335,101 +371,30 @@
   {
     "fields": [
       {
-        "mode": "NULLABLE",
-        "name": "family",
-        "type": "STRING"
-      },
-      {
-        "mode": "NULLABLE",
-        "name": "given",
-        "type": "STRING"
-      },
-      {
-        "mode": "NULLABLE",
-        "name": "ORCID",
+        "name": "raw_affiliation_strings",
         "type": "STRING",
-        "description": "URL-form of an ORCID identifier"
+        "mode": "REPEATED"
       },
       {
         "mode": "NULLABLE",
-        "name": "authenticated_orcid",
-        "type": "BOOLEAN",
-        "description": "If true, record owner asserts that the ORCID user completed ORCID OAuth authentication"
-      },
-      {
-        "fields": [
-          {
-            "mode": "NULLABLE",
-            "name": "name",
-            "type": "STRING"
-          },
-          {
-            "fields": [
-              {
-                "mode": "NULLABLE",
-                "name": "id",
-                "type": "STRING"
-              },
-              {
-                "mode": "NULLABLE",
-                "name": "id-type",
-                "type": "STRING"
-              },
-              {
-                "mode": "NULLABLE",
-                "name": "asserted-by",
-                "type": "STRING"
-              }
-            ],
-            "mode": "REPEATED",
-            "name": "id",
-            "type": "RECORD"
-          },
-          {
-            "mode": "REPEATED",
-            "name": "place",
-            "type": "STRING"
-          },
-          {
-            "mode": "REPEATED",
-            "name": "department",
-            "type": "STRING"
-          },
-          {
-            "mode": "REPEATED",
-            "name": "acronym",
-            "type": "STRING"
-          }
-        ],
-        "mode": "REPEATED",
-        "name": "affiliation",
-        "type": "RECORD"
+        "name": "is_corresponding",
+        "type": "boolean"
       },
       {
         "mode": "NULLABLE",
-        "name": "sequence",
+        "name": "raw_author_name",
         "type": "STRING"
       },
       {
         "mode": "NULLABLE",
-        "name": "suffix",
-        "type": "STRING"
-      },
-      {
-        "mode": "NULLABLE",
-        "name": "name",
-        "type": "STRING"
-      },
-      {
-        "mode": "NULLABLE",
-        "name": "raw",
+        "name": "author_position",
         "type": "STRING"
       }
     ],
     "mode": "REPEATED",
     "name": "z_authors",
     "type": "RECORD",
-    "description": "The authors of this resource. These are formatted as a list of Crossref Contributor objects, which are described in the Crossref API docs here: https://github.com/CrossRef/rest-api-doc/blob/master/api_format.md#contributor"
+    "description": "The authors of this resource."
   },
   {
     "mode": "NULLABLE",
@@ -524,6 +489,18 @@
         "mode": "NULLABLE",
         "name": "endpoint_id",
         "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "evidence",
+        "type": "STRING",
+        "description": "Deprecated"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "updated",
+        "type": "STRING",
+        "description": "Deprecated"
       }
     ],
     "mode": "REPEATED",
