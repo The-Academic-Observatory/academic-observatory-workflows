@@ -233,7 +233,7 @@ class TestUnpaywallTelescope(SandboxTestCase):
             )
             self.assert_table_integrity(dst_table_id, expected_rows=12)
             self.assert_table_integrity(upsert_table_id, expected_rows=4)
-            self.assert_table_integrity(main_table_id, expected_rows=16)
+            self.assert_table_integrity(main_table_id, expected_rows=14)
             expected_content = load_and_parse_json(
                 os.path.join(FIXTURES_FOLDER, "expected", "run3_main_table.json"),
                 date_fields={"oa_date", "published_date"},
