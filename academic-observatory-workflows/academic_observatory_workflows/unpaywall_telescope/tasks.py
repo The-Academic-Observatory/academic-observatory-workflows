@@ -16,27 +16,29 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import datetime
 import logging
 import os
 import re
 import requests
-from typing import List
+from typing import List, Any
 from urllib.parse import urlparse
 
-import pendulum
 from airflow.exceptions import AirflowException
 from airflow.models import DagRun
 from airflow.operators.bash import BashOperator
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
+import jsonlines
+import pendulum
 
 from academic_observatory_workflows.unpaywall_telescope.release import Changefile, UnpaywallRelease
 from observatory_platform.airflow.airflow import get_airflow_connection_password, is_first_dag_run
 from observatory_platform.airflow.release import release_from_bucket, release_to_bucket
 from observatory_platform.airflow.workflow import cleanup, CloudWorkspace
 from observatory_platform.dataset_api import DatasetAPI, DatasetRelease
-from observatory_platform.files import clean_dir, find_replace_file, gunzip_files, list_files, merge_update_files
+from observatory_platform.files import clean_dir, gunzip_files, list_files, merge_update_files, yield_jsonl
 from observatory_platform.google.bigquery import bq_load_table, bq_snapshot, bq_upsert_records
 from observatory_platform.google.gcs import gcs_upload_files
 from observatory_platform.http_download import download_file, download_files, DownloadInfo
@@ -228,18 +230,13 @@ def load_snapshot_extract(release_id: str, cloud_workspace: CloudWorkspace):
 
 
 def load_snapshot_transform(release_id: str, cloud_workspace: CloudWorkspace):
+    """Transforms all of the snapshot files"""
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.snapshot_release.transform_folder)
 
     # Transform data
-    logging.info(f"transform: find_replace_file")
-    find_replace_file(
-        src=release.snapshot_extract_file_path,
-        dst=release.main_table_file_path,
-        pattern="authenticated-orcid",
-        replacement="authenticated_orcid",
-    )
+    unpaywall_transform_file(release.snapshot_extract_file_path, release.main_table_file_path)
 
 
 def load_snapshot_split_main_table_file(release_id: str, cloud_workspace: CloudWorkspace, **context):
@@ -331,16 +328,17 @@ def load_changefiles_transform(release_id: str, cloud_workspace: CloudWorkspace,
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.changefile_release.transform_folder)
 
-    logging.info("transform: find and replace the 'authenticated-orcid' string in the jsonl to 'authenticated_orcid'")
-    for changefile in release.changefiles:
-        with open(changefile.extract_file_path, "r") as f_in, open(changefile.transform_file_path, "w") as f_out:
-            for line in f_in:
-                if line.strip() != "null":
-                    output = re.sub(pattern="authenticated-orcid", repl="authenticated_orcid", string=line)
-                    f_out.write(output)
+    with ThreadPoolExecutor(max_workers=os.cpu_count() * 2) as executor:
+        futures = []
+        for changefile in release.changefiles:
+            futures.append(
+                executor.submit(unpaywall_transform_file, changefile.extract_file_path, changefile.transform_file_path)
+            )
+        for future in futures:
+            future.result()
 
     logging.info(
-        "transform: Merge change files, make sure that we process them from the oldest changefile to the newest"
+        "Transform: Merge change files, make sure that we process them from the oldest changefile to the newest"
     )
     # Make sure changefiles are sorted from oldest to newest, just in case they were not sorted for some reason
     changefiles = sorted(release.changefiles, key=lambda c: c.changefile_date, reverse=False)
@@ -411,6 +409,60 @@ def cleanup_workflow(release_id: str, cloud_workspace: CloudWorkspace):
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
+
+
+def unpaywall_transform_file(input_file: str, output_file: str) -> None:
+    """Transforms the unpaywall .jsonl file. Writes the transformed data to a new file
+
+    :param input_file: The unpaywall file to transform
+    :param output_file: The file to write to
+    """
+    print(f"Transforming file: {input_file}")
+    with open(output_file, "w+") as f_out:
+        with jsonlines.Writer(f_out) as writer:
+            for line in yield_jsonl(input_file):
+                writer.write(unpaywall_transform_row(line))
+    print(f"Written tranformed file to: {output_file}")
+
+
+def unpaywall_transform_row(row: dict) -> dict:
+    """Transforms a single unpwaywall row
+
+    :param row: The unpaywall entry to transform
+    :param return: The transformed row
+    """
+
+    def replace_hyphens_in_keys(obj: Any):
+        """Replace hyphens because BigQuery doesn't like them"""
+        if isinstance(obj, dict):
+            return {k.replace("-", "_"): replace_hyphens_in_keys(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [replace_hyphens_in_keys(i) for i in obj]
+        else:
+            return obj
+
+    def replace_string_null(obj: Any):
+        """Replace 'null' with None. 'nulls' break uploads"""
+        if isinstance(obj, dict):
+            return {k: replace_string_null(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [replace_string_null(i) for i in obj]
+        else:
+            return None if obj == "null" else obj
+
+    def drop_list_nulls(obj: Any):
+        """Drop nulls (Nones) in a list"""
+        if isinstance(obj, dict):
+            return {k: drop_list_nulls(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [drop_list_nulls(i) for i in obj if i is not None]
+        else:
+            return obj
+
+    row = replace_hyphens_in_keys(row)
+    row = replace_string_null(row)
+    row = drop_list_nulls(row)
+    return row
 
 
 def snapshot_url(base_url: str, api_key: str) -> str:

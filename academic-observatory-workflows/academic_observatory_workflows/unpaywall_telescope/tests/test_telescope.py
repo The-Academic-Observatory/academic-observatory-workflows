@@ -180,7 +180,7 @@ class TestUnpaywallTelescope(SandboxTestCase):
 
             self.assert_table_integrity(upsert_table_id, expected_rows=2)
             expected_content = load_and_parse_json(
-                os.path.join(FIXTURES_FOLDER, "expected", "run1_bq_upsert_records.json"),
+                os.path.join(FIXTURES_FOLDER, "expected", "run1_main_table.json"),
                 date_fields={"oa_date", "published_date"},
                 timestamp_fields={"updated"},
             )
@@ -231,11 +231,11 @@ class TestUnpaywallTelescope(SandboxTestCase):
                 "unpaywall_snapshot",
                 prev_end_date,
             )
-            self.assert_table_integrity(dst_table_id, expected_rows=10)
+            self.assert_table_integrity(dst_table_id, expected_rows=12)
             self.assert_table_integrity(upsert_table_id, expected_rows=4)
-            self.assert_table_integrity(main_table_id, expected_rows=12)
+            self.assert_table_integrity(main_table_id, expected_rows=14)
             expected_content = load_and_parse_json(
-                os.path.join(FIXTURES_FOLDER, "expected", "run3_bq_upsert_records.json"),
+                os.path.join(FIXTURES_FOLDER, "expected", "run3_main_table.json"),
                 date_fields={"oa_date", "published_date"},
                 timestamp_fields={"updated"},
             )

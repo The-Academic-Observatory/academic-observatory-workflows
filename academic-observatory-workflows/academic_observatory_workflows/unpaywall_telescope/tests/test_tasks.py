@@ -15,11 +15,14 @@
 # Author: Tuan Chien, James Diprose
 
 import os
+import unittest
 from unittest.mock import patch
+import tempfile
 
+from airflow import AirflowException
+import jsonlines
 import pendulum
 import vcr
-from airflow import AirflowException
 
 from observatory_platform.sandbox.test_utils import SandboxTestCase
 from academic_observatory_workflows.config import project_path
@@ -31,6 +34,8 @@ from academic_observatory_workflows.unpaywall_telescope.tasks import (
     changefile_download_url,
     get_unpaywall_changefiles,
     unpaywall_filename_to_datetime,
+    unpaywall_transform_file,
+    unpaywall_transform_row,
     UNPAYWALL_BASE_URL,
 )
 
@@ -160,3 +165,59 @@ class TestUnpaywallUtils(SandboxTestCase):
         ):
             with self.assertRaisesRegex(AirflowException, "Unexpected status code"):
                 get_snapshot_file_name(UNPAYWALL_BASE_URL, "invalid-api-key")
+
+
+class TestUnpaywallTransform(unittest.TestCase):
+    def test_transform_file(self):
+        with tempfile.NamedTemporaryFile(mode="w+") as f_in, tempfile.NamedTemporaryFile(mode="r") as f_out:
+            # Sample input row
+            input_data = {"author-list": ["Alice", "null", None], "null-str": "null", "nested": {"some-key": "value"}}
+
+            # Write to input
+            with jsonlines.Writer(f_in) as writer:
+                writer.write(input_data)
+            f_in.flush()  # Flush because the temp file is still open
+
+            # Transform
+            unpaywall_transform_file(f_in.name, f_out.name)
+
+            # Read output
+            with jsonlines.Reader(f_out) as reader:
+                output = list(reader)
+
+            # Check result
+            self.assertEqual(len(output), 1)
+            row = output[0]
+            self.assertEqual(row["author_list"], ["Alice"])
+            self.assertIsNone(row["null_str"])
+            self.assertEqual(row["nested"]["some_key"], "value")
+
+    def test_transform_row(self):
+        input_row = {
+            "title": "Example",
+            "author-list": ["Alice", None, "Bob"],
+            "publication-info": {"journal-name": "Science", "publisher": "null", "identifiers": [None, "123", "null"]},
+            "null-field": "null",
+        }
+
+        expected_output = {
+            "title": "Example",
+            "author_list": ["Alice", "Bob"],
+            "publication_info": {
+                "journal_name": "Science",
+                "publisher": None,
+                "identifiers": ["123"],
+            },
+            "null_field": None,
+        }
+
+        result = unpaywall_transform_row(input_row)
+        print(result)
+        self.assertEqual(result["title"], expected_output["title"])
+        self.assertEqual(result["author_list"], expected_output["author_list"])
+        self.assertEqual(
+            result["publication_info"]["journal_name"], expected_output["publication_info"]["journal_name"]
+        )
+        self.assertEqual(result["publication_info"]["publisher"], expected_output["publication_info"]["publisher"])
+        self.assertEqual(result["publication_info"]["identifiers"], expected_output["publication_info"]["identifiers"])
+        self.assertEqual(result["null_field"], expected_output["null_field"])
