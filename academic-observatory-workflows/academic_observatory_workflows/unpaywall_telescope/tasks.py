@@ -22,7 +22,7 @@ import logging
 import os
 import re
 import requests
-from typing import List, Any
+from typing import List, Any, Optional
 from urllib.parse import urlparse
 
 from airflow.exceptions import AirflowException
@@ -159,7 +159,12 @@ def fetch_release(
 
 def bq_create_main_table_snapshot(release_id: str, cloud_workspace: CloudWorkspace, snapshot_expiry_days: int) -> None:
     """Create a snapshot of the main table. The purpose of this table is to be able to rollback the table
-    if something goes wrong. The snapshot expires after snapshot_expiry_days."""
+    if something goes wrong.
+
+    :param release_id: The unique ID assigned to the release object. Used for retrieval from the download bucket.
+    :param cloud_workspace: The CloudWorkspace object
+    :param snapshot_expiry_days: Number of days before the created snapshot is automatically deleted.
+    """
 
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
@@ -178,7 +183,17 @@ def bq_create_main_table_snapshot(release_id: str, cloud_workspace: CloudWorkspa
         raise AirflowException("bq_create_main_table_snapshot: failed to create BigQuery snapshot")
 
 
-def load_snapshot_download(release_id: str, cloud_workspace: CloudWorkspace, http_header: str, base_url: str):
+def load_snapshot_download(
+    release_id: str,
+    cloud_workspace: CloudWorkspace,
+    base_url: str,
+    http_header: Optional[dict] = None,
+):
+    """Downloads the snapshot file. Expects the API key to be set in the environment as UNPAWAYWALL_API_KEY.
+
+    :param base_url: The unpaywall base url. e.g. https://api.unpaywall.org
+    :param http_header: A dictionary of headers to send with the http request
+    """
     # Clean all files
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
@@ -212,6 +227,7 @@ def load_snapshot_download(release_id: str, cloud_workspace: CloudWorkspace, htt
 
 
 def load_snapshot_upload_downloaded(release_id: str, cloud_workspace: CloudWorkspace):
+    """Uploads the downloaded snapshot file to the download bucket"""
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     success = gcs_upload_files(
@@ -223,6 +239,7 @@ def load_snapshot_upload_downloaded(release_id: str, cloud_workspace: CloudWorks
 
 
 def load_snapshot_extract(release_id: str, cloud_workspace: CloudWorkspace):
+    """Extracts the downloaded snapshot file"""
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.snapshot_release.extract_folder)
@@ -240,6 +257,7 @@ def load_snapshot_transform(release_id: str, cloud_workspace: CloudWorkspace):
 
 
 def load_snapshot_split_main_table_file(release_id: str, cloud_workspace: CloudWorkspace, **context):
+    """Splits the main snapshot table file into many smaller files"""
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     op = BashOperator(
@@ -251,6 +269,7 @@ def load_snapshot_split_main_table_file(release_id: str, cloud_workspace: CloudW
 
 
 def load_snapshot_upload_main_table_files(release_id: str, cloud_workspace: CloudWorkspace):
+    """Uploads the snapshot files to the transform bucket"""
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     files_list = list_files(release.snapshot_release.transform_folder, release.main_table_files_regex)
@@ -262,6 +281,11 @@ def load_snapshot_upload_main_table_files(release_id: str, cloud_workspace: Clou
 def load_snapshot_bq_load(
     release_id: str, cloud_workspace: CloudWorkspace, schema_file_path: str, table_description: str
 ):
+    """Loads the snapshot files into the main bigquery table
+
+    :param schema_file_path: The file path of the schema file to use
+    :param table_description: The description to give the main table
+    """
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     success = bq_load_table(
@@ -282,7 +306,17 @@ def changefile_download_url(base_url: str, changefile: str, api_key: str):
     return f"{base_url}/daily-feed/changefile/{changefile}?api_key={api_key}"
 
 
-def load_changefiles_download(release_id: str, cloud_workspace: CloudWorkspace, http_header: str, base_url: str):
+def load_changefiles_download(
+    release_id: str,
+    cloud_workspace: CloudWorkspace,
+    base_url: str,
+    http_header: Optional[str] = None,
+):
+    """Downloads the changefiles. Expects the API key to be set in the environment as UNPAWAYWALL_API_KEY.
+
+    :param base_url: The unpaywall base url. e.g. https://api.unpaywall.org
+    :param http_header: A dictionary of headers to send with the http request
+    """
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.changefile_release.download_folder)
@@ -306,6 +340,7 @@ def load_changefiles_download(release_id: str, cloud_workspace: CloudWorkspace, 
 
 
 def load_changefiles_upload_downloaded(release_id: str, cloud_workspace: CloudWorkspace):
+    """Uploads the downloaded changefiles to the download bucket"""
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     files_list = [changefile.download_file_path for changefile in release.changefiles]
@@ -315,6 +350,7 @@ def load_changefiles_upload_downloaded(release_id: str, cloud_workspace: CloudWo
 
 
 def load_changefiles_extract(release_id: str, cloud_workspace: CloudWorkspace):
+    """Extracts the downloaded changefiles"""
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.changefile_release.extract_folder)
@@ -324,6 +360,10 @@ def load_changefiles_extract(release_id: str, cloud_workspace: CloudWorkspace):
 
 
 def load_changefiles_transform(release_id: str, cloud_workspace: CloudWorkspace, primary_key: str):
+    """Transforms all of the changefiles
+
+    :param primary_key: The primary key to use for merging the changefiles
+    """
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     clean_dir(release.changefile_release.transform_folder)
@@ -347,6 +387,7 @@ def load_changefiles_transform(release_id: str, cloud_workspace: CloudWorkspace,
 
 
 def load_changefiles_upload(release_id: str, cloud_workspace: CloudWorkspace):
+    """Uploads the downloaded changefiles to the download bucket"""
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     success = gcs_upload_files(
@@ -359,6 +400,11 @@ def load_changefiles_upload(release_id: str, cloud_workspace: CloudWorkspace):
 def load_changefiles_bq_load(
     release_id: str, cloud_workspace: CloudWorkspace, schema_file_path: str, table_description: str
 ):
+    """Loads the changefiles into the 'upsert' bigquery table
+
+    :param schema_file_path: The file path of the schema file to use
+    :param table_description: The description to give the main table
+    """
     # Will overwrite any existing upsert table
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
@@ -376,6 +422,10 @@ def load_changefiles_bq_load(
 
 
 def load_changefiles_bq_upsert(release_id: str, cloud_workspace: CloudWorkspace, primary_key: str):
+    """Upserts the changefiles into the main table from the upsert table
+
+    :param primary_key: A single key or a list of keys to use to determine which records to upsert.
+    """
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     bq_upsert_records(
@@ -386,6 +436,10 @@ def load_changefiles_bq_upsert(release_id: str, cloud_workspace: CloudWorkspace,
 
 
 def add_dataset_release(release_id: str, cloud_workspace: CloudWorkspace, api_bq_dataset_id: str):
+    """Adds a release to the API dataset
+
+    :param api_bq_dataset_id: The ID of the API dataset
+    """
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
 
@@ -406,6 +460,7 @@ def add_dataset_release(release_id: str, cloud_workspace: CloudWorkspace, api_bq
 
 
 def cleanup_workflow(release_id: str, cloud_workspace: CloudWorkspace):
+    """Cleans up the workflow, deleting folders and xcoms"""
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
     cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
