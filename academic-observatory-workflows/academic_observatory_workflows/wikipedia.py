@@ -22,10 +22,10 @@ from typing import List, Tuple
 from urllib.parse import unquote, urlparse
 
 import nltk
-import requests
 from airflow.exceptions import AirflowException
 
 from observatory_platform.files import get_chunks
+from observatory_platform.url_utils import retry_get_url, get_user_agent
 
 WIKI_MAX_TITLES = 20  # Set the number of titles for which wiki descriptions are retrieved at once, the API can return max 20 extracts.
 
@@ -104,7 +104,8 @@ def fetch_wikipedia_descriptions_batch(urls: List) -> List[Tuple[str, str]]:
         titles.append(unquote(title))
 
     # Confirm that there is a max of 20 titles, the limit for the wikipedia API
-    assert len(titles) <= 20
+    if not len(titles) <= 20:
+        raise AirflowException(f"More than 20 titles supplied: {titles}")
 
     # Extract descriptions using the Wikipedia API
     params = {
@@ -116,9 +117,11 @@ def fetch_wikipedia_descriptions_batch(urls: List) -> List[Tuple[str, str]]:
         "exintro": "1",
         "explaintext": "1",
     }
-    response = requests.get("https://en.wikipedia.org/w/api.php", params=params)
-    if response.status_code != 200:
-        raise AirflowException(f"Unsuccessfully retrieved Wikipedia extracts, url: {response.url}")
+
+    user_agent = get_user_agent(package_name="academic-observatory-workflows")
+    response = retry_get_url(
+        url="https://en.wikipedia.org/w/api.php", headers={"User-Agent": user_agent}, params=params
+    )
     response = response.json()
     pages = response["query"]["pages"]
 
@@ -134,7 +137,7 @@ def fetch_wikipedia_descriptions_batch(urls: List) -> List[Tuple[str, str]]:
 
     # Create description index
     descriptions = {}
-    for page_id, page in pages.items():
+    for _, page in pages.items():
         description = page.get("extract", "")
         if description:
             # Cleanup description
