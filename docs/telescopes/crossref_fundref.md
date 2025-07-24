@@ -18,7 +18,7 @@ The corresponding table created in BigQuery is `crossref.crossref_fundrefYYYYMMD
 +------------------------------+---------+
 | Harvest Frequency            | Weekly  |
 +------------------------------+---------+
-| Runs on remote worker        | True    |
+| Runs Tasks in Pod            | False    |
 +------------------------------+---------+
 | Catchup missed runs          | True    |
 +------------------------------+---------+

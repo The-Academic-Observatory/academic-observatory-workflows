@@ -46,7 +46,7 @@ The first array contains all the original field names and the second array the c
 +------------------------------+-----------------------------------------+
 | Workflow Update Frequency    | Weekly                                  |
 +------------------------------+-----------------------------------------+
-| Runs on remote worker        | True                                    |
+| Runs Tasks in Pod            | True                                    |
 +------------------------------+-----------------------------------------+
 | Catchup missed runs          | False                                   |
 +------------------------------+-----------------------------------------+

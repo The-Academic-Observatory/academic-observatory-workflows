@@ -18,7 +18,7 @@ The corresponding tables created in BigQuery are `orcid.orcid` and `orcid.orcid_
 +------------------------------+--------------+
 | Harvest Frequency            | Weekly       |
 +------------------------------+--------------+
-| Runs on remote worker        | True         |
+| Runs Tasks in Pod            | True         |
 +------------------------------+--------------+
 | Catchup missed runs          | False        |
 +------------------------------+--------------+

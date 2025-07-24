@@ -6,17 +6,12 @@ output data to other places. Workflows are built on top of Apache Airflow's DAGs
 .. toctree::
     :maxdepth: 1
 
-    crossref_events
     crossref_fundref
     crossref_metadata
-    geonames
-    grid
-    mag
     openalex
     open_citations
     orcid
+    pubmed
     ror
     scopus
-    unpaywall_snapshot
     unpaywall
-    web_of_science

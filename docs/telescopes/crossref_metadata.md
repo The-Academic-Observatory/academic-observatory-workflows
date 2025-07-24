@@ -25,7 +25,7 @@ The corresponding table created in BigQuery is `crossref.crossref_metadataYYYYMM
 +------------------------------+---------+
 | Harvest Frequency            | Monthly |
 +------------------------------+---------+
-| Runs on remote worker        | True    |
+| Runs Tasks in Pod            | True    |
 +------------------------------+---------+
 | Catchup missed runs          | True    |
 +------------------------------+---------+
