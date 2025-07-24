@@ -39,7 +39,7 @@ The telescope downloads SCOPUS data in parallel sessions up to the number of API
 +------------------------------+--------------------------------------+
 | Harvest frequency            | Default: @monthly                    |
 +------------------------------+--------------------------------------+
-| Runs on remote worker        | Default: False                       |
+| Runs Tasks in Pod            | Default: False                       |
 +------------------------------+--------------------------------------+
 | Catchup missed runs          | Default: False                       |
 +------------------------------+--------------------------------------+

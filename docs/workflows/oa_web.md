@@ -8,7 +8,7 @@ dispatch event is created, this event triggers the Github actions responsible fo
 +==============================+======================================+
 | Frequency                    | Default: @weekly                     |
 +------------------------------+--------------------------------------+
-| Runs on remote worker        | Default: False                       |
+| Runs Tasks in Pod            | Default: False                       |
 +------------------------------+--------------------------------------+
 | Catchup missed runs          | Default: False                       |
 +------------------------------+--------------------------------------+

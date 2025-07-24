@@ -23,7 +23,7 @@ See their [docs](https://ror.readme.io/docs/data-dump) for more information on t
 +------------------------------+-----------------------------------------+
 | Workflow Update Frequency    | Monthly                                 |
 +------------------------------+-----------------------------------------+
-| Runs on remote worker        | False                                   |
+| Runs Tasks in Pod            | False                                   |
 +------------------------------+-----------------------------------------+
 | Catchup missed runs          | True                                    |
 +------------------------------+-----------------------------------------+
