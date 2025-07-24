@@ -51,6 +51,24 @@ CHANGEFILES_URL = "https://api.unpaywall.org/feed/changefiles"
 CHANGEFILES_DOWNLOAD_URL = "https://api.unpaywall.org/daily-feed/changefile"
 
 
+def snapshot_url(base_url: str, api_key: str) -> str:
+    """Snapshot URL.
+
+    :param base_url: The base url. e.g. https://api.unpaywall.org. Can be changed for testing purposes.
+    :param api_key: The api key for the unpaywall feed api.
+    """
+    return f"{base_url}/feed/snapshot?api_key={api_key}"
+
+
+def changefile_download_url(base_url: str, changefile: str, api_key: str):
+    """Generate the changefile download url
+
+    :param base_url: The base url. e.g. https://api.unpaywall.org. Can be changed for testing purposes.
+    :param api_key: The api key for the unpaywall feed api.
+    """
+    return f"{base_url}/daily-feed/changefile/{changefile}?api_key={api_key}"
+
+
 def fetch_release(
     dag_id: str,
     run_id: str,
@@ -301,11 +319,6 @@ def load_snapshot_bq_load(
         raise AirflowException("bq_load: failed to load main table")
 
 
-def changefile_download_url(base_url: str, changefile: str, api_key: str):
-    """Generate the changefile download url"""
-    return f"{base_url}/daily-feed/changefile/{changefile}?api_key={api_key}"
-
-
 def load_changefiles_download(
     release_id: str,
     cloud_workspace: CloudWorkspace,
@@ -518,12 +531,6 @@ def unpaywall_transform_row(row: dict) -> dict:
     row = replace_string_null(row)
     row = drop_list_nulls(row)
     return row
-
-
-def snapshot_url(base_url: str, api_key: str) -> str:
-    """Snapshot URL"""
-
-    return f"{base_url}/feed/snapshot?api_key={api_key}"
 
 
 def get_snapshot_file_name(base_url: str, api_key: str) -> str:
