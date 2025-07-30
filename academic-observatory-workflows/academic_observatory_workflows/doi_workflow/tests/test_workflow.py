@@ -194,12 +194,9 @@ class TestDoiWorkflow(SandboxTestCase):
             {
                 "sensors.crossref_metadata_sensor": ["check_dependencies"],
                 "sensors.crossref_fundref_sensor": ["check_dependencies"],
-                "sensors.geonames_sensor": ["check_dependencies"],
                 "sensors.ror_sensor": ["check_dependencies"],
-                "sensors.open_citations_sensor": ["check_dependencies"],
                 "sensors.unpaywall_sensor": ["check_dependencies"],
                 "sensors.orcid_sensor": ["check_dependencies"],
-                "sensors.crossref_events_sensor": ["check_dependencies"],
                 "sensors.openalex_sensor": ["check_dependencies"],
                 "sensors.pubmed_sensor": ["check_dependencies"],
                 "check_dependencies": ["fetch_release"],

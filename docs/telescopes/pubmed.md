@@ -1,10 +1,10 @@
-# Pubmed Telescope
+# Pubmed
 
 The Pubmed Medline database is a bibliographioc database of over 35 million medical related citations over the last 30 years.
 
-More information on the database and the fields present in the data can be found here:
+More information on the database and the fields present in the data can be [found here](https://www.nlm.nih.gov/medline/medline_overview.html).
 
-https://www.nlm.nih.gov/medline/medline_overview.html
+
 
 ## Workflow
 
@@ -20,11 +20,11 @@ The baseline files from the Pubmed essentially only hold records to upsert to th
 
 The Baseline yearly snapshots are released in December of each year. The URL to the FTP server for the 'baseline' files is
 
-https://ftp.ncbi.nlm.nih.gov/pubmed/baseline/
+`https://ftp.ncbi.nlm.nih.gov/pubmed/baseline/`
 
 and similarly the updatefiles are released daily
 
-https://ftp.ncbi.nlm.nih.gov/pubmed/updatefiles/
+`https://ftp.ncbi.nlm.nih.gov/pubmed/updatefiles/`
 
 Updatefiles can hold both records to upsert and delete. If there are more than 30,000 upserts, there are multiple updatefiles released for that day. All files that are downloaded and are also uploaded to Google Cloud Storage for archival purposes.
 
@@ -114,7 +114,7 @@ It is important to note that each upsert record contains the entire record again
 
 Upserts and delete records are applied by matching on the PMID value and the Version number of a record. A backup is taken of the main table before any of the upserts and deletions are applied. The backup table is set to expire in 31 days after it was created (to reduce table storage costs in Bigquery).
 
-# Workflow Summary
+## Workflow Summary
 
 ```eval_rst
 +------------------------------+-----------------------------------------+
@@ -128,7 +128,7 @@ Upserts and delete records are applied by matching on the PMID value and the Ver
 +------------------------------+-----------------------------------------+
 | Workflow Update Frequency    | Weekly                                  |
 +------------------------------+-----------------------------------------+
-| Runs on remote worker        | True                                    |
+| Runs Tasks in Pod            | True                                    |
 +------------------------------+-----------------------------------------+
 | Catchup missed runs          | False                                   |
 +------------------------------+-----------------------------------------+

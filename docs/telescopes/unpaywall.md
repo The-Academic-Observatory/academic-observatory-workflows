@@ -57,7 +57,7 @@ The connection must be a valid URI supported by Airflow, but only the password c
 +------------------------------+--------------+
 | Harvest Frequency            | Daily        |
 +------------------------------+--------------+
-| Runs on remote worker        | False        |
+| Runs Tasks in Pod            | True         |
 +------------------------------+--------------+
 | Catchup missed runs          | True         |
 +------------------------------+--------------+

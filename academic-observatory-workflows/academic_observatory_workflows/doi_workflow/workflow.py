@@ -33,16 +33,13 @@ from observatory_platform.airflow.tasks import check_dependencies
 from observatory_platform.airflow.workflow import CloudWorkspace
 
 SENSOR_DAG_IDS = [
-    "crossref_metadata",
     "crossref_fundref",
-    "geonames",
-    "ror",
-    "open_citations",
-    "unpaywall",
-    "orcid",
-    "crossref_events",
+    "crossref_metadata",
     "openalex",
+    "ror",
+    "unpaywall",
     "pubmed",
+    "orcid",
 ]
 
 AGGREGATIONS = [
