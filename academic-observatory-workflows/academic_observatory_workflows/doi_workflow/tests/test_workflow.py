@@ -17,10 +17,12 @@
 from __future__ import annotations
 
 import os
+import requests
 from typing import Dict, List
+from unittest import TestCase
+from unittest.mock import Mock, patch
 
 import pendulum
-import vcr
 from airflow.models import DagModel
 from airflow.utils.session import provide_session
 from airflow.utils.state import State
@@ -154,35 +156,6 @@ class TestDoiWorkflow(SandboxTestCase):
             Repository("Unknown Repo 2", url_domain="unknown2.net", category="Unknown"),
         ]
         # fmt: on
-
-    def test_fetch_ror_affiliations(self):
-        """Test fetch_ror_affiliations"""
-
-        with vcr.use_cassette(os.path.join(FIXTURES_FOLDER, "test_fetch_ror_affiliations.yaml")):
-            # Single match
-            repository_institution = "Augsburg University - OPUS - Augsburg University Publication Server"
-            expected = {
-                "repository_institution": repository_institution,
-                "rors": [{"id": "https://ror.org/057ewhh68", "name": "Augsburg University"}],
-            }
-            actual = fetch_ror_affiliations(repository_institution)
-            self.assertEqual(expected, actual)
-
-            # Multiple matches
-            repository_institution = '"4 institutions : Université de Strasbourg, Université de Haute Alsace, INSA Strasbourg, Bibliothèque Nationale et Universitaire de Strasbourg - univOAK"'
-            expected = {
-                "repository_institution": repository_institution,
-                "rors": [
-                    {
-                        "id": "https://ror.org/001nta019",
-                        "name": "Institut National des Sciences Appliquées de Strasbourg",
-                    },
-                    {"id": "https://ror.org/00pg6eq24", "name": "University of Strasbourg"},
-                    {"id": "https://ror.org/04k8k6n84", "name": "University of Upper Alsace"},
-                ],
-            }
-            actual = fetch_ror_affiliations(repository_institution)
-            self.assertEqual(expected, actual)
 
     def test_dag_structure(self):
         """Test that the DOI DAG has the correct structure."""
@@ -600,3 +573,128 @@ class TestDoiWorkflow(SandboxTestCase):
         for item_ in items_actual_:
             item_["members"].sort()
         self.assertListEqual(items_expected_, items_actual_)
+
+
+class TestFetchRorAffiliations(TestCase):
+    @patch("academic_observatory_workflows.doi_workflow.queries.retry_get_url")
+    def test_fetch_ror_with_ror_display_name(self, mock_retry_get_url):
+        """
+        Test case for a successful API call where the best match has a 'ror_display' name.
+        The function should return the ID and the specific 'ror_display' name.
+        """
+        # Mock ROR API response data
+        mock_response_data = {
+            "items": [
+                {
+                    "score": 0.5,
+                    "organization": {
+                        "id": "https://ror.org/other_id",
+                        "names": [
+                            {"value": "Other University", "types": ["label"]},
+                        ],
+                    },
+                },
+                {
+                    "score": 0.8,
+                    "organization": {
+                        "id": "https://ror.org/05c65f247",
+                        "names": [
+                            {"value": "The University of Queensland", "types": ["ror_display"]},
+                            {"value": "UQ", "types": ["acronym"]},
+                        ],
+                    },
+                },
+            ]
+        }
+        mock_response = Mock()
+        mock_response.json.return_value = mock_response_data
+        mock_retry_get_url.return_value = mock_response
+
+        result = fetch_ror_affiliations("University of Queensland")
+        self.assertEqual(result["repository_institution"], "University of Queensland")
+        self.assertEqual(len(result["rors"]), 1)
+        self.assertEqual(result["rors"][0]["id"], "https://ror.org/05c65f247")
+        self.assertEqual(result["rors"][0]["name"], "The University of Queensland")
+
+    @patch("academic_observatory_workflows.doi_workflow.queries.retry_get_url")
+    def test_fetch_ror_without_ror_display_name(self, mock_retry_get_url):
+        """
+        Test case where the best match does not have a 'ror_display' name.
+        The function should fall back to using the first name in the list.
+        """
+        mock_response_data = {
+            "items": [
+                {
+                    "score": 0.9,
+                    "organization": {
+                        "id": "https://ror.org/05c65f247",
+                        "names": [
+                            {"value": "First Name in the list", "types": ["label"]},
+                            {"value": "Another Name", "types": ["acronym"]},
+                        ],
+                    },
+                }
+            ]
+        }
+        mock_response = Mock()
+        mock_response.json.return_value = mock_response_data
+        mock_retry_get_url.return_value = mock_response
+
+        result = fetch_ror_affiliations("Test Institution")
+        self.assertEqual(result["repository_institution"], "Test Institution")
+        self.assertEqual(len(result["rors"]), 1)
+        self.assertEqual(result["rors"][0]["id"], "https://ror.org/05c65f247")
+        self.assertEqual(result["rors"][0]["name"], "First Name in the list")
+
+    @patch("academic_observatory_workflows.doi_workflow.queries.retry_get_url")
+    def test_fetch_ror_with_no_matches(self, mock_retry_get_url):
+        """
+        Test case for when the ROR API returns no matching items.
+        The function should handle the ValueError gracefully and return an empty list.
+        """
+        mock_response_data = {"items": []}
+        mock_response = Mock()
+        mock_response.json.return_value = mock_response_data
+        mock_retry_get_url.return_value = mock_response
+
+        result = fetch_ror_affiliations("Non-existent Institution")
+        self.assertEqual(result["repository_institution"], "Non-existent Institution")
+        self.assertEqual(len(result["rors"]), 0)
+
+    @patch("academic_observatory_workflows.doi_workflow.queries.retry_get_url")
+    def test_fetch_ror_with_no_id(self, mock_retry_get_url):
+        """
+        Test case for when the best match item has no ROR ID.
+        The function should handle this and return an empty list.
+        """
+        mock_response_data = {
+            "items": [
+                {
+                    "score": 1,
+                    "organization": {
+                        "names": [{"value": "Institution without an ID", "types": ["label"]}]
+                        # 'id' key is intentionally missing
+                    },
+                }
+            ]
+        }
+        mock_response = Mock()
+        mock_response.json.return_value = mock_response_data
+        mock_retry_get_url.return_value = mock_response
+
+        result = fetch_ror_affiliations("No ID institution")
+        self.assertEqual(result["repository_institution"], "No ID institution")
+        self.assertEqual(len(result["rors"]), 0)
+
+    @patch("academic_observatory_workflows.doi_workflow.queries.retry_get_url")
+    def test_fetch_ror_with_http_error(self, mock_retry_get_url):
+        """
+        Test case for when the API call raises an HTTPError.
+        The function should catch the exception and return an empty list.
+        """
+        # Configure the mock object to raise an HTTPError
+        mock_retry_get_url.side_effect = requests.exceptions.HTTPError("Bad Request")
+
+        result = fetch_ror_affiliations("Error-prone Institution")
+        self.assertEqual(result["repository_institution"], "Error-prone Institution")
+        self.assertEqual(len(result["rors"]), 0)
