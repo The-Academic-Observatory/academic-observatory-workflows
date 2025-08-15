@@ -22,10 +22,11 @@ from typing import Dict, List
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-import pendulum
 from airflow.models import DagModel
 from airflow.utils.session import provide_session
 from airflow.utils.state import State
+import pendulum
+import vcr
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.doi_workflow.queries import (
@@ -386,7 +387,13 @@ class TestDoiWorkflow(SandboxTestCase):
             # Run DAG
             ##########
 
-            dag_run = doi_dag.test(execution_date=snapshot_date, session=env.session)
+            doi_vcr = vcr.VCR(
+                ignore_hosts=["google.com", "oauth2.googleapis.com", "bigquery.googleapis.com"],
+                ignore_localhost=True,
+                record_mode="none",
+            )
+            with doi_vcr.use_cassette(os.path.join(FIXTURES_FOLDER, "cassette_test_workflow_ror_affiliations.yaml")):
+                dag_run = doi_dag.test(execution_date=snapshot_date, session=env.session)
             self.assertEqual(State.SUCCESS, dag_run.state)
 
             ##########
