@@ -224,13 +224,44 @@ def fetch_ror_affiliations(repository_institution: str, num_retries: int = 3) ->
     rors = []
     try:
         response = retry_get_url(
-            "https://api.ror.org/organizations", num_retries=num_retries, params={"affiliation": repository_institution}
+            f"https://api.ror.org/v2/organizations",
+            num_retries=num_retries,
+            params={"affiliation": repository_institution},
         )
         items = response.json()["items"]
-        for item in items:
-            if item["chosen"]:
-                org = item["organization"]
-                rors.append({"id": org["id"], "name": org["name"]})
+
+        # We execute a search of their API, which returns a "score" response.
+        # We will use the response with the highest score.
+        scores = [float(i["score"]) for i in items]
+        try:
+            i = scores.index(max(scores))
+        except ValueError:
+            logging.warning(f"No matching items found for institution: {repository_institution}")
+            return {"repository_institution": repository_institution, "rors": []}
+        matched_item = items[i]
+
+        if not matched_item["organization"].get("id"):
+            logging.warning(f"No ID found for item in instution: {repository_institution}")
+            return {"repository_institution": repository_institution, "rors": []}
+
+        display_found = False
+        for name_obj in matched_item["organization"]["names"]:
+            # The ror_display is what ROR uses as the display name. We will borrow this.
+            if "ror_display" in name_obj["types"]:
+                rors.append({"id": matched_item["organization"]["id"], "name": name_obj["value"]})
+                display_found = True
+                break
+
+        # Use the first item in the list (if there are any items) if no display value found
+        if not display_found:
+            if matched_item["organization"].get("names"):
+                rors.append(
+                    {
+                        "id": matched_item["organization"]["id"],
+                        "name": matched_item["organization"]["names"][0]["value"],
+                    }
+                )
+
     except requests.exceptions.HTTPError as e:
         # If the repository_institution string causes a 500 error with the ROR affiliation matcher
         # Then catch the error and continue as if no ROR ids were matched for this entry.
