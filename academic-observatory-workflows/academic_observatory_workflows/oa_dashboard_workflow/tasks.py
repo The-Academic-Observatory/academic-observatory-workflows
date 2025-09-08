@@ -539,6 +539,7 @@ def oa_dashboard_subset(item: Dict) -> Dict:
         "id": "id",
         "name": "name",
         "logo_sm": "logo_sm",
+        "url": Coalesce("url", default=SKIP),
         "entity_type": "entity_type",
         "region": "region",
         "subregion": "subregion",
@@ -559,7 +560,10 @@ def oa_dashboard_subset(item: Dict) -> Dict:
         },
     }
 
-    return glom(item, subset_spec)
+    subset = glom(item, subset_spec)
+    if subset.get("url"):
+        subset["url"] = urlparse(subset["url"]).netloc  # Strip url to domain only
+    return subset
 
 
 def zenodo_subset(item: Dict):
