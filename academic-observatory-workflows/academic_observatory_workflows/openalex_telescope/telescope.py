@@ -16,7 +16,8 @@
 # Author: Aniek Roelofs, James Diprose, Alex Massen-Hane
 
 from __future__ import annotations
-
+from datetime import datetime
+from dateutil import relativedelta
 import logging
 from typing import List, Optional
 
@@ -36,6 +37,10 @@ from observatory_platform.airflow.workflow import cleanup, CloudWorkspace, make_
 from observatory_platform.config import AirflowConns
 from observatory_platform.google.bigquery import bq_create_dataset
 from observatory_platform.google.gke import DEFAULT_GKE_IMAGE, GkeParams
+
+
+def previous_month_fn(execution_date: datetime.datetime) -> datetime.datetime:
+    return execution_date - relativedelta(months=1)
 
 
 class DagParams:
@@ -567,7 +572,10 @@ def create_dag(dag_params: DagParams) -> DAG:
             cleanup(dag_id=dag_params.dag_id, workflow_folder=workflow_folder)
 
         external_task_id = "dag_run_complete"
-        sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id, external_task_id=external_task_id)
+        sensor = PreviousDagRunSensor(
+            dag_id=dag_params.dag_id, external_task_id=external_task_id, execution_date_fn=previous_month_fn
+        )
+
         task_check_dependencies = check_dependencies(
             airflow_conns=[dag_params.gke_conn_id, dag_params.aws_conn_id, dag_params.slack_conn_id]
         )

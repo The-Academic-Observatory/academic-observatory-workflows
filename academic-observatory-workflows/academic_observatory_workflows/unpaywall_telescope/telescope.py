@@ -15,6 +15,8 @@
 # Author: Tuan Chien, James Diprose
 
 from __future__ import annotations
+from datetime import datetime
+from dateutil import relativedelta
 
 
 import pendulum
@@ -35,6 +37,10 @@ from observatory_platform.airflow.tasks import check_dependencies, gke_create_st
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.url_utils import get_observatory_http_header
 from observatory_platform.google.gke import GkeParams, gke_make_kubernetes_task_params, gke_make_container_resources
+
+
+def previous_month_fn(execution_date: datetime.datetime) -> datetime.datetime:
+    return execution_date - relativedelta(months=1)
 
 
 class DagParams:
@@ -445,7 +451,9 @@ def create_dag(dag_params: DagParams) -> DAG:
         if dag_params.test_run:
             sensor = EmptyOperator(task_id="wait_for_prev_dag_run")
         else:
-            sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id, external_task_id=external_task_id)
+            sensor = PreviousDagRunSensor(
+                dag_id=dag_params.dag_id, external_task_id=external_task_id, execution_date_fn=previous_month_fn
+            )
         task_check_dependencies = check_dependencies(airflow_conns=[dag_params.unpaywall_conn_id])
         xcom_release_id = fetch_release()
         task_short_circuit = short_circuit(xcom_release_id)

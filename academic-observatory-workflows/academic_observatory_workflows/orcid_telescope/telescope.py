@@ -16,7 +16,8 @@
 # Author: Keegan Smith
 
 from __future__ import annotations
-
+from datetime import datetime
+from dateutil import relativedelta
 from typing import Optional
 
 import pendulum
@@ -33,6 +34,10 @@ from observatory_platform.airflow.tasks import check_dependencies, gke_create_st
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.config import AirflowConns
 from observatory_platform.google.gke import gke_make_container_resources, gke_make_kubernetes_task_params, GkeParams
+
+
+def previous_month_fn(execution_date: datetime.datetime) -> datetime.datetime:
+    return execution_date - relativedelta(months=1)
 
 
 class DagParams:
@@ -88,7 +93,7 @@ class DagParams:
         max_active_runs: int = 1,
         retries: int = 3,
         test_run: bool = False,
-        gke_volume_size: str = "1000Gi", # Only required for full download, ~550 Gi for uncompressed files and then less for compressed transformed files.
+        gke_volume_size: str = "1000Gi",  # Only required for full download, ~550 Gi for uncompressed files and then less for compressed transformed files.
         gke_namespace: str = "coki-astro",
         gke_volume_name: str = "orcid",
         **kwargs,
@@ -306,7 +311,9 @@ def create_dag(dag_params: DagParams) -> DAG:
         if dag_params.test_run:
             sensor = EmptyOperator(task_id="wait_for_prev_dag_run")
         else:
-            sensor = PreviousDagRunSensor(dag_id=dag_params.dag_id, external_task_id=external_task_id)
+            sensor = PreviousDagRunSensor(
+                dag_id=dag_params.dag_id, external_task_id=external_task_id, execution_date_fn=previous_month_fn
+            )
         task_check_dependencies = check_dependencies(airflow_conns=[dag_params.aws_orcid_conn_id])
         xcom_release = fetch_release()
         task_create_dataset = create_dataset(xcom_release, dag_params)
