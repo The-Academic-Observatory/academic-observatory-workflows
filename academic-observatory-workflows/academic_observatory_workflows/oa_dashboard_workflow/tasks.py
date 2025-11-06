@@ -39,7 +39,6 @@ from airflow.exceptions import AirflowException
 from glom import Coalesce, glom, SKIP
 from jinja2 import Template
 
-from academic_observatory_workflows.clearbit import clearbit_download_logo
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.github import trigger_repository_dispatch
 from academic_observatory_workflows.oa_dashboard_workflow.institution_ids import INSTITUTION_IDS
@@ -185,32 +184,36 @@ def download_assets(*, release: OaDashboardRelease, bucket_name: str):
             zip_file.extractall(unzip_folder_path)  # Overwrites by default
 
 
-def download_institution_logos(*, release: OaDashboardRelease):
+def update_institution_logos(*, release: OaDashboardRelease):
     logging.info(f"download_logos: institution")
+    id_select_sql = "SELECT id FROM `{}`"
 
-    # Get entities to fetch descriptions for
-    entity_type = "institution"
-    results = bq_run_query(f"SELECT id, url FROM {release.oa_dashboard_table_id(entity_type)}")
-    entities = [(result["id"], result["url"]) for result in results]
+    # Get institution ids of all existing logos
+    logos_table_id = release.logos_table_id("institution")
+    existing_logos_by_id: List[bigquery.Row] = bq_run_query(id_select_sql.format(logos_table_id))
+    existing_logo_set = set([v.values()[0] for v in existing_logos_by_id])
 
-    # Update logos
-    data = fetch_institution_logos(release.build_path, entities)
+    # Get institution ids of all institutions we have data for
+    institution_table_id = release.oa_dashboard_table_id("institution")
+    inst_ids: List[bigquery.Row] = bq_run_query(id_select_sql.format(institution_table_id))
+    new_inst_set = set([v.values()[0] for v in inst_ids])
 
-    # Upload to BigQuery
-    logos_table_id = release.logos_table_id(entity_type)
-    success = bq_load_from_memory(
-        logos_table_id,
-        data,
-        schema_file_path=project_path("oa_dashboard_workflow", "schema", "logos.json"),
-    )
-    if not success:
-        raise AirflowException(f"Uploading data to {logos_table_id} table failed")
+    # For any institutions without existing logos, add 'unknown.svg' logos to the dataset
+    missing_ids = set(i for i in new_inst_set if i not in existing_logo_set)
+    if missing_ids:
+        insert_sql = f"INSERT INTO `{logos_table_id}`  (id, logo_sm, logo_md, logo_lg)"
+        values_sql = []
+        for id in missing_ids:
+            values_sql.append(f'\nVALUES ("{id}", "unknown.svg", "unknown.svg", "unknown.svg")')
+        insert_sql += ", ".join(values_sql) + ";"
+        logging.info(f"Running SQL Insert statement:\n{insert_sql}")
+        bq_run_query(insert_sql)
 
     # Update with entity table
     template_path = project_path("oa_dashboard_workflow", "sql", "update_logos.sql.jinja2")
     sql = render_template(
         template_path,
-        entity_table_id=release.oa_dashboard_table_id(entity_type),
+        entity_table_id=release.oa_dashboard_table_id("institution"),
         logos_table_id=logos_table_id,
     )
     bq_run_query(sql)
