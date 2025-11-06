@@ -18,26 +18,24 @@ import json
 import os
 import tempfile
 from typing import List
-import unittest
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
+import zipfile
 
-import pendulum
 from airflow.models.connection import Connection
 from airflow.utils.state import State
 from deepdiff import DeepDiff
+import pendulum
 
 import academic_observatory_workflows.oa_dashboard_workflow.workflow
 from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.oa_dashboard_workflow.tasks import (
-    clean_url,
     data_file_pattern,
     EntityHistograms,
     EntityStats,
-    fetch_institution_logo,
     Histogram,
     make_entity_stats,
-    make_logo_url,
+    update_institution_logos,
     OaDashboardRelease,
     yield_data_glob,
     ZenodoVersion,
@@ -64,69 +62,57 @@ ROR_SCHEMA_FOLDER = project_path("ror_telescope", "schema")
 OA_DASHBAORD_SCHEMA_FOLDER = project_path("oa_dashboard_workflow", "schema")
 
 
+# Minimal Row mock to simulate bigquery.Row
+class MockRow:
+    def __init__(self, row_dict):
+        self._dict = row_dict
+
+    def values(self):
+        return list(self._dict.values())
+
+
 class TestFunctions(TestCase):
-    def test_clean_url(self):
-        url = "https://www.auckland.ac.nz/en.html"
-        expected = "https://www.auckland.ac.nz/"
-        actual = clean_url(url)
-        self.assertEqual(expected, actual)
+    @patch("academic_observatory_workflows.oa_dashboard_workflow.tasks.bq_run_query")
+    def test_update_institution_logos(self, mock_run_query: MagicMock):
+        # Mock return values
+        mock_run_query.side_effect = [
+            [MockRow({"id": 1}), MockRow({"id": 2})],  # existing logos
+            [MockRow({"id": 1}), MockRow({"id": 2}), MockRow({"id": 3})],  # institutions
+            None,  # INSERT
+            None,  # UPDATE
+        ]
 
-    def test_make_logo_url(self):
-        expected = "logos/country/s/1234.jpg"
-        actual = make_logo_url(entity_type="country", entity_id="1234", size="s", fmt="jpg")
-        self.assertEqual(expected, actual)
+        # Temporary directories for out_path and build_path
+        with tempfile.TemporaryDirectory() as out_dir, tempfile.TemporaryDirectory() as build_dir:
+            images_path = os.path.join(build_dir, "images")
+            os.makedirs(images_path)
+            # Add a dummy file
+            dummy_file = os.path.join(images_path, "dummy.png")
+            with open(dummy_file, "w") as f:
+                f.write("fake image data")
 
-    @unittest.skip
-    @patch("academic_observatory_workflows.oa_dashboard_workflow.tasks.make_logo_url")
-    def test_get_institution_logo(self, mock_make_url):
-        mock_make_url.return_value = "logo_path"
-        mock_clearbit_ref = "academic_observatory_workflows.oa_dashboard_workflow.tasks.clearbit_download_logo"
+            # Mock release object
+            mock_release = MagicMock(spec=OaDashboardRelease)
+            mock_release.logos_table_id.return_value = "logos_table"
+            mock_release.oa_dashboard_table_id.return_value = "institution_table"
+            mock_release.out_path = out_dir
+            mock_release.build_path = build_dir
 
-        def download_logo(company_url, file_path, size, fmt):
-            if not os.path.isdir(os.path.dirname(file_path)):
-                os.makedirs(os.path.dirname(file_path))
-            with open(file_path, "w") as f:
-                f.write("foo")
+            # Call the function
+            update_institution_logos(release=mock_release)
 
-        ror_id, url, size, width, fmt, build_path = "ror_id", "url.com", "size", 10, "fmt", "build_path"
-        with tempfile.TemporaryDirectory():
-            # Test when logo file does not exist yet and logo download fails
-            with patch(mock_clearbit_ref) as mock_clearbit_download:
-                actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path)
-                self.assertEqual(ror_id, actual_ror_id)
-                self.assertEqual("unknown.svg", actual_logo_path)
-                mock_clearbit_download.assert_called_once_with(
-                    company_url=url,
-                    file_path="build_path/images/logos/institution/size/ror_id.fmt",
-                    size=width,
-                    fmt=fmt,
-                )
-                mock_make_url.assert_not_called()
+            # Check SQL for missing logos was called
+            insert_sql = 'INSERT INTO `logos_table`  (id, logo_sm, logo_md, logo_lg)\nVALUES ("3", "unknown.svg", "unknown.svg", "unknown.svg");'
+            mock_run_query.assert_any_call(insert_sql)
+            self.assertEqual(mock_run_query.call_count, 4)
 
-            mock_make_url.reset_mock()
+            # Check that the images zip exists
+            zip_file = os.path.join(out_dir, "images.zip")
+            self.assertTrue(os.path.isfile(zip_file), "images.zip was not created")
 
-            # Test when logo file does not exist yet and logo is downloaded successfully
-            with patch(mock_clearbit_ref, wraps=download_logo) as mock_clearbit_download:
-                actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path)
-                self.assertEqual(ror_id, actual_ror_id)
-                self.assertEqual("logo_path", actual_logo_path)
-                mock_clearbit_download.assert_called_once_with(
-                    company_url=url,
-                    file_path="build_path/images/logos/institution/size/ror_id.fmt",
-                    size=width,
-                    fmt=fmt,
-                )
-                mock_make_url.assert_called_once_with(entity_type="institution", entity_id=ror_id, size=size, fmt=fmt)
-
-            mock_make_url.reset_mock()
-
-            # Test when logo file already exists
-            with patch(mock_clearbit_ref, wraps=download_logo) as mock_clearbit_download:
-                actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path)
-                self.assertEqual(ror_id, actual_ror_id)
-                self.assertEqual("logo_path", actual_logo_path)
-                mock_clearbit_download.assert_not_called()
-                mock_make_url.assert_called_once_with(entity_type="institution", entity_id=ror_id, size=size, fmt=fmt)
+            # Inspect the zip contents
+            with zipfile.ZipFile(zip_file, "r") as zf:
+                self.assertIn("dummy.png", zf.namelist())
 
     def test_make_entity_stats(self):
         """Test make_entity_stats"""
@@ -227,7 +213,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
                         "add_wiki_descriptions_country",
                         "add_wiki_descriptions_institution",
                         "download_assets",
-                        "download_institution_logos",
+                        "update_institution_logos",
                         "export_tables",
                         "download_data",
                         "make_draft_zenodo_version",
@@ -243,8 +229,8 @@ class TestOaDashboardWorkflow(SandboxTestCase):
                     "create_entity_tables": ["add_wiki_descriptions_country"],
                     "add_wiki_descriptions_country": ["add_wiki_descriptions_institution"],
                     "add_wiki_descriptions_institution": ["download_assets"],
-                    "download_assets": ["download_institution_logos"],
-                    "download_institution_logos": ["export_tables"],
+                    "download_assets": ["update_institution_logos"],
+                    "update_institution_logos": ["export_tables"],
                     "export_tables": ["download_data"],
                     "download_data": ["make_draft_zenodo_version"],
                     "make_draft_zenodo_version": ["fetch_zenodo_versions"],
@@ -376,7 +362,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
         bq_dataset_id_settings = env.add_dataset("settings")
         bq_dataset_id_oa_dashboard = env.add_dataset("oa_dashboard")
         data_bucket = env.add_bucket()
-        with env.create() as t:
+        with env.create() as _:
             # Setup dependencies
             # Upload fake data to BigQuery
             self.setup_tables(
@@ -386,7 +372,6 @@ class TestOaDashboardWorkflow(SandboxTestCase):
                 bucket_name=env.download_bucket,
                 snapshot_date=snapshot_date,
             )
-            breakpoint()
 
             # Upload fake cached zip files file to bucket
             for file_name in ["images-base.zip", "images.zip"]:
@@ -424,7 +409,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
             tasks.add_wiki_descriptions(release=release, entity_type="country")
             tasks.add_wiki_descriptions(release=release, entity_type="institution")
             tasks.download_assets(release=release, bucket_name=data_bucket)
-            tasks.download_institution_logos(release=release)
+            tasks.update_institution_logos(release=release)
             tasks.export_tables(
                 release=release,
                 entity_types=entity_types,
@@ -493,7 +478,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
         github_token = "github-token"
         zenodo_token = "zenodo-token"
 
-        with env.create() as t:
+        with env.create() as _:
             ##########
             # Setup and run fake DOI workflow to test sensor
             ##########
@@ -522,11 +507,10 @@ class TestOaDashboardWorkflow(SandboxTestCase):
             # Setup workflow and connections
             github_conn_id = "oa_dashboard_github_token"
             zenodo_conn_id = "oa_dashboard_zenodo_token"
-            entity_types = ["country", "institution"]
             version = "v10"
             task_resources = {
                 "download_assets": {"memory": "2G", "cpu": "2"},
-                "download_institution_logos": {"memory": "2G", "cpu": "2"},
+                "update_institution_logos": {"memory": "2G", "cpu": "2"},
                 "download_data": {"memory": "2G", "cpu": "2"},
                 "build_datasets": {"memory": "2G", "cpu": "2"},
                 "publish_zenodo_version": {"memory": "2G", "cpu": "2"},
@@ -581,7 +565,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
 
 def make_expected_build_files(base_path: str) -> List[str]:
     countries = ["AUS", "NZL"]
-    institutions = ["03b94tp07", "02n415q13"]  # Auckland, Curtin
+    institutions = ["02n415q13"]  #  Curtin
     categories = ["country"] * len(countries) + ["institution"] * len(institutions)
     entity_ids = countries + institutions
     expected = []
