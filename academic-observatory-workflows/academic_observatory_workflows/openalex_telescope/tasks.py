@@ -584,6 +584,9 @@ def transform_object(obj: dict):
 
     field = "international"
     if field in obj:
+        if not obj[field]:  # If the field is None instead of an empty record
+            obj[field] = {}
+
         for nested_field in obj.get(field, {}).keys():
             if not isinstance(obj[field][nested_field], dict):
                 continue
