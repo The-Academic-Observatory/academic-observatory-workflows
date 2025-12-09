@@ -52,7 +52,7 @@
   },
   {
     "name": "created_date",
-    "type": "DATE",
+    "type": "TIMESTAMP",
     "mode": "NULLABLE",
     "description": "The date this Funder object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
   },
@@ -264,3 +264,4 @@
     ]
   }
 ]
+

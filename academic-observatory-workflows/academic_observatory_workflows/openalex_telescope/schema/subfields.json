@@ -6,7 +6,7 @@
   },
   {
     "name": "created_date",
-    "type": "DATE",
+    "type": "TIMESTAMP",
     "mode": "NULLABLE"
   },
   {
@@ -130,3 +130,4 @@
     "mode": "NULLABLE"
   }
 ]
+
