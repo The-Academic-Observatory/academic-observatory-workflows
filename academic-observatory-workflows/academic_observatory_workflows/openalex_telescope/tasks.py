@@ -543,14 +543,17 @@ def transform_object(obj: dict):
     :return: None.
     """
 
-    # Remove nulls from arrays
-    # And handle null value
+    # Remove nulls from arrays and handle null value
     array_fields = [
         "corresponding_institution_ids",
         "corresponding_author_ids",
         "societies",
         "alternate_titles",
-        "host_organization_lineage_names",  # For sources
+        # For sources
+        "host_organization_lineage_names",
+        "host_organization_lineage",
+        "apc_prices",
+        "issn",
     ]
     for field in array_fields:
         remove_none_from_array(obj, field)
@@ -559,19 +562,29 @@ def transform_object(obj: dict):
     for val in obj.get("affiliations", []):
         remove_none_from_array(val, "years")
 
-    # Remove nulls from works primary_location.source.host_organization_lineage_names
+    # Remove nulls from works primary_location.source
     remove_none_from_array(
         safe_get_dict(safe_get_dict(obj, "primary_location"), "source"), "host_organization_lineage_names"
     )
+    remove_none_from_array(safe_get_dict(safe_get_dict(obj, "primary_location"), "source"), "host_organization_lineage")
 
     # Remove nulls from works best_oa_location.source.host_organization_lineage_names
     remove_none_from_array(
         safe_get_dict(safe_get_dict(obj, "best_oa_location"), "source"), "host_organization_lineage_names"
     )
+    remove_none_from_array(safe_get_dict(safe_get_dict(obj, "best_oa_location"), "source"), "host_organization_lineage")
+
+    # Remove nulls from sources ids.issn
+    remove_none_from_array(safe_get_dict(obj, "ids"), "issn")
 
     # Remove nulls from works locations[].source.host_organization_lineage_names
     for val in obj.get("locations", []):
         remove_none_from_array(safe_get_dict(val, "source"), "host_organization_lineage_names")
+        remove_none_from_array(safe_get_dict(val, "source"), "host_organization_lineage")
+
+    for val in obj.get("authorships", []):
+        for inst in val.get("institutions", []):
+            remove_none_from_array(inst, "type_list")
 
     field = "abstract_inverted_index"
     if field in obj:
@@ -584,9 +597,6 @@ def transform_object(obj: dict):
 
     field = "international"
     if field in obj:
-        if not obj[field]:  # If the field is None instead of an empty record
-            obj[field] = {}
-
         for nested_field in obj.get(field, {}).keys():
             if not isinstance(obj[field][nested_field], dict):
                 continue
