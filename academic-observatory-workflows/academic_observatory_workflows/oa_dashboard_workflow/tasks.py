@@ -25,8 +25,7 @@ import os.path
 import os.path
 import shutil
 import statistics
-from concurrent.futures import as_completed, ThreadPoolExecutor
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Union
 from urllib.parse import urlparse
 from zipfile import ZipFile
 
@@ -39,7 +38,6 @@ from airflow.exceptions import AirflowException
 from glom import Coalesce, glom, SKIP
 from jinja2 import Template
 
-from academic_observatory_workflows.clearbit import clearbit_download_logo
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.github import trigger_repository_dispatch
 from academic_observatory_workflows.oa_dashboard_workflow.institution_ids import INSTITUTION_IDS
@@ -185,32 +183,36 @@ def download_assets(*, release: OaDashboardRelease, bucket_name: str):
             zip_file.extractall(unzip_folder_path)  # Overwrites by default
 
 
-def download_institution_logos(*, release: OaDashboardRelease):
+def update_institution_logos(*, release: OaDashboardRelease):
     logging.info(f"download_logos: institution")
+    id_select_sql = "SELECT id FROM `{}`"
 
-    # Get entities to fetch descriptions for
-    entity_type = "institution"
-    results = bq_run_query(f"SELECT id, url FROM {release.oa_dashboard_table_id(entity_type)}")
-    entities = [(result["id"], result["url"]) for result in results]
+    # Get institution ids of all existing logos
+    logos_table_id = release.logos_table_id("institution")
+    existing_logos_by_id: List[bigquery.Row] = bq_run_query(id_select_sql.format(logos_table_id))
+    existing_logo_set = set([v.values()[0] for v in existing_logos_by_id])
 
-    # Update logos
-    data = fetch_institution_logos(release.build_path, entities)
+    # Get institution ids of all institutions we have data for
+    institution_table_id = release.oa_dashboard_table_id("institution")
+    inst_ids: List[bigquery.Row] = bq_run_query(id_select_sql.format(institution_table_id))
+    new_inst_set = set([v.values()[0] for v in inst_ids])
 
-    # Upload to BigQuery
-    logos_table_id = release.logos_table_id(entity_type)
-    success = bq_load_from_memory(
-        logos_table_id,
-        data,
-        schema_file_path=project_path("oa_dashboard_workflow", "schema", "logos.json"),
-    )
-    if not success:
-        raise AirflowException(f"Uploading data to {logos_table_id} table failed")
+    # For any institutions without existing logos, add 'unknown.svg' logos to the dataset
+    missing_ids = set(i for i in new_inst_set if i not in existing_logo_set)
+    if missing_ids:
+        insert_sql = f"INSERT INTO `{logos_table_id}`  (id, logo_sm, logo_md, logo_lg)"
+        values_sql = []
+        for id in missing_ids:
+            values_sql.append(f'\nVALUES ("{id}", "unknown.svg", "unknown.svg", "unknown.svg")')
+        insert_sql += ", ".join(values_sql) + ";"
+        logging.info(f"Running SQL Insert statement:\n{insert_sql}")
+        bq_run_query(insert_sql)
 
     # Update with entity table
     template_path = project_path("oa_dashboard_workflow", "sql", "update_logos.sql.jinja2")
     sql = render_template(
         template_path,
-        entity_table_id=release.oa_dashboard_table_id(entity_type),
+        entity_table_id=release.oa_dashboard_table_id("institution"),
         logos_table_id=logos_table_id,
     )
     bq_run_query(sql)
@@ -659,103 +661,3 @@ def make_entity_stats(entities: List[Dict]) -> EntityStats:
             p_outputs_open=hist_p_outputs_open, n_outputs=hist_n_outputs, n_outputs_open=hist_n_outputs_open
         ),
     )
-
-
-def make_logo_url(*, entity_type: str, entity_id: str, size: str, fmt: str) -> str:
-    """Make a logo url.
-
-    :param entity_type: the entity entity_type: country or institution.
-    :param entity_id: the entity id.
-    :param size: the size of the logo: s or l.
-    :param fmt: the format of the logo.
-    :return: the logo url.
-    """
-
-    return f"logos/{entity_type}/{size}/{entity_id}.{fmt}"
-
-
-def fetch_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: str, build_path: str) -> Tuple[str, str]:
-    """Get the path to the logo for an institution.
-    If the logo does not exist in the build path yet, download from the Clearbit Logo API tool.
-    If the logo does not exist and failed to download, the path will default to "unknown.svg".
-
-    :param ror_id: the institution's ROR id
-    :param url: the URL of the company domain + suffix e.g. spotify.com
-    :param size: the image size of the small logo for tables etc.
-    :param width: the width of the image.
-    :param fmt: the image format.
-    :param build_path: the build path for files of this workflow
-    :return: The ROR id and relative path (from build path) to the logo
-    """
-
-    logo_path = "unknown.svg"
-    size_folder = os.path.join(build_path, "images", "logos", "institution", size)
-    os.makedirs(size_folder, exist_ok=True)
-    file_path = os.path.join(size_folder, f"{ror_id}.{fmt}")
-    if not os.path.isfile(file_path):
-        logging.debug(
-            f"fetch_institution_logo: downloading logo company_url={url}, file_path={file_path}, size={width}, fmt={fmt}"
-        )
-        clearbit_download_logo(company_url=url, file_path=file_path, size=width, fmt=fmt)
-    if os.path.isfile(file_path):
-        logging.debug(f"fetch_institution_logo: {file_path} exists, skipping download")
-        logo_path = make_logo_url(entity_type="institution", entity_id=ror_id, size=size, fmt=fmt)
-
-    return ror_id, logo_path
-
-
-def clean_url(url: str) -> str:
-    """Remove path and query from URL.
-
-    :param url: the url.
-    :return: the cleaned url.
-    """
-
-    p = urlparse(url)
-    return f"{p.scheme}://{p.netloc}/"
-
-
-def fetch_institution_logos(build_path: str, entities: List[Tuple[str, str]]) -> List[Dict]:
-    """Update the index with logos, downloading logos if they don't exist.
-
-    :param build_path: the path to the build folder.
-    :param entities: the entities to process consisting of their id and url.
-    :return: None.
-    """
-
-    # Get the institution logo and the path to the logo image
-    logging.info("Downloading logos using Clearbit")
-    total = len(entities)
-
-    results = {
-        entity_id: {"id": entity_id, "logo_sm": "unknown.svg", "logo_md": "unknown.svg", "logo_lg": "unknown.svg"}
-        for entity_id, url in entities
-    }
-    for size, width, fmt in [("sm", 32, "jpg"), ("md", 128, "jpg"), ("lg", 532, "png")]:
-        logging.info(f"Downloading logos: size={size}, width={width}, fmt={fmt}")
-
-        # Create jobs
-        futures = []
-        with ThreadPoolExecutor() as executor:
-            for entity_id, url in entities:
-                if url:
-                    url = clean_url(url)
-                    futures.append(
-                        executor.submit(fetch_institution_logo, entity_id, url, size, width, fmt, build_path)
-                    )
-
-            # Wait for results
-            n_downloaded = 0
-            for completed in as_completed(futures):
-                entity_id, logo_path = completed.result()
-                results[entity_id][f"logo_{size}"] = logo_path
-                n_downloaded += 1
-
-                # Print progress
-                p_progress = n_downloaded / total * 100
-                if n_downloaded % 100 == 0:
-                    logging.info(f"Downloading logos {n_downloaded}/{total}: {p_progress:.2f}%")
-
-        logging.info("Finished downloading logos")
-
-    return list(results.values())
