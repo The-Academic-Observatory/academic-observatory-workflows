@@ -24,6 +24,7 @@ import pathlib
 import tempfile
 from collections import OrderedDict
 from typing import Dict
+import unittest
 from unittest.mock import patch
 
 import boto3
@@ -46,6 +47,7 @@ from academic_observatory_workflows.openalex_telescope.tasks import (
     MergedId,
     OpenAlexEntity,
     transform_object,
+    convert_field_to_int,
 )
 from academic_observatory_workflows.openalex_telescope.telescope import create_dag, DagParams
 from observatory_platform.airflow.workflow import CloudWorkspace, Workflow
@@ -976,6 +978,73 @@ class TestOpenAlexTelescope(SandboxTestCase):
             api = DatasetAPI(bq_project_id=env.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
             api_releases = api.get_dataset_releases(dag_id=self.dag_id, entity_id="openalex")
             self.assertEqual(len(api_releases), 1)
+
+
+class TestConvertFieldToInt(unittest.TestCase):
+
+    def test_successful_conversion_and_none_handling(self):
+        """
+        Tests:
+        1. Successful conversion (from string and float).
+        2. Handling of a None value (removal of the key).
+        """
+        data = {"str_id": "500", "float_val": 10.99, "none_val": None, "int_val": 42}
+
+        result_str = convert_field_to_int(data, "str_id")
+        self.assertTrue(result_str)
+        self.assertEqual(data["str_id"], 500)
+        self.assertIsInstance(data["str_id"], int)
+
+        result_float = convert_field_to_int(data, "float_val")
+        self.assertTrue(result_float)
+        self.assertEqual(data["float_val"], 10)
+        self.assertIsInstance(data["float_val"], int)
+
+        result_none = convert_field_to_int(data, "none_val")
+        self.assertTrue(result_none)
+        self.assertNotIn("none_val", data)
+
+        result_int = convert_field_to_int(data, "int_val")
+        self.assertTrue(result_int)
+        self.assertEqual(data["int_val"], 42)
+
+    def test_conversion_failure_and_unchanged_data(self):
+        """
+        1. Failure when value cannot be converted (e.g., non-numeric string).
+        2. Failure when value type is incompatible (e.g., list).
+        3. Field remains unchanged on failure.
+        """
+        data = {"alpha_str": "abcd", "a_list": [1, 2], "float_str": "12.34"}  # int() raises ValueError on float strings
+
+        original_alpha = data["alpha_str"]
+        result_alpha = convert_field_to_int(data, "alpha_str")
+        self.assertFalse(result_alpha)  # Expect False return on conversion failure
+        self.assertEqual(data["alpha_str"], original_alpha)  # Data must be unchanged
+
+        original_list = data["a_list"]
+        result_list = convert_field_to_int(data, "a_list")
+        self.assertFalse(result_list)  # Expect False return on conversion failure
+        self.assertEqual(data["a_list"], original_list)  # Data must be unchanged
+
+        original_float_str = data["float_str"]
+        result_float_str = convert_field_to_int(data, "float_str")
+        self.assertFalse(result_float_str)
+        self.assertEqual(data["float_str"], original_float_str)
+
+    def test_field_not_found_edge_cases(self):
+        """
+        1. Field key does not exist.
+        2. Input dictionary is None.
+        """
+        data = {"key1": 1}
+
+        result_missing = convert_field_to_int(data, "missing_key")
+        self.assertFalse(result_missing)
+        self.assertEqual(data, {"key1": 1})
+
+        data_none = None
+        result_none_obj = convert_field_to_int(data_none, "any_key")
+        self.assertFalse(result_none_obj)
 
 
 def get_table_expiry(table_id: str):

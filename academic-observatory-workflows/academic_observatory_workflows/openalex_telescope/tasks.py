@@ -25,7 +25,7 @@ import os
 from collections import OrderedDict
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from json.encoder import JSONEncoder
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Dict
 
 import boto3
 import jsonlines
@@ -526,6 +526,37 @@ def remove_none_from_array(obj: dict, field: str):
         obj[field] = [x for x in value if x is not None]
 
 
+def convert_field_to_int(obj: Dict[str, Any], field: str) -> bool:
+    """Convert a single field's value to an integer in place.
+
+    If the value is None, the field is removed from the dictionary.
+    If the value cannot be converted to an integer, it remains unchanged.
+
+    :param obj: The dictionary containing the field.
+    :param field: The key for the field to convert.
+    :return: True if the field was found, regardless of conversion success/failure. False otherwise.
+    """
+
+    if obj is None or field not in obj:
+        return False
+
+    value = obj[field]
+
+    # Handle None: Remove the field entirely
+    if value is None:
+        del obj[field]
+        return True
+
+    # Attempt Conversion
+    try:
+        obj[field] = int(value)
+    except (ValueError, TypeError):
+        print(f"Warning: Could not convert field to int: {field}")
+        return False
+
+    return True
+
+
 def safe_get_dict(obj: dict, field: str) -> dict:
     val = obj.get(field, {})
     if val is None:
@@ -585,6 +616,12 @@ def transform_object(obj: dict):
     for val in obj.get("authorships", []):
         for inst in val.get("institutions", []):
             remove_none_from_array(inst, "type_list")
+
+    # Ensure some fields are integers
+    convert_field_to_int(safe_get_dict(obj, "apc_paid"), "value")
+    convert_field_to_int(safe_get_dict(obj, "apc_paid"), "value_usd")
+    convert_field_to_int(safe_get_dict(obj, "apc_list"), "value")
+    convert_field_to_int(safe_get_dict(obj, "apc_list"), "value_usd")
 
     field = "abstract_inverted_index"
     if field in obj:
