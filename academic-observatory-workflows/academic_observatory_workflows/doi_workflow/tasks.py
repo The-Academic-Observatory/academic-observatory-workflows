@@ -133,7 +133,9 @@ def create_ror_hierarchy_table(
     # Fetch latest ROR table
     # release = DOIRelease.from_dict(release)
     ror_table_name = "ror"
-    print(f"create_ror_hierarchy_table: table_id={bq_table_id(input_project_id, bq_ror_dataset_id, ror_table_name)}, end_date={release.snapshot_date}")
+    print(
+        f"create_ror_hierarchy_table: table_id={bq_table_id(input_project_id, bq_ror_dataset_id, ror_table_name)}, end_date={release.snapshot_date}"
+    )
     ror_table_id = bq_select_latest_table(
         table_id=bq_table_id(input_project_id, bq_ror_dataset_id, ror_table_name),
         end_date=release.snapshot_date,
@@ -193,6 +195,7 @@ def create_intermediate_table(*, release: DOIRelease, sql_query: SQLQuery, outpu
         sql=sql,
         table_id=table_id,
         clustering_fields=sql_query.output_clustering_fields,
+        bytes_budget=int(3 * 2**40),  # 3 TB
     )
     if not success:
         raise AirflowException(f"create_intermediate_table: error creating {table_id}")
