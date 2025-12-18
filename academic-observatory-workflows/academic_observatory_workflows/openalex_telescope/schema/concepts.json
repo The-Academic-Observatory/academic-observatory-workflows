@@ -70,7 +70,7 @@
   },
   {
     "name": "created_date",
-    "type": "TIMESTAMP",
+    "type": "DATE",
     "mode": "NULLABLE",
     "description": "The date this Concept object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
   },
@@ -321,4 +321,3 @@
     "description": "The number of works tagged with this concept."
   }
 ]
-
