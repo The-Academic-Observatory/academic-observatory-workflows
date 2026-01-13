@@ -47,8 +47,7 @@ class TestRorTelescope(SandboxTestCase):
         self.ror_conceptrecid = 6347574
         self.server_port = find_free_port()
         self.mocked_files = [
-            os.path.join(FIXTURES_FOLDER, "v1.11-2022-10-20-ror-data.zip"),
-            os.path.join(FIXTURES_FOLDER, "v1.10-2022-10-17-ror-data.zip"),
+            os.path.join(FIXTURES_FOLDER, "v2.0-2025-12-16-ror-data.zip"),
         ]
 
     def test_dag_structure(self):
@@ -102,15 +101,10 @@ class TestRorTelescope(SandboxTestCase):
         # Get mocked releases, list_ror_records is tested in its own function
         ror_records = [
             {
-                "snapshot_date": "2022-10-20",
-                "url": f"http://localhost:{self.server_port}/v1.11-2022-10-20-ror-data.zip",
-                "checksum": "md5:0cac8705fba6df755648472356b7cb83",
-            },
-            {
-                "snapshot_date": "2022-10-17",
-                "url": f"http://localhost:{self.server_port}/v1.10-2022-10-17-ror-data.zip",
-                "checksum": "md5:60620675937e6513104275931331f68f",
-            },
+                "snapshot_date": "2025-12-16",
+                "url": f"http://localhost:{self.server_port}/v2.0-2025-12-16-ror-data.zip",
+                "checksum": "md5:36f92a09dda76381e5b04cf572eef0ee",
+            }
         ]
         m_list_ror_records.return_value = ror_records
 
@@ -121,7 +115,7 @@ class TestRorTelescope(SandboxTestCase):
 
         # Create the Observatory environment and run tests
         with env.create(), server.create():
-            logical_date = pendulum.datetime(year=2022, month=10, day=16)
+            logical_date = pendulum.datetime(year=2025, month=12, day=16)
             bq_table_name = "ror"
             test_params = DagParams(
                 dag_id=self.dag_id,
@@ -144,14 +138,7 @@ class TestRorTelescope(SandboxTestCase):
                 test_params.cloud_workspace.project_id,
                 test_params.bq_dataset_id,
                 test_params.bq_table_name,
-                pendulum.date(2022, 10, 17),
-            )
-            self.assert_table_content(table_id, expected_content, "id")
-            table_id = bq_sharded_table_id(
-                test_params.cloud_workspace.project_id,
-                test_params.bq_dataset_id,
-                test_params.bq_table_name,
-                pendulum.date(2022, 10, 20),
+                pendulum.date(2025, 12, 16),
             )
             self.assert_table_content(table_id, expected_content, "id")
 
@@ -160,4 +147,4 @@ class TestRorTelescope(SandboxTestCase):
                 bq_project_id=test_params.cloud_workspace.project_id, bq_dataset_id=test_params.api_bq_dataset_id
             )
             dataset_releases = api.get_dataset_releases(dag_id=test_params.dag_id, entity_id="ror")
-            self.assertEqual(len(dataset_releases), 2)
+            self.assertEqual(len(dataset_releases), 1)

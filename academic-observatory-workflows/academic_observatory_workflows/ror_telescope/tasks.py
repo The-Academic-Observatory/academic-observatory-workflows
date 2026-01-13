@@ -173,7 +173,7 @@ def bq_load(
         location=release.cloud_workspace.data_location,
         description=dataset_description,
     )
-    schema_file_path = bq_find_schema(path=schema_folder, table_name=bq_table_name, release_date=release.snapshot_date)
+    schema_file_path = bq_find_schema(path=schema_folder, table_name=bq_table_name)
     table_id = bq_sharded_table_id(
         release.cloud_workspace.output_project_id, bq_dataset_id, bq_table_name, release.snapshot_date
     )
@@ -306,12 +306,12 @@ def transform_ror(ror: List[Dict]) -> List[Dict]:
     for record in ror:
         ror_id = record["id"]
         # Check that address coordinates are correct
-        for address in record["addresses"]:
-            lat = address["lat"]
-            lng = address["lng"]
+        for address in record["locations"]:
+            lat = address["geonames_details"]["lat"]
+            lng = address["geonames_details"]["lng"]
             if lat is not None and lng is not None and not is_lat_lng_valid(lat, lng):
                 logging.warning(f"{ror_id} has invalid lat or lng: {lat}, {lng}. Setting both to None.")
-                address["lat"] = None
-                address["lng"] = None
+                address["geonames_details"]["lat"] = None
+                address["geonames_details"]["lng"] = None
         records.append(record)
     return records

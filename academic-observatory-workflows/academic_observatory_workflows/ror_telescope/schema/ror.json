@@ -1,0 +1,182 @@
+[
+  {
+    "name": "id",
+    "description": "Unique ROR ID for the organization",
+    "mode": "REQUIRED",
+    "type": "STRING"
+  },
+  {
+    "name": "names",
+    "description": "Names of the organization",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "fields": [
+      {
+        "name": "value",
+        "description": "Name value",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "types",
+        "description": "Name type",
+        "mode": "REPEATED",
+        "type": "STRING"
+      },
+      {
+        "name": "lang",
+        "description": "Language associated with this name",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      }
+    ]
+  },
+  {
+    "name": "domains",
+    "description": "",
+    "mode": "REPEATED",
+    "type": "STRING"
+  },
+  {
+    "name": "established",
+    "description": "Year the organization was established (CE)",
+    "mode": "NULLABLE",
+    "type": "INTEGER"
+  },
+  {
+    "name": "types",
+    "description": "Organization type. Allowed types: Education, Healthcare, Company, Archive, Nonprofit, Government, Facility, Other",
+    "mode": "REPEATED",
+    "type": "STRING"
+  },
+  {
+    "name": "relationships",
+    "description": "Related organizations in ROR. Allowed relationship types: Parent, Child, Related",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "fields": [
+      {
+        "name": "id",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "label",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "type",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      }
+    ]
+  },
+  {
+    "name": "locations",
+    "description": "The organization's location",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "fields": [
+      {
+        "name": "geonames_id",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "INTEGER"
+      },
+      {
+        "name": "geonames_details",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "RECORD",
+        "fields": [
+          {
+            "name": "country_code",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "country_name",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "lat",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "FLOAT"
+          },
+          {
+            "name": "lng",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "FLOAT"
+          },
+          {
+            "name": "name",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "links",
+    "description": "Official website of the organization",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "fields": [
+      {
+        "name": "type",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "value",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      }
+    ]
+  },
+  {
+    "name": "status",
+    "description": "Whether the organization is active or not",
+    "mode": "REQUIRED",
+    "type": "STRING"
+  },
+  {
+    "name": "external_ids",
+    "description": "Other identifiers for the organization. Allowed external IDs: Crossref Funder ID (FundRef), GRID, ISNI, Wikidata. Other external IDs not actively curated include OrgRef, HESA, UCAS, UKPRN, CNRS.",
+    "mode": "REPEATED",
+    "type": "RECORD",
+    "fields": [
+      {
+        "name": "type",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      },
+      {
+        "name": "all",
+        "description": "",
+        "mode": "REPEATED",
+        "type": "STRING"
+      },
+      {
+        "name": "preferred",
+        "description": "",
+        "mode": "NULLABLE",
+        "type": "STRING"
+      }
+    ]
+  }
+]
