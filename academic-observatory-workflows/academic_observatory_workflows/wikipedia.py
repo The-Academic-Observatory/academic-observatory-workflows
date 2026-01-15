@@ -191,10 +191,6 @@ def shorten_text_full_sentences(text: str, *, char_limit: int = 300) -> str:
     :param char_limit: The max number of characters
     :return: The shortened text.
     """
-    try:
-        nltk.data.find("tokenizers/punkt_tab")
-    except LookupError:
-        nltk.download("punkt_tab")
 
     # Create list of sentences
     sentences = nltk.tokenize.sent_tokenize(text)
