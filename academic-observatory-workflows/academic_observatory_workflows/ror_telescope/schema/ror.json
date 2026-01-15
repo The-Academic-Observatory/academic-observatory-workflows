@@ -106,6 +106,30 @@
             "type": "STRING"
           },
           {
+            "name": "country_subdivision_code",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "country_subdivision_name",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "continent_code",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
+            "name": "continent_name",
+            "description": "",
+            "mode": "NULLABLE",
+            "type": "STRING"
+          },
+          {
             "name": "lat",
             "description": "",
             "mode": "NULLABLE",
@@ -176,6 +200,47 @@
         "description": "",
         "mode": "NULLABLE",
         "type": "STRING"
+      }
+    ]
+  },
+  {
+    "name": "admin",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "created",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "date",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "schema_version",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "last_modified",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "date",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "schema_version",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
       }
     ]
   }

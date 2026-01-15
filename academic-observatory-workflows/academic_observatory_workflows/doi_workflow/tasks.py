@@ -185,6 +185,7 @@ def create_intermediate_table(*, release: DOIRelease, sql_query: SQLQuery, outpu
         snapshot_date=release.snapshot_date,
         **sql_query.inputs,
     )
+
     table_id = bq_sharded_table_id(
         output_project_id,
         sql_query.output_table.dataset_id,

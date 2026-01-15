@@ -143,13 +143,13 @@ SELECT
       STRUCT(
         institution.id as identifier,
         institution.types as types,
-        institution.name as name,
+        (SELECT n.value FROM UNNEST(institution.names) as n WHERE 'ror_display' IN UNNEST(n.types) LIMIT 1) as name,
         institution.country.wikipedia_name as country,
         institution.country.alpha3 as country_code,
         institution.country.alpha2 as country_code_2,
         institution.country.region as region,
         institution.country.subregion as subregion,
-        CONCAT(CAST(institution.addresses[SAFE_OFFSET(0)].lat as STRING), ", ", CAST(institution.addresses[SAFE_OFFSET(0)].lng as STRING)) as coordinates,
+        CONCAT(CAST(institution.locations[SAFE_OFFSET(0)].geonames_details.lat as STRING), ", ", CAST(institution.locations[SAFE_OFFSET(0)].geonames_details.lng as STRING)) as coordinates,
         CAST([] AS ARRAY<STRING>) as members
       )
     ) as institutions,

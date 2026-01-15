@@ -15,7 +15,7 @@
 # Author: Richard Hosking, James Diprose #}
 
 SELECT 
-  rors.* EXCEPT (country),
+  rors.*, 
   country
 FROM `{{ ror.project_id }}.{{ ror.dataset_id }}.ror{{ ror.snapshot_date.strftime('%Y%m%d') }}` as rors
-LEFT JOIN `{{ country.project_id }}.{{ country.dataset_id }}.{{ country.table_id }}` as country ON (rors.country.country_code = country.alpha2)
+LEFT JOIN `{{ country.project_id }}.{{ country.dataset_id }}.{{ country.table_id }}` as country ON (rors.locations[0].geonames_details.country_code = country.alpha2)
