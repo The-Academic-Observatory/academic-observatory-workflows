@@ -38,7 +38,10 @@ def fetch_wikipedia_descriptions(wikipedia_urls: List[str]) -> List[Tuple[str, s
     """
 
     # Download 'punkt' resource, required when shortening wiki descriptions
-    nltk.download("punkt_tab")
+    try:
+        nltk.data.find("tokenizers/punkt_tab")
+    except LookupError:
+        nltk.download("punkt_tab")
 
     # Create list with dictionaries of max 20 ids + titles (this is wiki api max)
     chunks = list(get_chunks(input_list=wikipedia_urls, chunk_size=WIKI_MAX_TITLES))
@@ -188,6 +191,11 @@ def shorten_text_full_sentences(text: str, *, char_limit: int = 300) -> str:
     :param char_limit: The max number of characters
     :return: The shortened text.
     """
+    try:
+        nltk.data.find("tokenizers/punkt_tab")
+    except LookupError:
+        nltk.download("punkt_tab")
+
     # Create list of sentences
     sentences = nltk.tokenize.sent_tokenize(text)
 
