@@ -164,7 +164,7 @@ class Institution:
     region: str = None
     subregion: str = None
     papers: List[Paper] = None
-    types: str = None
+    types: List[str] = None
     country: str = None
     coordinates: str = None
     repository: Repository = None
@@ -1038,7 +1038,7 @@ def make_openalex_dataset(dataset: ObservatoryDataset) -> List[dict]:
                             "ror": author.institution.ror_id,
                             "display_name": author.institution.name,
                             "country_code": author.institution.country_code,
-                            "type": author.institution.types,
+                            "type": author.institution.types[0],  # Openalex doesn't allow list of types
                         }
                     ],
                 }
@@ -1372,9 +1372,7 @@ def bq_load_observatory_dataset(
                 True,
                 dataset_id_all,
                 ror,
-                bq_find_schema(
-                    path=project_path("ror_telescope", "schema"), table_name="ror", release_date=snapshot_date
-                ),
+                bq_find_schema(path=project_path("ror_telescope", "schema"), table_name="ror"),
             ),
             Table(
                 "country",
@@ -1679,7 +1677,7 @@ def make_doi_institutions(author_list: AuthorList) -> List[Dict]:
         if inst.ror_id not in institutions:
             institutions[inst.ror_id] = {
                 "identifier": inst.ror_id,
-                "types": [inst.types],
+                "types": inst.types,
                 "name": inst.name,
                 "country": inst.country,
                 "country_code": inst.country_code,

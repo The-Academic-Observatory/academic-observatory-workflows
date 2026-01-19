@@ -17,7 +17,7 @@ from __future__ import annotations
 import copy
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Optional
 
 import pendulum
 import requests
@@ -315,16 +315,17 @@ def ror_to_ror_hierarchy_index(ror: List[Dict]) -> Dict:
 
     index = {}
     names = {}
+
     # Add all items to index
     for row in ror:
         ror_id = row["id"]
         index[ror_id] = set()
-        names[ror_id] = row["name"]
+        names[ror_id] = get_ror_name_from_names(row["names"])
 
     # Add all child -> parent relationships to index
     for row in ror:
         ror_id = row["id"]
-        name = row["name"]
+        name = get_ror_name_from_names(row["names"])
 
         # Build index of parents and children
         parents = set()
@@ -332,9 +333,9 @@ def ror_to_ror_hierarchy_index(ror: List[Dict]) -> Dict:
         for rel in row["relationships"]:
             rel_id = rel["id"]
             rel_type = rel["type"]
-            if rel_type == "Parent":
+            if rel_type.lower() == "parent":
                 parents.add(rel_id)
-            elif rel_type == "Child":
+            elif rel_type.lower() == "child":
                 children.add(rel_id)
 
         for rel in row["relationships"]:
@@ -349,7 +350,7 @@ def ror_to_ror_hierarchy_index(ror: List[Dict]) -> Dict:
                 )
                 continue
 
-            if rel_type == "Parent":
+            if rel_type.lower() == "parent":
                 if ror_id in index:
                     index[ror_id].add(rel_id)
                 else:
@@ -357,7 +358,7 @@ def ror_to_ror_hierarchy_index(ror: List[Dict]) -> Dict:
                         f"Parent does not exist in database for relationship: parent({rel_id}, {rel_label}), child({ror_id}, {name})"
                     )
 
-            elif rel_type == "Child":
+            elif rel_type.lower() == "child":
                 if rel_id in index:
                     index[rel_id].add(ror_id)
                 else:
@@ -373,3 +374,40 @@ def ror_to_ror_hierarchy_index(ror: List[Dict]) -> Dict:
         ancestor_index[ror_id] = ancestors
 
     return ancestor_index
+
+
+def get_ror_name_from_names(names: List[Dict]) -> Optional[str]:
+    """Given a list of name objects from a ROR, find the one with the 'ror_display' type and return it.
+
+    :param names: The list of name objects
+    :return: The display name object, or None if a name with the 'ror_display' type is not found.
+    ROR names object example:
+        "names" : [
+          {
+            "value" : "UC",
+            "types": ["acronym"],
+            "lang" : "en"
+          },
+          {
+            "value" : "UC System",
+            "types": ["alias"],
+            "lang" : "en"
+          },
+          {
+            "value" : "University of California System",
+            "types": ["ror_display", "label"],
+            "lang" : "en"
+          },
+          {
+            "value" : "Université de Californie",
+            "types": ["label"],
+            "lang" : "fr"
+          }
+        ]
+
+    The above example would return "University of California System"
+    """
+    for name in names:
+        if "ror_display" in name["types"]:
+            return name["value"]
+    return None

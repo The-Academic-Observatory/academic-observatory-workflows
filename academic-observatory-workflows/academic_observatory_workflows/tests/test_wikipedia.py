@@ -42,7 +42,7 @@ class TestWikipedia(TestCase):
         self.assertEqual(text_expected, text_output)
 
     def test_shorten_text_full_sentences(self):
-        nltk.download("punkt")
+        nltk.download("punkt_tab")
 
         text_input = "Sem Gordius at ea debile quantum si dis subordinatas Civiuni Magna. Ut oratione ut est enim subsolanea—aut Quasi Nemine hac dis Facer Eventu—mus quod 400 srripta firmare, annuebat p illum quas te 068,721 verbum displicere. Cum Memento si lorem 9,200 dispositae eget te Ridiculus magnae leo Arduas Nec sed 4,800 rationibus louor in vel integer te Nec Evidenter, Illa, eum Porro. Sem euismod'a crimen praevenire nec neque diabolum saepe, iniunctum vel Cadentes Modi, quo modo si intendis licuit sem vindices laesionem. Quo Quantum'v hitmari sint id Malrimonii, rem sit odio nascetur iste at Sociosqu."
         text_output = shorten_text_full_sentences(text_input, char_limit=300)
@@ -56,7 +56,7 @@ class TestWikipedia(TestCase):
 
     def test_fetch_wiki_description(self):
         # Download required nltk resource
-        nltk.download("punkt")
+        nltk.download("punkt_tab")
 
         wikipedia_urls = [
             "https://en.wikipedia.org/wiki/Pontifical_University_of_John_Paul_II",

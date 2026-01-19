@@ -92,7 +92,7 @@ class TestDoiWorkflow(SandboxTestCase):
             country_code_2="AU",
             region="Oceania",
             subregion="Australia and New Zealand",
-            types="Education",
+            types=["education", "funder"],
             country="Australia",
             coordinates="-31.95224, 115.8614",
             repository=repo_curtin,
@@ -113,9 +113,9 @@ class TestDoiWorkflow(SandboxTestCase):
             country_code_2="AU",
             region="Oceania",
             subregion="Australia and New Zealand",
-            types="Education",
+            types=["education", "funder"],
             country="Australia",
-            coordinates="-35.2778, 149.1205",
+            coordinates="-35.28346, 149.12807",
             repository=repo_anu,
         )
         repo_akl = Repository(
@@ -133,7 +133,7 @@ class TestDoiWorkflow(SandboxTestCase):
             country_code_2="NZ",
             region="Oceania",
             subregion="Australia and New Zealand",
-            types="Education",
+            types=["education", "funder"],
             country="New Zealand",
             coordinates="-36.84853, 174.76349",
             repository=repo_akl,
@@ -276,7 +276,7 @@ class TestDoiWorkflow(SandboxTestCase):
 
         ror = load_jsonl(os.path.join(FIXTURES_FOLDER, "ror.jsonl"))
         index = ror_to_ror_hierarchy_index(ror)
-        self.assertEqual(247, len(index))
+        self.assertEqual(289, len(index))
 
         # Auckland
         self.assertEqual(0, len(index["https://ror.org/03b94tp07"]))

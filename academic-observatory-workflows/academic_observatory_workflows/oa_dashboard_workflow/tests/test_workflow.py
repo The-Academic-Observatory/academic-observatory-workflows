@@ -18,6 +18,7 @@ import json
 import os
 import tempfile
 from typing import List
+import unittest
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -62,6 +63,8 @@ DOI_SCHEMA_FOLDER = project_path("doi_workflow", "schema")
 ROR_SCHEMA_FOLDER = project_path("ror_telescope", "schema")
 
 
+# Skip - remove this if this workflow is ever recomissioned
+@unittest.skip
 class TestFunctions(TestCase):
     def test_clean_url(self):
         url = "https://www.auckland.ac.nz/en.html"
@@ -178,6 +181,8 @@ class TestFunctions(TestCase):
             self.assertEqual(expected, actual)
 
 
+# Skip - remove this if this workflow is ever recomissioned
+@unittest.skip
 class TestOaDashboardWorkflow(SandboxTestCase):
     maxDiff = None
     dt_fmt = "YYYY-MM-DD"

@@ -55,19 +55,23 @@ class TestTasks(unittest.TestCase):
         records = [
             {
                 "id": "a",
-                "addresses": [
+                "locations": [
                     {
-                        "lat": 48.854692,
-                        "lng": 2.33781,
+                        "geonames_details": {
+                            "lat": 48.854692,
+                            "lng": 2.33781,
+                        }
                     }
                 ],
             },
             {
                 "id": "b",
-                "addresses": [
+                "locations": [
                     {
-                        "lat": 48.854692,
-                        "lng": 233781,
+                        "geonames_details": {
+                            "lat": 48.854692,
+                            "lng": 233781,
+                        }
                     }
                 ],
             },
@@ -78,19 +82,23 @@ class TestTasks(unittest.TestCase):
             [
                 {
                     "id": "a",
-                    "addresses": [
+                    "locations": [
                         {
-                            "lat": 48.854692,
-                            "lng": 2.33781,
+                            "geonames_details": {
+                                "lat": 48.854692,
+                                "lng": 2.33781,
+                            }
                         }
                     ],
                 },
                 {
                     "id": "b",
-                    "addresses": [
+                    "locations": [
                         {
-                            "lat": None,
-                            "lng": None,
+                            "geonames_details": {
+                                "lat": None,
+                                "lng": None,
+                            }
                         }
                     ],
                 },
