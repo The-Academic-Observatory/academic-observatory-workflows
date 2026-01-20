@@ -589,9 +589,10 @@ def transform_object(obj: dict):
     for field in array_fields:
         remove_none_from_array(obj, field)
 
-    # Remove nulls from authors affiliations[].years
-    for val in obj.get("affiliations", []):
-        remove_none_from_array(val, "years")
+    # Remove nulls from authorships.affiliations[].institution_ids
+    for i in obj.get("authorships", []):
+        for j in i.get("affiliations", []):
+            remove_none_from_array(j, "institution_ids")
 
     # Remove nulls from works primary_location.source
     remove_none_from_array(
