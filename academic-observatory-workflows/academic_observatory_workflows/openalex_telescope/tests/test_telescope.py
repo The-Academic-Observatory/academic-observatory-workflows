@@ -375,6 +375,14 @@ class TestOpenAlexUtils(SandboxTestCase):
             obj,
         )
 
+        # Null in array
+        obj = {"authorships": [{"affiliations": [{"institution_ids": [None]}]}]}
+        transform_object(obj)
+        self.assertDictEqual(
+            {"authorships": [{"affiliations": [{"institution_ids": []}]}]},
+            obj,
+        )
+
         # Test object with nested "international" fields
         obj1 = {
             "international": {

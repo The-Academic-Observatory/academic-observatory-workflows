@@ -97,7 +97,7 @@
   },
   {
     "name": "created_date",
-    "type": "TIMESTAMP",
+    "type": "DATE",
     "mode": "NULLABLE",
     "description": "The date this Author object was created in the OpenAlex dataset, expressed as an ISO 8601 date string."
   },
@@ -345,6 +345,11 @@
         "mode": "NULLABLE"
       },
       {
+        "name": "score",
+        "type": "FLOAT",
+        "mode": "NULLABLE"
+      },
+      {
         "name": "display_name",
         "type": "STRING",
         "mode": "NULLABLE"
@@ -456,12 +461,84 @@
         "description": "The strength of association between this author and the listed concept, from 0-100."
       },
       {
+        "name": "count",
+        "type": "INTEGER",
+        "mode": "NULLABLE"
+      },
+      {
         "name": "wikidata",
         "type": "STRING",
         "mode": "NULLABLE",
         "description": "The Wikidata ID for this concept. "
       }
     ]
+  },
+  {
+    "name": "topic_share",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      { "name": "id", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "display_name", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "value", "type": "FLOAT", "mode": "NULLABLE" },
+      {
+        "name": "subfield",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          { "name": "id", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "display_name", "type": "STRING", "mode": "NULLABLE" }
+        ]
+      },
+      {
+        "name": "field",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          { "name": "id", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "display_name", "type": "STRING", "mode": "NULLABLE" }
+        ]
+      },
+      {
+        "name": "domain",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          { "name": "id", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "display_name", "type": "STRING", "mode": "NULLABLE" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "sources",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      { "name": "id", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "display_name", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "issn_l", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "issn", "type": "STRING", "mode": "REPEATED" },
+      { "name": "is_oa", "type": "BOOLEAN", "mode": "NULLABLE" },
+      { "name": "is_in_doaj", "type": "BOOLEAN", "mode": "NULLABLE" },
+      { "name": "is_core", "type": "BOOLEAN", "mode": "NULLABLE" },
+      { "name": "host_organization", "type": "STRING", "mode": "NULLABLE" },
+      {
+        "name": "host_organization_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "host_organization_lineage",
+        "type": "STRING",
+        "mode": "REPEATED"
+      },
+      {
+        "name": "host_organization_lineage_names",
+        "type": "STRING",
+        "mode": "REPEATED"
+      },
+      { "name": "type", "type": "STRING", "mode": "NULLABLE" }
+    ]
   }
 ]
-
