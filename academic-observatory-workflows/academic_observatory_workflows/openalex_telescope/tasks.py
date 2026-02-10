@@ -647,7 +647,7 @@ def transform_object(obj: dict):
 
     # Transform updated_date from a date into a datetime
     field = "updated_date"
-    if field in obj:
+    if field in obj and obj[field]:
         obj[field] = pendulum.parse(obj[field]).to_iso8601_string()
 
 
