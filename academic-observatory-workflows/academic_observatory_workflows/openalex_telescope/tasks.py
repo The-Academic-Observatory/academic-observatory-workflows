@@ -645,10 +645,11 @@ def transform_object(obj: dict):
 
             obj[field][nested_field] = {"keys": keys, "values": values}
 
-    # Transform updated_date from a date into a datetime
-    field = "updated_date"
-    if field in obj:
-        obj[field] = pendulum.parse(obj[field]).to_iso8601_string()
+    # Transform updated_date and created_date from a date into a datetime
+    for field in ("updated_date", "created_date"):
+        print("Discovered date field")
+        if field in obj and obj[field]:
+            obj[field] = pendulum.parse(obj[field]).to_iso8601_string()
 
 
 def bq_compare_schemas(expected: List[dict], actual: List[dict], check_types_match: Optional[bool] = False) -> bool:
