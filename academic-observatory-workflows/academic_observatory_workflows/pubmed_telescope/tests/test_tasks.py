@@ -445,23 +445,23 @@ class TestPubMedUtils(SandboxTestCase):
 
         input_dict = [
             {
-                "AbstractText": ["String", {"Background": "data"}, {"OTHER": "data"}],
-                "NotAbstractText": {"col1": "row1", "col2": "row2"},
+                "Affiliation": ["String", {"Background": "data"}, {"OTHER": "data"}],
+                "NotAffiliation": {"col1": "row1", "col2": "row2"},
             },
             {
-                "AbstractText": {"Background": "data", "OTHER": "data"},
-                "NotAbstractText": {"col1": "row1", "col2": "row2"},
+                "Affiliation": {"Background": "data", "OTHER": "data"},
+                "NotAffiliation": {"col1": "row1", "col2": "row2"},
             },
         ]
 
         output_dict = [
             {
-                "AbstractText": "['String', {'Background': 'data'}, {'OTHER': 'data'}]",
-                "NotAbstractText": {"col1": "row1", "col2": "row2"},
+                "Affiliation": "['String', {'Background': 'data'}, {'OTHER': 'data'}]",
+                "NotAffiliation": {"col1": "row1", "col2": "row2"},
             },
             {
-                "AbstractText": "{'Background': 'data', 'OTHER': 'data'}",
-                "NotAbstractText": {"col1": "row1", "col2": "row2"},
+                "Affiliation": "{'Background': 'data', 'OTHER': 'data'}",
+                "NotAffiliation": {"col1": "row1", "col2": "row2"},
             },
         ]
 
