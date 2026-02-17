@@ -968,58 +968,66 @@ def transform_pubmed(input_path: str, upsert_path: str) -> Union[bool, str, Pubm
     # TODO: replace Entrez.read with something more standardised and memory efficient
     upsert_keys = []
     delete_keys = []
-    with open(upsert_path, mode="w") as f:
-        with jsonlines.Writer(f) as writer:
-            with gzip.open(input_path, "rb") as file:
-                adapter.info(f"Reading in file - {input_path}")
-
+    with open(upsert_path, mode="w") as f, jsonlines.Writer(f) as writer, gzip.open(input_path, "rb") as file:
+        adapter.info(f"Reading in file - {input_path}")
+        try:
+            context = etree.iterparse(file, events=("end",), tag=("PubmedArticle", "DeleteCitation"))
+            for _, elem in context:
                 try:
-                    context = etree.iterparse(file, events=("end",), tag=("PubmedArticle", "DeleteCitation"))
-                    for _, elem in context:
-                        try:
-                            record = parse_pubmed_element(elem, validate=False, ignore_errors=True)
-                        except Exception as e:
-                            log_string = etree.tostring(elem, encoding="unicode")
-                            adapter.error(f"Error parsing record: {log_string}")
-                            adapter.error(e)
+                    record = parse_pubmed_element(elem, validate=False, ignore_errors=True)
+                except Exception as e:
+                    log_string = etree.tostring(elem, encoding="unicode")
+                    admainapter.error(f"Error parsing record: {log_string}")
+                    adapter.error(e)
 
-                            # Clear memory
-                            elem.clear()
-                            while elem.getprevious() is not None:
-                                del elem.getparent()[0]
+                    # Clear memory
+                    elem.clear()
+                    while elem.getprevious() is not None:
+                        del elem.getparent()[0]
 
-                            continue
+                    continue
 
-                        # Pull out XML attributes from the Biopython data classes.
-                        data = add_attributes(record)
+                # Pull out XML attributes from the Biopython data classes.
+                data = add_attributes(record)
 
-                        # Remove unwanted nested list structure from the Pubmed dictionary.
-                        data = change_pubmed_list_structure(data)
+                # Remove unwanted nested list structure from the Pubmed dictionary.
+                data = change_pubmed_list_structure(data)
 
-                        if len(record.get("PubmedArticle", [])) > 0:
-                            # Get PubmedArticle
-                            data = data["PubmedArticle"][0]
+                if len(record.get("PubmedArticle", [])) > 0:
+                    # Get PubmedArticle
+                    data = data["PubmedArticle"][0]
 
-                            # Save upsert to file.
-                            writer.write(data)
+                    # The AbstractText field is inconsistent. Sometimes it's a list of strings, sometimes it's list of dicts
+                    abstract_text = (
+                        data.get("MedlineCitation", {}).get("Article", {}).get("Abstract", {}).get("AbstractText")
+                    )
+                    if abstract_text:
+                        for i, item in enumerate(abstract_text):
+                            if isinstance(item, str):
+                                data["MedlineCitation"]["Article"]["Abstract"]["AbstractText"][i] = {
+                                    "value": abstract_text[i]
+                                }
 
-                            # Append PMID to upsert keys
-                            pmid = PMID.from_dict(data["MedlineCitation"]["PMID"])
-                            upsert_keys.append(pmid)
+                    # Save upsert to file.
+                    writer.write(data)
 
-                        if len(record.get("DeleteCitation", [])) > 0:
-                            data = data["DeleteCitation"]["PMID"][0]
-                            pmid = PMID.from_dict(data)
-                            delete_keys.append(pmid)
+                    # Append PMID to upsert keys
+                    pmid = PMID.from_dict(data["MedlineCitation"]["PMID"])
+                    upsert_keys.append(pmid)
 
-                        # Clear memory
-                        elem.clear()
-                        while elem.getprevious() is not None:
-                            del elem.getparent()[0]
+                if len(record.get("DeleteCitation", [])) > 0:
+                    data = data["DeleteCitation"]["PMID"][0]
+                    pmid = PMID.from_dict(data)
+                    delete_keys.append(pmid)
 
-                except lxml.etree.XMLSyntaxError as e:
-                    adapter.info(f"Error parsing XML file - {input_path}")
-                    return False
+                # Clear memory
+                elem.clear()
+                while elem.getprevious() is not None:
+                    del elem.getparent()[0]
+
+        except lxml.etree.XMLSyntaxError as e:
+            adapter.info(f"Error parsing XML file - {input_path}")
+            return False
 
     # Pull out keys of upserts and deletes from an updatefile. This is not required for baseline files.
     adapter.info(f"Pulled out {len(upsert_keys)} upserts from file, saved to: {upsert_path}")
@@ -1288,7 +1296,6 @@ class PubMedCustomEncoder(json.JSONEncoder):
     """
 
     write_as_single_field = [
-        "AbstractText",
         "Affiliation",
         "ArticleTitle",
         "b",

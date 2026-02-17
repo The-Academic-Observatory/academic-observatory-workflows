@@ -18,6 +18,12 @@
             "type": "RECORD",
             "fields": [
               {
+                "name": "Minute",
+                "description": "Contains the numeric value for the minute in a date.",
+                "mode": "NULLABLE",
+                "type": "INTEGER"
+              },
+              {
                 "name": "Hour",
                 "description": "Contains the numeric value for the hour in a date.",
                 "mode": "NULLABLE",
@@ -604,8 +610,25 @@
               {
                 "name": "AbstractText",
                 "description": "Contains the text of the abstract or summary associated with the publication.",
-                "mode": "NULLABLE",
-                "type": "STRING"
+                "mode": "REPEATED",
+                "type": "RECORD",
+                "fields": [
+                  {
+                    "name": "value",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "Label",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  },
+                  {
+                    "name": "NlmCategory",
+                    "mode": "NULLABLE",
+                    "type": "STRING"
+                  }
+                ]
               }
             ]
           },
@@ -1039,6 +1062,11 @@
                 "name": "value",
                 "mode": "NULLABLE",
                 "type": "STRING"
+              },
+              {
+                "name": "AutoHM",
+                "mode": "NULLABLE",
+                "type": "STRING"
               }
             ]
           },
@@ -1062,6 +1090,11 @@
               },
               {
                 "name": "value",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "AutoHM",
                 "mode": "NULLABLE",
                 "type": "STRING"
               }
