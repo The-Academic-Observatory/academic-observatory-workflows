@@ -170,7 +170,7 @@ def fetch_release(
     # Grab list of baseline files from FTP server.
     files_to_download = []
     if year_first_run:
-        logging.info(f"This is the first run for the year for Pubmed. Grabbing list of 'baseline' files.")
+        logging.info("This is the first run for the year for Pubmed. Grabbing list of 'baseline' files.")
 
         # Grab metadata and path of the file.
         for file in baseline_list_ftp:
@@ -284,10 +284,10 @@ def fetch_release(
             )
     else:
         logging.info(
-            f"First run of the Pubmed telescope for the year. No previous releases.file_index to check against."
+            "First run of the Pubmed telescope for the year. No previous releases.file_index to check against."
         )
 
-    logging.info(f"List of files to download from the PubMed FTP server for release:")
+    logging.info("List of files to download from the PubMed FTP server for release:")
     for datafile in files_to_download:
         logging.info(f"Filename: {datafile.filename}, is a baseline file: {datafile.baseline}")
 
@@ -413,7 +413,7 @@ def baseline_transform(release: dict, max_processes: Optional[int] = None) -> No
     """
 
     release = PubMedRelease.from_dict(release)
-    if max_processes == None:
+    if max_processes is None:
         max_processes = os.cpu_count()
     logging.info(f"baseline_transform: max_processes={max_processes}")
 
@@ -450,7 +450,7 @@ def updatefiles_transform(release: dict, max_processes: Optional[int] = None) ->
     """
 
     release = PubMedRelease.from_dict(release)
-    if max_processes == None:
+    if max_processes is None:
         max_processes = os.cpu_count()
 
     # Object to store all of the upserts and delete keys that are present in each file.
@@ -502,7 +502,7 @@ def updatefiles_merge_upserts_deletes(
 
     release = PubMedRelease.from_dict(release)
     updatefiles = [PubmedUpdatefile.from_dict(updatefile) for updatefile in updatefiles]
-    if max_processes == None:
+    if max_processes is None:
         max_processes = os.cpu_count()
 
     # Merge records and return a list of what upserts to pull from the transformed updatefiles.
@@ -733,7 +733,7 @@ def add_dataset_releases(release: dict, api_bq_dataset_id: str) -> None:
     """
 
     release = PubMedRelease.from_dict(release)
-    logging.info(f"add_dataset_releases: creating dataset release for Pubmed Articles.")
+    logging.info("add_dataset_releases: creating dataset release for Pubmed Articles.")
     api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
     now = pendulum.now()
     dataset_release = DatasetRelease(
@@ -919,7 +919,7 @@ def parse_articles(data: Dict) -> Union[List, List[Dict]]:
     try:
         return data["PubmedArticle"]
     except KeyError:
-        logging.info(f"No PubmedArticle records in file")
+        logging.info("No PubmedArticle records in file")
         return []
 
 
@@ -927,7 +927,7 @@ def parse_deletes(data: Dict) -> Union[List, List[Dict]]:
     try:
         return data["DeleteCitation"]["PMID"]
     except KeyError:
-        logging.info(f"No DeleteCitation.PMID records in file")
+        logging.info("No DeleteCitation.PMID records in file")
         return []
 
 
@@ -977,7 +977,7 @@ def transform_pubmed(input_path: str, upsert_path: str) -> Union[bool, str, Pubm
                     record = parse_pubmed_element(elem, validate=False, ignore_errors=True)
                 except Exception as e:
                     log_string = etree.tostring(elem, encoding="unicode")
-                    admainapter.error(f"Error parsing record: {log_string}")
+                    adapter.error(f"Error parsing record: {log_string}")
                     adapter.error(e)
 
                     # Clear memory
@@ -1025,7 +1025,7 @@ def transform_pubmed(input_path: str, upsert_path: str) -> Union[bool, str, Pubm
                 while elem.getprevious() is not None:
                     del elem.getparent()[0]
 
-        except lxml.etree.XMLSyntaxError as e:
+        except lxml.etree.XMLSyntaxError:
             adapter.info(f"Error parsing XML file - {input_path}")
             return False
 
@@ -1169,7 +1169,6 @@ def add_attributes(obj: Union[StringElement, DictionaryElement, ListElement, Ord
 # Elements in the list are extra fields to append to the same level as the *List field.
 # Only for the 2023 schema. May change with a new revision.
 bad_list_fields = {
-    "AuthorList": [],
     "ArticleIdList": [],
     "AuthorList": ["CompleteYN", "Type"],
     "GrantList": ["CompleteYN"],
