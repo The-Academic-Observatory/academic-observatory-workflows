@@ -66,3 +66,6 @@ include = ["academic_observatory_workflows"]
 
 [tool.setuptools.package-data]
 "academic_observatory_workflows" = ["**/schema/*.json"]
+
+[tool.pyright]
+typeCheckingMode = "off"
