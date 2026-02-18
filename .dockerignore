@@ -8,3 +8,6 @@ airflow.db
 airflow.cfg
 config-prod.yaml
 config-example.yaml
+*.eggs
+*.egg-info
+__pycache__/
