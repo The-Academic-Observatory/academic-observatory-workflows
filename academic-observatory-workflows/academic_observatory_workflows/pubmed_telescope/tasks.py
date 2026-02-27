@@ -943,6 +943,34 @@ def parse_pubmed_element(elem, validate=False, ignore_errors=True):
     return data
 
 
+def fix_abstract_text_fields(data: dict):
+    """
+    The AbstractText fields are inconsistent. Sometimes it's a list of strings, sometimes it's list of dicts.
+    It's a real mess...
+
+    :param data: Should be the first entry of 'PubmedArticle'
+    """
+
+    # Abstract - a record that may contain AbstractText - a list of records
+    abstract_text = data.get("MedlineCitation", {}).get("Article", {}).get("Abstract", {}).get("AbstractText")
+    if abstract_text:
+        for i, item in enumerate(abstract_text):
+            if isinstance(item, str):
+                data["MedlineCitation"]["Article"]["Abstract"]["AbstractText"][i] = {"value": abstract_text[i]}
+
+    # OtherAbstract - a list of records that may each contain an AbstractText - another list of records
+    other_abstract = data.get("MedlineCitation", {}).get("OtherAbstract", [{}])
+    if other_abstract:
+        for i, abs in enumerate(other_abstract):
+            abstract_text = abs.get("AbstractText")
+            if not abstract_text:
+                continue
+            for j, item in enumerate(abstract_text):
+                if isinstance(item, str):
+                    data["MedlineCitation"]["OtherAbstract"][i]["AbstractText"][j] = {"value": abstract_text[j]}
+    return data
+
+
 def init_logging():
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s [%(processName)s] %(levelname)s:%(input_file)s:%(message)s"
@@ -994,19 +1022,8 @@ def transform_pubmed(input_path: str, upsert_path: str) -> Union[bool, str, Pubm
                 data = change_pubmed_list_structure(data)
 
                 if len(record.get("PubmedArticle", [])) > 0:
-                    # Get PubmedArticle
-                    data = data["PubmedArticle"][0]
-
-                    # The AbstractText field is inconsistent. Sometimes it's a list of strings, sometimes it's list of dicts
-                    abstract_text = (
-                        data.get("MedlineCitation", {}).get("Article", {}).get("Abstract", {}).get("AbstractText")
-                    )
-                    if abstract_text:
-                        for i, item in enumerate(abstract_text):
-                            if isinstance(item, str):
-                                data["MedlineCitation"]["Article"]["Abstract"]["AbstractText"][i] = {
-                                    "value": abstract_text[i]
-                                }
+                    # Get PubmedArticle and fix the abstract_text fields
+                    data = fix_abstract_text_fields(data["PubmedArticle"][0])
 
                     # Save upsert to file.
                     writer.write(data)

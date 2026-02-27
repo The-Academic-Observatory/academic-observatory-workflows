@@ -1167,8 +1167,26 @@
         "fields": [
           {
             "name": "AbstractText",
-            "mode": "NULLABLE",
-            "type": "STRING"
+            "description": "Contains the text of the abstract or summary associated with the publication.",
+            "mode": "REPEATED",
+            "type": "RECORD",
+            "fields": [
+              {
+                "name": "value",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "Label",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              },
+              {
+                "name": "NlmCategory",
+                "mode": "NULLABLE",
+                "type": "STRING"
+              }
+            ]
           },
           {
             "name": "CopyrightInformation",
