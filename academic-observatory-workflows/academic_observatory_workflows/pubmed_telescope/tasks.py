@@ -37,7 +37,7 @@ from observatory_platform.airflow.airflow import is_first_dag_run
 from observatory_platform.airflow.release import release_to_bucket
 from observatory_platform.airflow.workflow import cleanup, CloudWorkspace
 from observatory_platform.dataset_api import DatasetAPI, DatasetRelease
-from observatory_platform.files import clean_dir, get_chunks, save_jsonl, yield_jsonl
+from observatory_platform.files import clean_dir, get_chunks, save_jsonl, yield_jsonl, load_jsonl
 from observatory_platform.google.gcs import gcs_upload_files
 
 
@@ -410,8 +410,7 @@ def _transform_and_encode(input_path: str, upsert_path: str) -> Union[bool, str,
     filename = transform_pubmed(input_path, upsert_path)
     if not filename:
         return filename
-    with open(upsert_path, "r") as f:
-        data = json.load(f)
+    data = load_jsonl(upsert_path)
     # Use the encoder
     save_pubmed_jsonl(upsert_path, data)
     return filename
