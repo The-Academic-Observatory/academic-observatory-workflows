@@ -412,6 +412,17 @@ def baseline_transform(release: dict, max_processes: Optional[int] = None) -> No
     :param max_proceses: The max number of processes to use for multiprocessing
     """
 
+    def _transform_and_encode(input_path: str, upsert_path: str) -> Union[bool, str, PubmedUpdatefile]:
+        """Simple wrapper to transform pubmed and then use the json encoder"""
+        filename = transform_pubmed(input_path, upsert_path)
+        if not filename:
+            return filename
+        with open(filename, "r") as f:
+            data = json.load(f)
+        # Use the encoder
+        save_pubmed_jsonl(upsert_path, data)
+        return filename
+
     release = PubMedRelease.from_dict(release)
     if max_processes is None:
         max_processes = os.cpu_count()
@@ -432,12 +443,11 @@ def baseline_transform(release: dict, max_processes: Optional[int] = None) -> No
             for datafile in chunk:
                 input_path = datafile.download_file_path
                 upsert_path = datafile.transform_baseline_file_path
-                futures.append(executor.submit(transform_pubmed, input_path, upsert_path))
+                futures.append(executor.submit(_transform_and_encode, input_path, upsert_path))
 
             # Make sure that all datafiles have been properly transformed.
             for future in as_completed(futures):
                 filename = future.result()
-
                 assert filename, f"Unable to transform baseline file: {filename}"
 
 
