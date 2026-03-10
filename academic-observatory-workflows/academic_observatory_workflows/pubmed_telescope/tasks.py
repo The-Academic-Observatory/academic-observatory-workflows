@@ -37,7 +37,7 @@ from observatory_platform.airflow.airflow import is_first_dag_run
 from observatory_platform.airflow.release import release_to_bucket
 from observatory_platform.airflow.workflow import cleanup, CloudWorkspace
 from observatory_platform.dataset_api import DatasetAPI, DatasetRelease
-from observatory_platform.files import clean_dir, get_chunks, save_jsonl, yield_jsonl
+from observatory_platform.files import clean_dir, get_chunks, save_jsonl, yield_jsonl, load_jsonl
 from observatory_platform.google.gcs import gcs_upload_files
 
 
@@ -405,6 +405,17 @@ def updatefiles_upload_downloaded(release: dict) -> None:
         raise AirflowException("updatefiles.upload_downloaded: failed to upload files to cloud storage bucket")
 
 
+def _transform_and_encode(input_path: str, upsert_path: str) -> Union[bool, str, PubmedUpdatefile]:
+    """Simple wrapper to transform pubmed and then use the json encoder"""
+    filename = transform_pubmed(input_path, upsert_path)
+    if not filename:
+        return filename
+    data = load_jsonl(upsert_path)
+    # Use the encoder
+    save_pubmed_jsonl(upsert_path, data)
+    return filename
+
+
 def baseline_transform(release: dict, max_processes: Optional[int] = None) -> None:
     """
     Transform the *.xml.gz files downloaded from PubMed into usable json files for BigQuery import.
@@ -432,12 +443,11 @@ def baseline_transform(release: dict, max_processes: Optional[int] = None) -> No
             for datafile in chunk:
                 input_path = datafile.download_file_path
                 upsert_path = datafile.transform_baseline_file_path
-                futures.append(executor.submit(transform_pubmed, input_path, upsert_path))
+                futures.append(executor.submit(_transform_and_encode, input_path, upsert_path))
 
             # Make sure that all datafiles have been properly transformed.
             for future in as_completed(futures):
                 filename = future.result()
-
                 assert filename, f"Unable to transform baseline file: {filename}"
 
 
