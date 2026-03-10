@@ -410,7 +410,7 @@ def _transform_and_encode(input_path: str, upsert_path: str) -> Union[bool, str,
     filename = transform_pubmed(input_path, upsert_path)
     if not filename:
         return filename
-    with open(filename, "r") as f:
+    with open(upsert_path, "r") as f:
         data = json.load(f)
     # Use the encoder
     save_pubmed_jsonl(upsert_path, data)
