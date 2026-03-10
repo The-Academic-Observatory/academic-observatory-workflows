@@ -405,23 +405,24 @@ def updatefiles_upload_downloaded(release: dict) -> None:
         raise AirflowException("updatefiles.upload_downloaded: failed to upload files to cloud storage bucket")
 
 
+def _transform_and_encode(input_path: str, upsert_path: str) -> Union[bool, str, PubmedUpdatefile]:
+    """Simple wrapper to transform pubmed and then use the json encoder"""
+    filename = transform_pubmed(input_path, upsert_path)
+    if not filename:
+        return filename
+    with open(filename, "r") as f:
+        data = json.load(f)
+    # Use the encoder
+    save_pubmed_jsonl(upsert_path, data)
+    return filename
+
+
 def baseline_transform(release: dict, max_processes: Optional[int] = None) -> None:
     """
     Transform the *.xml.gz files downloaded from PubMed into usable json files for BigQuery import.
 
     :param max_proceses: The max number of processes to use for multiprocessing
     """
-
-    def _transform_and_encode(input_path: str, upsert_path: str) -> Union[bool, str, PubmedUpdatefile]:
-        """Simple wrapper to transform pubmed and then use the json encoder"""
-        filename = transform_pubmed(input_path, upsert_path)
-        if not filename:
-            return filename
-        with open(filename, "r") as f:
-            data = json.load(f)
-        # Use the encoder
-        save_pubmed_jsonl(upsert_path, data)
-        return filename
 
     release = PubMedRelease.from_dict(release)
     if max_processes is None:
