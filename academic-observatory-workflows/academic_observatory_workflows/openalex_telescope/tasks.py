@@ -95,7 +95,7 @@ def fetch_entities(
 
     # Return if there is no new snapshot
     if prev_release is not None and prev_release.snapshot_date >= snapshot_date:
-        logging.info(f"fetch_entities: no new snapshot found")
+        logging.info("fetch_entities: no new snapshot found")
         return {}
 
     # Build and return entities
@@ -122,7 +122,7 @@ def fetch_entities(
 
     # If no entities created then skip
     if len(entity_index) == 0:
-        logging.info(f"fetch_releases: no updates found")
+        logging.info("fetch_releases: no updates found")
 
     # Print summary information
     logging.info(f"is_first_run: {is_first_run}")
@@ -189,7 +189,7 @@ def aws_to_gcs_transfer(
         msgs.append(msg)
 
     if not manifest_changed and not merged_ids_changed:
-        logging.info(f"aws_to_gcs_transfer: manifests and merged_ids the same")
+        logging.info("aws_to_gcs_transfer: manifests and merged_ids the same")
     else:
         raise AirflowException(f"aws_to_gcs_transfer: {' ,'.join(msgs)}")
 
@@ -334,7 +334,7 @@ def expire_previous_version(
     # Check that previous release and this release are not the same
     if prev_release.snapshot_date == snapshot_date:
         raise AirflowException(
-            f"expire_previous_version: previous release snapshot date should not match current snapshot date"
+            "expire_previous_version: previous release snapshot date should not match current snapshot date"
         )
 
     # Check that table expiry not set
@@ -635,7 +635,7 @@ def transform_object(obj: dict):
 
     field = "international"
     if field in obj:
-        if obj[field] == None:
+        if obj[field] is None:
             obj[field] = {}
         for nested_field in obj.get(field, {}).keys():
             if not isinstance(obj[field][nested_field], dict):
@@ -647,7 +647,6 @@ def transform_object(obj: dict):
 
     # Transform updated_date and created_date from a date into a datetime
     for field in ("updated_date", "created_date"):
-        print("Discovered date field")
         if field in obj and obj[field]:
             obj[field] = pendulum.parse(obj[field]).to_iso8601_string()
 
@@ -691,10 +690,10 @@ def bq_compare_schemas(expected: List[dict], actual: List[dict], check_types_mat
             all_matched = False
             log_diff(diff_type, changes)
 
-        if "fields" in exp_field and not "fields" in act_field:
+        if "fields" in exp_field and "fields" not in act_field:
             logging.info(f"Fields are present under expected but not in actual! Field name: {exp_field['name']}")
-            all_mathced = False
-        elif not "fields" in exp_field and "fields" in act_field:
+            all_matched = False
+        elif "fields" not in exp_field and "fields" in act_field:
             logging.info(f"Fields are present under actual but not in expected! Field name: {act_field['name']}")
             all_matched = False
         elif "fields" in exp_field and "fields" in act_field:
