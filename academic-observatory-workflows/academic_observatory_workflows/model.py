@@ -802,14 +802,13 @@ def make_papers(
         # Green: in a 'repository'
         paper_repos = []
         if bool(random.getrandbits(1)):
-            # There can be multiple authors from the same institution so the repos have to be sampled from a set
             n_repos_ = random.randint(min_repos, max_repos)
-            repos = set()
-            for repo in [author.institution.repository for author in authors_] + repositories:
-                repos.add(repo)
+            repos = sorted(
+                {author.institution.repository for author in authors_} | set(repositories), key=lambda r: r.name
+            )
+            n_repos_ = min(n_repos_, len(repos))  # can't sample more than available
             paper_repos += random.sample(repos, n_repos_)
 
-        # Make paper
         paper = Paper(
             i,
             type="journal-article",

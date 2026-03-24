@@ -120,7 +120,7 @@ def create_repo_institution_to_ror_table(
     success = bq_load_from_memory(table_id, results)
     if not success:
         raise AirflowException(
-            f"create_repo_institution_to_ror_table: error loading repository_institution_to_ror table"
+            "create_repo_institution_to_ror_table: error loading repository_institution_to_ror table"
         )
 
 
@@ -160,7 +160,7 @@ def create_ror_hierarchy_table(
     )
     success = bq_load_from_memory(table_id, records)
     if not success:
-        raise AirflowException(f"create_ror_hierarchy_table: error loading ror_hierarchy table")
+        raise AirflowException("create_ror_hierarchy_table: error loading ror_hierarchy table")
 
 
 def create_intermediate_table(*, release: DOIRelease, sql_query: SQLQuery, output_project_id: str, ti: TaskInstance):
@@ -228,30 +228,19 @@ def create_aggregate_table(
 ):
     """Create an aggregate table from the DOI table.
 
-    This implementation splits the work into four steps, each writing
-    to a staging table, so no single query has to hold large arrays in memory:
+    Splits the work into four steps, each writing to a staging table
 
-      1a. Flat DOI table  — one scan of the raw DOI table, storing per-DOI
-                            OA booleans, citations, concepts, and relation
-                            arrays. All subsequent steps read from here.
+      1a. Flat DOI table  — one scan of the raw DOI table, storing per-DOI OA booleans, citations, concepts, and
+            relation arrays. All subsequent steps read from here.
 
-      1b. Base table      — aggregated non-relation columns (citations, OA
-                            summary, output types, events, disciplines).
-                            Also reads from the raw DOI table; could be
-                            moved to read from the flat table in future.
+      1b. Base table — aggregated non-relation columns (citations, OA summary, output types, events, disciplines).
+            Also reads from the raw DOI table; could be moved to read from the flat table in future.
 
-      2.  Relation tables — one per enabled relation type (institutions,
-                            countries, etc.). Reads from the flat table.
-                            Uses direct COUNTIF/SUM aggregations instead of
-                            collecting large OA struct arrays, which was the
-                            root cause of the original OOM.
+      2.  Relation tables — one per enabled relation type (institutions, countries, etc.). Reads from the flat table.
 
-      3.  Final assembly  — simple JOIN of base + relation tables into the
-                            destination table.
+      3.  Final assembly  — simple JOIN of base + relation tables into the destination table.
 
-    Staging tables are deleted in the finally block regardless of success or
-    failure. Set a short default expiry on bq_staging_dataset_id as a
-    backstop in case deletion fails.
+    Staging tables are deleted in the finally block regardless of success or failure.
     """
     client = bigquery.Client()
 
@@ -277,10 +266,7 @@ def create_aggregate_table(
     staging_tables = []
 
     try:
-        # ── Step 1a: Per-DOI flat table ───────────────────────────────────────
-        # One scan of the raw DOI table, shared by all relation queries.
-        # Stores OA booleans, citations, level-0 concepts, and pre-filtered
-        # relation arrays so relation queries never touch the raw DOI table.
+        # Step 1a: Per-DOI flat table
         flat_table_id = _staging_table_id(output_project_id, bq_staging_dataset_id, f"flat_{aggregation.table_name}")
         staging_tables.append(flat_table_id)
         print(f"create_aggregate_table: step 1a — flat table → {flat_table_id}")
@@ -294,7 +280,7 @@ def create_aggregate_table(
         if not success:
             raise AirflowException(f"create_aggregate_table: failed creating flat table {flat_table_id}")
 
-        # ── Step 1b: Base aggregated table ────────────────────────────────────
+        # Step 1b: Base aggregated table
         base_table_id = _staging_table_id(output_project_id, bq_staging_dataset_id, f"base_{aggregation.table_name}")
         staging_tables.append(base_table_id)
         print(f"create_aggregate_table: step 1b — base table → {base_table_id}")
@@ -307,7 +293,7 @@ def create_aggregate_table(
         if not success:
             raise AirflowException(f"create_aggregate_table: failed creating base table {base_table_id}")
 
-        # ── Step 2: One relation table per enabled relation type ──────────────
+        # Step 2: One relation table per enabled relation type
         relation_table_ids = {}
         for relation_type in enabled_relations:
             rel_table_id = _staging_table_id(
@@ -328,7 +314,7 @@ def create_aggregate_table(
                 raise AirflowException(f"create_aggregate_table: failed creating relation table {rel_table_id}")
             relation_table_ids[relation_type] = rel_table_id
 
-        # ── Step 3: Final assembly ────────────────────────────────────────────
+        # Step 3: Final assembly
         final_table_id = bq_sharded_table_id(
             output_project_id,
             bq_observatory_dataset_id,
@@ -337,11 +323,14 @@ def create_aggregate_table(
         )
         print(f"create_aggregate_table: step 3 — final assembly → {final_table_id}")
 
+        output_col_names = {r: "groupings" if r == "groups" else r for r in enabled_relations}
+
         final_sql = render_template(
             project_path("doi_workflow", "sql", "create_aggregate_final.sql.jinja2"),
             base_table_id=base_table_id,
             relation_types=enabled_relations,
             relation_table_ids=relation_table_ids,
+            output_col_names=output_col_names,
         )
         success = bq_create_table_from_query(
             sql=final_sql,
@@ -353,7 +342,7 @@ def create_aggregate_table(
             raise AirflowException(f"create_aggregate_table: failed creating final table {final_table_id}")
 
     finally:
-        # Clean up staging tables whether we succeeded or failed.
+        # Clean up staging tables
         for table_id in staging_tables:
             try:
                 client.delete_table(table_id, not_found_ok=True)
@@ -381,7 +370,7 @@ def update_table_descriptions(
     input_tables.sort()
 
     # Update descriptions
-    description = f"The DOI table.\n\nInput sources:\n"
+    description = "The DOI table.\n\nInput sources:\n"
     description += "".join([f"  - {input_table}\n" for input_table in input_tables])
     table_id = bq_sharded_table_id(output_project_id, bq_observatory_dataset_id, "doi", release.snapshot_date)
     bq_update_table_description(

@@ -478,10 +478,10 @@ CREATE TEMP FUNCTION process_repositories(
 #}
 
 
-{% if relation_type == 'groups' %}{% set relation_col = 'groups' %}
-{% elif relation_type == 'funders' %}{% set relation_col = 'funders_rel' %}
-{% elif relation_type == 'members' %}{% set relation_col = 'members' %}
-{% else %}{% set relation_col = relation_type %}
+{% if relation_type == 'groups' %}{% set relation_col = 'groupings' %}{% set output_col = 'groupings' %}
+{% elif relation_type == 'funders' %}{% set relation_col = 'funders_rel' %}{% set output_col = 'funders' %}
+{% elif relation_type == 'members' %}{% set relation_col = 'members' %}{% set output_col = 'members' %}
+{% else %}{% set relation_col = relation_type %}{% set output_col = relation_type %}
 {% endif %}
 
 -- Relation query: direct aggregation, no intermediate arrays.
@@ -611,7 +611,7 @@ SELECT
       r.citations_open_citations                AS open_citations
     )                                           AS citations,
     r.disciplines                               AS disciplines
-  ) ORDER BY r.total_outputs DESC LIMIT 1000)   AS {{ relation_type }}
+  ) ORDER BY r.total_outputs DESC LIMIT 1000)   AS {{ output_col }}
 FROM tmp_relations AS r
 INNER JOIN `{{ base_table_id }}` AS base
   ON r.aggregator_id = base.id

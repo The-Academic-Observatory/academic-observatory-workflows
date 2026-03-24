@@ -89,7 +89,7 @@ SELECT
       relation.coordinates  AS coordinates
     FROM UNNEST(affiliations.groupings) AS relation
     WHERE relation.identifier <> aggregrate.identifier
-  )                                                    AS groups,
+  )                                                    AS groupings,
   {% endif %}
 
   {% if relate_to_funders %}

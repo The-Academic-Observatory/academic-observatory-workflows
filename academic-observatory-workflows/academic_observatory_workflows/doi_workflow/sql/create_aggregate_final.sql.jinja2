@@ -1,10 +1,13 @@
 -- Final assembly: join base table with all relation tables.
 -- The base table already has the fully-assembled coki struct and all
 -- non-relation columns. We just join the relation columns alongside it.
+--
+-- output_col_names is a dict mapping relation_type -> output column name
+-- (e.g. 'groups' -> 'groupings' to avoid the reserved word GROUPS)
 SELECT
   base.* EXCEPT (total_oa_outputs)
   {% for relation_type in relation_types %}
-  , rel_{{ relation_type }}.{{ relation_type }}
+  , rel_{{ relation_type }}.{{ output_col_names[relation_type] }}
   {% endfor %}
 FROM `{{ base_table_id }}` AS base
 {% for relation_type in relation_types %}

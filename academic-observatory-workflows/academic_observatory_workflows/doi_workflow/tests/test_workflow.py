@@ -348,6 +348,7 @@ class TestDoiWorkflow(SandboxTestCase):
                 sql_queries=sql_queries,
                 start_date=start_date,
                 max_fetch_threads=1,
+                retries=0,
             )
             doi_dag = create_dag(dag_params)
 
