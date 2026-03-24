@@ -1,0 +1,162 @@
+{% set CROSSREF_TYPES_TO_EXCLUDE = '("dataset","database","component","report-component","peer-review","grant","proceedings","journal-issue","report-series","book-track")' %}
+
+-- Per-DOI flat table: one row per (aggregator, doi, year).
+-- Materialised once and shared by all relation queries, avoiding repeated
+-- full scans of the raw DOI table.
+-- Concepts are pre-filtered to level=0 and stored as an array per DOI so
+-- relation queries can UNNEST them without hitting the "ungrouped column" error.
+SELECT
+  aggregrate.identifier                                AS aggregator_id,
+  aggregrate.country_code                              AS aggregator_country_code,
+  aggregrate.country                                   AS aggregator_country,
+  aggregrate.country_code_2                            AS aggregator_country_code_2,
+  dois.crossref.{{ group_by_time_field }}              AS time_period,
+  dois.doi                                             AS doi,
+
+  -- OA status
+  coki.oa                                              AS oa,
+
+  -- Citations
+  dois.openalex.cited_by_count                         AS citations_openalex,
+  dois.crossref.references_count                       AS citations_crossref,
+  dois.open_citations.citations_total                  AS citations_open_citations,
+
+  -- Level-0 concepts, pre-filtered — avoids repeated UNNEST in relation queries
+  ARRAY(
+    SELECT AS STRUCT
+      fields.display_name AS display_name,
+      fields.Score        AS score,
+      coki.oa.coki.open   AS is_oa
+    FROM UNNEST(openalex.concepts) AS fields
+    WHERE fields.level = 0
+  )                                                    AS concepts,
+
+  -- Funding flags needed by tmp_disciplines (kept here so disciplines query
+  -- can also read from this table instead of raw DOI table if needed later)
+  ARRAY(
+    SELECT AS STRUCT
+      funder.country_code          AS country_code,
+      funder.funding_body_subtype  AS funding_body_subtype
+    FROM UNNEST(affiliations.funders) AS funder
+  )                                                    AS funders,
+
+  ARRAY(
+    SELECT AS STRUCT collab.country AS country
+    FROM UNNEST(affiliations.countries) AS collab
+  )                                                    AS collab_countries,
+
+  -- Relation arrays — each stored as-is so relation queries can UNNEST
+  -- without re-reading the DOI table
+  {% if relate_to_institutions %}
+  ARRAY(
+    SELECT AS STRUCT
+      relation.identifier   AS identifier,
+      relation.name         AS name,
+      relation.country      AS country,
+      relation.country_code AS country_code,
+      relation.region       AS region,
+      relation.subregion    AS subregion,
+      relation.coordinates  AS coordinates
+    FROM UNNEST(affiliations.institutions) AS relation
+    WHERE relation.identifier <> aggregrate.identifier
+  )                                                    AS institutions,
+  {% endif %}
+
+  {% if relate_to_countries %}
+  ARRAY(
+    SELECT AS STRUCT
+      relation.identifier   AS identifier,
+      relation.name         AS name,
+      relation.country      AS country,
+      relation.country_code AS country_code,
+      relation.region       AS region,
+      relation.subregion    AS subregion,
+      relation.coordinates  AS coordinates
+    FROM UNNEST(affiliations.countries) AS relation
+    WHERE relation.identifier <> aggregrate.country_code OR aggregrate.country_code IS NULL
+  )                                                    AS countries,
+  {% endif %}
+
+  {% if relate_to_groups %}
+  ARRAY(
+    SELECT AS STRUCT
+      relation.identifier   AS identifier,
+      relation.name         AS name,
+      relation.country      AS country,
+      relation.country_code AS country_code,
+      relation.region       AS region,
+      relation.subregion    AS subregion,
+      relation.coordinates  AS coordinates
+    FROM UNNEST(affiliations.groupings) AS relation
+    WHERE relation.identifier <> aggregrate.identifier
+  )                                                    AS groupings,
+  {% endif %}
+
+  {% if relate_to_funders %}
+  ARRAY(
+    SELECT AS STRUCT
+      relation.identifier   AS identifier,
+      relation.name         AS name,
+      relation.country      AS country,
+      relation.country_code AS country_code,
+      relation.region       AS region,
+      relation.subregion    AS subregion,
+      relation.coordinates  AS coordinates
+    FROM UNNEST(affiliations.funders) AS relation
+    WHERE relation.identifier <> aggregrate.identifier
+  )                                                    AS funders_rel,
+  {% endif %}
+
+  {% if relate_to_members %}
+  ARRAY(
+    SELECT AS STRUCT
+      relation                     AS identifier,
+      relation                     AS name,
+      CAST(NULL AS STRING)         AS country,
+      CAST(NULL AS STRING)         AS country_code,
+      CAST(NULL AS STRING)         AS region,
+      CAST(NULL AS STRING)         AS subregion,
+      CAST(NULL AS STRING)         AS coordinates
+    FROM UNNEST(aggregrate.members) AS relation
+  )                                                    AS members,
+  {% endif %}
+
+  {% if relate_to_publishers %}
+  ARRAY(
+    SELECT AS STRUCT
+      relation.identifier   AS identifier,
+      relation.name         AS name,
+      relation.country      AS country,
+      relation.country_code AS country_code,
+      relation.region       AS region,
+      relation.subregion    AS subregion,
+      relation.coordinates  AS coordinates
+    FROM UNNEST(affiliations.publishers) AS relation
+    WHERE relation.identifier <> aggregrate.identifier
+  )                                                    AS publishers,
+  {% endif %}
+
+  {% if relate_to_journals %}
+  ARRAY(
+    SELECT AS STRUCT
+      relation.identifier   AS identifier,
+      relation.name         AS name,
+      relation.country      AS country,
+      relation.country_code AS country_code,
+      relation.region       AS region,
+      relation.subregion    AS subregion,
+      relation.coordinates  AS coordinates
+    FROM UNNEST(affiliations.journals) AS relation
+    WHERE relation.identifier <> aggregrate.identifier
+  )                                                    AS journals,
+  {% endif %}
+
+  -- Sentinel column to avoid trailing comma issues with Jinja conditionals
+  TRUE AS _sentinel
+
+FROM `{{ project_id }}.{{ dataset_id }}.doi{{ snapshot_date.strftime('%Y%m%d') }}` AS dois,
+  UNNEST(dois.affiliations.{{ aggregation_field }}) AS aggregrate
+WHERE
+  aggregrate.identifier IS NOT NULL
+  AND dois.crossref.type IS NOT NULL
+  AND dois.crossref.type NOT IN {{ CROSSREF_TYPES_TO_EXCLUDE }}

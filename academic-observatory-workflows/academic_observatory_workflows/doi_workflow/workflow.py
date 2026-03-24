@@ -127,6 +127,7 @@ class DagParams:
         bq_dashboards_dataset_id: str = "coki_dashboards",
         bq_observatory_dataset_id: str = "observatory",
         bq_unpaywall_dataset_id: str = "unpaywall",
+        bq_staging_dataset_id: str = "observatory_staging",
         bq_ror_dataset_id: str = "ror",
         api_bq_dataset_id: str = "dataset_api",
         sql_queries: List[List[SQLQuery]] = None,
@@ -165,6 +166,7 @@ class DagParams:
         self.bq_observatory_dataset_id = bq_observatory_dataset_id
         self.bq_unpaywall_dataset_id = bq_unpaywall_dataset_id
         self.bq_ror_dataset_id = bq_ror_dataset_id
+        self.bq_staging_dataset_id = bq_staging_dataset_id
         self.api_bq_dataset_id = api_bq_dataset_id
 
         self.sql_queries = sql_queries
@@ -323,6 +325,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 aggregation=aggregation,
                 output_project_id=dag_params.cloud_workspace.output_project_id,
                 bq_observatory_dataset_id=dag_params.bq_observatory_dataset_id,
+                bq_staging_dataset_id=dag_params.bq_staging_dataset_id,
             )
 
         @task

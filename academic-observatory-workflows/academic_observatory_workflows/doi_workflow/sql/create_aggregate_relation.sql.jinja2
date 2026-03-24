@@ -1,0 +1,619 @@
+{# Copyright 2020 Curtin University
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Author: Richard Hosking #}
+
+{#Include:journal-article,proceedings-article,report,posted-content,edited-book,book,book-chapter,reference-book,monograph,other,book-section,book-part,reference-entry#}
+{#Exclude: the types below and NULL#}
+{% set CROSSREF_TYPES_TO_EXCLUDE = '("dataset","database","component","report-component","peer-review","grant","proceedings","journal-issue","report-series","book-track")' %}
+
+# Helper Function: Counting Access Types
+
+CREATE TEMP FUNCTION count_access_types(oa ANY TYPE) as (
+    (SELECT as STRUCT
+      COUNTIF(color.oa) as num_oa_outputs,
+      COUNTIF(color.green) as num_green_outputs,
+      COUNTIF(color.gold) as num_gold_outputs,
+      COUNTIF(color.gold_just_doaj) as num_gold_just_doaj_outputs,
+      COUNTIF(color.hybrid) as num_hybrid_outputs,
+      COUNTIF(color.bronze) as num_bronze_outputs,
+      COUNTIF(color.green_only) as num_green_only_outputs,
+      COUNTIF(color.green_only_ignoring_bronze) as num_green_only_ignoring_bronze_outputs,
+      COUNTIF(color.black) as num_black,
+      COUNTIF(license.has_license) as num_has_license,
+      COUNTIF(license.is_cclicensed) as num_is_cclicensed
+    FROM UNNEST(oa))
+);
+
+# Helper Function: Count distribution of access types and citations for a single output type
+
+CREATE TEMP FUNCTION count_single_output_type(
+        output_type STRING,
+        items ARRAY<STRUCT<type STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>,
+        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, black BOOL>>, measured_type STRING)
+  AS (
+  (SELECT as STRUCT
+    output_type,
+    COUNTIF(item.type = measured_type ) as total_outputs,
+    COUNTIF(item.type = measured_type AND item.oa ) as num_oa_outputs,
+    COUNTIF(item.type = measured_type AND item.green ) as num_green_outputs,
+    COUNTIF(item.type = measured_type AND item.gold ) as num_gold_outputs,
+    COUNTIF(item.type = measured_type AND item.gold_just_doaj ) as num_gold_just_doaj_outputs,
+    COUNTIF(item.type = measured_type AND item.hybrid ) as num_hybrid_outputs,
+    COUNTIF(item.type = measured_type AND item.bronze ) as num_bronze_outputs,
+    COUNTIF(item.type = measured_type AND item.green_only ) as num_green_only_outputs,
+    COUNTIF(item.type = measured_type AND item.black ) as num_black_outputs,
+    STRUCT(
+      SUM(citations.openalex) as total_openalex_citations,
+      SUM(citations.open_citations) as total_open_citations_citations,
+      SUM(citations.crossref) as total_crossref_citations
+    ) as citations
+  FROM UNNEST(items) as item)
+);
+
+# Helper Function: Count distribution of access types, bucketing a number of individual output types into a new bucket
+
+CREATE TEMP FUNCTION count_array_output_type(
+        output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>,
+        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, black BOOL>>, measured_type ARRAY<STRING>)
+  AS (
+  (SELECT as STRUCT
+    output_type,
+    COUNTIF(item.type in UNNEST(measured_type) ) as total_outputs,
+    COUNTIF(item.type in UNNEST(measured_type) AND item.oa ) as num_oa_outputs,
+    COUNTIF(item.type in UNNEST(measured_type) AND item.green ) as num_green_outputs,
+    COUNTIF(item.type in UNNEST(measured_type) AND item.gold ) as num_gold_outputs,
+    COUNTIF(item.type in UNNEST(measured_type) AND item.gold_just_doaj ) as num_gold_just_doaj_outputs,
+    COUNTIF(item.type in UNNEST(measured_type) AND item.hybrid ) as num_hybrid_outputs,
+    COUNTIF(item.type in UNNEST(measured_type) AND item.bronze ) as num_bronze_outputs,
+    COUNTIF(item.type in UNNEST(measured_type) AND item.green_only ) as num_green_only_outputs,
+    COUNTIF(item.type in UNNEST(measured_type) AND item.black ) as num_black_outputs,
+    STRUCT(
+      SUM(citations.openalex) as total_openalex_citations,
+      SUM(citations.open_citations) as total_open_citations_citations,
+      SUM(citations.crossref) as total_crossref_citations
+    ) as citations
+  FROM UNNEST(items) as item)
+);
+
+# Helper Function: Count distribution of access types, where outputtype does not match any from a list
+
+CREATE TEMP FUNCTION count_not_in_array_output_type(
+        output_type STRING, items ARRAY<STRUCT<type STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>,
+        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, black BOOL>>, measured_type ARRAY<STRING>)
+  AS (
+  (SELECT as STRUCT
+    output_type,
+    COUNTIF(item.type not in UNNEST(measured_type) ) as total_outputs,
+    COUNTIF(item.type not in UNNEST(measured_type) AND item.oa ) as num_oa_outputs,
+    COUNTIF(item.type not in UNNEST(measured_type) AND item.green ) as num_green_outputs,
+    COUNTIF(item.type not in UNNEST(measured_type) AND item.gold ) as num_gold_outputs,
+    COUNTIF(item.type not in UNNEST(measured_type) AND item.gold_just_doaj ) as num_gold_just_doaj_outputs,
+    COUNTIF(item.type not in UNNEST(measured_type) AND item.hybrid ) as num_hybrid_outputs,
+    COUNTIF(item.type not in UNNEST(measured_type) AND item.bronze ) as num_bronze_outputs,
+    COUNTIF(item.type not in UNNEST(measured_type) AND item.green_only ) as num_green_only_outputs,
+    COUNTIF(item.type not in UNNEST(measured_type) AND item.black ) as num_black_outputs,
+    STRUCT(
+      SUM(citations.openalex) as total_openalex_citations,
+      SUM(citations.open_citations) as total_open_citations_citations,
+      SUM(citations.crossref) as total_crossref_citations
+    ) as citations
+  FROM UNNEST(items) as item)
+);
+
+# Helper Function: Count Output Types
+
+CREATE TEMP FUNCTION count_output_types(
+        items ARRAY<STRUCT<type STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>,
+        oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, black BOOL>>)
+    AS (
+    [
+      count_single_output_type("journal_articles", items, 'journal-article'),
+      count_array_output_type("book_sections", items, ['book-section', 'book-part', 'book-chapter']),
+      count_array_output_type("authored_books", items, ['book', 'monograph']),
+      count_single_output_type("edited_volumes", items, 'edited-book'),
+      count_single_output_type("reports", items, 'report'),
+      count_single_output_type("datasets", items, 'dataset'),
+      count_single_output_type("proceedings_article", items, 'proceedings-article'),
+      count_not_in_array_output_type("other_outputs", items, ['journal-article', 'book-section', 'book-part', 'book-chapter','book', 'monograph','edited-book', 'report', 'dataset', 'proceedings-article'])
+    ]
+);
+
+# Helper Function: Compute Citation Analysis
+
+CREATE TEMP FUNCTION compute_conditional_citations(
+           items ARRAY<STRUCT<citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>, is_x BOOL>>,
+           access_type STRING, positive_label STRING, negative_label STRING)
+  AS (
+  ARRAY((
+    SELECT as STRUCT
+      CASE
+        WHEN is_x THEN positive_label
+        WHEN NOT is_x THEN negative_label
+        END
+      as label,
+      access_type,
+      is_x as status,
+      COUNT(*) as total_outputs,
+      COUNTIF(citations.crossref > 0 OR citations.open_citations > 0 OR citations.openalex > 0) as outputs_with_citations,
+      COUNTIF( (citations.crossref IS NULL OR citations.crossref = 0) AND (citations.open_citations IS NULL OR citations.open_citations = 0) AND (citations.openalex IS NULL OR citations.openalex = 0)) as outputs_without_citations,
+      STRUCT(
+        STRUCT(
+          SUM(citations.openalex) as total_citations
+        ) as openalex,
+        STRUCT(
+          SUM(citations.open_citations) as total_citations
+        ) as open_citations,
+        STRUCT(
+          SUM(citations.crossref) as total_citations
+        ) as crossref
+      ) as citations,
+    FROM UNNEST(items)
+    GROUP BY is_x
+  ))
+);
+
+# Helper Function: Compute a citation analysis across the array of passed in objects
+
+CREATE TEMP FUNCTION compute_citations(items ARRAY<STRUCT<doi STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>>>) as (
+  (SELECT AS STRUCT
+    STRUCT(
+      SUM(citations.openalex) as total_citations,
+      ROUND(SAFE_DIVIDE( SUM(citations.openalex) , COUNT(doi)), 2) as citations_per_output,
+      COUNTIF(citations.openalex > 0) as outputs_with_citations,
+      COUNTIF(citations.openalex is null) as outputs_without_citations,
+      ROUND(SAFE_DIVIDE(SUM(citations.openalex), COUNTIF(citations.openalex > 0)), 2) as citations_per_cited_output
+    ) as openalex,
+    STRUCT(
+      SUM(citations.crossref) as total_citations,
+      ROUND(SAFE_DIVIDE( SUM(citations.crossref) , COUNT(doi)), 2) as citations_per_output,
+      COUNTIF(citations.crossref > 0) as outputs_with_citations,
+      COUNTIF(citations.crossref is null) as outputs_without_citations,
+      ROUND(SAFE_DIVIDE(SUM(citations.crossref), COUNTIF(citations.crossref > 0)), 2) as citations_per_cited_output
+    ) as crossref,
+    STRUCT(
+      SUM(citations.open_citations) as total_citations,
+      ROUND(SAFE_DIVIDE( SUM(citations.open_citations) , COUNT(doi)), 2) as citations_per_output,
+      COUNTIF(citations.open_citations > 0) as outputs_with_citations,
+      COUNTIF(citations.open_citations is null) as outputs_without_citations,
+      ROUND(SAFE_DIVIDE(SUM(citations.open_citations), COUNTIF(citations.open_citations > 0)), 2) as citations_per_cited_output
+    ) as open_citations
+  FROM UNNEST(items))
+);
+
+# Helper Function: Compute the count of various Open Access Types from a passed in array of Objects
+
+CREATE TEMP FUNCTION compute_access_types(
+           items ARRAY<STRUCT<doi STRING, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>,
+           is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, black BOOL>>)
+  AS (
+  (SELECT AS STRUCT
+    STRUCT(
+      COUNTIF(is_oa = True) as total_outputs,
+      ROUND(SAFE_DIVIDE( (COUNTIF(is_oa is True)) * 100 , COUNT(doi)), 2) as percent
+    ) as oa,
+    STRUCT(
+      COUNTIF(green = True) as total_outputs,
+      ROUND(SAFE_DIVIDE( (COUNTIF(green is True)) * 100 , COUNT(doi)), 2) as percent
+    ) as green,
+    STRUCT(
+      COUNTIF(gold = True) as total_outputs,
+      ROUND(SAFE_DIVIDE( (COUNTIF(gold is True)) * 100 , COUNT(doi)), 2) as percent
+    ) as gold,
+    STRUCT(
+      COUNTIF(gold_just_doaj = True) as total_outputs,
+      ROUND(SAFE_DIVIDE( (COUNTIF(gold_just_doaj is True)) * 100 , COUNT(doi)), 2) as percent
+    ) as gold_doaj,
+    STRUCT(
+      COUNTIF(hybrid) as total_outputs,
+      ROUND(SAFE_DIVIDE( (COUNTIF(hybrid is True)) * 100 , COUNT(doi)), 2) as percent
+    ) as hybrid,
+    STRUCT(
+      COUNTIF(bronze) as total_outputs,
+      ROUND(SAFE_DIVIDE( (COUNTIF(bronze is True)) * 100 , COUNT(doi)), 2) as percent
+    ) as bronze,
+    STRUCT(
+      COUNTIF(green_only) as total_outputs,
+      ROUND(SAFE_DIVIDE( (COUNTIF(green_only is True)) * 100 , COUNT(doi)), 2) as percent
+    ) as green_only,
+    STRUCT(
+      COUNTIF(black) as total_outputs,
+      ROUND(SAFE_DIVIDE( (COUNTIF(black is True)) * 100 , COUNT(doi)), 2) as percent
+    ) as black,
+  FROM UNNEST(items))
+);
+
+-- Helper Function: compute COKI Open Access categories
+CREATE TEMP FUNCTION compute_coki_oa(items ARRAY<STRUCT<doi STRING,
+  oa_coki STRUCT< open BOOL,
+  closed BOOL,
+  publisher BOOL,
+  other_platform BOOL,
+  publisher_only BOOL,
+  both BOOL,
+  other_platform_only BOOL,
+  publisher_categories STRUCT<oa_journal BOOL, hybrid BOOL, no_guarantees BOOL>,
+  other_platform_categories STRUCT<preprint BOOL, domain BOOL, institution BOOL, public BOOL, aggregator BOOL, other_internet BOOL, unknown BOOL>>>>)
+  AS (
+  (SELECT AS STRUCT
+    STRUCT(
+      COUNTIF(oa_coki.open = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.open is True)) * 100, COUNT(doi)), 2) as percent
+    ) as open,
+    STRUCT(
+      COUNTIF(oa_coki.closed = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.closed is True)) * 100, COUNT(doi)), 2) as percent
+    ) as closed,
+    STRUCT(
+      COUNTIF(oa_coki.publisher = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.publisher is True)) * 100, COUNT(doi)), 2) as percent
+    ) as publisher,
+    STRUCT(
+      COUNTIF(oa_coki.other_platform = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform is True)) * 100, COUNT(doi)), 2) as percent
+    ) as other_platform,
+    STRUCT(
+      COUNTIF(oa_coki.publisher_only = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.publisher_only is True)) * 100, COUNT(doi)), 2) as percent
+    ) as publisher_only,
+    STRUCT(
+      COUNTIF(oa_coki.both = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.both is True)) * 100, COUNT(doi)), 2) as percent
+    ) as both,
+    STRUCT(
+      COUNTIF(oa_coki.other_platform_only = True) as total,
+      ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_only is True)) * 100, COUNT(doi)), 2) as percent
+    ) as other_platform_only,
+    STRUCT(
+      STRUCT(
+        COUNTIF(oa_coki.publisher_categories.oa_journal = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.publisher_categories.oa_journal is True)) * 100, COUNTIF(oa_coki.publisher = True)), 2) as percent
+      ) as oa_journal,
+      STRUCT(
+        COUNTIF(oa_coki.publisher_categories.hybrid = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.publisher_categories.hybrid is True)) * 100, COUNTIF(oa_coki.publisher = True)), 2) as percent
+      ) as hybrid,
+      STRUCT(
+        COUNTIF(oa_coki.publisher_categories.no_guarantees = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.publisher_categories.no_guarantees is True)) * 100, COUNTIF(oa_coki.publisher = True)), 2) as percent
+      ) as no_guarantees
+    ) as publisher_categories,
+    STRUCT(
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.preprint = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.preprint is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as preprint,
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.domain = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.domain is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as domain,
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.institution = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.institution is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as institution,
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.public = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.public is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as public,
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.aggregator = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.aggregator is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as aggregator,
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.other_internet = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.other_internet is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as other_internet,
+      STRUCT(
+        COUNTIF(oa_coki.other_platform_categories.unknown = True) as total,
+        ROUND(SAFE_DIVIDE((COUNTIF(oa_coki.other_platform_categories.unknown is True)) * 100, COUNTIF(oa_coki.other_platform = True)), 2) as percent
+      ) as unknown
+    ) as other_platform_categories
+  FROM UNNEST(items))
+);
+
+# Helper Function: Compute summary statistic, grouped by a field of study for an array of passed in items
+
+CREATE TEMP FUNCTION compute_disciplines(
+            fields ARRAY<STRUCT<DisplayName STRING, Score FLOAT64, citations STRUCT<openalex INT64, crossref INT64, open_citations INT64>,
+            is_oa BOOL, green BOOL, gold BOOL, gold_just_doaj BOOL, hybrid BOOL, bronze BOOL, green_only BOOL, black BOOL,
+            funding BOOL, international_funding BOOL, domestic_funding BOOL, government_funding BOOL, private_funding BOOL, international_colab BOOL>>)
+  AS (
+  ARRAY(
+    (SELECT AS STRUCT
+        DisplayName as field,
+        COUNT(DisplayName) as total_outputs,
+        SUM(Score) as sum_of_scores,
+        STRUCT(
+          STRUCT(SUM(citations.openalex) as total_citations) as openalex,
+          STRUCT(SUM(citations.open_citations) as total_citations) as open_citations,
+          STRUCT(SUM(citations.crossref) as total_citations) as crossref
+        ) as citations,
+        COUNTIF(is_oa) as num_oa_outputs,
+        COUNTIF(green) as num_green_outputs,
+        COUNTIF(gold) as num_gold_outputs,
+        COUNTIF(gold_just_doaj) as num_gold_just_doaj_outputs,
+        COUNTIF(hybrid) as num_hybrid_outputs,
+        COUNTIF(bronze) as num_bronze_outputs,
+        COUNTIF(green_only) as num_green_only_outputs,
+        COUNTIF(black) as num_black_outputs,
+        STRUCT(
+          COUNTIF(funding) as total_funded_outputs,
+          COUNTIF(international_funding) as num_international_outputs,
+          COUNTIF(domestic_funding) as num_domestic_outputs,
+          COUNTIF(international_funding AND domestic_funding) as num_international_and_domestic_outputs,
+          COUNTIF(government_funding) as num_government_outputs,
+          COUNTIF(private_funding) as num_private_outputs,
+          COUNTIF(government_funding AND private_funding) as num_government_and_private_outputs
+        ) as funding,
+        COUNTIF(international_colab) as num_international_collaboration_outputs,
+        COUNTIF(international_colab AND international_funding) as international_collaboration_with_funding_outputs
+    FROM UNNEST(fields)
+    GROUP BY DisplayName)
+  )
+);
+
+# Helper Function: Function to help with the process_relations function below. Simplified summary, grouped by field of study
+
+CREATE TEMP FUNCTION group_disciplines(fields ARRAY<STRUCT<DisplayName STRING, Score FLOAT64, is_oa BOOL>>) as (
+  ARRAY(
+    (SELECT AS STRUCT
+      DisplayName as field,
+      COUNT(DisplayName) as total_outputs,
+      COUNTIF(is_oa) as num_oa_outputs,
+      ROUND(SUM(Score), 4) as sum_of_scores,
+    FROM UNNEST(fields)
+    GROUP BY DisplayName)
+  )
+);
+
+# Helper Function: Compute a summary of OA types, citations and fields of study. Use for compute collaborations and various other relationship to the primary entity
+
+CREATE TEMP FUNCTION process_relations(relationships ANY TYPE, total INT64, total_oa INT64) as (
+  ARRAY(SELECT AS STRUCT
+          relation.identifier as id,
+          COUNT(relation.identifier) as total_outputs,
+          ROUND(SAFE_DIVIDE( COUNT(relation.identifier), total), 3) as percentage_of_all_outputs,
+          ROUND(SAFE_DIVIDE( COUNTIF(coki.oa.coki.open) , total_oa ), 3) as percentage_of_all_oa,
+          MAX(relation.name) as name,
+          MAX(relation.country) as country,
+          MAX(relation.country_code) as country_code,
+          MAX(relation.region) as region,
+          MAX(relation.subregion) as subregion,
+          MAX(relation.coordinates) as coordinates,
+          count_access_types(ARRAY_AGG(coki.oa)).*,
+          STRUCT(
+            SUM(citations.openalex) as openalex,
+            SUM(citations.crossref) as crosssref,
+            SUM(citations.open_citations) as open_citations
+          ) as citations,
+          group_disciplines(ARRAY_CONCAT_AGG(disciplines)) as disciplines
+      FROM UNNEST(relationships) as relations
+      GROUP BY relation.identifier
+      ORDER BY total_outputs DESC
+      LIMIT 1000)
+);
+
+# Helper Function: Create a summary of events, grouped into the event type
+
+CREATE TEMP FUNCTION process_events(events ANY TYPE) as (
+    ARRAY(
+    SELECT as STRUCT
+        source,
+        SUM(count) as total_outputs,
+        SUM( IF(is_oa, count, 0) ) as num_oa_outputs,
+        SUM( IF(green, count, 0) ) as num_green_outputs,
+        SUM( IF(gold, count, 0) ) as num_gold_outputs,
+        SUM( IF(gold_just_doaj, count, 0) ) as num_gold_just_doaj_outputs,
+        SUM( IF(hybrid, count, 0) ) as num_hybrid_outputs,
+        SUM( IF(bronze, count, 0) ) as num_bronze_outputs,
+        SUM( IF(green_only, count, 0) ) as num_green_only_outputs
+    FROM  UNNEST(events)
+    GROUP BY source
+    ORDER BY total_outputs DESC
+  )
+);
+
+# Helper Function: Creates a summary count for how many objects where hosted at a given repository
+
+CREATE TEMP FUNCTION process_repositories(
+  repositories ARRAY<STRUCT<coki_repository_name STRING,
+  endpoint_id STRING,
+  repository_institution STRING,
+  pmh_domain STRING,
+  pmh_id STRING,
+  url STRING,
+  category STRING,
+  rors ARRAY<STRUCT<id STRING, name STRING>>>>,
+  ror_id STRING) AS (ARRAY(
+    SELECT as STRUCT
+      id,
+      total_outputs,
+      category,
+      CASE
+        WHEN ror_id IN UNNEST(ARRAY(SELECT id from UNNEST(rors_agg) WHERE id IS NOT NULL GROUP BY id)) THEN true
+        ELSE false
+      END as home_repo,
+    FROM (
+    SELECT AS STRUCT
+      coki_repository_name as id,
+      COUNT(repository) as total_outputs,
+      MAX(category) as category,
+      ARRAY_CONCAT_AGG(rors) as rors_agg,
+    FROM UNNEST(repositories) as repository
+    WHERE coki_repository_name IS NOT NULL
+    GROUP BY coki_repository_name
+    ORDER BY total_outputs DESC, LOWER(id) ASC)
+  )
+);
+
+----
+-- Main SQL Function
+----
+
+{#
+  REFACTOR NOTE:
+  The original query built large intermediate arrays per (aggregator, year) group inline inside
+  tmp_agg_table, which caused BigQuery to OOM when aggregators (e.g. large publishers) had
+  hundreds of thousands of DOIs.
+
+  The fix pre-aggregates each relation type (institutions, countries, funders, etc.) into its own
+  CTE keyed on (aggregator_id, relation_id, time_period). Each row in these CTEs contains only
+  the summarised per-relation-per-DOI data needed by process_relations — crucially, the disciplines
+  array is already reduced to one row per DisplayName at this point, not one row per concept per DOI.
+
+  In tmp_agg_table, instead of ARRAY_CONCAT_AGG(ARRAY(SELECT ... FROM UNNEST(affiliations.X))),
+  we do a simple ARRAY_AGG over the pre-aggregated CTE rows, which is dramatically smaller.
+
+  The output schema is identical to the original.
+#}
+
+
+{% if relation_type == 'groups' %}{% set relation_col = 'groupings' %}{% set output_col = 'groupings' %}
+{% elif relation_type == 'funders' %}{% set relation_col = 'funders_rel' %}{% set output_col = 'funders' %}
+{% elif relation_type == 'members' %}{% set relation_col = 'members' %}{% set output_col = 'members' %}
+{% else %}{% set relation_col = relation_type %}{% set output_col = relation_type %}
+{% endif %}
+
+-- Relation query: direct aggregation, no intermediate arrays.
+--
+-- The original process_relations function worked by collecting all per-DOI
+-- data into a large array and then aggregating inside the function. That
+-- approach OOMs for large publishers now that the data has grown.
+--
+-- This query produces an identical output schema by replacing the array
+-- accumulation with direct COUNTIF/SUM aggregations and a nested
+-- GROUP BY for disciplines. No large intermediate arrays are ever built.
+
+WITH
+
+-- Step 1: one row per (aggregator, relation, doi).
+-- Concepts stay as an array — no cross join with relations.
+tmp_per_doi AS (
+  SELECT
+    flat.aggregator_id,
+    flat.time_period,
+    relation.identifier                         AS relation_identifier,
+    relation.name                               AS relation_name,
+    relation.country                            AS relation_country,
+    relation.country_code                       AS relation_country_code,
+    relation.region                             AS relation_region,
+    relation.subregion                          AS relation_subregion,
+    relation.coordinates                        AS relation_coordinates,
+    -- OA booleans directly — no struct array needed
+    flat.oa.color.oa                            AS is_oa,
+    flat.oa.color.green                         AS is_green,
+    flat.oa.color.gold                          AS is_gold,
+    flat.oa.color.gold_just_doaj                AS is_gold_just_doaj,
+    flat.oa.color.hybrid                        AS is_hybrid,
+    flat.oa.color.bronze                        AS is_bronze,
+    flat.oa.color.green_only                    AS is_green_only,
+    flat.oa.color.green_only_ignoring_bronze    AS is_green_only_ignoring_bronze,
+    flat.oa.color.black                         AS is_black,
+    flat.oa.license.has_license                 AS has_license,
+    flat.oa.license.is_cclicensed               AS is_cclicensed,
+    flat.oa.coki.open                           AS coki_open,
+    flat.citations_openalex,
+    flat.citations_crossref,
+    flat.citations_open_citations,
+    flat.concepts                               AS concepts
+  FROM `{{ flat_table_id }}` AS flat,
+    UNNEST(flat.{{ relation_col }}) AS relation
+  WHERE relation.identifier IS NOT NULL
+),
+
+-- Step 2: aggregate to (aggregator, relation, year).
+-- All counts computed directly — no ARRAY_AGG of OA structs.
+tmp_relations AS (
+  SELECT
+    aggregator_id,
+    time_period,
+    relation_identifier,
+    MAX(relation_name)                          AS relation_name,
+    MAX(relation_country)                       AS relation_country,
+    MAX(relation_country_code)                  AS relation_country_code,
+    MAX(relation_region)                        AS relation_region,
+    MAX(relation_subregion)                     AS relation_subregion,
+    MAX(relation_coordinates)                   AS relation_coordinates,
+    COUNT(*)                                    AS total_outputs,
+    -- OA counts: direct COUNTIF, no array accumulation
+    COUNTIF(is_oa)                              AS num_oa_outputs,
+    COUNTIF(is_green)                           AS num_green_outputs,
+    COUNTIF(is_gold)                            AS num_gold_outputs,
+    COUNTIF(is_gold_just_doaj)                  AS num_gold_just_doaj_outputs,
+    COUNTIF(is_hybrid)                          AS num_hybrid_outputs,
+    COUNTIF(is_bronze)                          AS num_bronze_outputs,
+    COUNTIF(is_green_only)                      AS num_green_only_outputs,
+    COUNTIF(is_green_only_ignoring_bronze)      AS num_green_only_ignoring_bronze_outputs,
+    COUNTIF(is_black)                           AS num_black,
+    COUNTIF(has_license)                        AS num_has_license,
+    COUNTIF(is_cclicensed)                      AS num_is_cclicensed,
+    COUNTIF(coki_open)                          AS num_coki_open,
+    -- Citations: direct SUM
+    SUM(citations_openalex)                     AS citations_openalex,
+    SUM(citations_crossref)                     AS citations_crossref,
+    SUM(citations_open_citations)               AS citations_open_citations,
+    -- Disciplines: ARRAY_CONCAT_AGG merges per-DOI concept arrays,
+    -- group_disciplines then groups by DisplayName.
+    -- This is the same approach as the original query and is safe because
+    -- concepts is a small array (max 18 per your data) so the concat
+    -- stays manageable.
+    group_disciplines(
+      ARRAY_CONCAT_AGG(concepts)
+    )                                           AS disciplines
+  FROM tmp_per_doi
+  GROUP BY aggregator_id, time_period, relation_identifier
+)
+
+-- Step 3: one row per (aggregator, year) with the relation array.
+-- Reconstruct the same output schema as process_relations, using the
+-- pre-computed counts from tmp_relations instead of re-aggregating arrays.
+SELECT
+  r.aggregator_id                               AS id,
+  r.time_period,
+  ARRAY_AGG(STRUCT(
+    r.relation_identifier                       AS id,
+    r.total_outputs                             AS total_outputs,
+    ROUND(SAFE_DIVIDE(r.total_outputs, base.total_outputs), 3)
+                                                AS percentage_of_all_outputs,
+    ROUND(SAFE_DIVIDE(r.num_coki_open, base.total_oa_outputs), 3)
+                                                AS percentage_of_all_oa,
+    r.relation_name                             AS name,
+    r.relation_country                          AS country,
+    r.relation_country_code                     AS country_code,
+    r.relation_region                           AS region,
+    r.relation_subregion                        AS subregion,
+    r.relation_coordinates                      AS coordinates,
+    -- count_access_types fields inlined directly
+    r.num_oa_outputs,
+    r.num_green_outputs,
+    r.num_gold_outputs,
+    r.num_gold_just_doaj_outputs,
+    r.num_hybrid_outputs,
+    r.num_bronze_outputs,
+    r.num_green_only_outputs,
+    r.num_green_only_ignoring_bronze_outputs,
+    r.num_black,
+    r.num_has_license,
+    r.num_is_cclicensed,
+    STRUCT(
+      r.citations_openalex                      AS openalex,
+      r.citations_crossref                      AS crosssref,
+      r.citations_open_citations                AS open_citations
+    )                                           AS citations,
+    r.disciplines                               AS disciplines
+  ) ORDER BY r.total_outputs DESC LIMIT 1000)   AS {{ output_col }}
+FROM tmp_relations AS r
+INNER JOIN `{{ base_table_id }}` AS base
+  ON r.aggregator_id = base.id
+  AND r.time_period = base.time_period
+GROUP BY r.aggregator_id, r.time_period

@@ -311,6 +311,7 @@ class TestDoiWorkflow(SandboxTestCase):
         bq_dashboards_dataset_id = env.add_dataset(prefix="dashboards")
         bq_observatory_dataset_id = env.add_dataset(prefix="observatory")
         bq_settings_dataset_id = env.add_dataset(prefix="settings")
+        bq_staging_dataset_id = env.add_dataset(prefix="observatory_staging")
         sql_queries = make_sql_queries(
             input_project_id=self.project_id,
             output_project_id=self.project_id,
@@ -343,11 +344,13 @@ class TestDoiWorkflow(SandboxTestCase):
                 bq_dashboards_dataset_id=bq_dashboards_dataset_id,
                 bq_observatory_dataset_id=bq_observatory_dataset_id,
                 bq_unpaywall_dataset_id=fake_dataset_id,
+                bq_staging_dataset_id=bq_staging_dataset_id,
                 bq_ror_dataset_id=fake_dataset_id,
                 api_bq_dataset_id=api_bq_dataset_id,
                 sql_queries=sql_queries,
                 start_date=start_date,
                 max_fetch_threads=1,
+                retries=0,
             )
             doi_dag = create_dag(dag_params)
 
