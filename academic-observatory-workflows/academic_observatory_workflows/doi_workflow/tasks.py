@@ -224,7 +224,7 @@ def create_aggregate_table(
     aggregation: Aggregation,
     output_project_id: str,
     bq_observatory_dataset_id: str,
-    bq_staging_dataset_id: str = "observatory_staging",
+    bq_staging_dataset_id: str,
 ):
     """Create an aggregate table from the DOI table.
 
