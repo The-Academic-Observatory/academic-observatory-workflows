@@ -1,4 +1,4 @@
-FROM quay.io/astronomer/astro-runtime:12.11.0
+FROM quay.io/astronomer/astro-runtime:13.6.0
 
 # The following describes what various dependencies are used for. Some dependencies are specified in packages.txt
 # and some are installed in this Dockerfile if not available in apt by default.
@@ -28,7 +28,7 @@ USER astro
 
 # Install Observatory Platform
 RUN git clone https://github.com/The-Academic-Observatory/observatory-platform.git && \
-    pip install ./observatory-platform[tests] --constraint  https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-no-providers-3.10.txt
+    pip install ./observatory-platform[tests] --constraint  https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-3.10.txt
 
 # Set working directory for subsequent commands
 WORKDIR /app
@@ -41,4 +41,4 @@ ENV PYTHONPATH="${PYTHONPATH}:/app/academic-observatory-workflows"
 
 # Install Academic Observatory Workflows
 # Now that we're in /app, the path to the package is academic-observatory-workflows
-RUN pip install ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-no-providers-3.10.txt
+RUN pip install ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-3.10.txt
