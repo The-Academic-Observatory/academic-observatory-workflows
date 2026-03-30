@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import copy
 import datetime
 import gzip
 import json
@@ -501,9 +502,25 @@ def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict
             # Wrap this in a try and pass so that it doesn't
             # cause the transform step to fail unexpectedly.
             try:
+                obj_for_schema = copy.deepcopy(obj)
+                # Use a copy with empty arrays removed purely for schema inference.
+                # The original obj (with empty arrays) is written to the output file so BigQuery sees all fields present.
+                remove_empty_arrays(
+                    obj_for_schema,
+                    [
+                        "affiliations",
+                        "last_known_institutions",
+                        "sources",
+                        "topics",
+                        "topic_share",
+                        "x_concepts",
+                        "counts_by_year",
+                        "display_name_alternatives",
+                    ],
+                )
                 schema_generator.deduce_schema_for_record(obj, schema_map)
-            except Exception:
-                pass
+            except Exception as e:
+                logging.warning(f"Schema deduction error in {download_path}: {e}")
 
             json.dump(obj, f_out)
             f_out.write("\n")
@@ -562,6 +579,14 @@ def safe_get_dict(obj: dict, field: str) -> dict:
     if val is None:
         return {}
     return val
+
+
+def remove_empty_arrays(obj: dict, fields: list[str]):
+    """Remove keys entirely when their value is None or an empty list,
+    so the schema generator never sees an untyped empty array."""
+    for field in fields:
+        if field in obj and not obj[field]:
+            del obj[field]
 
 
 def transform_object(obj: dict):
@@ -624,6 +649,7 @@ def transform_object(obj: dict):
     convert_field_to_int(safe_get_dict(obj, "apc_list"), "value")
     convert_field_to_int(safe_get_dict(obj, "apc_list"), "value_usd")
 
+    # Remove empty/null arrays so schema generator never sees untyped empty lists
     field = "abstract_inverted_index"
     if field in obj:
         if not isinstance(obj.get(field), dict):
