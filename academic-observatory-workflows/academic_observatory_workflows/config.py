@@ -55,9 +55,9 @@ class TestConfig:
 
     gcp_project_id: str = os.getenv("TEST_GCP_PROJECT_ID")
     gcp_data_location: str = os.getenv("TEST_GCP_DATA_LOCATION")
-    http_host_url: str = "host.minikube.internal"
+    http_host_url: str = "172.17.0.1"
     http_port: int = 5080
-    ftp_host_url: str = "host.minikube.internal"
+    ftp_host_url: str = "172.17.0.1"
     ftp_port: int = 5021
     gke_image: str = "academic-observatory:test"
     gke_namespace: str = "default"
