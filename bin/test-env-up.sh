@@ -73,6 +73,45 @@ if [ "${remote}" = "false" ]; then
         --driver=docker \
         --network=bridge
     minikube update-context
+
+    # Manually add the minikube host alias because it sometimes doesn't work and Google won't fix it
+    # https://github.com/kubernetes/minikube/issues/8439
+    eval "$(minikube docker-env --unset)"
+
+    HOST_IP=$(docker container inspect minikube --format '{{.NetworkSettings.Networks.bridge.Gateway}}')
+    MINIKUBE_HOST_IP=$(minikube ssh "ip route | grep default" | awk '{print $3}' | tr -d '[:space:]')
+
+    if [[ -n "$HOST_IP" ]]; then
+      sudo sed -i '/host\.minikube\.internal/d' /etc/hosts
+      echo "$HOST_IP host.minikube.internal" | sudo tee -a /etc/hosts > /dev/null
+      echo "Set host.minikube.internal -> $HOST_IP on host"
+    else
+      echo "Error: could not determine host IP from docker network" >&2
+    fi
+
+    if [[ -n "$MINIKUBE_HOST_IP" ]]; then
+      minikube ssh "grep -v 'host\.minikube\.internal' /etc/hosts | sudo tee /tmp/hosts.new && sudo cp /tmp/hosts.new /etc/hosts && echo '$MINIKUBE_HOST_IP host.minikube.internal' | sudo tee -a /etc/hosts > /dev/null"
+      echo "Set host.minikube.internal -> $MINIKUBE_HOST_IP on minikube"
+    else
+      echo "Error: could not determine host IP from minikube default route" >&2
+    fi
+
+    eval "$(minikube docker-env)"
+
+    # Patch CoreDNS so pods can resolve host.minikube.internal
+    kubectl get configmap coredns -n kube-system -o json | \
+      python3 -c "
+import json, sys
+cm = json.load(sys.stdin)
+corefile = cm['data']['Corefile']
+if 'host.minikube.internal' not in corefile:
+    hosts_block = '    hosts {\n      $MINIKUBE_HOST_IP host.minikube.internal\n      fallthrough\n    }\n'
+    corefile = corefile.replace('    kubernetes ', hosts_block + '    kubernetes ')
+    cm['data']['Corefile'] = corefile
+print(json.dumps(cm))
+" | kubectl apply -f -
+    kubectl rollout restart deployment coredns -n kube-system
+    kubectl rollout status deployment coredns -n kube-system    
 fi
 
 # Wait until the API is ready
