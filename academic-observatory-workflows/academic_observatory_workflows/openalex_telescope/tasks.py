@@ -520,8 +520,13 @@ def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict
                 )
                 schema_generator.deduce_schema_for_record(obj, schema_map)
             except Exception as e:
-                logging.warning(f"Schema deduction error in {download_path}: {e}")
-
+                # Find which fields in this record are empty arrays/null
+                offending = [k for k, v in obj_for_schema.items() if isinstance(v, list) and len(v) == 0]
+                logging.warning(
+                    f"  Schema deduction error: {e}\n"
+                    f"    record id      : {obj.get('id', '?')}\n"
+                    f"    empty arrays   : {offending}"
+                )
             json.dump(obj, f_out)
             f_out.write("\n")
 
@@ -648,6 +653,11 @@ def transform_object(obj: dict):
     convert_field_to_int(safe_get_dict(obj, "apc_paid"), "value_usd")
     convert_field_to_int(safe_get_dict(obj, "apc_list"), "value")
     convert_field_to_int(safe_get_dict(obj, "apc_list"), "value_usd")
+
+    for val in obj.get("sources", []):
+        remove_none_from_array(val, "issn")
+    for val in obj.get("locations", []):
+        remove_none_from_array(safe_get_dict(val, "source"), "issn")
 
     # Remove empty/null arrays so schema generator never sees untyped empty lists
     field = "abstract_inverted_index"

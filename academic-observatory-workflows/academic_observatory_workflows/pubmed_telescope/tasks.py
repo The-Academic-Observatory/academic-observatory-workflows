@@ -14,7 +14,6 @@ from io import BytesIO
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 import jsonlines
-import lxml
 import pendulum
 import time
 from airflow import AirflowException
@@ -945,7 +944,7 @@ def parse_pubmed_element(elem, validate=False, ignore_errors=True):
     elem_bytes = etree.tostring(elem, encoding="utf-8")
     wrapped_xml = (
         b'<?xml version="1.0" encoding="utf-8"?>'
-        b'<!DOCTYPE PubmedArticleSet SYSTEM "http://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd">'
+        b'<!DOCTYPE PubmedArticleSet SYSTEM "https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd">'
         b"<PubmedArticleSet>" + elem_bytes + b"</PubmedArticleSet>"
     )
     record_handle = BytesIO(wrapped_xml)
@@ -1052,7 +1051,7 @@ def transform_pubmed(input_path: str, upsert_path: str) -> Union[bool, str, Pubm
                 while elem.getprevious() is not None:
                     del elem.getparent()[0]
 
-        except lxml.etree.XMLSyntaxError:
+        except etree.XMLSyntaxError:
             adapter.info(f"Error parsing XML file - {input_path}")
             return False
 
