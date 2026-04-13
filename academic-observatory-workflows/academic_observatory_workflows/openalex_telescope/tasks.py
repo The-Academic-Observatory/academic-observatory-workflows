@@ -594,6 +594,17 @@ def remove_empty_arrays(obj: dict, fields: list[str]):
             del obj[field]
 
 
+def ensure_list_field(obj: dict, field: str):
+    """Ensure a field is always a list. If it's a bare scalar, wrap it. If None/missing, skip."""
+    if obj is None or field not in obj:
+        return
+    val = obj[field]
+    if val is None:
+        del obj[field]
+    elif not isinstance(val, list):
+        obj[field] = [val]
+
+
 def transform_object(obj: dict):
     """Transform an entry/object for one of the OpenAlex entities.
     For the Work entity only the "abstract_inverted_index" field is transformed.
@@ -624,13 +635,13 @@ def transform_object(obj: dict):
         for j in i.get("affiliations", []):
             remove_none_from_array(j, "institution_ids")
 
-    # Remove nulls from works primary_location.source
+    # Remove nulls from works primary_location.source fields
     remove_none_from_array(
         safe_get_dict(safe_get_dict(obj, "primary_location"), "source"), "host_organization_lineage_names"
     )
     remove_none_from_array(safe_get_dict(safe_get_dict(obj, "primary_location"), "source"), "host_organization_lineage")
 
-    # Remove nulls from works best_oa_location.source.host_organization_lineage_names
+    # Remove nulls from works best_oa_location.source fields
     remove_none_from_array(
         safe_get_dict(safe_get_dict(obj, "best_oa_location"), "source"), "host_organization_lineage_names"
     )
@@ -639,10 +650,19 @@ def transform_object(obj: dict):
     # Remove nulls from sources ids.issn
     remove_none_from_array(safe_get_dict(obj, "ids"), "issn")
 
-    # Remove nulls from works locations[].source.host_organization_lineage_names
+    # Ensure issn is always a list for primary_location and best_oa_location sources
+    for loc_field in ("primary_location", "best_oa_location"):
+        source = safe_get_dict(safe_get_dict(obj, loc_field), "source")
+        ensure_list_field(source, "issn")
+        remove_none_from_array(source, "issn")
+
+    # Remove nulls from works locations[].source fields, and ensure issn is always a list
     for val in obj.get("locations", []):
-        remove_none_from_array(safe_get_dict(val, "source"), "host_organization_lineage_names")
-        remove_none_from_array(safe_get_dict(val, "source"), "host_organization_lineage")
+        source = safe_get_dict(val, "source")
+        remove_none_from_array(source, "host_organization_lineage_names")
+        remove_none_from_array(source, "host_organization_lineage")
+        ensure_list_field(source, "issn")
+        remove_none_from_array(source, "issn")
 
     for val in obj.get("authorships", []):
         for inst in val.get("institutions", []):
@@ -654,10 +674,10 @@ def transform_object(obj: dict):
     convert_field_to_int(safe_get_dict(obj, "apc_list"), "value")
     convert_field_to_int(safe_get_dict(obj, "apc_list"), "value_usd")
 
+    # Ensure issn is always a list for top-level sources
     for val in obj.get("sources", []):
+        ensure_list_field(val, "issn")
         remove_none_from_array(val, "issn")
-    for val in obj.get("locations", []):
-        remove_none_from_array(safe_get_dict(val, "source"), "issn")
 
     # Remove empty/null arrays so schema generator never sees untyped empty lists
     field = "abstract_inverted_index"
@@ -666,7 +686,6 @@ def transform_object(obj: dict):
             return
         keys = list(obj[field].keys())
         values = [str(value)[1:-1] for value in obj[field].values()]
-
         obj[field] = {"keys": keys, "values": values}
 
     field = "international"
@@ -678,7 +697,6 @@ def transform_object(obj: dict):
                 continue
             keys = list(obj[field][nested_field].keys())
             values = list(obj[field][nested_field].values())
-
             obj[field][nested_field] = {"keys": keys, "values": values}
 
     # Transform updated_date and created_date from a date into a datetime
