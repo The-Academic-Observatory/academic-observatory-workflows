@@ -104,31 +104,7 @@ class DagParams:
         │   ├── institution.json: used to create the institution table. First 18 institutions used to build first page of institution table
         │   │                     and then this file is included in the public folder and downloaded by the client to enable the
         │   │                     other pages of the table to be displayed. Copied into public/data folder.
-        │   └── stats.json: global statistics, e.g. the minimum and maximum date for the dataset, when it was last updated etc.
-        └── images:
-            └── logos: country and institution logos.
-                ├── country
-                │   ├── md: medium logos displayed on country pages.
-                │   │   ├── ALB.svg
-                │   │   ├── ARE.svg
-                │   │   └── ARG.svg
-                │   └── sm: small logos displayed in country table.
-                │       ├── ALB.svg
-                │       ├── ARE.svg
-                │       └── ARG.svg
-                └── institution
-                    ├── lg: large logos used for social media cards.
-                    │   ├── 05ykr0121.png
-                    │   ├── 05ym42410.png
-                    │   └── 05ynxx418.png
-                    ├── md: medium logos displayed on institution pages.
-                    │   ├── 05ykr0121.jpg
-                    │   ├── 05ym42410.jpg
-                    │   └── 05ynxx418.jpg
-                    └── sm: small logos displayed in institution table.
-                        ├── 05ykr0121.jpg
-                        ├── 05ym42410.jpg
-                        └── 05ynxx418.jpg
+        └── └── stats.json: global statistics, e.g. the minimum and maximum date for the dataset, when it was last updated etc.
         """
 
         self.dag_id = dag_id
@@ -260,21 +236,21 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.download_assets(release=release, bucket_name=dag_params.data_bucket)
 
         @task.kubernetes(
-            name=f"{dag_params.dag_id}-download-institution-logos",
+            name=f"{dag_params.dag_id}-update-institution-logos",
             container_resources=gke_make_container_resources(
-                {"memory": "4G", "cpu": "2"},
-                dag_params.gke_params.gke_resource_overrides.get("download_institution_logos"),
+                {"memory": "2G", "cpu": "2"},
+                dag_params.gke_params.gke_resource_overrides.get("update_institution_logos"),
             ),
             **kubernetes_task_params,
         )
-        def download_institution_logos(release: dict, dag_params, **context):
-            """Download logos and update indexes."""
+        def update_institution_logos(release: dict, **context):
+            """Create logo archive"""
 
             import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
             from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 
             release = OaDashboardRelease.from_dict(release)
-            tasks.download_institution_logos(release=release)
+            tasks.update_institution_logos(release=release)
 
         @task
         def export_tables(release: dict, dag_params, **context):
@@ -430,7 +406,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             )
 
         task_download_assets = download_assets(xcom_release, dag_params)
-        task_download_institution_logos = download_institution_logos(xcom_release, dag_params)
+        task_update_institution_logos = update_institution_logos(xcom_release)
         task_export_tables = export_tables(xcom_release, dag_params)
         task_download_data = download_data(xcom_release, dag_params)
         task_make_draft_zenodo_version = make_draft_zenodo_version(xcom_release, dag_params)
@@ -455,7 +431,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             task_create_entity_tables,
             *tasks_wiki,
             task_download_assets,
-            task_download_institution_logos,
+            task_update_institution_logos,
             task_export_tables,
             task_download_data,
             task_make_draft_zenodo_version,
