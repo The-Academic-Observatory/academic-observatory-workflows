@@ -508,8 +508,8 @@ class TestTransferOrcid(unittest.TestCase):
         ) as mock_transfer:
             clear_airflow_connections()
             upsert_airflow_connection(conn_id=self.aws_conn_id, conn_type="http", login="", password="")
-            # One failure, but 3 total attempts so it should pass
-            mock_transfer.side_effect = [(False, 0), (True, 1)]
+            # two failures, but 3 total attempts so it should pass
+            mock_transfer.side_effect = [(False, 0), (False, 0), (True, 1)]
             tasks.transfer_orcid(
                 release=dummy_release().to_dict(),
                 aws_orcid_conn_id=self.aws_conn_id,
