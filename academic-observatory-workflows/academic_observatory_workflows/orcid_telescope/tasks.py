@@ -24,7 +24,6 @@ import re
 import time
 from concurrent.futures import as_completed, ProcessPoolExecutor, ThreadPoolExecutor
 import datetime
-import json
 import shutil
 from typing import Dict, Optional, Tuple, Union
 
@@ -146,7 +145,12 @@ def create_dataset(release: dict, dataset_description: str) -> None:
 
 
 def transfer_orcid(
-    release: dict, aws_orcid_conn_id: str, transfer_attempts: int, orcid_bucket: str, orcid_summaries_prefix: str
+    release: dict,
+    aws_orcid_conn_id: str,
+    transfer_attempts: int,
+    orcid_bucket: str,
+    orcid_summaries_prefix: str,
+    aws_orcid_bucket: str,
 ):
     """Sync files from AWS bucket to Google Cloud bucket.
 
@@ -154,6 +158,7 @@ def transfer_orcid(
     :param transfer_attempts: The number of times to attempt the transfer job before giving up
     :param orcid_bucket: The name of the gcs bucket to store the Orcid data
     :param orcid_summaries_prefix: The prefix in which to store the summaries in the bucket
+    :param aws_orcid_bucket: The name of the aws orcid summaries bucket (owned by orcid)
     """
 
     release = OrcidRelease.from_dict(release)
@@ -163,7 +168,7 @@ def transfer_orcid(
         logging.info(f"Beginning AWS to GCP transfer attempt no. {i+1}")
         success, objects_count = gcs_create_aws_transfer(
             aws_key=aws_key,
-            aws_bucket=ORCID_AWS_SUMMARIES_BUCKET,
+            aws_bucket=aws_orcid_bucket,
             include_prefixes=[],
             gc_project_id=release.cloud_workspace.project_id,
             gc_bucket_dst_uri=gcs_blob_uri(orcid_bucket, f"{orcid_summaries_prefix}/"),

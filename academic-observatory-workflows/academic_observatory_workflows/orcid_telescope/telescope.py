@@ -73,7 +73,7 @@ class DagParams:
         self,
         dag_id: str,
         cloud_workspace: CloudWorkspace,
-        orcid_bucket: str = "ao-orcid",
+        orcid_bucket: str = "ao-orcid-v3",
         orcid_summaries_prefix: str = "orcid_summaries",
         bq_dataset_id: str = "orcid",
         api_bq_dataset_id: str = "dataset_api",
@@ -87,6 +87,7 @@ class DagParams:
         transfer_attempts: int = 5,
         max_workers: Optional[int] = None,
         observatory_api_conn_id: str = AirflowConns.OBSERVATORY_API,
+        orcid_aws_summaries_bucket: str = "v3.0-summaries",
         aws_orcid_conn_id: str = "aws_orcid",
         start_date: pendulum.DateTime = pendulum.datetime(2023, 6, 1),
         schedule: str = "0 0 * * 0",  # Midnight UTC every Sunday
@@ -114,6 +115,7 @@ class DagParams:
         self.transfer_attempts = transfer_attempts
         self.max_workers = max_workers
         self.observatory_api_conn_id = observatory_api_conn_id
+        self.orcid_aws_summaries_bucket = orcid_aws_summaries_bucket
         self.aws_orcid_conn_id = aws_orcid_conn_id
         self.start_date = start_date
         self.schedule = schedule
