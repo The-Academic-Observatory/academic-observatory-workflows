@@ -180,7 +180,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 transfer_attempts=dag_params.transfer_attempts,
                 orcid_bucket=dag_params.orcid_bucket,
                 orcid_summaries_prefix=dag_params.orcid_summaries_prefix,
-                aws_orcid_bucket=dag_params.aws_orcid_summaries_bucket,
+                aws_orcid_bucket=dag_params.orcid_aws_summaries_bucket,
             )
 
         @task(trigger_rule=TriggerRule.NONE_FAILED)
