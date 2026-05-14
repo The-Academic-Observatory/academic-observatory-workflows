@@ -520,7 +520,7 @@ class TestTransferOrcid(unittest.TestCase):
             )
             self.assertEqual(mock_transfer.call_count, 3)
             mock_transfer.assert_called_with(
-                aws_key=("", ""),  # matches the empty login/password from upsert_airflow_connection
+                aws_key=("", None),  # matches the empty login/password from upsert_airflow_connection
                 aws_bucket="aws_orcid_bucket",
                 include_prefixes=[],
                 gc_project_id=dummy_release().cloud_workspace.project_id,
