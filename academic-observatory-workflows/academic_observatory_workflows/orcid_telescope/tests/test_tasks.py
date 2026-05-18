@@ -23,7 +23,7 @@ from observatory_platform.dataset_api import DatasetAPI, DatasetRelease
 from observatory_platform.date_utils import datetime_normalise
 from observatory_platform.files import load_jsonl
 from observatory_platform.google import bigquery as bq
-from observatory_platform.google.gcs import gcs_upload_file
+from observatory_platform.google.gcs import gcs_upload_file, gcs_blob_uri
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
 from observatory_platform.sandbox.test_utils import SandboxTestCase
 
@@ -498,7 +498,6 @@ class TestTasks(SandboxTestCase):
 
 
 class TestTransferOrcid(unittest.TestCase):
-
     transfer_attempts = 3
     aws_conn_id = "aws_test_transfer_orcid"
 
@@ -509,14 +508,24 @@ class TestTransferOrcid(unittest.TestCase):
         ) as mock_transfer:
             clear_airflow_connections()
             upsert_airflow_connection(conn_id=self.aws_conn_id, conn_type="http", login="", password="")
-            # One failure, but 3 total attempts so it should pass
-            mock_transfer.side_effect = ([False, 0], [True, 1])
+            # two failures, but 3 total attempts so it should pass
+            mock_transfer.side_effect = [(False, 0), (False, 0), (True, 1)]
             tasks.transfer_orcid(
                 release=dummy_release().to_dict(),
                 aws_orcid_conn_id=self.aws_conn_id,
                 transfer_attempts=self.transfer_attempts,
                 orcid_bucket="orcid_bucket",
                 orcid_summaries_prefix="orcid_summaries_prefix",
+                aws_orcid_bucket="aws_orcid_bucket",
+            )
+            self.assertEqual(mock_transfer.call_count, 3)
+            mock_transfer.assert_called_with(
+                aws_key=("", None),  # matches the empty login/password from upsert_airflow_connection
+                aws_bucket="aws_orcid_bucket",
+                include_prefixes=[],
+                gc_project_id=dummy_release().cloud_workspace.project_id,
+                gc_bucket_dst_uri=gcs_blob_uri("orcid_bucket", "orcid_summaries_prefix/"),
+                description="Transfer ORCID data from AWS to GCP",
             )
 
     def test_transfer_orcid_fails(self):
@@ -527,7 +536,7 @@ class TestTransferOrcid(unittest.TestCase):
             clear_airflow_connections()
             upsert_airflow_connection(conn_id=self.aws_conn_id, conn_type="http", login="", password="")
             # Transfer failures should raise an error
-            mock_transfer.side_effect = ([False, 0] for _ in range(self.transfer_attempts))
+            mock_transfer.side_effect = [(False, 0)] * self.transfer_attempts
             with self.assertRaises(AirflowException):
                 tasks.transfer_orcid(
                     release=dummy_release().to_dict(),
@@ -535,6 +544,7 @@ class TestTransferOrcid(unittest.TestCase):
                     transfer_attempts=self.transfer_attempts,
                     orcid_bucket="orcid_bucket",
                     orcid_summaries_prefix="orcid_summaries_prefix",
+                    aws_orcid_bucket="aws_orcid_bucket",
                 )
 
 
