@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 import unittest
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
@@ -584,6 +585,7 @@ class TestCreateOrcidManifest(unittest.TestCase):
             gcs_upload_file(
                 bucket_name=env.download_bucket, blob_name=f"{summaries_prefix}/{batch}/{orcid}", file_path=file_path
             )
+            time.sleep(2)
 
             # Set the last modified to now - blob0 should be ignored
             release.prev_latest_modified_record = pendulum.now()
