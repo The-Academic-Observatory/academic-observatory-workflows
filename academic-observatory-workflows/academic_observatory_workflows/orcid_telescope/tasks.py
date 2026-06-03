@@ -61,16 +61,6 @@ MANIFEST_HEADER = ["bucket_name", "blob_name", "updated"]
 ORCID_AWS_SUMMARIES_BUCKET = "v2.0-summaries"
 ORCID_REGEX = r"\d{4}-\d{4}-\d{4}-\d{3}(\d|X)\b"
 
-_AFFILIATION_SECTIONS = {
-    "distinctions": "distinction_summary",
-    "educations": "education_summary",
-    "employments": "employment_summary",
-    "invited_positions": "invited_position_summary",
-    "memberships": "membership_summary",
-    "qualifications": "qualification_summary",
-    "services": "service_summary",
-}
-
 
 def fetch_release(
     dag_id: str,
@@ -599,39 +589,6 @@ def latest_modified_record_date(release: dict) -> str:
     return latest_modified_record_date
 
 
-def _normalise_to_list(value):
-    """xmltodict returns a dict for a single child element and a list for multiple.
-    Always return a list."""
-    if value is None:
-        return []
-    return value if isinstance(value, list) else [value]
-
-
-def _wrap_activities_summary(activities_summary: dict) -> dict:
-    """Wrap flat affiliation summaries into the group structure expected by the BQ schema,
-    and normalise any single-element groups that xmltodict returns as dicts."""
-    if not activities_summary:
-        return activities_summary
-    for section_key, summary_key in _AFFILIATION_SECTIONS.items():
-        section = activities_summary.get(section_key)
-        if not isinstance(section, dict) or summary_key not in section:
-            continue
-        summaries = _normalise_to_list(section.pop(summary_key))
-        lmd = section.get("last_modified_date")
-        section["group"] = [
-            {
-                "last_modified_date": lmd,
-                "external_ids": section.pop("external_ids", None),
-                summary_key: summaries,
-            }
-        ]
-    for section_key in ("peer_reviews", "fundings", "works", "research_resources", *_AFFILIATION_SECTIONS.keys()):
-        section = activities_summary.get(section_key)
-        if isinstance(section, dict) and "group" in section:
-            section["group"] = _normalise_to_list(section["group"])
-    return activities_summary
-
-
 def transform_orcid_record(record_path: str) -> Union[Dict, str]:
     """Transform a single ORCID file/record.
     Streams the content from the blob URI and turns this into a dictionary.
@@ -668,8 +625,5 @@ def transform_orcid_record(record_path: str) -> Union[Dict, str]:
     orcid_record = {k: v for k, v in orcid_record.items() if not k.startswith("@xmlns")}
     convert_key = lambda k: k.split(":")[-1].lstrip("@#").replace("-", "_")
     orcid_record = change_keys(orcid_record, convert_key)
-
-    # Migrate activities_summary to v3 group structure
-    _wrap_activities_summary(orcid_record.get("activities_summary"))
 
     return orcid_record
