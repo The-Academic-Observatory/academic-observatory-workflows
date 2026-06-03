@@ -844,6 +844,12 @@
                 "name": "primary",
                 "type": "BOOLEAN",
                 "description": "Whether email is primary."
+              },
+              {
+                "mode": "NULLABLE",
+                "name": "verification_date",
+                "type": "TIMESTAMP",
+                "description": "The date the email was verified."
               }
             ],
             "mode": "REPEATED",
@@ -1546,7 +1552,7 @@
           },
           {
             "mode": "REPEATED",
-            "name": "group",
+            "name": "affiliation_group",
             "type": "RECORD",
             "description": "Distinction affiliation group",
             "fields": [
@@ -2370,7 +2376,7 @@
           },
           {
             "mode": "REPEATED",
-            "name": "group",
+            "name": "affiliation_group",
             "type": "RECORD",
             "description": "Education affiliation group",
             "fields": [
@@ -3194,7 +3200,7 @@
           },
           {
             "mode": "REPEATED",
-            "name": "group",
+            "name": "affiliation_group",
             "type": "RECORD",
             "description": "Employment affiliation group",
             "fields": [
@@ -4870,7 +4876,7 @@
           },
           {
             "mode": "REPEATED",
-            "name": "group",
+            "name": "affiliation_group",
             "type": "RECORD",
             "description": "Invited position affiliation group",
             "fields": [
@@ -5694,7 +5700,7 @@
           },
           {
             "mode": "REPEATED",
-            "name": "group",
+            "name": "affiliation_group",
             "type": "RECORD",
             "description": "Membership affiliation group",
             "fields": [
@@ -6776,16 +6782,10 @@
               },
               {
                 "mode": "REPEATED",
-                "name": "peer_review_summary",
+                "name": "peer_review_group",
                 "type": "RECORD",
-                "description": "Peer review summary.",
+                "description": "Peer review group item.",
                 "fields": [
-                  {
-                    "mode": "NULLABLE",
-                    "name": "created_date",
-                    "type": "TIMESTAMP",
-                    "description": "The date time when element was created."
-                  },
                   {
                     "mode": "NULLABLE",
                     "name": "last_modified_date",
@@ -6794,169 +6794,15 @@
                   },
                   {
                     "mode": "NULLABLE",
-                    "name": "source",
-                    "type": "RECORD",
-                    "description": "The client application (Member organization's system) or user that created the item. XSD VERSION 1.2 UPDATE: the identifier for the source may be either an ORCID iD (representing individuals and legacy client applications) or a Client ID (representing all newer client applications)",
-                    "fields": [
-                      {
-                        "mode": "NULLABLE",
-                        "name": "source_orcid",
-                        "type": "RECORD",
-                        "description": "The identifier of the researcher or contributor in ORCID (the ORCID iD). At least one of uri or path must be given. NOTE: this type is also used for legacy client IDs.",
-                        "fields": [
-                          {
-                            "mode": "NULLABLE",
-                            "name": "host",
-                            "type": "STRING",
-                            "description": "ORCID host (base URL) of the ORCID iD."
-                          },
-                          {
-                            "mode": "NULLABLE",
-                            "name": "path",
-                            "type": "STRING",
-                            "description": "ORCID path (16-character identifier) of the ORCID iD."
-                          },
-                          {
-                            "mode": "NULLABLE",
-                            "name": "uri",
-                            "type": "STRING",
-                            "description": "ORCID iD in URI form (preferred)."
-                          }
-                        ]
-                      },
-                      {
-                        "mode": "NULLABLE",
-                        "name": "source_client_id",
-                        "type": "RECORD",
-                        "description": "The client ID for the client application (Member organization system) that created the item.",
-                        "fields": [
-                          {
-                            "mode": "NULLABLE",
-                            "name": "host",
-                            "type": "STRING",
-                            "description": "ORCID host (base URL) of the ORCID iD."
-                          },
-                          {
-                            "mode": "NULLABLE",
-                            "name": "path",
-                            "type": "STRING",
-                            "description": "Path for the API client ID."
-                          },
-                          {
-                            "mode": "NULLABLE",
-                            "name": "uri",
-                            "type": "STRING",
-                            "description": "ORCID URI for the API client ID."
-                          }
-                        ]
-                      },
-                      {
-                        "mode": "NULLABLE",
-                        "name": "source_name",
-                        "type": "STRING",
-                        "description": "The human-readable name of the client application (Member organization system) or individual user that created the item."
-                      },
-                      {
-                        "mode": "NULLABLE",
-                        "name": "assertion_origin_orcid",
-                        "type": "RECORD",
-                        "description": "The ORCID identifier for the individual user (or legacy client application) made the assertion. If missing, source is the same as assertion origin.",
-                        "fields": [
-                          {
-                            "mode": "NULLABLE",
-                            "name": "host",
-                            "type": "STRING",
-                            "description": "ORCID host (base URL) of the ORCID iD."
-                          },
-                          {
-                            "mode": "NULLABLE",
-                            "name": "path",
-                            "type": "STRING",
-                            "description": "ORCID path (16-character identifier) of the ORCID iD."
-                          },
-                          {
-                            "mode": "NULLABLE",
-                            "name": "uri",
-                            "type": "STRING",
-                            "description": "ORCID iD in URI form (preferred)."
-                          }
-                        ]
-                      },
-                      {
-                        "mode": "NULLABLE",
-                        "name": "assertion_origin_client_id",
-                        "type": "RECORD",
-                        "description": "The client ID for the client application (Member organization system) that made the assertion. If missing, source is the same as assertion origin.",
-                        "fields": [
-                          {
-                            "mode": "NULLABLE",
-                            "name": "host",
-                            "type": "STRING",
-                            "description": "ORCID host (base URL) of the ORCID iD."
-                          },
-                          {
-                            "mode": "NULLABLE",
-                            "name": "path",
-                            "type": "STRING",
-                            "description": "Path for the API client ID."
-                          },
-                          {
-                            "mode": "NULLABLE",
-                            "name": "uri",
-                            "type": "STRING",
-                            "description": "ORCID URI for the API client ID."
-                          }
-                        ]
-                      },
-                      {
-                        "mode": "NULLABLE",
-                        "name": "assertion_origin_name",
-                        "type": "STRING",
-                        "description": "The human-readable name of the client application (Member organization system) or individual user that created the item."
-                      }
-                    ]
-                  },
-                  {
-                    "mode": "NULLABLE",
-                    "name": "put_code",
-                    "type": "INTEGER",
-                    "description": "The put-code attribute is present only when reading elements."
-                  },
-                  {
-                    "mode": "NULLABLE",
-                    "name": "visibility",
-                    "type": "STRING",
-                    "description": "Indicates who can see the value of the element when reading the ORCID record."
-                  },
-                  {
-                    "mode": "NULLABLE",
-                    "name": "display_index",
-                    "type": "STRING",
-                    "description": "Display index."
-                  },
-                  {
-                    "mode": "NULLABLE",
-                    "name": "path",
-                    "type": "STRING",
-                    "description": "The activity-path attribute is present only when reading elements."
-                  },
-                  {
-                    "mode": "NULLABLE",
-                    "name": "reviewer_role",
-                    "type": "STRING",
-                    "description": "The role played by a person in their contribution to a review."
-                  },
-                  {
-                    "mode": "NULLABLE",
                     "name": "external_ids",
                     "type": "RECORD",
-                    "description": "The unique identifier of the review.",
+                    "description": "Container for storing external ids.",
                     "fields": [
                       {
                         "mode": "REPEATED",
                         "name": "external_id",
                         "type": "RECORD",
-                        "description": "A reference to an external identifier.",
+                        "description": "A reference to an external identifier, suitable for works, people and funding.",
                         "fields": [
                           {
                             "mode": "NULLABLE",
@@ -7193,104 +7039,524 @@
                     ]
                   },
                   {
-                    "mode": "NULLABLE",
-                    "name": "review_url",
-                    "type": "STRING",
-                    "description": "A link to a representation of the review on the web."
-                  },
-                  {
-                    "mode": "NULLABLE",
-                    "name": "review_type",
-                    "type": "STRING",
-                    "description": "The kind of review applied to the subject type reviewed."
-                  },
-                  {
-                    "mode": "NULLABLE",
-                    "name": "completion_date",
+                    "mode": "REPEATED",
+                    "name": "peer_review_summary",
                     "type": "RECORD",
-                    "description": "The date on which the review was completed.",
+                    "description": "Peer review summary.",
                     "fields": [
                       {
                         "mode": "NULLABLE",
-                        "name": "year",
-                        "type": "INTEGER",
-                        "description": "Used with the fuzzy-date type. Represents the year of the date."
+                        "name": "created_date",
+                        "type": "TIMESTAMP",
+                        "description": "The date time when element was created."
                       },
                       {
                         "mode": "NULLABLE",
-                        "name": "month",
-                        "type": "INTEGER",
-                        "description": "Used with the fuzzy-date type. Represents the month of the date."
+                        "name": "last_modified_date",
+                        "type": "TIMESTAMP",
+                        "description": "The date time when the element was last modified."
                       },
                       {
                         "mode": "NULLABLE",
-                        "name": "day",
-                        "type": "INTEGER",
-                        "description": "Used with the fuzzy-date type. Represents the day of the date."
-                      }
-                    ]
-                  },
-                  {
-                    "mode": "NULLABLE",
-                    "name": "review_group_id",
-                    "type": "STRING",
-                    "description": "Identifier for the group that this review should be a part of for aggregation purposes"
-                  },
-                  {
-                    "mode": "NULLABLE",
-                    "name": "convening_organization",
-                    "type": "RECORD",
-                    "description": "Information about the organization convening the review.",
-                    "fields": [
-                      {
-                        "mode": "NULLABLE",
-                        "name": "name",
-                        "type": "STRING",
-                        "description": "Organization name."
-                      },
-                      {
-                        "mode": "NULLABLE",
-                        "name": "address",
+                        "name": "source",
                         "type": "RECORD",
-                        "description": "Container for address information.",
+                        "description": "The client application (Member organization's system) or user that created the item. XSD VERSION 1.2 UPDATE: the identifier for the source may be either an ORCID iD (representing individuals and legacy client applications) or a Client ID (representing all newer client applications)",
                         "fields": [
                           {
                             "mode": "NULLABLE",
-                            "name": "country",
-                            "type": "STRING",
-                            "description": "Country represented by its ISO 3611 code."
+                            "name": "source_orcid",
+                            "type": "RECORD",
+                            "description": "The identifier of the researcher or contributor in ORCID (the ORCID iD). At least one of uri or path must be given. NOTE: this type is also used for legacy client IDs.",
+                            "fields": [
+                              {
+                                "mode": "NULLABLE",
+                                "name": "host",
+                                "type": "STRING",
+                                "description": "ORCID host (base URL) of the ORCID iD."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "path",
+                                "type": "STRING",
+                                "description": "ORCID path (16-character identifier) of the ORCID iD."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "uri",
+                                "type": "STRING",
+                                "description": "ORCID iD in URI form (preferred)."
+                              }
+                            ]
                           },
                           {
                             "mode": "NULLABLE",
-                            "name": "region",
-                            "type": "STRING",
-                            "description": "Region within a country."
+                            "name": "source_client_id",
+                            "type": "RECORD",
+                            "description": "The client ID for the client application (Member organization system) that created the item.",
+                            "fields": [
+                              {
+                                "mode": "NULLABLE",
+                                "name": "host",
+                                "type": "STRING",
+                                "description": "ORCID host (base URL) of the ORCID iD."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "path",
+                                "type": "STRING",
+                                "description": "Path for the API client ID."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "uri",
+                                "type": "STRING",
+                                "description": "ORCID URI for the API client ID."
+                              }
+                            ]
                           },
                           {
                             "mode": "NULLABLE",
-                            "name": "city",
+                            "name": "source_name",
                             "type": "STRING",
-                            "description": "City."
+                            "description": "The human-readable name of the client application (Member organization system) or individual user that created the item."
+                          },
+                          {
+                            "mode": "NULLABLE",
+                            "name": "assertion_origin_orcid",
+                            "type": "RECORD",
+                            "description": "The ORCID identifier for the individual user (or legacy client application) made the assertion. If missing, source is the same as assertion origin.",
+                            "fields": [
+                              {
+                                "mode": "NULLABLE",
+                                "name": "host",
+                                "type": "STRING",
+                                "description": "ORCID host (base URL) of the ORCID iD."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "path",
+                                "type": "STRING",
+                                "description": "ORCID path (16-character identifier) of the ORCID iD."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "uri",
+                                "type": "STRING",
+                                "description": "ORCID iD in URI form (preferred)."
+                              }
+                            ]
+                          },
+                          {
+                            "mode": "NULLABLE",
+                            "name": "assertion_origin_client_id",
+                            "type": "RECORD",
+                            "description": "The client ID for the client application (Member organization system) that made the assertion. If missing, source is the same as assertion origin.",
+                            "fields": [
+                              {
+                                "mode": "NULLABLE",
+                                "name": "host",
+                                "type": "STRING",
+                                "description": "ORCID host (base URL) of the ORCID iD."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "path",
+                                "type": "STRING",
+                                "description": "Path for the API client ID."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "uri",
+                                "type": "STRING",
+                                "description": "ORCID URI for the API client ID."
+                              }
+                            ]
+                          },
+                          {
+                            "mode": "NULLABLE",
+                            "name": "assertion_origin_name",
+                            "type": "STRING",
+                            "description": "The human-readable name of the client application (Member organization system) or individual user that created the item."
                           }
                         ]
                       },
                       {
                         "mode": "NULLABLE",
-                        "name": "disambiguated_organization",
+                        "name": "put_code",
+                        "type": "INTEGER",
+                        "description": "The put-code attribute is present only when reading elements."
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "visibility",
+                        "type": "STRING",
+                        "description": "Indicates who can see the value of the element when reading the ORCID record."
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "display_index",
+                        "type": "STRING",
+                        "description": "Display index."
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "path",
+                        "type": "STRING",
+                        "description": "The activity-path attribute is present only when reading elements."
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "reviewer_role",
+                        "type": "STRING",
+                        "description": "The role played by a person in their contribution to a review."
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "external_ids",
                         "type": "RECORD",
-                        "description": "A reference to a disambiguated version the organization.",
+                        "description": "The unique identifier of the review.",
+                        "fields": [
+                          {
+                            "mode": "REPEATED",
+                            "name": "external_id",
+                            "type": "RECORD",
+                            "description": "A reference to an external identifier.",
+                            "fields": [
+                              {
+                                "mode": "NULLABLE",
+                                "name": "created_date",
+                                "type": "TIMESTAMP",
+                                "description": "The date time when element was created."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "last_modified_date",
+                                "type": "TIMESTAMP",
+                                "description": "The date time when the element was last modified."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "source",
+                                "type": "RECORD",
+                                "description": "The client application (Member organization's system) or user that created the item. XSD VERSION 1.2 UPDATE: the identifier for the source may be either an ORCID iD (representing individuals and legacy client applications) or a Client ID (representing all newer client applications)",
+                                "fields": [
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "source_orcid",
+                                    "type": "RECORD",
+                                    "description": "The identifier of the researcher or contributor in ORCID (the ORCID iD). At least one of uri or path must be given. NOTE: this type is also used for legacy client IDs.",
+                                    "fields": [
+                                      {
+                                        "mode": "NULLABLE",
+                                        "name": "host",
+                                        "type": "STRING",
+                                        "description": "ORCID host (base URL) of the ORCID iD."
+                                      },
+                                      {
+                                        "mode": "NULLABLE",
+                                        "name": "path",
+                                        "type": "STRING",
+                                        "description": "ORCID path (16-character identifier) of the ORCID iD."
+                                      },
+                                      {
+                                        "mode": "NULLABLE",
+                                        "name": "uri",
+                                        "type": "STRING",
+                                        "description": "ORCID iD in URI form (preferred)."
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "source_client_id",
+                                    "type": "RECORD",
+                                    "description": "The client ID for the client application (Member organization system) that created the item.",
+                                    "fields": [
+                                      {
+                                        "mode": "NULLABLE",
+                                        "name": "host",
+                                        "type": "STRING",
+                                        "description": "ORCID host (base URL) of the ORCID iD."
+                                      },
+                                      {
+                                        "mode": "NULLABLE",
+                                        "name": "path",
+                                        "type": "STRING",
+                                        "description": "Path for the API client ID."
+                                      },
+                                      {
+                                        "mode": "NULLABLE",
+                                        "name": "uri",
+                                        "type": "STRING",
+                                        "description": "ORCID URI for the API client ID."
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "source_name",
+                                    "type": "STRING",
+                                    "description": "The human-readable name of the client application (Member organization system) or individual user that created the item."
+                                  },
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "assertion_origin_orcid",
+                                    "type": "RECORD",
+                                    "description": "The ORCID identifier for the individual user (or legacy client application) made the assertion. If missing, source is the same as assertion origin.",
+                                    "fields": [
+                                      {
+                                        "mode": "NULLABLE",
+                                        "name": "host",
+                                        "type": "STRING",
+                                        "description": "ORCID host (base URL) of the ORCID iD."
+                                      },
+                                      {
+                                        "mode": "NULLABLE",
+                                        "name": "path",
+                                        "type": "STRING",
+                                        "description": "ORCID path (16-character identifier) of the ORCID iD."
+                                      },
+                                      {
+                                        "mode": "NULLABLE",
+                                        "name": "uri",
+                                        "type": "STRING",
+                                        "description": "ORCID iD in URI form (preferred)."
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "assertion_origin_client_id",
+                                    "type": "RECORD",
+                                    "description": "The client ID for the client application (Member organization system) that made the assertion. If missing, source is the same as assertion origin.",
+                                    "fields": [
+                                      {
+                                        "mode": "NULLABLE",
+                                        "name": "host",
+                                        "type": "STRING",
+                                        "description": "ORCID host (base URL) of the ORCID iD."
+                                      },
+                                      {
+                                        "mode": "NULLABLE",
+                                        "name": "path",
+                                        "type": "STRING",
+                                        "description": "Path for the API client ID."
+                                      },
+                                      {
+                                        "mode": "NULLABLE",
+                                        "name": "uri",
+                                        "type": "STRING",
+                                        "description": "ORCID URI for the API client ID."
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "assertion_origin_name",
+                                    "type": "STRING",
+                                    "description": "The human-readable name of the client application (Member organization system) or individual user that created the item."
+                                  }
+                                ]
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "put_code",
+                                "type": "INTEGER",
+                                "description": "The put-code attribute is present only when reading elements."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "visibility",
+                                "type": "STRING",
+                                "description": "Indicates who can see the value of the element when reading the ORCID record."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "display_index",
+                                "type": "STRING",
+                                "description": "Display index."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "path",
+                                "type": "STRING",
+                                "description": "The activity-path attribute is present only when reading elements."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "external_id_type",
+                                "type": "STRING",
+                                "description": "The external id type."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "external_id_value",
+                                "type": "STRING",
+                                "description": "The external id value."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "external_id_normalized",
+                                "type": "RECORD",
+                                "description": "The normalized external id.",
+                                "fields": [
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "transient",
+                                    "type": "BOOLEAN",
+                                    "description": "A string that is flagged as transient i.e. populated by ORCID, not the source."
+                                  },
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "text",
+                                    "type": "STRING",
+                                    "description": "External id normalized value"
+                                  }
+                                ]
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "external_id_normalized_error",
+                                "type": "RECORD",
+                                "description": "External id normalized error.",
+                                "fields": [
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "transient",
+                                    "type": "BOOLEAN",
+                                    "description": "A string that is flagged as transient i.e. populated by ORCID, not the source."
+                                  },
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "error_message",
+                                    "type": "STRING",
+                                    "description": "Error message."
+                                  },
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "error_code",
+                                    "type": "STRING",
+                                    "description": "Error code."
+                                  }
+                                ]
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "external_id_url",
+                                "type": "STRING",
+                                "description": "Represents a URL in the XML anyURI format."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "external_id_relationship",
+                                "type": "STRING",
+                                "description": "Indicates the relationship type, selected from the following options: part-of, self ,version-of."
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "review_url",
+                        "type": "STRING",
+                        "description": "A link to a representation of the review on the web."
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "review_type",
+                        "type": "STRING",
+                        "description": "The kind of review applied to the subject type reviewed."
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "completion_date",
+                        "type": "RECORD",
+                        "description": "The date on which the review was completed.",
                         "fields": [
                           {
                             "mode": "NULLABLE",
-                            "name": "disambiguation_source",
-                            "type": "STRING",
-                            "description": "The source for providing the disambiguated organization ID."
+                            "name": "year",
+                            "type": "INTEGER",
+                            "description": "Used with the fuzzy-date type. Represents the year of the date."
                           },
                           {
                             "mode": "NULLABLE",
-                            "name": "disambiguated_organization_identifier",
+                            "name": "month",
+                            "type": "INTEGER",
+                            "description": "Used with the fuzzy-date type. Represents the month of the date."
+                          },
+                          {
+                            "mode": "NULLABLE",
+                            "name": "day",
+                            "type": "INTEGER",
+                            "description": "Used with the fuzzy-date type. Represents the day of the date."
+                          }
+                        ]
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "review_group_id",
+                        "type": "STRING",
+                        "description": "Identifier for the group that this review should be a part of for aggregation purposes"
+                      },
+                      {
+                        "mode": "NULLABLE",
+                        "name": "convening_organization",
+                        "type": "RECORD",
+                        "description": "Information about the organization convening the review.",
+                        "fields": [
+                          {
+                            "mode": "NULLABLE",
+                            "name": "name",
                             "type": "STRING",
-                            "description": "The disambiguated organization identifier."
+                            "description": "Organization name."
+                          },
+                          {
+                            "mode": "NULLABLE",
+                            "name": "address",
+                            "type": "RECORD",
+                            "description": "Container for address information.",
+                            "fields": [
+                              {
+                                "mode": "NULLABLE",
+                                "name": "country",
+                                "type": "STRING",
+                                "description": "Country represented by its ISO 3611 code."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "region",
+                                "type": "STRING",
+                                "description": "Region within a country."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "city",
+                                "type": "STRING",
+                                "description": "City."
+                              }
+                            ]
+                          },
+                          {
+                            "mode": "NULLABLE",
+                            "name": "disambiguated_organization",
+                            "type": "RECORD",
+                            "description": "A reference to a disambiguated version the organization.",
+                            "fields": [
+                              {
+                                "mode": "NULLABLE",
+                                "name": "disambiguation_source",
+                                "type": "STRING",
+                                "description": "The source for providing the disambiguated organization ID."
+                              },
+                              {
+                                "mode": "NULLABLE",
+                                "name": "disambiguated_organization_identifier",
+                                "type": "STRING",
+                                "description": "The disambiguated organization identifier."
+                              }
+                            ]
                           }
                         ]
                       }
@@ -7322,7 +7588,7 @@
           },
           {
             "mode": "REPEATED",
-            "name": "group",
+            "name": "affiliation_group",
             "type": "RECORD",
             "description": "Qualification affiliation group",
             "fields": [
@@ -8616,53 +8882,61 @@
                         "fields": [
                           {
                             "mode": "NULLABLE",
-                            "name": "name",
-                            "type": "STRING",
-                            "description": "Organization name."
-                          },
-                          {
-                            "mode": "NULLABLE",
-                            "name": "address",
+                            "name": "organization",
                             "type": "RECORD",
-                            "description": "Container for address information.",
+                            "description": "A reference to an organization.",
                             "fields": [
                               {
                                 "mode": "NULLABLE",
-                                "name": "country",
+                                "name": "name",
                                 "type": "STRING",
-                                "description": "Country represented by its ISO 3611 code."
+                                "description": "Organization name."
                               },
                               {
                                 "mode": "NULLABLE",
-                                "name": "region",
-                                "type": "STRING",
-                                "description": "Region within a country."
+                                "name": "address",
+                                "type": "RECORD",
+                                "description": "Container for address information.",
+                                "fields": [
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "country",
+                                    "type": "STRING",
+                                    "description": "Country represented by its ISO 3611 code."
+                                  },
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "region",
+                                    "type": "STRING",
+                                    "description": "Region within a country."
+                                  },
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "city",
+                                    "type": "STRING",
+                                    "description": "City."
+                                  }
+                                ]
                               },
                               {
                                 "mode": "NULLABLE",
-                                "name": "city",
-                                "type": "STRING",
-                                "description": "City."
-                              }
-                            ]
-                          },
-                          {
-                            "mode": "NULLABLE",
-                            "name": "disambiguated_organization",
-                            "type": "RECORD",
-                            "description": "A reference to a disambiguated version the organization.",
-                            "fields": [
-                              {
-                                "mode": "NULLABLE",
-                                "name": "disambiguation_source",
-                                "type": "STRING",
-                                "description": "The source for providing the disambiguated organization ID."
-                              },
-                              {
-                                "mode": "NULLABLE",
-                                "name": "disambiguated_organization_identifier",
-                                "type": "STRING",
-                                "description": "The disambiguated organization identifier."
+                                "name": "disambiguated_organization",
+                                "type": "RECORD",
+                                "description": "A reference to a disambiguated version the organization.",
+                                "fields": [
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "disambiguation_source",
+                                    "type": "STRING",
+                                    "description": "The source for providing the disambiguated organization ID."
+                                  },
+                                  {
+                                    "mode": "NULLABLE",
+                                    "name": "disambiguated_organization_identifier",
+                                    "type": "STRING",
+                                    "description": "The disambiguated organization identifier."
+                                  }
+                                ]
                               }
                             ]
                           }
@@ -9000,7 +9274,7 @@
           },
           {
             "mode": "REPEATED",
-            "name": "group",
+            "name": "affiliation_group",
             "type": "RECORD",
             "description": "Service affiliation group",
             "fields": [

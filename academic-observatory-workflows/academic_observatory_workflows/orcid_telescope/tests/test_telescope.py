@@ -303,6 +303,7 @@ class TestOrcidTelescope(SandboxTestCase):
             table_id = bq_table_id(
                 project_id=TestConfig.gcp_project_id, dataset_id=test_params.bq_dataset_id, table_id="orcid_upsert"
             )
+            breakpoint()
             expected = load_and_parse_json(
                 OrcidTestRecords.upsert_table,
                 timestamp_fields=OrcidTestRecords.timestamp_fields,
