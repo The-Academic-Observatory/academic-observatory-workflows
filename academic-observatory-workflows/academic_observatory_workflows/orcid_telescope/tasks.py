@@ -135,11 +135,11 @@ def create_dataset(release: dict, dataset_description: str) -> None:
     :param dataset_description: The description to give the Orcid dataset
     """
 
-    release = OrcidRelease.from_dict(release)
+    orcid_release = OrcidRelease.from_dict(release)
     bq.bq_create_dataset(
-        project_id=release.cloud_workspace.project_id,
-        dataset_id=release.bq_dataset_id,
-        location=release.cloud_workspace.data_location,
+        project_id=orcid_release.cloud_workspace.project_id,
+        dataset_id=orcid_release.bq_dataset_id,
+        location=orcid_release.cloud_workspace.data_location,
         description=dataset_description,
     )
 
@@ -161,7 +161,7 @@ def transfer_orcid(
     :param aws_orcid_bucket: The name of the aws orcid summaries bucket (owned by orcid)
     """
 
-    release = OrcidRelease.from_dict(release)
+    orcid_release = OrcidRelease.from_dict(release)
     success = False
     aws_key = aws_orcid_key(aws_orcid_conn_id)
     for i in range(transfer_attempts):
@@ -170,7 +170,7 @@ def transfer_orcid(
             aws_key=aws_key,
             aws_bucket=aws_orcid_bucket,
             include_prefixes=[],
-            gc_project_id=release.cloud_workspace.project_id,
+            gc_project_id=orcid_release.cloud_workspace.project_id,
             gc_bucket_dst_uri=gcs_blob_uri(orcid_bucket, f"{orcid_summaries_prefix}/"),
             description="Transfer ORCID data from AWS to GCP",
         )
@@ -190,16 +190,16 @@ def bq_create_main_table_snapshot(release: dict, snapshot_expiry_days: int):
     :param snapshot_expiry_days: The number of days to keep the snapshot
     """
 
-    release = OrcidRelease.from_dict(release)
-    if release.is_first_run:
+    orcid_release = OrcidRelease.from_dict(release)
+    if orcid_release.is_first_run:
         msg = f"bq_create_main_table_snapshots: skipping as snapshots are not created on the first run"
         logging.info(msg)
         raise AirflowSkipException(msg)
 
     expiry_date = pendulum.now().add(days=snapshot_expiry_days)
     success = bq.bq_snapshot(
-        src_table_id=release.bq_main_table_id,
-        dst_table_id=release.bq_snapshot_table_id,
+        src_table_id=orcid_release.bq_main_table_id,
+        dst_table_id=orcid_release.bq_snapshot_table_id,
         expiry_date=expiry_date,
     )
     if not success:
@@ -217,14 +217,14 @@ def create_manifests(
     :return: The datetime of the last modified ORCID record in the manifest as a string
     """
 
-    release = OrcidRelease.from_dict(release)
+    orcid_release = OrcidRelease.from_dict(release)
     logging.info("Creating manifest")
 
     if not max_workers:
         max_workers = os.cpu_count() * 2
     logging.info(f"Using {max_workers} threads for manifest creation")
 
-    orcid_batches = release.orcid_batches()
+    orcid_batches = orcid_release.orcid_batches()
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = []
         for orcid_batch in orcid_batches:
@@ -232,7 +232,7 @@ def create_manifests(
                 executor.submit(
                     create_orcid_batch_manifest,
                     orcid_batch=orcid_batch,
-                    reference_date=release.prev_latest_modified_record,
+                    reference_date=orcid_release.prev_latest_modified_record,
                     bucket=orcid_bucket,
                     bucket_prefix=orcid_summaries_prefix,
                 )
@@ -242,7 +242,7 @@ def create_manifests(
 
     # Open and write each batch manifest to the master manifest file
     logging.info("Joining manifest files")
-    with open(release.master_manifest_file, "w") as f:
+    with open(orcid_release.master_manifest_file, "w") as f:
         writer = csv.DictWriter(f, fieldnames=MANIFEST_HEADER)
         writer.writeheader()
         for orcid_batch in orcid_batches:
@@ -254,7 +254,7 @@ def create_manifests(
 def download(release: dict):
     """Reads each batch's manifest and downloads the files from the gcs bucket."""
 
-    release = OrcidRelease.from_dict(release)
+    orcid_release = OrcidRelease.from_dict(release)
 
     # Check the type of credentials
     credentials, _ = auth.default()
@@ -269,10 +269,10 @@ def download(release: dict):
     else:
         raise AirflowException(f"Unknown credentials type: {type(credentials)}")
 
-    with gcs_hmac_key(release.cloud_workspace.project_id, email) as (key, secret):
+    with gcs_hmac_key(orcid_release.cloud_workspace.project_id, email) as (key, secret):
         total_files = 0
         start_time = time.time()
-        for orcid_batch in release.orcid_batches():
+        for orcid_batch in orcid_release.orcid_batches():
             if not orcid_batch.missing_records:
                 total_files += len(orcid_batch.existing_records)
                 logging.info(f"All files present for {orcid_batch.batch_str}. Skipping download.")
@@ -302,9 +302,9 @@ def download(release: dict):
         total_time = time.time() - start_time
 
     # Check all files exist
-    if total_files != len(release.downloaded_records):
+    if total_files != len(orcid_release.downloaded_records):
         raise FileNotFoundError(
-            f"Downloaded {total_files} files but found {len(release.downloaded_records)} records on disk."
+            f"Downloaded {total_files} files but found {len(orcid_release.downloaded_records)} records on disk."
         )
     logging.info(f"Completed download for {total_files} files in {str(datetime.timedelta(seconds=total_time))}")
 
@@ -315,7 +315,7 @@ def transform(release: dict, max_workers: Optional[int] = None):
     :param max_workers: Number of process pools to use. If None, uses the cpu count
     """
 
-    release = OrcidRelease.from_dict(release)
+    orcid_release = OrcidRelease.from_dict(release)
     if not max_workers:
         max_workers = os.cpu_count()
     logging.info(f"Using {max_workers} processes for transform operation")
@@ -323,7 +323,11 @@ def transform(release: dict, max_workers: Optional[int] = None):
     total_upsert_records = 0
     total_delete_records = 0
     start_time = time.time()
-    for orcid_batch in release.orcid_batches():
+    for orcid_batch in orcid_release.orcid_batches():
+        if os.path.exists(orcid_batch.transform_delete_file) and os.path.exists(orcid_batch.transform_upsert_file):
+            logging.info(f"ORCID batch {orcid_batch.batch_str} already processed. Skipping.")
+            continue
+
         logging.info(f"Transforming ORCID batch {orcid_batch.batch_str}")
         transformed_data = []
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -365,26 +369,26 @@ def transform(release: dict, max_workers: Optional[int] = None):
     )
 
     # Sanity checks
-    if total_upsert_records + total_delete_records != len(release.downloaded_records):
+    if total_upsert_records + total_delete_records != len(orcid_release.downloaded_records):
         raise ValueError(
-            f"Expected {len(release.downloaded_records)} total records processed but got {total_upsert_records + total_delete_records}"
+            f"Expected {len(orcid_release.downloaded_records)} total records processed but got {total_upsert_records + total_delete_records}"
         )
 
 
 def clean_downloads(release: dict):
     """Removes all files in the downloads folder of the release"""
-    release = OrcidRelease.from_dict(release)
+    orcid_release = OrcidRelease.from_dict(release)
 
-    logging.info(f"Removing folder: {release.download_folder}")
-    shutil.rmtree(release.download_folder)
+    logging.info(f"Removing folder: {orcid_release.download_folder}")
+    shutil.rmtree(orcid_release.download_folder)
 
 
 def upload_transformed(release: dict):
     """Uploads the upsert and delete files to the transform bucket."""
 
-    release = OrcidRelease.from_dict(release)
-    file_paths = release.upsert_files + release.delete_files
-    success = gcs_upload_files(bucket_name=release.cloud_workspace.transform_bucket, file_paths=file_paths)
+    orcid_release = OrcidRelease.from_dict(release)
+    file_paths = orcid_release.upsert_files + orcid_release.delete_files
+    success = gcs_upload_files(bucket_name=orcid_release.cloud_workspace.transform_bucket, file_paths=file_paths)
     if not success:
         raise AirflowException("Error occurred uploading transformed filed to bigquery")
 
@@ -395,16 +399,16 @@ def bq_load_main_table(release: dict, schema_file_path: str):
     :param schema_file_path: The path to the schema file to use for table load
     """
 
-    release = OrcidRelease.from_dict(release)
-    if not release.is_first_run:
+    orcid_release = OrcidRelease.from_dict(release)
+    if not orcid_release.is_first_run:
         msg = f"bq_load_main_table: skipping as the main table is only created on the first run"
         logging.info(msg)
         raise AirflowSkipException(msg)
 
-    blobs = gcs_list_blobs(release.cloud_workspace.transform_bucket, match_glob=release.upsert_blob_glob)
+    blobs = gcs_list_blobs(orcid_release.cloud_workspace.transform_bucket, match_glob=orcid_release.upsert_blob_glob)
     success = bq.bq_load_table(
         uri=[gcs_blob_uri(blob.bucket.name, blob.name) for blob in blobs],
-        table_id=release.bq_main_table_id,
+        table_id=orcid_release.bq_main_table_id,
         schema_file_path=schema_file_path,
         source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
         write_disposition=bigquery.WriteDisposition.WRITE_EMPTY,
@@ -420,16 +424,16 @@ def bq_load_upsert_table(release: dict, schema_file_path: str):
     :param schema_file_path: The path to the schema file to use for table load
     """
 
-    release = OrcidRelease.from_dict(release)
-    if release.is_first_run:
+    orcid_release = OrcidRelease.from_dict(release)
+    if orcid_release.is_first_run:
         msg = f"bq_load_upsert_table: skipping as no records are upserted on the first run"
         logging.info(msg)
         raise AirflowSkipException(msg)
 
-    blobs = gcs_list_blobs(release.cloud_workspace.transform_bucket, match_glob=release.upsert_blob_glob)
+    blobs = gcs_list_blobs(orcid_release.cloud_workspace.transform_bucket, match_glob=orcid_release.upsert_blob_glob)
     success = bq.bq_load_table(
         uri=[gcs_blob_uri(blob.bucket.name, blob.name) for blob in blobs],
-        table_id=release.bq_upsert_table_id,
+        table_id=orcid_release.bq_upsert_table_id,
         schema_file_path=schema_file_path,
         source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
         write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
@@ -445,16 +449,16 @@ def bq_load_delete_table(release: dict, delete_schema_file_path: str):
     :param schema_file_path: The path to the 'delete' schema file to use for table load
     """
 
-    release = OrcidRelease.from_dict(release)
-    if release.is_first_run:
+    orcid_release = OrcidRelease.from_dict(release)
+    if orcid_release.is_first_run:
         msg = "bq_load_delete_table: skipping as no records are deleted on the first run"
         logging.info(msg)
         raise AirflowSkipException(msg)
 
-    blobs = gcs_list_blobs(release.cloud_workspace.transform_bucket, match_glob=release.delete_blob_glob)
+    blobs = gcs_list_blobs(orcid_release.cloud_workspace.transform_bucket, match_glob=orcid_release.delete_blob_glob)
     success = bq.bq_load_table(
         uri=[gcs_blob_uri(blob.bucket.name, blob.name) for blob in blobs],
-        table_id=release.bq_delete_table_id,
+        table_id=orcid_release.bq_delete_table_id,
         schema_file_path=delete_schema_file_path,
         source_format=SourceFormat.NEWLINE_DELIMITED_JSON,
         write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
@@ -467,15 +471,15 @@ def bq_load_delete_table(release: dict, delete_schema_file_path: str):
 def bq_upsert_records(release: dict):
     """Upsert the records from the upserts table into the main table."""
 
-    release = OrcidRelease.from_dict(release)
-    if release.is_first_run:
+    orcid_release = OrcidRelease.from_dict(release)
+    if orcid_release.is_first_run:
         msg = "bq_upsert_records: skipping as no records are upserted on the first run"
         logging.info(msg)
         raise AirflowSkipException(msg)
 
     bq.bq_upsert_records(
-        main_table_id=release.bq_main_table_id,
-        upsert_table_id=release.bq_upsert_table_id,
+        main_table_id=orcid_release.bq_main_table_id,
+        upsert_table_id=orcid_release.bq_upsert_table_id,
         primary_key="orcid_identifier",
     )
 
@@ -483,15 +487,15 @@ def bq_upsert_records(release: dict):
 def bq_delete_records(release: dict):
     """Delete the records in the delete table from the main table."""
 
-    release = OrcidRelease.from_dict(release)
-    if release.is_first_run:
+    orcid_release = OrcidRelease.from_dict(release)
+    if orcid_release.is_first_run:
         msg = "bq_delete_records: skipping as no records are deleted on the first run"
         logging.info(msg)
         raise AirflowSkipException(msg)
 
     bq.bq_delete_records(
-        main_table_id=release.bq_main_table_id,
-        delete_table_id=release.bq_delete_table_id,
+        main_table_id=orcid_release.bq_main_table_id,
+        delete_table_id=orcid_release.bq_delete_table_id,
         main_table_primary_key="orcid_identifier.path",
         delete_table_primary_key="id",
     )
@@ -503,22 +507,22 @@ def add_dataset_release(release: dict, *, api_bq_dataset_id: str, latest_modifie
     :param api_bq_datastet_id: bigquery dataset ID of the API
     :param last_modified_release_date: The modification datetime of the last modified record of this release"""
 
-    release = OrcidRelease.from_dict(release)
+    orcid_release = OrcidRelease.from_dict(release)
     try:
         pendulum.parse(latest_modified_date)
     except pendulum.parsing.Exceptions.ParserError:
         raise AirflowException("Latest modified record date not valid: {latest_modified_date}")
 
-    api = DatasetAPI(bq_project_id=release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
+    api = DatasetAPI(bq_project_id=orcid_release.cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
     now = pendulum.now()
     dataset_release = DatasetRelease(
-        dag_id=release.dag_id,
+        dag_id=orcid_release.dag_id,
         entity_id="orcid",
-        dag_run_id=release.run_id,
+        dag_run_id=orcid_release.run_id,
         created=now,
         modified=now,
-        changefile_start_date=release.start_date,
-        changefile_end_date=release.end_date,
+        changefile_start_date=orcid_release.start_date,
+        changefile_end_date=orcid_release.end_date,
         extra={"latest_modified_record_date": latest_modified_date},
     )
     api.add_dataset_release(dataset_release)
@@ -527,8 +531,8 @@ def add_dataset_release(release: dict, *, api_bq_dataset_id: str, latest_modifie
 def cleanup_workflow(release: dict) -> None:
     """Delete all files, folders and XComs associated with this release."""
 
-    release = OrcidRelease.from_dict(release)
-    cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
+    orcid_release = OrcidRelease.from_dict(release)
+    cleanup(dag_id=orcid_release.dag_id, workflow_folder=orcid_release.workflow_folder)
 
 
 def aws_orcid_key(conn_id: str) -> Tuple[str, str]:
@@ -580,8 +584,8 @@ def latest_modified_record_date(release: dict) -> str:
     :return: the most recent date of modification for the records
     """
 
-    release = OrcidRelease.from_dict(release)
-    with open(release.master_manifest_file, "r") as f:
+    orcid_release = OrcidRelease.from_dict(release)
+    with open(orcid_release.master_manifest_file, "r") as f:
         reader = csv.DictReader(f)
         modified_dates = sorted([pendulum.parse(row["updated"]) for row in reader])
     latest_modified_record_date = datetime_normalise(modified_dates[-1])

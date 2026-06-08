@@ -115,7 +115,7 @@ class OrcidRelease(ChangefileRelease):
         )
 
     @staticmethod
-    def from_dict(dict_: Dict):
+    def from_dict(dict_: Dict) -> "OrcidRelease":
         return OrcidRelease(
             dag_id=dict_["dag_id"],
             run_id=dict_["run_id"],
