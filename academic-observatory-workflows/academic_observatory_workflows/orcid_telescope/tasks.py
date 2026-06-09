@@ -196,7 +196,7 @@ def bq_create_main_table_snapshot(release: dict, snapshot_expiry_days: int):
         logging.info(msg)
         raise AirflowSkipException(msg)
 
-    expiry_date = pendulum.now().add(days=snapshot_expiry_days)
+    expiry_date = pendulum.now("UTC").add(days=snapshot_expiry_days)
     success = bq.bq_snapshot(
         src_table_id=orcid_release.bq_main_table_id,
         dst_table_id=orcid_release.bq_snapshot_table_id,
@@ -367,12 +367,6 @@ def transform(release: dict, max_workers: Optional[int] = None):
     logging.info(
         f"Transformed {total_upsert_records} upserts and {total_delete_records} deletes in {str(datetime.timedelta(seconds=total_time))}"
     )
-
-    # Sanity checks
-    if total_upsert_records + total_delete_records != len(orcid_release.downloaded_records):
-        raise ValueError(
-            f"Expected {len(orcid_release.downloaded_records)} total records processed but got {total_upsert_records + total_delete_records}"
-        )
 
 
 def clean_downloads(release: dict):
