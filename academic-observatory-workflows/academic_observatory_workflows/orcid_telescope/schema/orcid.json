@@ -8881,7 +8881,7 @@
                         "description": "Container for host and proposal organisations",
                         "fields": [
                           {
-                            "mode": "NULLABLE",
+                            "mode": "REPEATED",
                             "name": "organization",
                             "type": "RECORD",
                             "description": "A reference to an organization.",
