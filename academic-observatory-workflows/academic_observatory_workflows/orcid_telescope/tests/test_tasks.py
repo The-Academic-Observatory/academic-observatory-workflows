@@ -238,10 +238,10 @@ class TestTasks(SandboxTestCase):
                 bq_upsert_table_name="test_orcid_upsert",
                 bq_delete_table_name="test_orcid_delete",
                 cloud_workspace=env.cloud_workspace,
-                start_date=pendulum.now(),
-                end_date=pendulum.now(),
-                prev_release_end=pendulum.now(),
-                prev_latest_modified_record=pendulum.now(),
+                start_date=pendulum.now("UTC"),
+                end_date=pendulum.now("UTC"),
+                prev_release_end=pendulum.now("UTC"),
+                prev_latest_modified_record=pendulum.now("UTC"),
                 is_first_run=False,
             )
 
