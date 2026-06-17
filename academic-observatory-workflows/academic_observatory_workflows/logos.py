@@ -12,30 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Author: James Diprose
+# Author: James Diprose, Keegan Smith
 
 import logging
 import shutil
 
 import requests
 
+logger = logging.getLogger(__name__)
 
-def clearbit_download_logo(*, company_url: str, file_path: str, size: int = 24, fmt: str = "jpg") -> bool:
-    """Download a company logo from the Clearbit Logo API tool: https://clearbit.com/logo.
-    :param company_url: the URL of the company domain + suffix e.g. spotify.com
+
+def download_logo(*, domain: str, key: str, file_path: str, size: int = 24, fmt: str = "jpg") -> bool:
+    """Download a company logo from the logo.dev Logo API tool: https://www.logo.dev
+
+    :param domain: the URL of the company domain + suffix e.g. spotify.com
+    :param key: The API key for logo.dev
     :param file_path: the path where the file should be saved.
     :param size: the desired size (pixels) of the logo.
     :param fmt: the format of the logo, either jpg or png.
     :return: whether the logo was found or not.
     """
 
-    params = (("size", size), ("format", fmt))
-    response = requests.get(f"https://logo.clearbit.com/{company_url}", params=params, stream=True)
+    params = (("size", size), ("format", fmt), ("token", key))
+    response = requests.get(f"https://img.logo.dev/{domain}", params=params, stream=True)
     if response.status_code == 200:
         with open(file_path, "wb") as f:
             shutil.copyfileobj(response.raw, f)
         del response
         return True
     elif response.status_code != 404:
-        logging.warning(f"{response.url}: status_code={response.status_code}, reason={response.reason}")
+        logger.warning(f"{response.url}: status_code={response.status_code}, reason={response.reason}")
     return False

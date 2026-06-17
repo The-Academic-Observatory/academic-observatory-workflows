@@ -21,8 +21,6 @@ import json
 import logging
 import os
 import os.path
-import os.path
-import os.path
 import shutil
 import statistics
 from concurrent.futures import as_completed, ThreadPoolExecutor
@@ -39,14 +37,13 @@ from airflow.exceptions import AirflowException
 from glom import Coalesce, glom, SKIP
 from jinja2 import Template
 
-from academic_observatory_workflows.clearbit import clearbit_download_logo
+from academic_observatory_workflows.logos import download_logo
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.github import trigger_repository_dispatch
 from academic_observatory_workflows.oa_dashboard_workflow.institution_ids import INSTITUTION_IDS
 from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 from academic_observatory_workflows.wikipedia import fetch_wikipedia_descriptions
-from academic_observatory_workflows.zenodo import make_draft_version, publish_new_version, Zenodo
-from observatory_platform.airflow.airflow import get_airflow_connection_password
+from academic_observatory_workflows.zenodo import Zenodo
 from observatory_platform.files import yield_jsonl
 from observatory_platform.google.bigquery import (
     bq_create_table_from_query,
@@ -185,8 +182,8 @@ def download_assets(*, release: OaDashboardRelease, bucket_name: str):
             zip_file.extractall(unzip_folder_path)  # Overwrites by default
 
 
-def download_institution_logos(*, release: OaDashboardRelease):
-    logging.info(f"download_logos: institution")
+def download_institution_logos(*, key: str, release: OaDashboardRelease):
+    logging.info("download_logos: institution")
 
     # Get entities to fetch descriptions for
     entity_type = "institution"
@@ -194,7 +191,7 @@ def download_institution_logos(*, release: OaDashboardRelease):
     entities = [(result["id"], result["url"]) for result in results]
 
     # Update logos
-    data = fetch_institution_logos(release.build_path, entities)
+    data = fetch_institution_logos(release.build_path, entities, key)
 
     # Upload to BigQuery
     logos_table_id = release.logos_table_id(entity_type)
@@ -250,20 +247,18 @@ def download_data(*, release: OaDashboardRelease, download_bucket: str):
         raise AirflowException("OaDashboardWorkflow.download failed")
 
 
-def make_draft_zenodo_version(*, zenodo_conn_id: str, zenodo_host: str, conceptrecid: int):
-    zenodo_token = get_airflow_connection_password(zenodo_conn_id)
+def make_draft_zenodo_version(*, zenodo_token: str, zenodo_host: str, conceptrecid: int):
     zenodo = Zenodo(host=zenodo_host, access_token=zenodo_token)
-    make_draft_version(zenodo, conceptrecid)
+    zenodo.make_draft_version(conceptrecid)
 
 
 def fetch_zenodo_versions(
     *,
-    zenodo_conn_id: str,
+    zenodo_token: str,
     zenodo_host: str,
     conceptrecid: int,
 ):
     # Get versions
-    zenodo_token = get_airflow_connection_password(zenodo_conn_id)
     zenodo = Zenodo(host=zenodo_host, access_token=zenodo_token)
     res = zenodo.get_versions(conceptrecid, all_versions=1)
     if res.status_code != 200:
@@ -305,11 +300,10 @@ def publish_zenodo_version(
     release: OaDashboardRelease,
     version: str,
     bucket_name: str,
-    zenodo_conn_id: str,
+    zenodo_token: str,
     zenodo_host: str,
     conceptrecid: int,
 ):
-    zenodo_token = get_airflow_connection_password(zenodo_conn_id)
     zenodo = Zenodo(host=zenodo_host, access_token=zenodo_token)
     res = zenodo.get_versions(conceptrecid, all_versions=0)
     if res.status_code != 200:
@@ -328,7 +322,7 @@ def publish_zenodo_version(
         raise AirflowException(f"publish_zenodo_version: unable to download gs://{bucket_name}/{blob_name}")
 
     # Publish new version
-    publish_new_version(zenodo, draft_id, file_path)
+    zenodo.publish_new_version(draft_id, file_path)
 
 
 def upload_dataset(*, release: OaDashboardRelease, version: str, bucket_name: str):
@@ -340,8 +334,7 @@ def upload_dataset(*, release: OaDashboardRelease, version: str, bucket_name: st
         gcs_upload_file(bucket_name=bucket_name, blob_name=blob_name, file_path=file_path, check_blob_hash=False)
 
 
-def repository_dispatch(*, github_conn_id: str):
-    token = get_airflow_connection_password(github_conn_id)
+def repository_dispatch(*, token: str):
     event_types = ["data-update/develop", "data-update/staging", "data-update/production"]
     for event_type in event_types:
         trigger_repository_dispatch(
@@ -674,9 +667,11 @@ def make_logo_url(*, entity_type: str, entity_id: str, size: str, fmt: str) -> s
     return f"logos/{entity_type}/{size}/{entity_id}.{fmt}"
 
 
-def fetch_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: str, build_path: str) -> Tuple[str, str]:
+def fetch_institution_logo(
+    ror_id: str, url: str, size: str, width: int, fmt: str, build_path: str, key: str
+) -> Tuple[str, str]:
     """Get the path to the logo for an institution.
-    If the logo does not exist in the build path yet, download from the Clearbit Logo API tool.
+    If the logo does not exist in the build path yet, download from the Logo.dev Logo API tool.
     If the logo does not exist and failed to download, the path will default to "unknown.svg".
 
     :param ror_id: the institution's ROR id
@@ -685,6 +680,7 @@ def fetch_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: st
     :param width: the width of the image.
     :param fmt: the image format.
     :param build_path: the build path for files of this workflow
+    :param key: the API key for logo.dev
     :return: The ROR id and relative path (from build path) to the logo
     """
 
@@ -694,9 +690,9 @@ def fetch_institution_logo(ror_id: str, url: str, size: str, width: int, fmt: st
     file_path = os.path.join(size_folder, f"{ror_id}.{fmt}")
     if not os.path.isfile(file_path):
         logging.debug(
-            f"fetch_institution_logo: downloading logo company_url={url}, file_path={file_path}, size={width}, fmt={fmt}"
+            f"fetch_institution_logo: downloading logo domain={url}, file_path={file_path}, size={width}, fmt={fmt}"
         )
-        clearbit_download_logo(company_url=url, file_path=file_path, size=width, fmt=fmt)
+        download_logo(domain=url, key=key, file_path=file_path, size=width, fmt=fmt)
     if os.path.isfile(file_path):
         logging.debug(f"fetch_institution_logo: {file_path} exists, skipping download")
         logo_path = make_logo_url(entity_type="institution", entity_id=ror_id, size=size, fmt=fmt)
@@ -712,10 +708,10 @@ def clean_url(url: str) -> str:
     """
 
     p = urlparse(url)
-    return f"{p.scheme}://{p.netloc}/"
+    return p.netloc
 
 
-def fetch_institution_logos(build_path: str, entities: List[Tuple[str, str]]) -> List[Dict]:
+def fetch_institution_logos(build_path: str, entities: List[Tuple[str, str]], key: str) -> List[Dict]:
     """Update the index with logos, downloading logos if they don't exist.
 
     :param build_path: the path to the build folder.
@@ -724,12 +720,12 @@ def fetch_institution_logos(build_path: str, entities: List[Tuple[str, str]]) ->
     """
 
     # Get the institution logo and the path to the logo image
-    logging.info("Downloading logos using Clearbit")
+    logging.info("Downloading logos using Logo.dev")
     total = len(entities)
 
     results = {
         entity_id: {"id": entity_id, "logo_sm": "unknown.svg", "logo_md": "unknown.svg", "logo_lg": "unknown.svg"}
-        for entity_id, url in entities
+        for entity_id, _ in entities
     }
     for size, width, fmt in [("sm", 32, "jpg"), ("md", 128, "jpg"), ("lg", 532, "png")]:
         logging.info(f"Downloading logos: size={size}, width={width}, fmt={fmt}")
@@ -741,7 +737,7 @@ def fetch_institution_logos(build_path: str, entities: List[Tuple[str, str]]) ->
                 if url:
                     url = clean_url(url)
                     futures.append(
-                        executor.submit(fetch_institution_logo, entity_id, url, size, width, fmt, build_path)
+                        executor.submit(fetch_institution_logo, entity_id, url, size, width, fmt, build_path, key)
                     )
 
             # Wait for results

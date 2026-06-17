@@ -16,15 +16,17 @@
 
 from __future__ import annotations
 
+import os
 from typing import List, Optional
 
-import pendulum
 from airflow import DAG
 from airflow.decorators import dag, task
+from airflow.providers.cncf.kubernetes.secret import Secret
 from airflow.models.baseoperator import chain
 from airflow.sensors.external_task import ExternalTaskSensor
+import pendulum
 
-from observatory_platform.airflow.airflow import on_failure_callback
+from observatory_platform.airflow.airflow import on_failure_callback, get_airflow_connection_password
 from observatory_platform.airflow.release import make_snapshot_date
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
 from observatory_platform.airflow.workflow import cleanup, CloudWorkspace
@@ -265,16 +267,18 @@ def create_dag(dag_params: DagParams) -> DAG:
                 {"memory": "4G", "cpu": "2"},
                 dag_params.gke_params.gke_resource_overrides.get("download_institution_logos"),
             ),
+            secrets=[Secret("env", "LOGO_DEV_API_KEY", "logo-dev-api-key", "api-key")],
             **kubernetes_task_params,
         )
-        def download_institution_logos(release: dict, dag_params, **context):
+        def download_institution_logos(release: dict, **context):
             """Download logos and update indexes."""
 
+            import os
             import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
             from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 
             release = OaDashboardRelease.from_dict(release)
-            tasks.download_institution_logos(release=release)
+            tasks.download_institution_logos(key=os.environ["LOGO_DEV_API_KEY"], release=release)
 
         @task
         def export_tables(release: dict, dag_params, **context):
@@ -312,8 +316,9 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
 
+            zenodo_token = get_airflow_connection_password(dag_params.zenodo_conn_id)
             tasks.make_draft_zenodo_version(
-                zenodo_conn_id=dag_params.zenodo_conn_id,
+                zenodo_token=zenodo_token,
                 zenodo_host=dag_params.zenodo_host,
                 conceptrecid=dag_params.conceptrecid,
             )
@@ -324,8 +329,9 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
 
+            zenodo_token = get_airflow_connection_password(dag_params.zenodo_conn_id)
             return tasks.fetch_zenodo_versions(
-                zenodo_conn_id=dag_params.zenodo_conn_id,
+                zenodo_token=zenodo_token,
                 zenodo_host=dag_params.zenodo_host,
                 conceptrecid=dag_params.conceptrecid,
             )
@@ -378,12 +384,13 @@ def create_dag(dag_params: DagParams) -> DAG:
             import academic_observatory_workflows.oa_dashboard_workflow.tasks as tasks
             from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 
+            zenodo_token = get_airflow_connection_password(dag_params.zenodo_conn_id)
             release = OaDashboardRelease.from_dict(release)
             tasks.publish_zenodo_version(
                 release=release,
                 version=dag_params.version,
                 bucket_name=dag_params.data_bucket,
-                zenodo_conn_id=dag_params.zenodo_conn_id,
+                zenodo_token=zenodo_token,
                 zenodo_host=dag_params.zenodo_host,
                 conceptrecid=dag_params.conceptrecid,
             )
@@ -396,7 +403,8 @@ def create_dag(dag_params: DagParams) -> DAG:
             from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 
             release = OaDashboardRelease.from_dict(release)
-            tasks.repository_dispatch(github_conn_id=dag_params.github_conn_id)
+            token = get_airflow_connection_password(dag_params.github_conn_id)
+            tasks.repository_dispatch(token=token)
 
         @task
         def cleanup_workflow(release: dict, dag_params, **context):
@@ -430,7 +438,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             )
 
         task_download_assets = download_assets(xcom_release, dag_params)
-        task_download_institution_logos = download_institution_logos(xcom_release, dag_params)
+        task_download_institution_logos = download_institution_logos(xcom_release)
         task_export_tables = export_tables(xcom_release, dag_params)
         task_download_data = download_data(xcom_release, dag_params)
         task_make_draft_zenodo_version = make_draft_zenodo_version(xcom_release, dag_params)
