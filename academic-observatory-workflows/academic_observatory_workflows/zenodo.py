@@ -96,64 +96,62 @@ class Zenodo:
         url = self.make_url(f"/api/deposit/depositions/{id}/actions/publish")
         return requests.post(url, params={"access_token": self.access_token})
 
+    def make_draft_version(self, conceptrecid: int):
+        # Make new draft version
+        res = self.get_versions(conceptrecid)
+        if res.status_code != 200:
+            raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
 
-def make_draft_version(zenodo: Zenodo, conceptrecid: int):
-    # Make new draft version
-    res = zenodo.get_versions(conceptrecid)
-    if res.status_code != 200:
-        raise AirflowException(f"zenodo.get_versions status_code {res.status_code}")
+        versions = res.json()
+        if len(versions) == 0:
+            raise AirflowException(f"make_draft_version: at least 1 version must exist")
 
-    versions = res.json()
-    if len(versions) == 0:
-        raise AirflowException(f"make_draft_version: at least 1 version must exist")
+        latest = versions[0]
+        draft_id = latest["id"]
+        state = latest["state"]
+        if state == "done":
+            # If published then create a new draft
+            res = self.create_new_version(draft_id)
+            if res.status_code != 201:
+                raise AirflowException(f"zenodo.create_new_version status_code {res.status_code}")
+            draft_id = int(res.json()["links"]["latest_draft"].split("/")[-1])
 
-    latest = versions[0]
-    draft_id = latest["id"]
-    state = latest["state"]
-    if state == "done":
-        # If published then create a new draft
-        res = zenodo.create_new_version(draft_id)
+        # Fetch draft deposition
+        res = self.get_deposition(draft_id)
+        if res.status_code != 200:
+            raise AirflowException(f"zenodo.get_deposition status_code {res.status_code}")
+
+        # Update metadata
+        draft = res.json()
+        publication_date = pendulum.now().format("YYYY-MM-DD")
+        metadata = draft["metadata"]
+        metadata["publication_date"] = publication_date
+        metadata["version"] = publication_date
+        data = {"metadata": metadata}
+        res = self.update(draft_id, data)
+        if res.status_code != 200:
+            raise AirflowException(f"zenodo.update status_code {res.status_code}")
+
+    def publish_new_version(self, draft_id: int, file_path: str):
+        # Get full deposition which contains files
+        res = self.get_deposition(draft_id)
+        if res.status_code != 200:
+            raise AirflowException(f"zenodo.get_deposition {res.status_code}")
+        draft = res.json()
+
+        # Delete existing files
+        for file in draft["files"]:
+            file_id = file["id"]
+            res = self.delete_file(draft_id, file_id)
+            if res.status_code != 204:
+                raise AirflowException(f"zenodo.delete_file status_code {res.status_code}")
+
+        # Upload new file
+        res = self.upload_file(draft_id, file_path)
         if res.status_code != 201:
-            raise AirflowException(f"zenodo.create_new_version status_code {res.status_code}")
-        draft_id = int(res.json()["links"]["latest_draft"].split("/")[-1])
+            raise AirflowException(f"zenodo.upload_file status_code {res.status_code}")
 
-    # Fetch draft deposition
-    res = zenodo.get_deposition(draft_id)
-    if res.status_code != 200:
-        raise AirflowException(f"zenodo.get_deposition status_code {res.status_code}")
-
-    # Update metadata
-    draft = res.json()
-    publication_date = pendulum.now().format("YYYY-MM-DD")
-    metadata = draft["metadata"]
-    metadata["publication_date"] = publication_date
-    metadata["version"] = publication_date
-    data = {"metadata": metadata}
-    res = zenodo.update(draft_id, data)
-    if res.status_code != 200:
-        raise AirflowException(f"zenodo.update status_code {res.status_code}")
-
-
-def publish_new_version(zenodo: Zenodo, draft_id: int, file_path: str):
-    # Get full deposition which contains files
-    res = zenodo.get_deposition(draft_id)
-    if res.status_code != 200:
-        raise AirflowException(f"zenodo.get_deposition {res.status_code}")
-    draft = res.json()
-
-    # Delete existing files
-    for file in draft["files"]:
-        file_id = file["id"]
-        res = zenodo.delete_file(draft_id, file_id)
-        if res.status_code != 204:
-            raise AirflowException(f"zenodo.delete_file status_code {res.status_code}")
-
-    # Upload new file
-    res = zenodo.upload_file(draft_id, file_path)
-    if res.status_code != 201:
-        raise AirflowException(f"zenodo.upload_file status_code {res.status_code}")
-
-    # Publish
-    res = zenodo.publish(draft_id)
-    if res.status_code != 202:
-        raise AirflowException(f"zenodo.publish status_code {res.status_code}")
+        # Publish
+        res = self.publish(draft_id)
+        if res.status_code != 202:
+            raise AirflowException(f"zenodo.publish status_code {res.status_code}")

@@ -63,12 +63,10 @@ DOI_SCHEMA_FOLDER = project_path("doi_workflow", "schema")
 ROR_SCHEMA_FOLDER = project_path("ror_telescope", "schema")
 
 
-# Skip - remove this if this workflow is ever recomissioned
-@unittest.skip
 class TestFunctions(TestCase):
     def test_clean_url(self):
         url = "https://www.auckland.ac.nz/en.html"
-        expected = "https://www.auckland.ac.nz/"
+        expected = "www.auckland.ac.nz"
         actual = clean_url(url)
         self.assertEqual(expected, actual)
 
@@ -80,24 +78,25 @@ class TestFunctions(TestCase):
     @patch("academic_observatory_workflows.oa_dashboard_workflow.tasks.make_logo_url")
     def test_get_institution_logo(self, mock_make_url):
         mock_make_url.return_value = "logo_path"
-        mock_clearbit_ref = "academic_observatory_workflows.oa_dashboard_workflow.tasks.clearbit_download_logo"
+        mock_logo_ref = "academic_observatory_workflows.oa_dashboard_workflow.tasks.download_logo"
 
-        def download_logo(company_url, file_path, size, fmt):
+        def download_logo(*, domain, key, file_path, size, fmt):
             if not os.path.isdir(os.path.dirname(file_path)):
                 os.makedirs(os.path.dirname(file_path))
             with open(file_path, "w") as f:
                 f.write("foo")
 
-        ror_id, url, size, width, fmt, build_path = "ror_id", "url.com", "size", 10, "fmt", "build_path"
-        with tempfile.TemporaryDirectory():
+        ror_id, url, size, width, fmt, key = "ror_id", "url.com", "size", 10, "fmt", "key"
+        with tempfile.TemporaryDirectory() as build_path:
             # Test when logo file does not exist yet and logo download fails
-            with patch(mock_clearbit_ref) as mock_clearbit_download:
-                actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path)
+            with patch(mock_logo_ref) as mock_download:
+                actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path, key)
                 self.assertEqual(ror_id, actual_ror_id)
                 self.assertEqual("unknown.svg", actual_logo_path)
-                mock_clearbit_download.assert_called_once_with(
-                    company_url=url,
-                    file_path="build_path/images/logos/institution/size/ror_id.fmt",
+                mock_download.assert_called_once_with(
+                    domain=url,
+                    key=key,
+                    file_path=os.path.join(build_path, "images", "logos", "institution", size, f"{ror_id}.{fmt}"),
                     size=width,
                     fmt=fmt,
                 )
@@ -106,13 +105,14 @@ class TestFunctions(TestCase):
             mock_make_url.reset_mock()
 
             # Test when logo file does not exist yet and logo is downloaded successfully
-            with patch(mock_clearbit_ref, wraps=download_logo) as mock_clearbit_download:
-                actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path)
+            with patch(mock_logo_ref, wraps=download_logo) as mock_download:
+                actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path, key)
                 self.assertEqual(ror_id, actual_ror_id)
                 self.assertEqual("logo_path", actual_logo_path)
-                mock_clearbit_download.assert_called_once_with(
-                    company_url=url,
-                    file_path="build_path/images/logos/institution/size/ror_id.fmt",
+                mock_download.assert_called_once_with(
+                    domain=url,
+                    key=key,
+                    file_path=os.path.join(build_path, "images", "logos", "institution", size, f"{ror_id}.{fmt}"),
                     size=width,
                     fmt=fmt,
                 )
@@ -121,11 +121,11 @@ class TestFunctions(TestCase):
             mock_make_url.reset_mock()
 
             # Test when logo file already exists
-            with patch(mock_clearbit_ref, wraps=download_logo) as mock_clearbit_download:
-                actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path)
+            with patch(mock_logo_ref, wraps=download_logo) as mock_download:
+                actual_ror_id, actual_logo_path = fetch_institution_logo(ror_id, url, size, width, fmt, build_path, key)
                 self.assertEqual(ror_id, actual_ror_id)
                 self.assertEqual("logo_path", actual_logo_path)
-                mock_clearbit_download.assert_not_called()
+                mock_download.assert_not_called()
                 mock_make_url.assert_called_once_with(entity_type="institution", entity_id=ror_id, size=size, fmt=fmt)
 
     def test_make_entity_stats(self):
@@ -181,8 +181,6 @@ class TestFunctions(TestCase):
             self.assertEqual(expected, actual)
 
 
-# Skip - remove this if this workflow is ever recomissioned
-@unittest.skip
 class TestOaDashboardWorkflow(SandboxTestCase):
     maxDiff = None
     dt_fmt = "YYYY-MM-DD"
@@ -324,7 +322,6 @@ class TestOaDashboardWorkflow(SandboxTestCase):
                     bq_find_schema(
                         path=ROR_SCHEMA_FOLDER,
                         table_name="ror",
-                        release_date=snapshot_date,
                     ),
                 ),
                 Table(
@@ -357,8 +354,17 @@ class TestOaDashboardWorkflow(SandboxTestCase):
                 snapshot_date=snapshot_date,
             )
 
-    def test_tasks(self):
+    @patch("academic_observatory_workflows.oa_dashboard_workflow.tasks.download_logo")
+    def test_tasks(self, mock_download_logo):
         """Test data generation and transform tasks."""
+
+        def download_logo(*, domain, key, file_path, size, fmt):
+            if not os.path.isdir(os.path.dirname(file_path)):
+                os.makedirs(os.path.dirname(file_path))
+            with open(file_path, "w") as f:
+                f.write("foo")
+
+        mock_download_logo.side_effect = download_logo
 
         snapshot_date = pendulum.datetime(2021, 11, 21)
         env = SandboxEnvironment(project_id=self.project_id, data_location=self.data_location)
@@ -412,7 +418,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
             tasks.add_wiki_descriptions(release=release, entity_type="country")
             tasks.add_wiki_descriptions(release=release, entity_type="institution")
             tasks.download_assets(release=release, bucket_name=data_bucket)
-            tasks.download_institution_logos(release=release)
+            tasks.download_institution_logos(key="key", release=release)
             tasks.export_tables(
                 release=release,
                 entity_types=entity_types,
@@ -509,7 +515,6 @@ class TestOaDashboardWorkflow(SandboxTestCase):
             # Setup workflow and connections
             github_conn_id = "oa_dashboard_github_token"
             zenodo_conn_id = "oa_dashboard_zenodo_token"
-            entity_types = ["country", "institution"]
             version = "v10"
             task_resources = {
                 "download_assets": {"memory": "2G", "cpu": "2"},
@@ -561,9 +566,24 @@ class TestOaDashboardWorkflow(SandboxTestCase):
             self.assert_blob_exists(data_bucket, blob_name)
 
             # Check that repository dispatch called
-            mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/develop")
-            mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/staging")
-            mock_trigger_repository_dispatch.called_once_with(github_token, "data-update/production")
+            mock_trigger_repository_dispatch.assert_any_call(
+                org="The-Academic-Observatory",
+                repo_name="coki-oa-web",
+                token=github_token,
+                event_type="data-update/develop",
+            )
+            mock_trigger_repository_dispatch.assert_any_call(
+                org="The-Academic-Observatory",
+                repo_name="coki-oa-web",
+                token=github_token,
+                event_type="data-update/staging",
+            )
+            mock_trigger_repository_dispatch.assert_any_call(
+                org="The-Academic-Observatory",
+                repo_name="coki-oa-web",
+                token=github_token,
+                event_type="data-update/production",
+            )
 
 
 def make_expected_build_files(base_path: str) -> List[str]:

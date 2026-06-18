@@ -25,7 +25,7 @@ from unittest.mock import MagicMock, patch
 from airflow.exceptions import AirflowException
 import tempfile
 
-from academic_observatory_workflows.zenodo import make_draft_version, publish_new_version, Zenodo
+from academic_observatory_workflows.zenodo import Zenodo
 
 
 class MockResponse:
@@ -232,7 +232,7 @@ class TestZenodo(TestCase):
         res.status_code = 500
         mock_get_versions.return_value = res
         with self.assertRaises(AirflowException):
-            make_draft_version(self.zenodo, 1)
+            self.zenodo.make_draft_version(1)
 
         # No versions found
         res = MockResponse()
@@ -240,7 +240,7 @@ class TestZenodo(TestCase):
         res.status_code = 200
         mock_get_versions.return_value = res
         with self.assertRaises(AirflowException):
-            make_draft_version(self.zenodo, 1)
+            self.zenodo.make_draft_version(1)
 
         # Could not create a new version
         res_get_versions = MockResponse()
@@ -252,7 +252,7 @@ class TestZenodo(TestCase):
         res_create_new_version.data = {"id": 2, "state": "unsubmitted", "links": {"latest_draft": "/2"}}
         mock_create_new_version.return_value = res_create_new_version
         with self.assertRaises(AirflowException):
-            make_draft_version(self.zenodo, 1)
+            self.zenodo.make_draft_version(1)
 
         # Could not get deposition
         res_create_new_version.status_code = 201
@@ -261,7 +261,7 @@ class TestZenodo(TestCase):
         res_get_deposition.data = {"id": 2, "state": "done", "metadata": {}}
         mock_get_deposition.return_value = res_get_deposition
         with self.assertRaises(AirflowException):
-            make_draft_version(self.zenodo, 2)
+            self.zenodo.make_draft_version(2)
 
         # Could not update
         res_get_deposition.status_code = 200
@@ -269,11 +269,11 @@ class TestZenodo(TestCase):
         res_update.status_code = 500
         mock_update.return_value = res_update
         with self.assertRaises(AirflowException):
-            make_draft_version(self.zenodo, 2)
+            self.zenodo.make_draft_version(2)
 
         # Success
         res_update.status_code = 200
-        make_draft_version(self.zenodo, 1)
+        self.zenodo.make_draft_version(1)
 
     @patch("academic_observatory_workflows.zenodo.Zenodo.get_deposition")
     @patch("academic_observatory_workflows.zenodo.Zenodo.delete_file")
@@ -288,7 +288,7 @@ class TestZenodo(TestCase):
         res_get_deposition.status_code = 500
         mock_get_deposition.return_value = res_get_deposition
         with self.assertRaises(AirflowException):
-            publish_new_version(self.zenodo, draft_id, file_path)
+            self.zenodo.publish_new_version(draft_id, file_path)
 
         # Error deleting files
         res_get_deposition = MockResponse()
@@ -306,7 +306,7 @@ class TestZenodo(TestCase):
         res_delete_file.status_code = 500
         mock_delete_file.return_value = res_delete_file
         with self.assertRaises(AirflowException):
-            publish_new_version(self.zenodo, draft_id, file_path)
+            self.zenodo.publish_new_version(draft_id, file_path)
 
         # Error uploading new file
         res_delete_file = MockResponse()
@@ -317,7 +317,7 @@ class TestZenodo(TestCase):
         res_upload_file.status_code = 500
         mock_upload_file.return_value = res_upload_file
         with self.assertRaises(AirflowException):
-            publish_new_version(self.zenodo, draft_id, file_path)
+            self.zenodo.publish_new_version(draft_id, file_path)
 
         # Error publish
         res_upload_file = MockResponse()
@@ -329,10 +329,10 @@ class TestZenodo(TestCase):
         mock_publish.return_value = res_publish
 
         with self.assertRaises(AirflowException):
-            publish_new_version(self.zenodo, draft_id, file_path)
+            self.zenodo.publish_new_version(draft_id, file_path)
 
         # Success
         res_publish = MockResponse()
         res_publish.status_code = 202
         mock_publish.return_value = res_publish
-        publish_new_version(self.zenodo, draft_id, file_path)
+        self.zenodo.publish_new_version(draft_id, file_path)

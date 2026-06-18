@@ -9,12 +9,25 @@ type: Opaque
 data:
   api-key: c2VjcmV0 # 'secret'
 
+
 # Unpaywall secret
 ---
 apiVersion: v1
 kind: Secret
 metadata:
   name: unpaywall
+  namespace: default
+type: Opaque
+data:
+  api-key: c2VjcmV0 # 'secret'
+
+
+# Logo dev API key
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: logo-dev-api-key
   namespace: default
 type: Opaque
 data:
