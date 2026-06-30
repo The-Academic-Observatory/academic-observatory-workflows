@@ -41,7 +41,7 @@ from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
 
 import observatory_platform.google.bigquery as bq
-from academic_observatory_workflows.openalex_telescope.release import Manifest, MergedId, OpenAlexEntity
+from academic_observatory_workflows.openalex_telescope.release import Manifest, OpenAlexEntity
 from observatory_platform.airflow.airflow import send_slack_msg
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.dataset_api import DatasetAPI, DatasetRelease
@@ -104,9 +104,6 @@ def fetch_entities(
     for entity_name, manifest in entity_index.items():
         logging.info(f"fetch_releases: adding OpenAlexEntity({entity_name}), snapshot_date={snapshot_date})")
 
-        # Also fetch merged IDs so that we can check if they have changed later on
-        merged_ids = fetch_merged_ids(bucket=aws_openalex_bucket, aws_key=aws_key, entity_name=entity_name)
-
         # Save metadata
         entity = OpenAlexEntity(
             dag_id=dag_id,
@@ -117,7 +114,6 @@ def fetch_entities(
             schema_folder=schema_folder,
             snapshot_date=snapshot_date,
             manifest=manifest,
-            merged_ids=merged_ids,
             is_first_run=is_first_run,
             format=format,
         )
@@ -150,8 +146,6 @@ def aws_to_gcs_transfer(
     object_paths = []
     for entry in entity.entries:
         object_paths.append(entry.object_key)
-    for merged_id in entity.merged_ids:
-        object_paths.append(merged_id.object_key)
     gcs_upload_transfer_manifest(object_paths, entity.transfer_manifest_uri)
 
     # Transfer files
@@ -184,27 +178,14 @@ def aws_to_gcs_transfer(
     # manifests do not match then the data has changed, and we need to restart the DAG run manually.
     # See step 3 : https://docs.openalex.org/download-all-data/snapshot-data-format#the-manifest-file
     current_manifest = fetch_manifest(bucket=aws_openalex_bucket, aws_key=aws_key, entity_name=entity.entity_name)
-    current_merged_ids = fetch_merged_ids(bucket=aws_openalex_bucket, aws_key=aws_key, entity_name=entity.entity_name)
 
     msgs = []
     manifest_changed = entity.manifest != current_manifest
-    merged_ids_changed = entity.merged_ids != current_merged_ids
 
     if manifest_changed:
         msg = f"OpenAlexEntity({entity.entity_name}) manifests have changed"
         logging.error(f"aws_to_gcs_transfer: {msg}")
         msgs.append(msg)
-
-    if merged_ids_changed:
-        msg = "OpenAlexEntity({entity.entity_name}) merged_ids have changed"
-        logging.error(f"aws_to_gcs_transfer: {msg}")
-        msgs.append(msg)
-
-    if not manifest_changed and not merged_ids_changed:
-        logging.info("aws_to_gcs_transfer: manifests and merged_ids the same")
-    else:
-        raise AirflowException(f"aws_to_gcs_transfer: {' ,'.join(msgs)}")
-
 
 def download(*, entity: OpenAlexEntity, **context):
     output_folder = f"{entity.download_folder}/data/{entity.entity_name}/"
@@ -404,12 +385,6 @@ def make_first_run_message(task_id: str):
     return f"{task_id}: skipping this task, as it is not executed on the first run"
 
 
-def make_no_merged_ids_msg(task_id: str, entity_name: str) -> str:
-    return (
-        f"{task_id}: skipping this task, as there are no merged_ids for OpenAlexEntity({entity_name}) in this release"
-    )
-
-
 def get_aws_key(aws_conn_id: str) -> Tuple[str, str]:
     """Get the AWS access key id and secret access key from the aws_conn_id airflow connection.
 
@@ -453,30 +428,6 @@ def fetch_manifest(
     return Manifest.from_dict(data)
 
 
-def fetch_merged_ids(
-    *, bucket: str, aws_key: Tuple[str, str], entity_name: str, prefix: str = "data/merged_ids"
-) -> List[MergedId]:
-    aws_access_key_id, aws_secret_key = aws_key
-    client = boto3.Session(
-        aws_access_key_id=aws_access_key_id,
-        aws_secret_access_key=aws_secret_key,
-    ).client("s3")
-    paginator = client.get_paginator("list_objects_v2")
-
-    results = []
-    for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/{entity_name}"):
-        for content in page.get("Contents", []):
-            obj_key = content["Key"]
-            # There is a dud file in data/merged_ids/sources/
-            if obj_key != "data/merged_ids/sources/.csv":
-                url = f"s3://{bucket}/{obj_key}"
-                content_length = content["Size"]
-                results.append(MergedId(url, content_length))
-
-    # Sort from oldest to newest
-    results.sort(key=lambda m: m.updated_date, reverse=False)
-
-    return results
 
 
 def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict, list]:

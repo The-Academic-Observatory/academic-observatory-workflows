@@ -39,7 +39,6 @@ class OpenAlexEntity(SnapshotRelease):
         schema_folder: str,
         snapshot_date: pendulum.DateTime,
         manifest: Manifest,
-        merged_ids: List[MergedId],
         is_first_run: bool,
         format: Literal["jsonl", "parquet"],
     ):
@@ -53,7 +52,6 @@ class OpenAlexEntity(SnapshotRelease):
         :param schema_folder: the path to the schema folder.
         :param snapshot_date: the OpenAlex snapshot date.
         :param manifest: the Redshift manifest provided by OpenAlex for this entity.
-        :param merged_ids: the MergedIds provided by OpenAlex for this entity.
         :param is_first_run: whether this is the first run or not.
         :param format: The data format to use for processing this entity. Avaialble: jsonl and parquet
         """
@@ -68,7 +66,6 @@ class OpenAlexEntity(SnapshotRelease):
         self.bq_dataset_id = bq_dataset_id
         self.schema_folder = schema_folder
         self.manifest = manifest
-        self.merged_ids = merged_ids
         self.is_first_run = is_first_run
         self.format = format
 
@@ -126,7 +123,6 @@ class OpenAlexEntity(SnapshotRelease):
             schema_folder=dict_["schema_folder"],
             snapshot_date=pendulum.parse(dict_["snapshot_date"]),
             manifest=Manifest.from_dict(dict_["manifest"]),
-            merged_ids=[MergedId.from_dict(merged_id) for merged_id in dict_["merged_ids"]],
             is_first_run=dict_["is_first_run"],
         )
 
@@ -140,7 +136,6 @@ class OpenAlexEntity(SnapshotRelease):
             schema_folder=self.schema_folder,
             snapshot_date=self.snapshot_date.isoformat(),
             manifest=self.manifest.to_dict(),
-            merged_ids=[merged_id.to_dict() for merged_id in self.merged_ids],
             is_first_run=self.is_first_run,
         )
 
@@ -265,46 +260,3 @@ class ManifestEntry:
 
     def to_dict(self) -> Dict:
         return dict(url=self.url, meta=self.meta.to_dict())
-
-
-class MergedId:
-    def __init__(self, url: str, content_length: int):
-        """A pointer to an OpenAlex Merged ID file. See:
-
-        * https://docs.openalex.org/download-all-data/snapshot-data-format#merged-entities
-
-        :param url: the path to the Merged ID file on an AWS bucket.
-        :param content_length: size of the file in bytes.
-        """
-
-        self.url = url
-        self.content_length = content_length
-
-    def __eq__(self, other):
-        if isinstance(other, MergedId):
-            return self.url == other.url and self.content_length == other.content_length
-        return False
-
-    @property
-    def object_key(self):
-        bucket_name, object_key = s3_uri_parts(self.url)
-        if object_key is None:
-            raise ValueError(f"object_key for url={self.url} is None")
-        return object_key
-
-    @property
-    def updated_date(self) -> pendulum.DateTime:
-        return pendulum.parse(re.search(r"\d{4}-\d{2}-\d{2}", self.url).group(0))
-
-    @property
-    def file_name(self):
-        return re.search(r"[^/]+\.csv\.gz$", self.url).group(0)
-
-    @staticmethod
-    def from_dict(dict_: Dict) -> MergedId:
-        url = dict_["url"]
-        content_length = dict_["content_length"]
-        return MergedId(url, content_length)
-
-    def to_dict(self) -> Dict:
-        return dict(url=self.url, content_length=self.content_length)
