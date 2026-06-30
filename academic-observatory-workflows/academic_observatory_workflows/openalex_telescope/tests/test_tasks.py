@@ -275,11 +275,16 @@ class TestOpenAlexUtils(SandboxTestCase):
                 schema_folder=schema_folder,
                 snapshot_date=snapshot_date,
                 manifest=Manifest(
-                    [ManifestEntry("s3://openalex/data/authors/updated_date=2023-01-28/part_000.gz", Meta(7073, 4))],
+                    [
+                        ManifestEntry(
+                            "s3://openalex/data/jsonl/authors/updated_date=2023-01-28/part_000.gz", Meta(7073, 4)
+                        )
+                    ],
                     Meta(7073, 4),
                 ),
                 merged_ids=[MergedId("s3://openalex/data/merged_ids/authors/2023-01-28.csv.gz", 1000)],
                 is_first_run=is_first_run,
+                format="jsonl",
             )
 
             # table_description
@@ -298,7 +303,7 @@ class TestOpenAlexUtils(SandboxTestCase):
 
             # entries
             self.assertEqual(
-                [ManifestEntry("s3://openalex/data/authors/updated_date=2023-01-28/part_000.gz", Meta(7073, 4))],
+                [ManifestEntry("s3://openalex/data/jsonl/authors/updated_date=2023-01-28/part_000.gz", Meta(7073, 4))],
                 entity.entries,
             )
 
@@ -306,7 +311,7 @@ class TestOpenAlexUtils(SandboxTestCase):
         manifest_path = os.path.join(FIXTURES_FOLDER, "manifest")
         with aws_bucket_test_env(prefix=self.dag_id, region_name=self.aws_region_name) as bucket_name:
             s3 = boto3.client("s3")
-            s3_object_key = "data/publishers/manifest"
+            s3_object_key = "data/jsonl/publishers/manifest"
             with open(manifest_path, "rb") as f:
                 s3.upload_fileobj(f, bucket_name, s3_object_key)
 

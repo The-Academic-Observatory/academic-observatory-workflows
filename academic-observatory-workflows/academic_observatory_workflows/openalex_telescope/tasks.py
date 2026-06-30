@@ -26,7 +26,7 @@ import os
 from collections import OrderedDict
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from json.encoder import JSONEncoder
-from typing import Any, List, Optional, Tuple, Dict
+from typing import Any, List, Optional, Tuple, Dict, Literal
 
 import boto3
 import jsonlines
@@ -71,6 +71,7 @@ def fetch_entities(
     aws_conn_id: str,
     aws_openalex_bucket: str,
     entity_id=DATASET_API_ENTITY_ID,
+    format: Literal["jsonl", "parquet"] = "jsonl",
 ) -> dict[str, dict]:
     # Get previous release and on first run check that previous releases removed
     api = DatasetAPI(bq_project_id=cloud_workspace.output_project_id, bq_dataset_id=api_bq_dataset_id)
@@ -86,7 +87,7 @@ def fetch_entities(
     aws_key = get_aws_key(aws_conn_id)
     snapshot_date = pendulum.instance(datetime.datetime.min)
     for entity_name in entity_names:
-        manifest = fetch_manifest(bucket=aws_openalex_bucket, aws_key=aws_key, entity_name=entity_name)
+        manifest = fetch_manifest(bucket=aws_openalex_bucket, aws_key=aws_key, entity_name=entity_name, format=format)
 
         manifest_snapshot_date = max([entry.updated_date for entry in manifest.entries])
         if snapshot_date < manifest_snapshot_date:
@@ -118,6 +119,7 @@ def fetch_entities(
             manifest=manifest,
             merged_ids=merged_ids,
             is_first_run=is_first_run,
+            format=format,
         )
         entity_index[entity_name] = entity.to_dict()
 
@@ -133,8 +135,17 @@ def fetch_entities(
 
 
 def aws_to_gcs_transfer(
-    *, entity: OpenAlexEntity, gc_project_id: str, aws_conn_id: str, n_transfer_trys: int, aws_openalex_bucket: str
+    *,
+    entity: OpenAlexEntity,
+    gc_project_id: str,
+    aws_conn_id: str,
+    transfer_attempts: int,
+    aws_openalex_bucket: str,
+    transfer_prefixes: Optional[list] = None,
 ):
+    if not transfer_prefixes:
+        transfer_prefixes = []
+
     # Make GCS Transfer Manifest for files that we need for this release
     object_paths = []
     for entry in entity.entries:
@@ -147,18 +158,18 @@ def aws_to_gcs_transfer(
     count = 0
     success = False
     aws_key = get_aws_key(aws_conn_id)
-    for i in range(n_transfer_trys):
+    for i in range(transfer_attempts):
         success, objects_count = gcs_create_aws_transfer(
             aws_key=aws_key,
             aws_bucket=aws_openalex_bucket,
-            include_prefixes=[],
+            include_prefixes=transfer_prefixes,
             gc_project_id=gc_project_id,  # ,
             gc_bucket_dst_uri=entity.gcs_openalex_data_uri,
             description=f"Transfer OpenAlex {entity.entity_name} from AWS to GCS",
             transfer_manifest=entity.transfer_manifest_uri,
         )
         logging.info(
-            f"gcs_create_aws_transfer: try={i + 1}/{n_transfer_trys}, success={success}, objects_count={objects_count}"
+            f"gcs_create_aws_transfer: try={i + 1}/{transfer_attempts}, success={success}, objects_count={objects_count}"
         )
         count += objects_count
         if success:
@@ -419,17 +430,14 @@ def get_aws_key(aws_conn_id: str) -> Tuple[str, str]:
 
 
 def fetch_manifest(
-    *,
-    bucket: str,
-    aws_key: Tuple[str, str],
-    entity_name: str,
+    *, bucket: str, aws_key: Tuple[str, str], entity_name: str, format: Literal["jsonl", "parquet"] = "jsonl"
 ) -> Manifest:
     """Fetch OpenAlex manifests for a range of entity types.
 
     :param bucket: the OpenAlex AWS bucket.
     :param aws_key: the aws_access_key_id and aws_secret_key as a tuple.
     :param entity_name: the entity type.
-    :return: None
+    :return: The Manifest Object
     """
 
     aws_access_key_id, aws_secret_key = aws_key
@@ -437,7 +445,7 @@ def fetch_manifest(
         aws_access_key_id=aws_access_key_id,
         aws_secret_access_key=aws_secret_key,
     ).client("s3")
-    obj = client.get_object(Bucket=bucket, Key=f"data/{entity_name}/manifest")
+    obj = client.get_object(Bucket=bucket, Key=f"data/{format}/{entity_name}/manifest")
     data = json.loads(obj["Body"].read().decode())
 
     # Add s3:// as necessary

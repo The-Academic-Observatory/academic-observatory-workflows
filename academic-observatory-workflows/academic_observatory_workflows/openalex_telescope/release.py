@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Literal
 
 import pendulum
 
@@ -41,6 +41,7 @@ class OpenAlexEntity(SnapshotRelease):
         manifest: Manifest,
         merged_ids: List[MergedId],
         is_first_run: bool,
+        format: Literal["jsonl", "parquet"],
     ):
         """This class represents the data and settings related to an OpenAlex entity or table.
 
@@ -54,6 +55,7 @@ class OpenAlexEntity(SnapshotRelease):
         :param manifest: the Redshift manifest provided by OpenAlex for this entity.
         :param merged_ids: the MergedIds provided by OpenAlex for this entity.
         :param is_first_run: whether this is the first run or not.
+        :param format: The data format to use for processing this entity. Avaialble: jsonl and parquet
         """
 
         super().__init__(
@@ -68,6 +70,8 @@ class OpenAlexEntity(SnapshotRelease):
         self.manifest = manifest
         self.merged_ids = merged_ids
         self.is_first_run = is_first_run
+        self.format = format
+
         self.transfer_manifest_uri = gcs_blob_uri(
             cloud_workspace.download_bucket,
             f"{gcs_blob_name_from_path(self.download_folder)}/{entity_name}-manifest.csv",
@@ -101,6 +105,11 @@ class OpenAlexEntity(SnapshotRelease):
         return bq.bq_sharded_table_id(
             self.cloud_workspace.output_project_id, self.bq_dataset_id, self.entity_name, self.snapshot_date
         )
+
+    @property
+    def aws_prefix(self):
+        """The location of this entity's data in the OpenAlex AWS bucket"""
+        return f"data/{self.format}/{self.entity_name}"
 
     @property
     def entries(self):
