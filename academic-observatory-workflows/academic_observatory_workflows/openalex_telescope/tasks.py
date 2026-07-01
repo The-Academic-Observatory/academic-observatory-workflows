@@ -187,9 +187,10 @@ def aws_to_gcs_transfer(
         logging.error(f"aws_to_gcs_transfer: {msg}")
         msgs.append(msg)
 
+
 def download(*, entity: OpenAlexEntity, **context):
-    output_folder = f"{entity.download_folder}/data/{entity.entity_name}/"
-    bucket_path = f"{entity.gcs_openalex_data_uri}data/{entity.entity_name}/*"
+    output_folder = f"{entity.download_folder}/data/{entity.format}/{entity.entity_name}/"
+    bucket_path = f"{entity.gcs_openalex_data_uri}data/{entity.format}/{entity.entity_name}/*"
 
     # Build command
     cmds = [
@@ -428,19 +429,17 @@ def fetch_manifest(
     return Manifest.from_dict(data)
 
 
-
-
 def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict, list]:
     """Transforms a single file.
     Each entry/object in the gzip input file is transformed and the transformed object is immediately written out to
     a gzip file. For each entity only one field has to be transformed.
 
-    This function generates and returnms a Bigquery style schema from the transformed object,
-    using the ScehmaGenerator from the 'bigquery_schema_generator' package.
+    This function generates and returns a Bigquery style schema from the transformed object,
+    using the SchemaGenerator from the 'bigquery_schema_generator' package.
 
     :param download_path: The path to the file with the OpenAlex entries.
     :param transform_path: The path where transformed data will be saved.
-    :return: schema_map. A nested OrderedDict object produced by the SchemaGenertaor.
+    :return: schema_map. A nested OrderedDict object produced by the SchemaGenerator.
     :return: schema_generator.error_logs: Possible error logs produced by the SchemaGenerator.
     """
 
@@ -462,6 +461,7 @@ def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict
             # cause the transform step to fail unexpectedly.
             try:
                 obj_for_schema = copy.deepcopy(obj)
+
                 # Use a copy with empty arrays removed purely for schema inference.
                 # The original obj (with empty arrays) is written to the output file so BigQuery sees all fields present.
                 remove_empty_arrays(
@@ -475,9 +475,18 @@ def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict
                         "x_concepts",
                         "counts_by_year",
                         "display_name_alternatives",
+                        "merged_ids",
                     ],
                 )
-                schema_generator.deduce_schema_for_record(obj, schema_map)
+
+                if "ids" in obj_for_schema and isinstance(obj_for_schema["ids"], dict):
+                    remove_empty_arrays(obj_for_schema["ids"], ["merged_ids"])
+                    # If the entire ids sub-dictionary became empty, drop it to save the generator
+                    if not obj_for_schema["ids"]:
+                        del obj_for_schema["ids"]
+
+                schema_generator.deduce_schema_for_record(obj_for_schema, schema_map)
+
             except Exception as e:
                 # Find which fields in this record are empty arrays/null
                 offending = [k for k, v in obj_for_schema.items() if isinstance(v, list) and len(v) == 0]
@@ -549,8 +558,10 @@ def remove_empty_arrays(obj: dict, fields: list[str]):
     """Remove keys entirely when their value is None or an empty list,
     so the schema generator never sees an untyped empty array."""
     for field in fields:
-        if field in obj and not obj[field]:
-            del obj[field]
+        if field in obj:
+            # Drop if explicitly None, an empty list, or an empty dict
+            if obj[field] is None or (isinstance(obj[field], (list, dict)) and not obj[field]):
+                del obj[field]
 
 
 def ensure_list_field(obj: dict, field: str):

@@ -108,9 +108,15 @@ class TestOpenAlexUtils(SandboxTestCase):
         )
         manifest_c = Manifest(
             [
-                ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2023-03-28/part_013.gz", Meta(866388416, 721951)),
-                ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2023-03-28/part_014.gz", Meta(860530408, 709123)),
-                ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2023-03-28/part_015.gz", Meta(321944435, 262846)),
+                ManifestEntry(
+                    "s3://openalex/data/jsonl/works/updated_date=2023-03-28/part_013.gz", Meta(866388416, 721951)
+                ),
+                ManifestEntry(
+                    "s3://openalex/data/jsonl/works/updated_date=2023-03-28/part_014.gz", Meta(860530408, 709123)
+                ),
+                ManifestEntry(
+                    "s3://openalex/data/jsonl/works/updated_date=2023-03-28/part_015.gz", Meta(321944435, 262846)
+                ),
             ],
             Meta(2048863259, 1693920),
         )
@@ -130,11 +136,15 @@ class TestOpenAlexUtils(SandboxTestCase):
         self.assertEqual("part_000.gz", entry.file_name)
 
         # Assert that manifest entry without a s3:// url prefix is still valid.
-        manifest_entry_no_s3 = ManifestEntry("openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))
+        manifest_entry_no_s3 = ManifestEntry(
+            "openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4)
+        )
         self.assertEqual(manifest_entry_no_s3.url, "s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz")
 
         # object_key
-        manifest_entry = ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))
+        manifest_entry = ManifestEntry(
+            "s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4)
+        )
         self.assertEqual("data/jsonl/works/updated_date=2022-12-20/part_000.gz", manifest_entry.object_key)
 
         # updated_date
@@ -210,7 +220,6 @@ class TestOpenAlexUtils(SandboxTestCase):
             obj,
         )
 
-
     @patch("observatory_platform.airflow.workflow.Variable.get")
     def test_openalex_entity(self, m_variable_get):
         with tempfile.TemporaryDirectory() as t:
@@ -278,7 +287,6 @@ class TestOpenAlexUtils(SandboxTestCase):
             with open(manifest_path, "r") as f:
                 expected = Manifest.from_dict(json.load(f))
             self.assertEqual(expected, actual)
-
 
     def test_transform_object(self):
         """Test the transform_object function."""

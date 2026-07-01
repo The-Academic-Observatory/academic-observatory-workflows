@@ -94,7 +94,7 @@ class OpenAlexEntity(SnapshotRelease):
     def data_uri(self):
         return gcs_blob_uri(
             self.cloud_workspace.transform_bucket,
-            f"{gcs_blob_name_from_path(self.transform_folder)}/data/{self.entity_name}/*",
+            f"{gcs_blob_name_from_path(self.transform_folder)}/data/{self.format}/{self.entity_name}/*",
         )
 
     @property
@@ -124,6 +124,7 @@ class OpenAlexEntity(SnapshotRelease):
             snapshot_date=pendulum.parse(dict_["snapshot_date"]),
             manifest=Manifest.from_dict(dict_["manifest"]),
             is_first_run=dict_["is_first_run"],
+            format=dict_["format"],
         )
 
     def to_dict(self) -> dict:
@@ -137,6 +138,7 @@ class OpenAlexEntity(SnapshotRelease):
             snapshot_date=self.snapshot_date.isoformat(),
             manifest=self.manifest.to_dict(),
             is_first_run=self.is_first_run,
+            format=self.format,
         )
 
 

@@ -384,9 +384,9 @@ def create_dag(dag_params: DagParams) -> DAG:
                     entity=entity,
                     gc_project_id=dag_params.cloud_workspace.input_project_id,
                     aws_conn_id=dag_params.aws_conn_id,
-                    n_transfer_trys=dag_params.n_transfer_trys,
+                    transfer_attempts=dag_params.n_transfer_trys,
                     aws_openalex_bucket=dag_params.aws_openalex_bucket,
-                    include_prefixes=[entity.aws_prefix],
+                    transfer_prefixes=[entity.aws_prefix],
                 )
 
             @task.kubernetes(
@@ -408,7 +408,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 entity_index = release_from_bucket(dag_params.cloud_workspace.transform_bucket, entity_index_id)
                 entity = tasks.get_entity(entity_index, entity_name)
-                entity.download(entity=entity, **context)
+                tasks.download(entity=entity, **context)
 
             @task.kubernetes(
                 name=f"{dag_params.dag_id}-transform",
