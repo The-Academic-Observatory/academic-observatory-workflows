@@ -264,7 +264,7 @@ class TestOpenAlexUtils(SandboxTestCase):
             self.assertTrue(entity.schema_file_path.endswith("authors.json"))
 
             # data_uri
-            self.assertTrue(entity.data_uri.endswith("data/authors/*"))
+            self.assertTrue(entity.data_uri.endswith("data/jsonl/authors/*"))
 
             # bq_table_id
             self.assertEqual("project-id.openalex.authors20230128", entity.bq_table_id)
