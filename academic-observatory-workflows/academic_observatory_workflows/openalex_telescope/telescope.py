@@ -364,6 +364,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 description=dag_params.dataset_description,
             )
 
+        # One task group per entity that required updating
         @task_group
         def process_entity(
             entity_index_id: str,
@@ -383,8 +384,9 @@ def create_dag(dag_params: DagParams) -> DAG:
                     entity=entity,
                     gc_project_id=dag_params.cloud_workspace.input_project_id,
                     aws_conn_id=dag_params.aws_conn_id,
-                    n_transfer_trys=dag_params.n_transfer_trys,
+                    transfer_attempts=dag_params.n_transfer_trys,
                     aws_openalex_bucket=dag_params.aws_openalex_bucket,
+                    transfer_prefixes=[entity.aws_prefix],
                 )
 
             @task.kubernetes(
@@ -406,7 +408,6 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 entity_index = release_from_bucket(dag_params.cloud_workspace.transform_bucket, entity_index_id)
                 entity = tasks.get_entity(entity_index, entity_name)
-
                 tasks.download(entity=entity, **context)
 
             @task.kubernetes(
