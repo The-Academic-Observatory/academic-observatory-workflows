@@ -26,7 +26,6 @@ from airflow.operators.empty import EmptyOperator
 from airflow.utils.trigger_rule import TriggerRule
 
 from observatory_platform.airflow.airflow import on_failure_callback
-from observatory_platform.airflow.sensors import PreviousDagRunSensor
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.google.gke import gke_make_container_resources, gke_make_kubernetes_task_params, GkeParams
@@ -135,6 +134,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             "owner": "airflow",
             "on_failure_callback": on_failure_callback,
             "retries": dag_params.retries,
+            "depends_on_past": True,
         },
     )
     def pubmed():
@@ -510,13 +510,6 @@ def create_dag(dag_params: DagParams) -> DAG:
             release = release_from_bucket(dag_params.cloud_workspace.download_bucket, release_id)
             tasks.cleanup_workflow(release)
 
-        external_task_id = "dag_run_complete"
-        if dag_params.test_run:
-            sensor = EmptyOperator(task_id="wait_for_prev_dag_run")
-        else:
-            sensor = PreviousDagRunSensor(
-                dag_id=dag_params.dag_id, external_task_id=external_task_id, execution_date_fn=previous_month_fn
-            )
         task_check_dependencies = check_dependencies()
         xcom_release_id = fetch_release()
         task_shortcircuit = short_circuit(xcom_release_id, dag_params)
@@ -536,13 +529,11 @@ def create_dag(dag_params: DagParams) -> DAG:
         )
         task_add_dataset_releases = add_dataset_releases(xcom_release_id, dag_params)
         task_cleanup_workflow = cleanup_workflow(xcom_release_id, dag_params)
-        task_dag_run_complete = EmptyOperator(task_id=external_task_id)
         task_merge_branches = EmptyOperator(task_id="merge_branches")
 
         # Define DAG structure
         (
-            sensor
-            >> task_check_dependencies
+            task_check_dependencies
             >> xcom_release_id
             >> task_shortcircuit
             >> task_create_snapshot
@@ -555,12 +546,6 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_group_updatefiles >> task_merge_branches
 
         # Final steps of the DAG
-        (
-            task_merge_branches
-            >> task_delete_storage
-            >> task_add_dataset_releases
-            >> task_cleanup_workflow
-            >> task_dag_run_complete
-        )
+        (task_merge_branches >> task_delete_storage >> task_add_dataset_releases >> task_cleanup_workflow)
 
     return pubmed()

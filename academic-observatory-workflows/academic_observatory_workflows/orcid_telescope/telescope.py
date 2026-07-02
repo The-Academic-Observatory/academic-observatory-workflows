@@ -23,13 +23,11 @@ from typing import Optional
 import pendulum
 from airflow import DAG
 from airflow.decorators import dag, task
-from airflow.operators.empty import EmptyOperator
 from airflow.utils.trigger_rule import TriggerRule
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.orcid_telescope import tasks
 from observatory_platform.airflow.airflow import on_failure_callback
-from observatory_platform.airflow.sensors import PreviousDagRunSensor
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.config import AirflowConns
@@ -93,7 +91,6 @@ class DagParams:
         schedule: str = "0 0 * * 0",  # Midnight UTC every Sunday
         max_active_runs: int = 1,
         retries: int = 3,
-        test_run: bool = False,
         gke_volume_size: str = "1000Gi",  # Only required for full download, ~550 Gi for uncompressed files and then less for compressed transformed files.
         gke_namespace: str = "coki-astro",
         gke_volume_name: str = "orcid",
@@ -121,7 +118,6 @@ class DagParams:
         self.schedule = schedule
         self.max_active_runs = max_active_runs
         self.retries = retries
-        self.test_run = test_run
         self.gke_params = GkeParams(
             gke_volume_size=gke_volume_size, gke_namespace=gke_namespace, gke_volume_name=gke_volume_name, **kwargs
         )
@@ -143,6 +139,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             "owner": "airflow",
             "on_failure_callback": on_failure_callback,
             "retries": dag_params.retries,
+            "depends_on_past": True,
         },
     )
     def orcid():
@@ -310,13 +307,6 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             tasks.cleanup_workflow(release)
 
-        external_task_id = "dag_run_complete"
-        if dag_params.test_run:
-            sensor = EmptyOperator(task_id="wait_for_prev_dag_run")
-        else:
-            sensor = PreviousDagRunSensor(
-                dag_id=dag_params.dag_id, external_task_id=external_task_id, execution_date_fn=previous_month_fn
-            )
         task_check_dependencies = check_dependencies(airflow_conns=[dag_params.aws_orcid_conn_id])
         xcom_release = fetch_release()
         task_create_dataset = create_dataset(xcom_release, dag_params)
@@ -343,11 +333,9 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_bq_delete_records = bq_delete_records(xcom_release)
         task_add_dataset_release = add_dataset_release(xcom_release, xcom_latest_modified_date, dag_params)
         task_cleanup_workflow = cleanup_workflow(xcom_release)
-        task_dag_run_complete = EmptyOperator(task_id=external_task_id)
 
         (
-            sensor
-            >> task_check_dependencies
+            task_check_dependencies
             >> xcom_release
             >> task_create_dataset
             >> task_transfer_orcid
@@ -366,7 +354,6 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> task_bq_delete_records
             >> task_add_dataset_release
             >> task_cleanup_workflow
-            >> task_dag_run_complete
         )
 
     return orcid()
