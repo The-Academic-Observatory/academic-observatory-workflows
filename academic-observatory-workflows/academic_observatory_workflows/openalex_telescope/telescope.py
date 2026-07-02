@@ -566,8 +566,6 @@ def create_dag(dag_params: DagParams) -> DAG:
             workflow_folder = make_workflow_folder(dag_params.dag_id, context["run_id"])
             cleanup(dag_id=dag_params.dag_id, workflow_folder=workflow_folder)
 
-        external_task_id = "dag_run_complete"
-
         task_check_dependencies = check_dependencies(
             airflow_conns=[dag_params.gke_conn_id, dag_params.aws_conn_id, dag_params.slack_conn_id]
         )
@@ -594,7 +592,6 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         task_add_dataset_release = add_dataset_release(xcom_entity_index, dag_params)
         task_cleanup_workflow = cleanup_workflow(dag_params)
-        task_dag_run_complete = EmptyOperator(task_id=external_task_id)
 
         (
             task_check_dependencies
@@ -604,7 +601,6 @@ def create_dag(dag_params: DagParams) -> DAG:
             >> process_entities
             >> task_add_dataset_release
             >> task_cleanup_workflow
-            >> task_dag_run_complete
         )
 
     return openalex()
