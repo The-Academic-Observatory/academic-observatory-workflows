@@ -109,6 +109,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             "owner": "airflow",
             "on_failure_callback": on_failure_callback,
             "retries": dag_params.retries,
+            "depends_on_past": True,
         },
     )
     def crossref_fundref():

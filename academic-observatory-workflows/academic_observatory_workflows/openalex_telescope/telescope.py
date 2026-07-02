@@ -16,8 +16,6 @@
 # Author: Aniek Roelofs, James Diprose, Alex Massen-Hane
 
 from __future__ import annotations
-from datetime import datetime
-from dateutil import relativedelta
 import logging
 from typing import List, Optional
 
@@ -31,16 +29,11 @@ from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.openalex_telescope.release import OpenAlexEntity
 from observatory_platform.airflow.airflow import is_first_dag_run, on_failure_callback
 from observatory_platform.airflow.release import release_to_bucket
-from observatory_platform.airflow.sensors import PreviousDagRunSensor
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
 from observatory_platform.airflow.workflow import cleanup, CloudWorkspace, make_workflow_folder
 from observatory_platform.config import AirflowConns
 from observatory_platform.google.bigquery import bq_create_dataset
 from observatory_platform.google.gke import DEFAULT_GKE_IMAGE, GkeParams
-
-
-def previous_month_fn(execution_date: datetime.datetime) -> datetime.datetime:
-    return execution_date - relativedelta(months=1)
 
 
 class DagParams:
@@ -319,6 +312,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             "owner": "airflow",
             "on_failure_callback": on_failure_callback,
             "retries": dag_params.retries,
+            "depends_on_past": True,
         },
     )
     def openalex():
@@ -572,11 +566,6 @@ def create_dag(dag_params: DagParams) -> DAG:
             workflow_folder = make_workflow_folder(dag_params.dag_id, context["run_id"])
             cleanup(dag_id=dag_params.dag_id, workflow_folder=workflow_folder)
 
-        external_task_id = "dag_run_complete"
-        sensor = PreviousDagRunSensor(
-            dag_id=dag_params.dag_id, external_task_id=external_task_id, execution_date_fn=previous_month_fn
-        )
-
         task_check_dependencies = check_dependencies(
             airflow_conns=[dag_params.gke_conn_id, dag_params.aws_conn_id, dag_params.slack_conn_id]
         )
@@ -603,18 +592,15 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         task_add_dataset_release = add_dataset_release(xcom_entity_index, dag_params)
         task_cleanup_workflow = cleanup_workflow(dag_params)
-        task_dag_run_complete = EmptyOperator(task_id=external_task_id)
 
         (
-            sensor
-            >> task_check_dependencies
+            task_check_dependencies
             >> xcom_entity_index
             >> task_short_circuit
             >> task_create_dataset
             >> process_entities
             >> task_add_dataset_release
             >> task_cleanup_workflow
-            >> task_dag_run_complete
         )
 
     return openalex()

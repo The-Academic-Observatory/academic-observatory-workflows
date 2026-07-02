@@ -47,7 +47,6 @@ class TestUnpaywallTelescope(SandboxTestCase):
         dag = create_dag(DagParams(dag_id=self.dag_id, cloud_workspace=self.fake_cloud_workspace))
         self.assert_dag_structure(
             {
-                "wait_for_prev_dag_run": {"check_dependencies"},
                 "check_dependencies": {"fetch_release"},
                 "fetch_release": {
                     "load_changefiles.bq_upsert",
@@ -88,8 +87,7 @@ class TestUnpaywallTelescope(SandboxTestCase):
                 "merge_branches": {"gke_delete_storage"},
                 "gke_delete_storage": {"add_dataset_release"},
                 "add_dataset_release": {"cleanup_workflow"},
-                "cleanup_workflow": {"dag_run_complete"},
-                "dag_run_complete": {},
+                "cleanup_workflow": {},
             },
             dag,
         )
@@ -149,7 +147,6 @@ class TestUnpaywallTelescope(SandboxTestCase):
                 gke_namespace=TestConfig.gke_namespace,
                 gke_resource_overrides=task_resources,
                 gke_volume_size="500Mi",
-                test_run=True,
             )
             api = DatasetAPI(bq_project_id=env.cloud_workspace.project_id, bq_dataset_id=test_params.api_bq_dataset_id)
             main_table_id = bq_table_id(

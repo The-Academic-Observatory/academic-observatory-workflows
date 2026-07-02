@@ -99,6 +99,7 @@ def create_dag(dag_params: DagParams):
             "owner": "airflow",
             "on_failure_callback": on_failure_callback,
             "retries": dag_params.retries,
+            "depends_on_past": True,
         },
     )
     def scopus():

@@ -32,15 +32,10 @@ from academic_observatory_workflows.unpaywall_telescope.release import Unpaywall
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.google.bigquery import bq_create_dataset, bq_find_schema
 from observatory_platform.airflow.release import release_from_bucket
-from observatory_platform.airflow.sensors import PreviousDagRunSensor
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.url_utils import get_observatory_http_header
 from observatory_platform.google.gke import GkeParams, gke_make_kubernetes_task_params, gke_make_container_resources
-
-
-def previous_month_fn(execution_date: datetime.datetime) -> datetime.datetime:
-    return execution_date - relativedelta(months=1)
 
 
 class DagParams:
@@ -88,7 +83,6 @@ class DagParams:
         schedule: str = "@daily",
         max_active_runs: int = 1,
         retries: int = 3,
-        test_run: bool = False,
         gke_volume_size: str = "1000Gi",
         gke_namespace: str = "coki-astro",
         gke_volume_name: str = "unpaywall",
@@ -116,7 +110,6 @@ class DagParams:
         self.schedule = schedule
         self.max_active_runs = max_active_runs
         self.retries = retries
-        self.test_run = test_run
         self.gke_volume_size = gke_volume_size
         self.gke_namespace = gke_namespace
         self.gke_volume_name = gke_volume_name
@@ -142,6 +135,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             "owner": "airflow",
             "on_failure_callback": on_failure_callback,
             "retries": dag_params.retries,
+            "depends_on_past": True,
         },
     )
     def unpaywall():
@@ -445,15 +439,6 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             tasks.cleanup_workflow(release_id, cloud_workspace=dag_params.cloud_workspace)
 
-        # Wait for the previous DAG run to finish to make sure that
-        # changefiles are processed in the correct order
-        external_task_id = "dag_run_complete"
-        if dag_params.test_run:
-            sensor = EmptyOperator(task_id="wait_for_prev_dag_run")
-        else:
-            sensor = PreviousDagRunSensor(
-                dag_id=dag_params.dag_id, external_task_id=external_task_id, execution_date_fn=previous_month_fn
-            )
         task_check_dependencies = check_dependencies(airflow_conns=[dag_params.unpaywall_conn_id])
         xcom_release_id = fetch_release()
         task_short_circuit = short_circuit(xcom_release_id)
@@ -465,7 +450,6 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_add_dataset_release = add_dataset_release(xcom_release_id, dag_params)
         task_cleanup_workflow = cleanup_workflow(xcom_release_id, dag_params)
         # The last task that the next DAG run's ExternalTaskSensor waits for.
-        task_dag_run_complete = EmptyOperator(task_id=external_task_id)
         task_create_storage = gke_create_storage(
             volume_name=dag_params.gke_params.gke_volume_name,
             volume_size=dag_params.gke_params.gke_volume_size,
@@ -478,8 +462,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_merge_branches = EmptyOperator(task_id="merge_branches")
 
         (
-            sensor
-            >> task_check_dependencies
+            task_check_dependencies
             >> xcom_release_id
             >> task_short_circuit
             >> task_create_dataset
@@ -492,12 +475,6 @@ def create_dag(dag_params: DagParams) -> DAG:
         task_group_load_snapshot >> task_group_load_changefiles
         task_group_load_changefiles >> task_merge_branches
 
-        (
-            task_merge_branches
-            >> task_delete_storage
-            >> task_add_dataset_release
-            >> task_cleanup_workflow
-            >> task_dag_run_complete
-        )
+        (task_merge_branches >> task_delete_storage >> task_add_dataset_release >> task_cleanup_workflow)
 
     return unpaywall()

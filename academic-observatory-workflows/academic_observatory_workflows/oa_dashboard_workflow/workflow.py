@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import List, Optional
 
 from airflow import DAG
@@ -174,6 +173,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             "owner": "airflow",
             "on_failure_callback": on_failure_callback,
             "retries": dag_params.retries,
+            "depends_on_past": True,
         },
     )
     def oa_dashboard_workflow():
