@@ -161,7 +161,6 @@ class TestPubMedTelescope(SandboxTestCase):
 
         self.assert_dag_structure(
             {
-                "wait_for_prev_dag_run": ["check_dependencies"],
                 "check_dependencies": ["fetch_release"],
                 "fetch_release": [
                     "short_circuit",
@@ -203,8 +202,7 @@ class TestPubMedTelescope(SandboxTestCase):
                 "merge_branches": ["gke_delete_storage"],
                 "gke_delete_storage": ["add_dataset_releases"],
                 "add_dataset_releases": ["cleanup_workflow"],
-                "cleanup_workflow": ["dag_run_complete"],
-                "dag_run_complete": [],
+                "cleanup_workflow": [],
             },
             dag,
         )

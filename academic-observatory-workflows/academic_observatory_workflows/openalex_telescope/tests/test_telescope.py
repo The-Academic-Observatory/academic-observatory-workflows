@@ -85,7 +85,6 @@ class TestOpenAlexTelescope(SandboxTestCase):
             "expire_previous_version",
         ]
         expected = {
-            "wait_for_prev_dag_run": ["check_dependencies"],
             "check_dependencies": ["fetch_entities"],
             "fetch_entities": [
                 "short_circuit",
@@ -217,8 +216,7 @@ class TestOpenAlexTelescope(SandboxTestCase):
             "topics.gke_delete_storage": ["add_dataset_release"],
             # Cleanup
             "add_dataset_release": ["cleanup_workflow"],
-            "cleanup_workflow": ["dag_run_complete"],
-            "dag_run_complete": [],
+            "cleanup_workflow": [],
         }
         self.assert_dag_structure(expected, dag)
 
@@ -321,7 +319,6 @@ class TestOpenAlexTelescope(SandboxTestCase):
                 gke_namespace=TestConfig.gke_namespace,
                 gke_resource_map=resource_map,
                 gke_volume_map=gke_volume_map,
-                test_run=True,
                 retries=0,
             )
             dag = create_dag(dag_params)
