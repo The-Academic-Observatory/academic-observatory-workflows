@@ -88,13 +88,19 @@ def create_repo_institution_to_ror_table(
     release: DOIRelease,
     input_project_id: str,
     output_project_id: str,
-    bq_unpaywall_dataset_id: str,
+    bq_openalex_dataset_id: str,
     bq_intermediate_dataset_id: str,
     max_fetch_threads: int,
 ):
     # Fetch unique Unpaywall repository institution names
     template_path = project_path("doi_workflow", "sql", "create_openaccess_repo_names.sql.jinja2")
-    sql = render_template(template_path, project_id=input_project_id, dataset_id=bq_unpaywall_dataset_id)
+
+    alex_works_table_id = bq_select_latest_table(
+        table_id=bq_table_id(input_project_id, bq_openalex_dataset_id, "works"),
+        end_date=release.snapshot_date,
+        sharded=True,
+    )
+    sql = render_template(template_path, openalex_works_fqid=alex_works_table_id)
     records = bq_run_query(sql)
 
     # Fetch affiliation strings
@@ -111,13 +117,16 @@ def create_repo_institution_to_ror_table(
     results.sort(key=lambda r: r[key])
 
     # Load the BigQuery table
-    table_id = bq_sharded_table_id(
-        output_project_id,
-        bq_intermediate_dataset_id,
-        "repository_institution_to_ror",
-        release.snapshot_date,
+    success = bq_load_from_memory(
+        bq_sharded_table_id(
+            output_project_id,
+            bq_intermediate_dataset_id,
+            "repository_institution_to_ror",
+            release.snapshot_date,
+        ),
+        results,
     )
-    success = bq_load_from_memory(table_id, results)
+
     if not success:
         raise AirflowException(
             "create_repo_institution_to_ror_table: error loading repository_institution_to_ror table"

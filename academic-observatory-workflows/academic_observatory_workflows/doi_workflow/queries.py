@@ -80,7 +80,6 @@ def make_sql_queries(
     dataset_id_ror: str = "ror",
     dataset_id_orcid: str = "orcid",
     dataset_id_open_citations: str = "open_citations",
-    dataset_id_unpaywall: str = "unpaywall",
     dataset_id_scihub: str = "scihub",
     dataset_id_openalex: str = "openalex",
     dataset_id_pubmed: str = "pubmed",
@@ -147,7 +146,9 @@ def make_sql_queries(
                 "openaccess",
                 inputs={
                     "scihub": Table(input_project_id, dataset_id_scihub, "scihub", sharded=True),
-                    "unpaywall": Table(input_project_id, dataset_id_unpaywall, "unpaywall", sharded=False),
+                    "openalex_works": Table(input_project_id, dataset_id_openalex, "works", sharded=True),
+                    "openalex_institution": Table(input_project_id, dataset_id_openalex, "institution", sharded=True),
+                    "openalex_sources": Table(input_project_id, dataset_id_openalex, "sources", sharded=True),
                     "ror": Table(input_project_id, dataset_id_ror, "ror", sharded=True),
                     "repository": Table(input_project_id, dataset_id_settings, "repository"),
                     "repository_institution_to_ror": Table(
@@ -187,7 +188,6 @@ def make_sql_queries(
                     "openaccess": Table(
                         output_project_id, dataset_id_observatory_intermediate, "openaccess", sharded=True
                     ),
-                    "unpaywall": Table(input_project_id, dataset_id_unpaywall, "unpaywall"),
                     "open_citations": Table(
                         output_project_id, dataset_id_observatory_intermediate, "open_citations", sharded=True
                     ),

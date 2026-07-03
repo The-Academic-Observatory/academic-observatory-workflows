@@ -103,12 +103,6 @@ AGGREGATIONS = [
         relate_to_groups=False,
         relate_to_funders=False,
     ),
-    # Aggregation(
-    #     "region",
-    #     "regions",
-    #     relate_to_funders=True,
-    #     relate_to_publishers=True,
-    # ),
     Aggregation(
         "subregion",
         "subregions",
@@ -126,7 +120,7 @@ class DagParams:
         bq_intermediate_dataset_id: str = "observatory_intermediate",
         bq_dashboards_dataset_id: str = "coki_dashboards",
         bq_observatory_dataset_id: str = "observatory",
-        bq_unpaywall_dataset_id: str = "unpaywall",
+        bq_openalex_dataset_id: str = "openalex",
         bq_staging_dataset_id: str = "observatory_staging",
         bq_ror_dataset_id: str = "ror",
         api_bq_dataset_id: str = "dataset_api",
@@ -146,7 +140,6 @@ class DagParams:
         :param bq_intermediate_dataset_id: the BigQuery intermediate dataset id.
         :param bq_dashboards_dataset_id: the BigQuery dashboards dataset id.
         :param bq_observatory_dataset_id: the BigQuery observatory dataset id.
-        :param bq_unpaywall_dataset_id: the BigQuery Unpaywall dataset id.
         :param bq_ror_dataset_id: the BigQuery ROR dataset id.
         :param api_bq_dataset_id: the Dataset ID to use when storing releases.
         :param sql_queries: a list of batches of SQLQuery objects.
@@ -163,8 +156,8 @@ class DagParams:
         self.cloud_workspace = cloud_workspace
         self.bq_intermediate_dataset_id = bq_intermediate_dataset_id
         self.bq_dashboards_dataset_id = bq_dashboards_dataset_id
+        self.bq_openalex_dataset_id = bq_openalex_dataset_id
         self.bq_observatory_dataset_id = bq_observatory_dataset_id
-        self.bq_unpaywall_dataset_id = bq_unpaywall_dataset_id
         self.bq_ror_dataset_id = bq_ror_dataset_id
         self.bq_staging_dataset_id = bq_staging_dataset_id
         self.api_bq_dataset_id = api_bq_dataset_id
@@ -248,7 +241,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 release=release,
                 input_project_id=dag_params.cloud_workspace.input_project_id,
                 output_project_id=dag_params.cloud_workspace.output_project_id,
-                bq_unpaywall_dataset_id=dag_params.bq_unpaywall_dataset_id,
+                bq_opanelex_dataset_id=dag_params.bq_openalex_dataset_id,
                 bq_intermediate_dataset_id=dag_params.bq_intermediate_dataset_id,
                 max_fetch_threads=dag_params.max_fetch_threads,
             )
@@ -321,6 +314,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             """Runs the aggregate table query."""
 
             release = DOIRelease.from_dict(release)
+
             tasks.create_aggregate_table(
                 release=release,
                 aggregation=aggregation,

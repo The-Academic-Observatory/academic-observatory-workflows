@@ -14,7 +14,11 @@
 
 # Author: James Diprose #}
 
-SELECT DISTINCT TRIM(oa_location.repository_institution) as repository_institution
-FROM `{{ project_id }}.{{ dataset_id }}.unpaywall` as unpaywall, UNNEST(unpaywall.oa_locations) as oa_location
-WHERE oa_location.host_type = "repository" AND oa_location.repository_institution IS NOT NULL AND TRIM(oa_location.repository_institution) != ""
+SELECT DISTINCT TRIM(location.source.host_organization_name) as repository_institution
+FROM `{{ openalex_works_fqid }}` as works, UNNEST(works.locations) as location
+WHERE location.source.type = "repository"
+  AND location.source.host_organization_name IS NOT NULL
+  AND TRIM(location.source.host_organization_name) != ""
+  AND location.is_oa = true
 ORDER BY repository_institution ASC
+
