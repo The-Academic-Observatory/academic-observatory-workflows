@@ -71,10 +71,6 @@ to the queries themselves. Strive for clarity and precision over
 brevity where necessary
 #}
 
--- Converts an OAI-PMH document ID into a hostname
-CREATE TEMP FUNCTION PMH_ID_TO_DOMAIN(pmh_id STRING)
-  RETURNS STRING AS (NET.REG_DOMAIN(REGEXP_REPLACE(REGEXP_REPLACE(LOWER(pmh_id), "^.*oai:", ""), ":.*$", "")));
-
 -- Creates a set of temporary tables
 WITH
 
@@ -159,7 +155,7 @@ repositories as (
       END as rors
     FROM `{{ openalex_works.project_id }}.{{ openalex_works.dataset_id }}.{{ openalex_works.table_id }}` as works, UNNEST(works.locations) as location
     LEFT JOIN repository as repo_url ON NET.REG_DOMAIN(location.landing_page_url) = repo_url.url_domain
-    LEFT JOIN `{{ openalex_insitution.project_id }}.{{ openalex_insitution.dataset_id }}.{{ openalex_institution.table_id }}` as institution
+    LEFT JOIN `{{ openalex_institutions.project_id }}.{{ openalex_institutions.dataset_id }}.{{ openalex_institutions.table_id }}` as institution
       ON institution.id = location.source.host_organization
     WHERE location.source.type = "repository"
       AND works.doi IS NOT NULL)

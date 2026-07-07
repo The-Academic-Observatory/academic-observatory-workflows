@@ -147,7 +147,7 @@ def make_sql_queries(
                 inputs={
                     "scihub": Table(input_project_id, dataset_id_scihub, "scihub", sharded=True),
                     "openalex_works": Table(input_project_id, dataset_id_openalex, "works", sharded=True),
-                    "openalex_institution": Table(input_project_id, dataset_id_openalex, "institution", sharded=True),
+                    "openalex_institutions": Table(input_project_id, dataset_id_openalex, "institutions", sharded=True),
                     "openalex_sources": Table(input_project_id, dataset_id_openalex, "sources", sharded=True),
                     "ror": Table(input_project_id, dataset_id_ror, "ror", sharded=True),
                     "repository": Table(input_project_id, dataset_id_settings, "repository"),
