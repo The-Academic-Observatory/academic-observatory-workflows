@@ -17,7 +17,7 @@
 from typing import List
 
 import pendulum
-from airflow.decorators import dag, task
+from airflow.sdk import dag, task
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.scopus_telescope import tasks
