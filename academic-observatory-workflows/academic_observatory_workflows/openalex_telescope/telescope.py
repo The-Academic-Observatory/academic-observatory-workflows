@@ -22,7 +22,6 @@ from typing import List, Optional
 import pendulum
 from airflow import DAG
 from airflow.decorators import dag, task, task_group
-from airflow.operators.empty import EmptyOperator
 from kubernetes.client import models as k8s
 
 from academic_observatory_workflows.config import project_path

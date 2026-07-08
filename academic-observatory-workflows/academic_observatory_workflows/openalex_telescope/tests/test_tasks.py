@@ -279,7 +279,7 @@ class TestOpenAlexUtils(SandboxTestCase):
         manifest_path = os.path.join(FIXTURES_FOLDER, "manifest")
         with aws_bucket_test_env(prefix=self.dag_id, region_name=self.aws_region_name) as bucket_name:
             s3 = boto3.client("s3")
-            s3_object_key = "data/jsonl/publishers/manifest"
+            s3_object_key = "data/jsonl/publishers/manifest.json"
             with open(manifest_path, "rb") as f:
                 s3.upload_fileobj(f, bucket_name, s3_object_key)
 

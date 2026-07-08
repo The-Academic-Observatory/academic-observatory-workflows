@@ -421,7 +421,7 @@ def create_openalex_dataset(input_path: pathlib.Path, bucket_name: str) -> Dict:
 
             manifest = Manifest(entries, Meta(content_length=content_length, record_count=record_count))
             manifest_index[entity_name] = manifest
-            output_path = pathlib.Path(temp_dir) / "data" / "jsonl" / entity_name / "manifest"
+            output_path = pathlib.Path(temp_dir) / "data" / "jsonl" / entity_name / "manifest.json"
             with open(output_path, mode="w") as f:
                 json.dump(manifest.to_dict(), f, indent=2)
 
