@@ -421,7 +421,7 @@ def fetch_manifest(
         aws_access_key_id=aws_access_key_id,
         aws_secret_access_key=aws_secret_key,
     ).client("s3")
-    obj = client.get_object(Bucket=bucket, Key=f"data/{format}/{entity_name}/manifest")
+    obj = client.get_object(Bucket=bucket, Key=f"data/{format}/{entity_name}/manifest.json")
     data = json.loads(obj["Body"].read().decode())
 
     # Add s3:// as necessary
