@@ -31,7 +31,7 @@ from airflow.utils.state import State
 from kubernetes.client import models as k8s
 
 from academic_observatory_workflows.config import project_path, TestConfig
-from academic_observatory_workflows.openalex_telescope.release import ManifestEntry, Meta
+from academic_observatory_workflows.openalex_telescope.release import ManifestFile, Meta
 from academic_observatory_workflows.openalex_telescope.tasks import Manifest
 from academic_observatory_workflows.openalex_telescope.telescope import create_dag, DagParams
 from observatory_platform.airflow.workflow import Workflow
@@ -377,7 +377,7 @@ def create_openalex_dataset(input_path: pathlib.Path, bucket_name: str) -> Dict:
         entry_index = {}
 
         # Create part files and merged_ids
-        for root, dirs, files in os.walk(str(input_path)):
+        for root, _, files in os.walk(str(input_path)):
             for filename in files:
                 if "expected" not in pathlib.Path(root).parts:
                     file_path = pathlib.Path(root) / filename
@@ -398,7 +398,7 @@ def create_openalex_dataset(input_path: pathlib.Path, bucket_name: str) -> Dict:
                         if entity_name not in entry_index:
                             entry_index[entity_name] = []
                         entry_index[entity_name].append(
-                            ManifestEntry(
+                            ManifestFile(
                                 f"s3://{bucket_name}/{s3_object_key}/{file_name}",
                                 Meta(content_length=os.path.getsize(output_path), record_count=len(data)),
                             )

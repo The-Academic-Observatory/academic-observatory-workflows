@@ -29,7 +29,7 @@ import pendulum
 from bigquery_schema_generator.generate_schema import SchemaGenerator
 from google.cloud import bigquery
 
-from academic_observatory_workflows.openalex_telescope.release import ManifestEntry, Meta, s3_uri_parts
+from academic_observatory_workflows.openalex_telescope.release import ManifestFile, Meta, s3_uri_parts
 from academic_observatory_workflows.openalex_telescope.tasks import (
     bq_compare_schemas,
     fetch_manifest,
@@ -91,10 +91,10 @@ class TestOpenAlexUtils(SandboxTestCase):
     def test_manifest_entry(self):
         # Test manifest equality
         manifest_a = Manifest(
-            entries=[
-                ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4)),
-                ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-21/part_000.gz", Meta(9018, 8)),
-                ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-22/part_000.gz", Meta(4035, 4)),
+            files=[
+                ManifestFile("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4)),
+                ManifestFile("s3://openalex/data/jsonl/works/updated_date=2022-12-21/part_000.gz", Meta(9018, 8)),
+                ManifestFile("s3://openalex/data/jsonl/works/updated_date=2022-12-22/part_000.gz", Meta(4035, 4)),
             ],
             date="2022-12-22",
             content_length=20126,
@@ -103,10 +103,10 @@ class TestOpenAlexUtils(SandboxTestCase):
             entity="works",
         )
         manifest_b = Manifest(
-            entries=[
-                ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-21/part_000.gz", Meta(9018, 8)),
-                ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4)),
-                ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-22/part_000.gz", Meta(4035, 4)),
+            files=[
+                ManifestFile("s3://openalex/data/jsonl/works/updated_date=2022-12-21/part_000.gz", Meta(9018, 8)),
+                ManifestFile("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4)),
+                ManifestFile("s3://openalex/data/jsonl/works/updated_date=2022-12-22/part_000.gz", Meta(4035, 4)),
             ],
             date="2022-12-22",
             content_length=20126,
@@ -115,14 +115,14 @@ class TestOpenAlexUtils(SandboxTestCase):
             entity="works",
         )
         manifest_c = Manifest(
-            entries=[
-                ManifestEntry(
+            files=[
+                ManifestFile(
                     "s3://openalex/data/jsonl/works/updated_date=2023-03-28/part_013.gz", Meta(866388416, 721951)
                 ),
-                ManifestEntry(
+                ManifestFile(
                     "s3://openalex/data/jsonl/works/updated_date=2023-03-28/part_014.gz", Meta(860530408, 709123)
                 ),
-                ManifestEntry(
+                ManifestFile(
                     "s3://openalex/data/jsonl/works/updated_date=2023-03-28/part_015.gz", Meta(321944435, 262846)
                 ),
             ],
@@ -136,25 +136,25 @@ class TestOpenAlexUtils(SandboxTestCase):
         # Assert that two manifest instances with the same data are equal
         self.assertEqual(manifest_a, copy.copy(manifest_a))
 
-        # Assert that two manifest instances with entries in a different order are not equal
+        # Assert that two manifest instances with files in a different order are not equal
         self.assertNotEqual(manifest_a, manifest_b)
 
         # Assert that two manifest instances with completely different data are not equal
         self.assertNotEqual(manifest_a, manifest_c)
 
-        # Assert that manifest ManifestEntry parses updated_date and file_name properly
-        entry = ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))
+        # Assert that manifest ManifestFile parses updated_date and file_name properly
+        entry = ManifestFile("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))
         self.assertEqual(pendulum.datetime(2022, 12, 20), entry.updated_date)
         self.assertEqual("part_000.gz", entry.file_name)
 
         # Assert that manifest entry without a s3:// url prefix is still valid.
-        manifest_entry_no_s3 = ManifestEntry(
+        manifest_entry_no_s3 = ManifestFile(
             "openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4)
         )
         self.assertEqual(manifest_entry_no_s3.url, "s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz")
 
         # object_key
-        manifest_entry = ManifestEntry(
+        manifest_entry = ManifestFile(
             "s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4)
         )
         self.assertEqual("data/jsonl/works/updated_date=2022-12-20/part_000.gz", manifest_entry.object_key)
@@ -170,9 +170,9 @@ class TestOpenAlexUtils(SandboxTestCase):
             url="s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz",
             meta=dict(content_length=7073, record_count=4),
         )
-        obj = ManifestEntry.from_dict(manifest_entry_dict)
+        obj = ManifestFile.from_dict(manifest_entry_dict)
 
-        self.assertIsInstance(obj, ManifestEntry)
+        self.assertIsInstance(obj, ManifestFile)
         self.assertEqual(manifest_entry, obj)
 
         # to_dict
@@ -186,9 +186,7 @@ class TestOpenAlexUtils(SandboxTestCase):
     def test_manifest(self):
         # from_dict
         manifest = Manifest(
-            entries=[
-                ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))
-            ],
+            files=[ManifestFile("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))],
             content_length=7073,
             record_count=4,
             date="2022-12-20",
@@ -196,7 +194,7 @@ class TestOpenAlexUtils(SandboxTestCase):
             entity="works",
         )
         manifest_dict = dict(
-            entries=[
+            files=[
                 dict(
                     url="s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz",
                     meta=dict(content_length=7073, record_count=4),
@@ -244,13 +242,13 @@ class TestOpenAlexUtils(SandboxTestCase):
                 schema_folder=schema_folder,
                 snapshot_date=snapshot_date,
                 manifest=Manifest(
-                    entries=[
-                        ManifestEntry(
+                    files=[
+                        ManifestFile(
                             "s3://openalex/data/jsonl/authors/updated_date=2023-01-28/part_000.gz", Meta(7073, 4)
                         )
                     ],
                     content_length=7073,
-                    record_length=4,
+                    record_count=4,
                     date="2023-02-01",
                     format="jsonl",
                     entity="authors",
@@ -273,14 +271,14 @@ class TestOpenAlexUtils(SandboxTestCase):
             # bq_table_id
             self.assertEqual("project-id.openalex.authors20230128", entity.bq_table_id)
 
-            # entries
+            # files
             self.assertEqual(
-                [ManifestEntry("s3://openalex/data/jsonl/authors/updated_date=2023-01-28/part_000.gz", Meta(7073, 4))],
-                entity.entries,
+                [ManifestFile("s3://openalex/data/jsonl/authors/updated_date=2023-01-28/part_000.gz", Meta(7073, 4))],
+                entity.files,
             )
 
     def test_fetch_manifest(self):
-        manifest_path = os.path.join(FIXTURES_FOLDER, "manifest")
+        manifest_path = os.path.join(FIXTURES_FOLDER, "manifest.json")
         with aws_bucket_test_env(prefix=self.dag_id, region_name=self.aws_region_name) as bucket_name:
             s3 = boto3.client("s3")
             s3_object_key = "data/jsonl/publishers/manifest.json"

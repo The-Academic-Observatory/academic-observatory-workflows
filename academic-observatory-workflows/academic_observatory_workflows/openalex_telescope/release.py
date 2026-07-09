@@ -109,8 +109,8 @@ class OpenAlexEntity(SnapshotRelease):
         return f"data/{self.format}/{self.entity_name}"
 
     @property
-    def entries(self):
-        return [entry for entry in self.manifest.entries]
+    def files(self):
+        return [file for file in self.manifest.files]
 
     @staticmethod
     def from_dict(dict_: dict) -> OpenAlexEntity:
@@ -161,7 +161,7 @@ def s3_uri_parts(s3_uri: str) -> Tuple[str, str]:
 
 class Manifest:
     def __init__(
-        self, entries: List[ManifestEntry], format: str, date: str, entity: str, record_count: int, content_length: int
+        self, files: List[ManifestFile], format: str, date: str, entity: str, record_count: int, content_length: int
     ):
         """An OpenAlex Entity Manifest file in Redshift Manifest format. It lists all the data files for each
         entity. See:
@@ -169,7 +169,7 @@ class Manifest:
         * https://docs.openalex.org/download-all-data/snapshot-data-format
         * https://docs.aws.amazon.com/redshift/latest/dg/loading-data-files-using-manifest.html
 
-        :param entries: a list of Manifest entries.
+        :param files: a list of Manifest files.
         :param format: The data format of the files
         :param date: The snapshot date
         :param entity: The openalex entity
@@ -177,7 +177,7 @@ class Manifest:
         :param content_length: size of the snapshot in bytes.
         """
 
-        self.entries = entries
+        self.files = files
         self.format = format
         self.date = date
         self.entity = entity
@@ -186,19 +186,26 @@ class Manifest:
 
     def __eq__(self, other):
         if isinstance(other, Manifest):
-            return self.meta == other.meta and len(self.entries) == len(other.entries) and self.entries == other.entries
+            return (
+                self.files == other.files
+                and self.format == other.format
+                and self.entity == other.entity
+                and self.date == other.date
+                and self.record_count == other.record_count
+                and self.content_length == other.content_length
+            )
         return False
 
     @staticmethod
     def from_dict(dict_: Dict) -> Manifest:
-        entries = [ManifestEntry.from_dict(entry) for entry in dict_["files"]]
+        files = [ManifestFile.from_dict(entry) for entry in dict_["files"]]
         format = dict_["format"]
         date = dict_["date"]
         entity = dict_["entity"]
         record_count = dict_["record_count"]
         content_length = dict_["content_length"]
         return Manifest(
-            entries=entries,
+            files=files,
             format=format,
             date=date,
             entity=entity,
@@ -208,7 +215,7 @@ class Manifest:
 
     def to_dict(self) -> Dict:
         return dict(
-            entries=[entry.to_dict() for entry in self.entries],
+            files=[entry.to_dict() for entry in self.files],
             format=self.format,
             date=self.date,
             entity=self.entity,
@@ -246,7 +253,7 @@ class Meta:
         return dict(content_length=self.content_length, record_count=self.record_count)
 
 
-class ManifestEntry:
+class ManifestFile:
     def __init__(self, url: str, meta: Meta):
         """An entry in an OpenAlex Entity Manifest file, containing a URL of the file on an AWS S3
         bucket and metadata about the file (size in bytes and number of records).
@@ -263,7 +270,7 @@ class ManifestEntry:
         self.meta = meta
 
     def __eq__(self, other):
-        if isinstance(other, ManifestEntry):
+        if isinstance(other, ManifestFile):
             return self.url == other.url and self.meta == other.meta
         return False
 
@@ -283,10 +290,10 @@ class ManifestEntry:
         return re.search(r"part_\d+\.gz", self.url).group(0)
 
     @staticmethod
-    def from_dict(dict_: Dict) -> ManifestEntry:
+    def from_dict(dict_: Dict) -> ManifestFile:
         url = dict_["url"]
         meta = Meta.from_dict(dict_["meta"])
-        return ManifestEntry(url, meta)
+        return ManifestFile(url, meta)
 
     def to_dict(self) -> Dict:
         return dict(url=self.url, meta=self.meta.to_dict())
