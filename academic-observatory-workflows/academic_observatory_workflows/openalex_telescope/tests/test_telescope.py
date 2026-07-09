@@ -31,7 +31,7 @@ from airflow.utils.state import State
 from kubernetes.client import models as k8s
 
 from academic_observatory_workflows.config import project_path, TestConfig
-from academic_observatory_workflows.openalex_telescope.release import ManifestEntry, Meta
+from academic_observatory_workflows.openalex_telescope.release import ManifestFile, Meta
 from academic_observatory_workflows.openalex_telescope.tasks import Manifest
 from academic_observatory_workflows.openalex_telescope.telescope import create_dag, DagParams
 from observatory_platform.airflow.workflow import Workflow
@@ -377,7 +377,7 @@ def create_openalex_dataset(input_path: pathlib.Path, bucket_name: str) -> Dict:
         entry_index = {}
 
         # Create part files and merged_ids
-        for root, dirs, files in os.walk(str(input_path)):
+        for root, _, files in os.walk(str(input_path)):
             for filename in files:
                 if "expected" not in pathlib.Path(root).parts:
                     file_path = pathlib.Path(root) / filename
@@ -398,7 +398,7 @@ def create_openalex_dataset(input_path: pathlib.Path, bucket_name: str) -> Dict:
                         if entity_name not in entry_index:
                             entry_index[entity_name] = []
                         entry_index[entity_name].append(
-                            ManifestEntry(
+                            ManifestFile(
                                 f"s3://{bucket_name}/{s3_object_key}/{file_name}",
                                 Meta(content_length=os.path.getsize(output_path), record_count=len(data)),
                             )
@@ -419,7 +419,14 @@ def create_openalex_dataset(input_path: pathlib.Path, bucket_name: str) -> Dict:
                 content_length += entry.meta.content_length
                 record_count += entry.meta.record_count
 
-            manifest = Manifest(entries, Meta(content_length=content_length, record_count=record_count))
+            manifest = Manifest(
+                files=entries,
+                content_length=content_length,
+                record_count=record_count,
+                entity=entity_name,
+                format="jsonl",
+                date="2023-04-16",
+            )
             manifest_index[entity_name] = manifest
             output_path = pathlib.Path(temp_dir) / "data" / "jsonl" / entity_name / "manifest.json"
             with open(output_path, mode="w") as f:
@@ -433,7 +440,7 @@ def create_openalex_dataset(input_path: pathlib.Path, bucket_name: str) -> Dict:
 
 def upload_folder_to_s3(bucket_name: str, folder_path: str, s3_prefix=None):
     s3 = boto3.client("s3")
-    for root, dirs, files in os.walk(folder_path):
+    for root, _, files in os.walk(folder_path):
         for filename in files:
             local_path = os.path.join(root, filename)
             s3_path = os.path.relpath(local_path, folder_path)
