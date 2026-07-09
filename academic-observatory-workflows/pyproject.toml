@@ -1,12 +1,12 @@
 [build-system]
-requires = ["setuptools>=44", "wheel"]
+requires = ["setuptools==80.9.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "academic-observatory-workflows"
 version = "1.0.0"
 description = "Academic Observatory Workflows provides Apache Airflow Workflows for fetching, processing and analysing data about academic institutions."
-requires-python = ">=3.10"
+requires-python = "==3.13"
 license = { text = "Apache-2.0" }
 keywords = ["science", "data", "workflows", "academic institutes", "academic-observatory-workflows"]
 authors = [{ name = "Curtin University", email = "agent@observatory.academy" }]
@@ -48,7 +48,7 @@ tests = [
     "liccheck>=0.4,<1",
     "flake8>=3,<4",
     "coverage>=7,<8",
-    "vcrpy>=7,<8",
+    "vcrpy>=8,<9",
     "Faker>=37,<38",
     "boto3>=1.15.0,<2",
     "toml>=0.10.0"

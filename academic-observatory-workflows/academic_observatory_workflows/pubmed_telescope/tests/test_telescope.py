@@ -228,12 +228,11 @@ class TestPubMedTelescope(SandboxTestCase):
     def test_telescope(self):
         """Test the PubMed Telescope end to end"""
         env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        env.add_connection(**TestConfig.gke_cluster_connection)
         api_bq_dataset_id = env.add_dataset("pubmed_api")
         bq_dataset_id = env.add_dataset("pubmed")
 
         with env.create(task_logging=True):
-            clear_airflow_connections()
-            upsert_airflow_connection(**TestConfig.gke_cluster_connection)
 
             # Make an http server to serve the test files
             task_resources = {

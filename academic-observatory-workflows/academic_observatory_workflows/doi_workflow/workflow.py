@@ -21,8 +21,8 @@ from typing import List, Optional
 import pendulum
 from airflow import DAG
 from airflow.decorators import dag, task, task_group
-from airflow.models.baseoperator import chain
-from airflow.operators.empty import EmptyOperator
+from airflow.sdk import chain
+from airflow.providers.standard.operators.empty import EmptyOperator
 
 import academic_observatory_workflows.doi_workflow.tasks as tasks
 from academic_observatory_workflows.doi_workflow.queries import Aggregation, make_sql_queries, SQLQuery
@@ -187,8 +187,9 @@ class DagParams:
         input_table_task_ids = []
         for batch in self.sql_queries:
             for sql_query in batch:
-                task_id = sql_query.name
-                input_table_task_ids.append(task_id)
+                # task_id = sql_query.name
+                # input_table_task_ids.append(task_id)
+                input_table_task_ids.append(f"intermediate_tables.{sql_query.name}")
         self.input_table_task_ids = input_table_task_ids
 
 

@@ -24,7 +24,7 @@ from concurrent.futures import as_completed, ThreadPoolExecutor
 from queue import Empty, Queue
 from threading import Event
 from time import sleep
-from typing import Any, Dict, List, Tuple, Type, Union, Literal
+from typing import Any, Dict, List, Tuple, Union, Literal
 from urllib.parse import quote_plus
 
 import pendulum
@@ -205,7 +205,7 @@ def cleanup_workflow(release: dict) -> None:
     """Delete all files, folders and XComs associated with this release."""
 
     release = ScopusRelease.from_dict(release)
-    cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
+    cleanup(workflow_folder=release.workflow_folder)
 
 
 def transform_to_db_format(records: List[dict], snapshot_date: pendulum.Date, institution_ids: List[str]) -> List[dict]:

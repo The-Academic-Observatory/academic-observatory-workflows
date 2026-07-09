@@ -19,13 +19,13 @@ import os
 from unittest.mock import patch
 
 import pendulum
+from airflow.sdk import Connection
 
 from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.scopus_telescope.telescope import create_dag, DagParams
 from observatory_platform.dataset_api import DatasetAPI
 from observatory_platform.google.bigquery import bq_sharded_table_id
 from observatory_platform.airflow.workflow import Workflow
-from observatory_platform.airflow.airflow import upsert_airflow_connection, clear_airflow_connections
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
 from observatory_platform.sandbox.test_utils import SandboxTestCase
 
@@ -118,6 +118,14 @@ class TestScopusTelescope(SandboxTestCase):
         """Test workflow end to end"""
 
         env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        env.add_connection(
+            Connection(
+                conn_id="scopus_curtin_university",
+                conn_type="http",
+                host="http://login:password@localhost",
+                password="foo",
+            )
+        )
         bq_dataset_id = env.add_dataset("scopus")
         bq_table_name = "scopus"
         api_bq_dataset_id = env.add_dataset("dataset_api")
@@ -130,19 +138,12 @@ class TestScopusTelescope(SandboxTestCase):
         m_search.return_value = results_str, results_len
 
         with env.create():
-            # Add login/pass connection
-            clear_airflow_connections()
-            conn_id = "scopus_curtin_university"
-            upsert_airflow_connection(
-                conn_id=conn_id, conn_type="http", host="http://login:password@localhost", password="foo"
-            )
-
             logical_date = pendulum.datetime(2021, 1, 1)
             test_params = DagParams(
                 dag_id=self.dag_id,
                 cloud_workspace=env.cloud_workspace,
                 institution_ids=["123"],
-                scopus_conn_ids=[conn_id],
+                scopus_conn_ids=["scopus_curtin_university"],
                 bq_dataset_id=bq_dataset_id,
                 bq_table_name=bq_table_name,
                 api_bq_dataset_id=api_bq_dataset_id,
@@ -150,7 +151,9 @@ class TestScopusTelescope(SandboxTestCase):
                 retries=0,
             )
             dag = create_dag(test_params)
-            dagrun = dag.test(execution_date=logical_date)
+            dag.default_args = {}
+            env.serialize_dag(dag)
+            dagrun = dag.test(logical_date=logical_date)
 
             # Make assertions
             if not dagrun.state == "success":

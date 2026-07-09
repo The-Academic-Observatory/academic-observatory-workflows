@@ -287,19 +287,6 @@ class TestDoiWorkflow(SandboxTestCase):
         # International Centre for Radio Astronomy Research
         self.assertEqual({"https://ror.org/02n415q13", "https://ror.org/047272k79"}, index["https://ror.org/05sd1pp77"])
 
-    @provide_session
-    def update_db(self, *, session, object):
-        session.merge(object)
-        session.commit()
-
-    def add_dummy_dag_model(self, *, tmp_dir: str, dag_id: str, schedule: str):
-        model = DagModel()
-        model.dag_id = dag_id
-        model.schedule = schedule
-        model.fileloc = os.path.join(tmp_dir, "dummy_dag.py")
-        open(model.fileloc, mode="a").close()
-        self.update_db(object=model)
-
     def test_workflow(self):
         """Test the DOI telescope end to end."""
 
@@ -353,18 +340,19 @@ class TestDoiWorkflow(SandboxTestCase):
                 retries=0,
             )
             doi_dag = create_dag(dag_params)
+            for task in doi_dag.tasks:
+                task.on_failure_callback = None
+            env.serialize_dag(doi_dag)
 
             # Run Dummy Dags
             logical_date = pendulum.datetime(year=2023, month=6, day=18)
             snapshot_date = pendulum.datetime(year=2023, month=6, day=25)
-            expected_state = "success"
+            # Running all sensor dags
             for dag_id in SENSOR_DAG_IDS:
                 dag = make_dummy_dag(dag_id, logical_date)
-                with env.create_dag_run(dag, logical_date):
-                    # Running all of a DAGs tasks sets the DAG to finished
-                    self.add_dummy_dag_model(tmp_dir=env.temp_dir, dag_id=dag.dag_id, schedule=dag.schedule_interval)
-                    ti = env.run_task("dummy_task")
-                    self.assertEqual(expected_state, ti.state)
+                env.serialize_dag(dag)
+                dagrun = dag.test(logical_date=logical_date)
+                self.assertEqual("success", dagrun.state)
 
             # Generate fake dataset
             repository = load_jsonl(os.path.join(FIXTURES_FOLDER, "repository.jsonl"))
@@ -391,12 +379,18 @@ class TestDoiWorkflow(SandboxTestCase):
             ##########
 
             doi_vcr = vcr.VCR(
-                ignore_hosts=["google.com", "oauth2.googleapis.com", "bigquery.googleapis.com"],
+                ignore_hosts=[
+                    "google.com",
+                    "oauth2.googleapis.com",
+                    "bigquery.googleapis.com",
+                    "in-process.invalid",
+                    "in-process.invalid.",
+                ],
                 ignore_localhost=True,
                 record_mode="none",
             )
             with doi_vcr.use_cassette(os.path.join(FIXTURES_FOLDER, "cassette_test_workflow_ror_affiliations.yaml")):
-                dag_run = doi_dag.test(execution_date=snapshot_date, session=env.session)
+                dag_run = doi_dag.test(logical_date=snapshot_date)
             self.assertEqual(State.SUCCESS, dag_run.state)
 
             ##########
