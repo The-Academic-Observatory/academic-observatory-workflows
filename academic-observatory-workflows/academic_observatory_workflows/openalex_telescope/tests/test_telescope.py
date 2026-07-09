@@ -393,7 +393,7 @@ def create_openalex_dataset(input_path: pathlib.Path, bucket_name: str) -> Dict:
                         data = json.loads(load_file(file_path))
                         save_jsonl_gz(str(output_path), data)
 
-                        # Build manifest entries
+                        # Build manifest files
                         entity_name = output_root.parts[-2]
                         if entity_name not in entry_index:
                             entry_index[entity_name] = []
@@ -413,14 +413,14 @@ def create_openalex_dataset(input_path: pathlib.Path, bucket_name: str) -> Dict:
 
         # Create and save manifests
         manifest_index = {}
-        for entity_name, entries in entry_index.items():
+        for entity_name, files in entry_index.items():
             content_length, record_count = 0, 0
-            for entry in entries:
-                content_length += entry.meta.content_length
-                record_count += entry.meta.record_count
+            for file_ in files:
+                content_length += file_.meta.content_length
+                record_count += file_.meta.record_count
 
             manifest = Manifest(
-                files=entries,
+                files=files,
                 content_length=content_length,
                 record_count=record_count,
                 entity=entity_name,

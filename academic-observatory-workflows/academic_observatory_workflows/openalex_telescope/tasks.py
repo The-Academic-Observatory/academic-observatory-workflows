@@ -89,7 +89,7 @@ def fetch_entities(
     for entity_name in entity_names:
         manifest = fetch_manifest(bucket=aws_openalex_bucket, aws_key=aws_key, entity_name=entity_name, format=format)
 
-        manifest_snapshot_date = max([entry.updated_date for entry in manifest.entries])
+        manifest_snapshot_date = max([file.updated_date for file in manifest.files])
         if snapshot_date < manifest_snapshot_date:
             snapshot_date = manifest_snapshot_date
 
@@ -144,7 +144,7 @@ def aws_to_gcs_transfer(
 
     # Make GCS Transfer Manifest for files that we need for this release
     object_paths = []
-    for entry in entity.entries:
+    for entry in entity.files:
         object_paths.append(entry.object_key)
     gcs_upload_transfer_manifest(object_paths, entity.transfer_manifest_uri)
 
@@ -221,7 +221,7 @@ def transform(*, entity: OpenAlexEntity):
 
     with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
         futures = []
-        for entry in entity.entries:
+        for entry in entity.files:
             input_path = os.path.join(entity.download_folder, entry.object_key)
             output_path = os.path.join(entity.transform_folder, entry.object_key)
             futures.append(executor.submit(transform_file, input_path, output_path))
@@ -281,7 +281,7 @@ def compare_schemas(*, entity: OpenAlexEntity, transform_bucket: str, slack_conn
 def upload_files(*, entity: OpenAlexEntity, transform_bucket: str):
     # Make files to upload
     file_paths = []
-    for entry in entity.entries:
+    for entry in entity.files:
         file_path = os.path.join(entity.transform_folder, entry.object_key)
         file_paths.append(file_path)
 
@@ -437,7 +437,7 @@ def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict
     This function generates and returns a Bigquery style schema from the transformed object,
     using the SchemaGenerator from the 'bigquery_schema_generator' package.
 
-    :param download_path: The path to the file with the OpenAlex entries.
+    :param download_path: The path to the file with the OpenAlex files.
     :param transform_path: The path where transformed data will be saved.
     :return: schema_map. A nested OrderedDict object produced by the SchemaGenerator.
     :return: schema_generator.error_logs: Possible error logs produced by the SchemaGenerator.
