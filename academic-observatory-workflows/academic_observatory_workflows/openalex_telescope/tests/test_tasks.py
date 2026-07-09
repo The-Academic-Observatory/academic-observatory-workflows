@@ -91,23 +91,31 @@ class TestOpenAlexUtils(SandboxTestCase):
     def test_manifest_entry(self):
         # Test manifest equality
         manifest_a = Manifest(
-            [
+            entries=[
                 ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4)),
                 ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-21/part_000.gz", Meta(9018, 8)),
                 ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-22/part_000.gz", Meta(4035, 4)),
             ],
-            Meta(20126, 16),
+            date="2022-12-22",
+            content_length=20126,
+            record_count=16,
+            format="jsonl",
+            entity="works",
         )
         manifest_b = Manifest(
-            [
+            entries=[
                 ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-21/part_000.gz", Meta(9018, 8)),
                 ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4)),
                 ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-22/part_000.gz", Meta(4035, 4)),
             ],
-            Meta(20126, 16),
+            date="2022-12-22",
+            content_length=20126,
+            record_count=16,
+            format="jsonl",
+            entity="works",
         )
         manifest_c = Manifest(
-            [
+            entries=[
                 ManifestEntry(
                     "s3://openalex/data/jsonl/works/updated_date=2023-03-28/part_013.gz", Meta(866388416, 721951)
                 ),
@@ -118,7 +126,11 @@ class TestOpenAlexUtils(SandboxTestCase):
                     "s3://openalex/data/jsonl/works/updated_date=2023-03-28/part_015.gz", Meta(321944435, 262846)
                 ),
             ],
-            Meta(2048863259, 1693920),
+            date="2023-03-28",
+            content_length=2048863259,
+            record_count=1693920,
+            format="jsonl",
+            entity="works",
         )
 
         # Assert that two manifest instances with the same data are equal
@@ -172,32 +184,16 @@ class TestOpenAlexUtils(SandboxTestCase):
         )
 
     def test_manifest(self):
-        # Equality
-        self.assertEqual(
-            Manifest(
-                [ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))],
-                Meta(7073, 4),
-            ),
-            Manifest(
-                [ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))],
-                Meta(7073, 4),
-            ),
-        )
-        self.assertNotEqual(
-            Manifest(
-                [ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))],
-                Meta(7073, 2),
-            ),
-            Manifest(
-                [ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))],
-                Meta(7073, 3),
-            ),
-        )
-
         # from_dict
         manifest = Manifest(
-            [ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))],
-            Meta(7073, 4),
+            entries=[
+                ManifestEntry("s3://openalex/data/jsonl/works/updated_date=2022-12-20/part_000.gz", Meta(7073, 4))
+            ],
+            content_length=7073,
+            record_count=4,
+            date="2022-12-20",
+            format="jsonl",
+            entity="works",
         )
         manifest_dict = dict(
             entries=[
@@ -206,7 +202,11 @@ class TestOpenAlexUtils(SandboxTestCase):
                     meta=dict(content_length=7073, record_count=4),
                 )
             ],
-            meta=dict(content_length=7073, record_count=4),
+            content_length=7073,
+            record_count=4,
+            date="2022-12-20",
+            format="jsonl",
+            entity="works",
         )
         obj = Manifest.from_dict(manifest_dict)
         self.assertIsInstance(obj, Manifest)
@@ -244,12 +244,16 @@ class TestOpenAlexUtils(SandboxTestCase):
                 schema_folder=schema_folder,
                 snapshot_date=snapshot_date,
                 manifest=Manifest(
-                    [
+                    entries=[
                         ManifestEntry(
                             "s3://openalex/data/jsonl/authors/updated_date=2023-01-28/part_000.gz", Meta(7073, 4)
                         )
                     ],
-                    Meta(7073, 4),
+                    content_length=7073,
+                    record_length=4,
+                    date="2023-02-01",
+                    format="jsonl",
+                    entity="authors",
                 ),
                 is_first_run=is_first_run,
                 format="jsonl",

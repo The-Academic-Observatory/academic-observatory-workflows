@@ -160,7 +160,9 @@ def s3_uri_parts(s3_uri: str) -> Tuple[str, str]:
 
 
 class Manifest:
-    def __init__(self, entries: List[ManifestEntry], meta: Meta):
+    def __init__(
+        self, entries: List[ManifestEntry], format: str, date: str, entity: str, record_count: int, content_length: int
+    ):
         """An OpenAlex Entity Manifest file in Redshift Manifest format. It lists all the data files for each
         entity. See:
 
@@ -168,11 +170,19 @@ class Manifest:
         * https://docs.aws.amazon.com/redshift/latest/dg/loading-data-files-using-manifest.html
 
         :param entries: a list of Manifest entries.
-        :param meta: TODO not sure?
+        :param format: The data format of the files
+        :param date: The snapshot date
+        :param entity: The openalex entity
+        :param record_count: The number of individual records in the snapshot
+        :param content_length: size of the snapshot in bytes.
         """
 
         self.entries = entries
-        self.meta = meta
+        self.format = format
+        self.date = date
+        self.entity = entity
+        self.record_count = record_count
+        self.content_length = content_length
 
     def __eq__(self, other):
         if isinstance(other, Manifest):
@@ -181,12 +191,30 @@ class Manifest:
 
     @staticmethod
     def from_dict(dict_: Dict) -> Manifest:
-        entries = [ManifestEntry.from_dict(entry) for entry in dict_["entries"]]
-        meta = Meta.from_dict(dict_["meta"])
-        return Manifest(entries, meta)
+        entries = [ManifestEntry.from_dict(entry) for entry in dict_["files"]]
+        format = dict_["format"]
+        date = dict_["date"]
+        entity = dict_["entity"]
+        record_count = dict_["record_count"]
+        content_length = dict_["content_length"]
+        return Manifest(
+            entries=entries,
+            format=format,
+            date=date,
+            entity=entity,
+            record_count=record_count,
+            content_length=content_length,
+        )
 
     def to_dict(self) -> Dict:
-        return dict(entries=[entry.to_dict() for entry in self.entries], meta=self.meta.to_dict())
+        return dict(
+            entries=[entry.to_dict() for entry in self.entries],
+            format=self.format,
+            date=self.date,
+            entity=self.entity,
+            record_count=self.record_count,
+            content_length=self.content_length,
+        )
 
 
 class Meta:
@@ -241,7 +269,7 @@ class ManifestEntry:
 
     @property
     def object_key(self):
-        bucket_name, object_key = s3_uri_parts(self.url)
+        _, object_key = s3_uri_parts(self.url)
         if object_key is None:
             raise ValueError(f"object_key for url={self.url} is None")
         return object_key
