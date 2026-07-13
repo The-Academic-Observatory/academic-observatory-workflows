@@ -285,24 +285,30 @@ def get_snapshot_date(project_id: str, dataset_id: str, table_id: str, snapshot_
     return shard_date
 
 
-def traverse_ancestors(index: Dict, child_ids: Set):
-    """Traverse all of the ancestors of a set of child ROR ids.
+def get_ancestors(index: Dict, ror_id: str, cache: Dict[str, Set], visiting: Set[str]) -> Set:
+    """Get all ancestors of a single ROR id, with cycle detection and memoization.
 
-    :param index: the index.
-    :param child_ids: the child ids.
-    :return: all of the ancestors of all child ids.
+    :param index: the child -> direct-parents index.
+    :param ror_id: the id to find ancestors for.
+    :param cache: memoized ancestor sets, keyed by ror_id.
+    :param visiting: ids currently on the traversal path (for cycle detection).
+    :return: the set of all ancestor ids.
     """
+    if ror_id in cache:
+        return cache[ror_id]
 
-    ancestors = child_ids.copy()
-    for child_id in child_ids:
-        parents = index[child_id]
+    if ror_id in visiting:
+        logging.warning(f"Cycle detected in ROR hierarchy at {ror_id}, breaking cycle")
+        return set()
 
-        if not len(parents):
-            continue
+    visiting.add(ror_id)
+    ancestors: Set[str] = set()
+    for parent_id in index.get(ror_id, set()):
+        ancestors.add(parent_id)
+        ancestors |= get_ancestors(index, parent_id, cache, visiting)
+    visiting.remove(ror_id)
 
-        child_ancestors = traverse_ancestors(index, parents)
-        ancestors = ancestors.union(child_ancestors)
-
+    cache[ror_id] = ancestors
     return ancestors
 
 
@@ -368,10 +374,9 @@ def ror_to_ror_hierarchy_index(ror: List[Dict]) -> Dict:
 
     # Convert parent sets to ancestor sets
     ancestor_index = copy.deepcopy(index)
+    cache: Dict[str, Set] = {}
     for ror_id in index.keys():
-        parents = index[ror_id]
-        ancestors = traverse_ancestors(index, parents)
-        ancestor_index[ror_id] = ancestors
+        ancestor_index[ror_id] = get_ancestors(index, ror_id, cache, set())
 
     return ancestor_index
 
