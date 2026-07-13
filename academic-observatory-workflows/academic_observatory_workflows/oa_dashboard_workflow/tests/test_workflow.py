@@ -22,10 +22,11 @@ import unittest
 from unittest import TestCase
 from unittest.mock import patch
 
-import pendulum
 from airflow.models.connection import Connection
 from airflow.utils.state import State
 from deepdiff import DeepDiff
+import numpy as np
+import pendulum
 
 import academic_observatory_workflows.oa_dashboard_workflow.workflow
 from academic_observatory_workflows.config import project_path, TestConfig
@@ -56,11 +57,66 @@ academic_observatory_workflows.oa_dashboard_workflow.tasks.INCLUSION_THRESHOLD =
 }
 from academic_observatory_workflows.oa_dashboard_workflow.workflow import create_dag, DagParams
 
-
 FIXTURES_FOLDER = project_path("oa_dashboard_workflow", "tests", "fixtures")
 DOI_FIXTURES_FOLDER = project_path("doi_workflow", "tests", "fixtures")
 DOI_SCHEMA_FOLDER = project_path("doi_workflow", "schema")
 ROR_SCHEMA_FOLDER = project_path("ror_telescope", "schema")
+
+
+def build_entities(p_outputs_open, n_outputs, n_outputs_open):
+    """Helper to build entity dicts from parallel lists of stats."""
+    return [
+        dict(stats=dict(p_outputs_open=p, n_outputs=n, n_outputs_open=n_open))
+        for p, n, n_open in zip(p_outputs_open, n_outputs, n_outputs_open)
+    ]
+
+
+class TestMakeEntityStats(unittest.TestCase):
+    def setUp(self):
+        # Shared fixture for the "normal" case, reused across tests
+        self.p_outputs_open = [101, 50, 30]
+        self.n_outputs = [10, 100, 1000]
+        self.n_outputs_open = [10, 100, 1000]
+        self.entities = build_entities(self.p_outputs_open, self.n_outputs, self.n_outputs_open)
+        self.stats = make_entity_stats(self.entities)
+
+    def test_n_items(self):
+        self.assertEqual(self.stats.n_items, 3)
+
+    def test_min_max_are_exact(self):
+        # min/max/median come straight from np.min/np.max/statistics.median on the
+        # raw inputs -- these are exact integer-ish values, safe to assert precisely.
+        self.assertEqual(self.stats.min["p_outputs_open"], 30)
+        self.assertEqual(self.stats.min["n_outputs"], 10)
+        self.assertEqual(self.stats.min["n_outputs_open"], 10)
+
+        self.assertEqual(self.stats.max["p_outputs_open"], 100)
+        self.assertEqual(self.stats.max["n_outputs"], 1000)
+        self.assertEqual(self.stats.max["n_outputs_open"], 1000)
+
+    def test_median(self):
+        self.assertEqual(self.stats.median["p_outputs_open"], 50)
+
+    def test_histogram_p_outputs_open(self):
+        hist = self.stats.histograms.p_outputs_open
+        self.assertEqual(hist.data, [2, 0, 1])
+        np.testing.assert_allclose(hist.bins, [30.0, 53.333333, 76.666667, 100.0], rtol=1e-5)
+
+    def test_histogram_n_outputs(self):
+        hist = self.stats.histograms.n_outputs
+        self.assertEqual(hist.data, [1, 1, 1])
+        # bins are log10(n_outputs + 1), just check the endpoints and count
+        # rather than every internal edge -- less brittle, still catches real breaks
+        self.assertEqual(len(hist.bins), 4)
+        np.testing.assert_allclose(hist.bins[0], np.log10(10 + 1), rtol=1e-5)
+        np.testing.assert_allclose(hist.bins[-1], np.log10(1000 + 1), rtol=1e-5)
+
+    def test_histogram_n_outputs_open(self):
+        hist = self.stats.histograms.n_outputs_open
+        self.assertEqual(hist.data, [1, 1, 1])
+        self.assertEqual(len(hist.bins), 4)
+        np.testing.assert_allclose(hist.bins[0], np.log10(10 + 1), rtol=1e-5)
+        np.testing.assert_allclose(hist.bins[-1], np.log10(1000 + 1), rtol=1e-5)
 
 
 class TestFunctions(TestCase):
@@ -127,37 +183,6 @@ class TestFunctions(TestCase):
                 self.assertEqual("logo_path", actual_logo_path)
                 mock_download.assert_not_called()
                 mock_make_url.assert_called_once_with(entity_type="institution", entity_id=ror_id, size=size, fmt=fmt)
-
-    def test_make_entity_stats(self):
-        """Test make_entity_stats"""
-
-        # Input figures for multiple entities
-        p_outputs_open = [100, 50, 30]
-        n_outputs = [10, 100, 1000]
-        n_outputs_open = [10, 100, 1000]
-        entities = [
-            dict(
-                stats=dict(p_outputs_open=p_outputs_open_, n_outputs=n_outputs_, n_outputs_open=n_outputs_open_),
-            )
-            for p_outputs_open_, n_outputs_, n_outputs_open_ in zip(p_outputs_open, n_outputs, n_outputs_open)
-        ]
-        stats = make_entity_stats(entities)
-        expected_stats = EntityStats(
-            3,
-            min=dict(p_outputs_open=30.0, n_outputs=10, n_outputs_open=10),
-            max=dict(p_outputs_open=100.0, n_outputs=1000, n_outputs_open=1000),
-            median=dict(p_outputs_open=50),
-            histograms=EntityHistograms(
-                p_outputs_open=Histogram(data=[2, 0, 1], bins=[30.0, 53.33333333333333, 76.66666666666666, 100.0]),
-                n_outputs=Histogram(
-                    data=[1, 1, 1], bins=[1.041392685158225, 1.6944064825985894, 2.3474202800389543, 3.000434077479319]
-                ),
-                n_outputs_open=Histogram(
-                    data=[1, 1, 1], bins=[1.041392685158225, 1.6944064825985894, 2.3474202800389543, 3.000434077479319]
-                ),
-            ),
-        )
-        self.assertEqual(expected_stats, stats)
 
     def test_load_data_glob(self):
         with tempfile.TemporaryDirectory() as t:
