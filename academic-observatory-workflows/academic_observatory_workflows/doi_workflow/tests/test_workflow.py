@@ -32,7 +32,6 @@ from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.doi_workflow.queries import (
     fetch_ror_affiliations,
     make_sql_queries,
-    ror_to_ror_hierarchy_index,
 )
 from academic_observatory_workflows.doi_workflow.workflow import create_dag, DagParams, SENSOR_DAG_IDS
 from academic_observatory_workflows.model import (
@@ -270,22 +269,6 @@ class TestDoiWorkflow(SandboxTestCase):
         with env.create():
             dag_file = os.path.join(project_path(), "..", "..", "dags", "load_dags.py")
             self.assert_dag_load(self.dag_id, dag_file)
-
-    def test_ror_to_ror_hierarchy_index(self):
-        """Test ror_to_ror_hierarchy_index. Check that correct ancestor relationships created."""
-
-        ror = load_jsonl(os.path.join(FIXTURES_FOLDER, "ror.jsonl"))
-        index = ror_to_ror_hierarchy_index(ror)
-        self.assertEqual(289, len(index))
-
-        # Auckland
-        self.assertEqual(0, len(index["https://ror.org/03b94tp07"]))
-
-        # Curtin
-        self.assertEqual(0, len(index["https://ror.org/02n415q13"]))
-
-        # International Centre for Radio Astronomy Research
-        self.assertEqual({"https://ror.org/02n415q13", "https://ror.org/047272k79"}, index["https://ror.org/05sd1pp77"])
 
     @provide_session
     def update_db(self, *, session, object):
