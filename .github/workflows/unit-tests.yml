@@ -8,7 +8,7 @@ jobs:
     strategy:
       max-parallel: 4
       matrix:
-        python-version: ["3.10"]
+        python-version: ["3.13"]
         os: [ubuntu-latest]
 
     steps:
@@ -20,10 +20,10 @@ jobs:
       - name: Set up GCP Service Account Credentials
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.TEST_GCP_SERVICE_KEY }} # Store your GCP service account key as a GitHub secret
+          credentials_json: ${{ secrets.TEST_GCP_SERVICE_KEY }}
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -41,8 +41,6 @@ jobs:
           echo "${{ secrets.TEST_GCP_SERVICE_KEY }}" | base64 --decode > /tmp/google_application_credentials.json
           bash bin/test-env-up.sh --remote
 
-          # Manually add the minikube host alias because it sometimes doens't work and google won't fix it
-          # https://github.com/kubernetes/minikube/issues/8439
           eval $(minikube docker-env --unset)
           sudo chown $USER /etc/hosts
           echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
@@ -63,34 +61,31 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install pigz -y
-          python -m pip install --upgrade pip
 
           cd ..
-          # Add -b feature/my-branch to run tests for a feature branch
-          git clone  https://github.com/The-Academic-Observatory/observatory-platform.git
-          pip install -e ./observatory-platform[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-${{ matrix.python-version }}.txt
+          git clone -b airflow_3 https://github.com/The-Academic-Observatory/observatory-platform.git
+          uv pip install --system -e ./observatory-platform[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.2.2/constraints-${{ matrix.python-version }}.txt
 
           cd academic-observatory-workflows
-          pip install -e ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-${{ matrix.python-version }}.txt
+          uv pip install --system -e ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.2.2/constraints-${{ matrix.python-version }}.txt
 
           cd ..
           curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_linux_amd64.deb
           sudo dpkg -i s5cmd_2.1.0_linux_amd64.deb
 
-          pip freeze # for debugging
+          uv pip freeze --system # for debugging
           airflow db init
 
       - name: Check licenses
         run: |
           # stop the build if there are licensing issues
-          python bin/extract_deps.py
-          liccheck --sfile strategy.ini --rfile .liccheck_requirements.txt --level CAUTIOUS --reporting liccheck-output.txt --no-deps
+          uv venv /tmp/licensecheck-env --python ${{ matrix.python-version }}
+          uv pip install --python /tmp/licensecheck-env/bin/python "pip<24.1" licensecheck
+          /tmp/licensecheck-env/bin/licensecheck
 
       - name: Lint with flake8
         run: |
-          # stop the build if there are Python syntax errors or undefined names
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: Run unit tests with coverage
