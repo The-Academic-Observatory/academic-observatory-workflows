@@ -7,15 +7,17 @@ usage() {
     echo "       $0 [--remote]"
     echo "       $0 [--help]"
     echo
-    echo "--no-build  Will not build the AO workflows Docker image."
-    echo "--remote    Will run as if in Github Actions"
-    echo "--help      Display this help message"
+    echo "--remote          Will run as if in Github Actions"
+    echo "--no-build        Will not rebuild the academic-observatory image"
+    echo "--clean   Fully delete and recreate the minikube cluster (default: reuse existing cluster if present)"
+    echo "--help            Display this help message"
+    echo "--force-rebuild   Bypass Docker's build cache entirely"
     exit 1
 }
 
 get_args() {
     local OPTIONS
-    OPTIONS=$(getopt -o h --long help,no-build,remote -- "$@")
+    OPTIONS=$(getopt -o h --long help,no-build,remote,clean,force-rebuild -- "$@")
     if [ $? -ne 0 ]; then
         usage
         exit 1
@@ -27,12 +29,20 @@ get_args() {
         -h | --help)
             usage
             ;;
-        --no-build)
-            nobuild=true
-            shift
-            ;;
         --remote)
             remote=true
+            shift
+            ;;
+        --no-build)
+            no_build=true
+            shift
+            ;;
+        --clean)
+            clean=true
+            shift
+            ;;
+        --force-rebuild)
+            force_rebuild=true
             shift
             ;;
         --)
@@ -47,9 +57,14 @@ get_args() {
     done
 }
 
-nobuild=false
+no_build=false
 remote=false
+clean=false
+force_rebuild=false
 get_args "$@"
+
+# Set docker daemon to host
+eval "$(minikube docker-env --unset --shell bash 2>/dev/null || true)"
 
 # Authenticate minikube with gcp
 if [ -f .env ]; then # Source the .env file
@@ -60,8 +75,20 @@ if [ -z "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
     exit 1
 fi
 
+if [ "${no_build}" = "false" ]; then
+    if [ "${force_rebuild}" = "true" ]; then
+        docker build --no-cache -t academic-observatory:test . &
+    else
+        docker build -t academic-observatory:test . &
+    fi
+    build_pid=$!
+fi
+
+docker compose -f test-env-compose.yaml build &
+compose_build_pid=$!
+
 # Delete and start Minikube
-if [ "${remote}" = "false" ]; then
+if [ "${clean}" = "true" ] || ! minikube status &>/dev/null; then
     minikube delete --all --purge
     minikube start \
         --ports=5080,5021 \
@@ -130,16 +157,15 @@ if [ "${remote}" = "false" ]; then
     minikube addons enable gcp-auth
 fi
 
+if [ "${no_build}" = "false" ]; then
+    wait "$build_pid"
+    minikube image load academic-observatory:test
+fi
+
 # Run the compose commands to spin up the servers
-docker compose -f test-env-compose.yaml build
+wait "$compose_build_pid"
 docker compose -f test-env-compose.yaml down
 docker compose -f test-env-compose.yaml up -d
-
-# Use the minikube Docker daemon
-eval "$(minikube docker-env --shell bash)"
-if [ "${nobuild}" = "false" ]; then
-    docker build --no-cache -t academic-observatory:test .
-fi
 
 # (Re)Deploy kubernetes config items
 kubectl delete --ignore-not-found -f bin/test-konfig.yaml

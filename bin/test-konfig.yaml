@@ -32,3 +32,16 @@ metadata:
 type: Opaque
 data:
   api-key: c2VjcmV0 # 'secret'
+
+
+# Openalex fake credentials endpoint
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openalex-api-key
+  namespace: default
+type: Opaque
+data:
+  api-key: c2VjcmV0 # 'secret'
+
