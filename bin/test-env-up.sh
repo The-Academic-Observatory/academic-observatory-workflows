@@ -146,7 +146,7 @@ eval "$(minikube docker-env --shell bash)"
 if [ "${no_build}" = "false" ]; then
     if [ "${no_cache}" = "false" ]; then
         docker build -t academic-observatory:test .
-    else;
+    else
         docker build --no-cache -t academic-observatory:test .
     fi
 fi
