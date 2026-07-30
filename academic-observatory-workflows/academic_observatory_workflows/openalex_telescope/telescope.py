@@ -23,6 +23,8 @@ import pendulum
 from airflow import DAG
 from airflow.decorators import dag, task, task_group
 from kubernetes.client import models as k8s
+from airflow.providers.cncf.kubernetes.secret import Secret
+from airflow.hooks.base import BaseHook
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.openalex_telescope.release import OpenAlexEntity
@@ -49,8 +51,9 @@ class DagParams:
         non_concurrent_table_expiry_days: int = 62,
         n_transfer_trys: int = 3,
         primary_key: str = "id",
-        aws_conn_id: str = "aws_openalex",
-        aws_openalex_bucket: str = "openalex",
+        openalex_conn_id: str = "openalex-api-key",
+        aws_openalex_bucket: str = "openalex-snapshots",
+        openalex_credentials_url: str = "https://api.openalex.org/snapshots/credentials",
         slack_conn_id: Optional[str] = AirflowConns.SLACK,
         start_date: pendulum.DateTime = pendulum.datetime(2021, 12, 1),
         schedule: str = "@weekly",
@@ -169,8 +172,9 @@ class DagParams:
         self.non_concurrent_table_expiry_days = non_concurrent_table_expiry_days
         self.n_transfer_trys = n_transfer_trys
         self.primary_key = primary_key
-        self.aws_conn_id = aws_conn_id
+        self.openalex_conn_id = openalex_conn_id
         self.aws_openalex_bucket = aws_openalex_bucket
+        self.openalex_credentials_url = openalex_credentials_url
         self.slack_conn_id = slack_conn_id
         self.start_date = start_date
         self.schedule = schedule
@@ -204,6 +208,7 @@ class DagParams:
             }
             gke_resource_map = {
                 "small": {
+                    "transfer": {"container_resources": resource_cpu2, "node_selector": balanced_node_selector},
                     "download": {"container_resources": resource_cpu2, "node_selector": balanced_node_selector},
                     "transform": {"container_resources": resource_cpu4, "node_selector": balanced_node_selector},
                     "upload_schema": {
@@ -216,6 +221,7 @@ class DagParams:
                     },
                 },
                 "medium": {
+                    "transfer": {"container_resources": resource_cpu4, "node_selector": balanced_node_selector},
                     "download": {
                         "container_resources": resource_cpu8,
                         "node_selector": balanced_node_selector,
@@ -234,6 +240,7 @@ class DagParams:
                     },
                 },
                 "large": {
+                    "transfer": {"container_resources": resource_cpu8, "node_selector": balanced_node_selector},
                     "download": {
                         "container_resources": resource_cpu16,
                         "node_selector": balanced_node_selector,
@@ -335,7 +342,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 schema_folder=dag_params.schema_folder,
                 bq_dataset_id=dag_params.bq_dataset_id,
                 api_bq_dataset_id=dag_params.api_bq_dataset_id,
-                aws_conn_id=dag_params.aws_conn_id,
+                aws_key=tasks.get_temp_aws_creds(BaseHook.get_connection(dag_params.openalex_conn_id).password),
                 aws_openalex_bucket=dag_params.aws_openalex_bucket,
             )
             entity_index_id = release_to_bucket(entity_index, dag_params.cloud_workspace.transform_bucket)
@@ -366,20 +373,34 @@ def create_dag(dag_params: DagParams) -> DAG:
             dag_params: DagParams,
             gke_params: GkeParams,
         ):
-            @task()
+            # Add the env var to the gke parameters for the transfer task
+            transfer_params = {
+                **gke_params.kubernetes_task_params,
+                **gke_params.gke_resource_overrides.get("transfer"),
+            }
+            transfer_params["env_vars"] = {
+                **transfer_params.get("env_vars", {}),
+                "OPENALEX_CREDENTIALS_URL": dag_params.openalex_credentials_url,
+            }
+
+            @task.kubernetes(
+                name=f"{dag_params.dag_id}-transfer",
+                secrets=[
+                    Secret("env", "OPENALEX_API_KEY", "openalex-api-key", "api-key"),
+                ],
+                **transfer_params,
+            )
             def aws_to_gcs_transfer(entity_index: dict, entity_name: str, dag_params: DagParams, **context):
                 """Transfer files from AWS bucket to Google Cloud bucket"""
 
                 import academic_observatory_workflows.openalex_telescope.tasks as tasks
+                import os
 
                 entity = tasks.get_entity(entity_index, entity_name)
                 tasks.aws_to_gcs_transfer(
                     entity=entity,
-                    gc_project_id=dag_params.cloud_workspace.input_project_id,
-                    aws_conn_id=dag_params.aws_conn_id,
-                    transfer_attempts=dag_params.n_transfer_trys,
+                    openalex_api_key=os.environ["OPENALEX_API_KEY"],
                     aws_openalex_bucket=dag_params.aws_openalex_bucket,
-                    transfer_prefixes=[entity.aws_prefix],
                 )
 
             @task.kubernetes(
@@ -496,7 +517,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 if is_first_run:
                     logging.info(
-                        f"expire_previous_version: there are no previous versions to expire as it is the first run"
+                        "expire_previous_version: there are no previous versions to expire as it is the first run"
                     )
                     return
 
@@ -566,7 +587,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             cleanup(dag_id=dag_params.dag_id, workflow_folder=workflow_folder)
 
         task_check_dependencies = check_dependencies(
-            airflow_conns=[dag_params.gke_conn_id, dag_params.aws_conn_id, dag_params.slack_conn_id]
+            airflow_conns=[dag_params.gke_conn_id, dag_params.openalex_conn_id, dag_params.slack_conn_id]
         )
         xcom = fetch_entities(dag_params)
         xcom_entity_index_id = xcom["entity_index_id"]

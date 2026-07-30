@@ -112,6 +112,26 @@ class OpenAlexEntity(SnapshotRelease):
     def files(self):
         return [file for file in self.manifest.files]
 
+    @property
+    def download_data_uri(self) -> str:
+        """The local download path pattern for this entity's files, e.g.
+        {download_folder}/data/{format}/{entity_name}/*"""
+        return os.path.join(self.download_folder, "data", self.format, self.entity_name)
+
+    def _relative_path_for(self, object_key: str) -> str:
+        return object_key.split(f"{self.entity_name}/", 1)[-1]
+
+    def download_path_for(self, object_key: str) -> str:
+        """Map a manifest object_key (e.g. full/{date}/jsonl/{entity}/updated_date=.../part_000.gz)
+        to where that file lives locally after download."""
+        return os.path.join(self.download_data_uri, self._relative_path_for(object_key))
+
+    def transform_path_for(self, object_key: str) -> str:
+        """Map a manifest object_key to where that file lives locally after transform."""
+        return os.path.join(
+            self.transform_folder, "data", self.format, self.entity_name, self._relative_path_for(object_key)
+        )
+
     @staticmethod
     def from_dict(dict_: dict) -> OpenAlexEntity:
         return OpenAlexEntity(
