@@ -163,6 +163,7 @@ if [ "${no_build}" = "false" ]; then
 fi
 
 # Run the compose commands to spin up the servers
+eval "$(minikube docker-env --shell bash)" # Make sure we're on the minikube daemon
 wait "$compose_build_pid"
 docker compose -f test-env-compose.yaml down
 docker compose -f test-env-compose.yaml up -d
