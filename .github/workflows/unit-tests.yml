@@ -39,6 +39,11 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_application_credentials.json
         run: |
           echo "${{ secrets.TEST_GCP_SERVICE_KEY }}" | base64 --decode > /tmp/google_application_credentials.json
+          cat <<EOF > .env
+          GOOGLE_APPLICATION_CREDENTIALS=/tmp/google_application_credentials.json
+          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          EOF
           bash bin/test-env-up.sh --remote
 
           # Manually add the minikube host alias because it sometimes doens't work and google won't fix it
