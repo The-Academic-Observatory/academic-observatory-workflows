@@ -145,6 +145,32 @@ class DagParams:
                     }
 
         :param gke_conn_id: the name of the airlfow connection storing the gke cluster information.
+
+
+        OpenAlex enterprise authentication
+        ----------------------------------
+        OpenAlex's enterprise bucket requires exchanging a long-lived OPENALEX_API_KEY for short-lived AWS credentials
+        via POST to https://api.openalex.org/snapshots/credentials (or OPENALEX_CREDENTIALS_URL if set, for testing).
+        This happens in two places, differently, because of where each caller runs:
+
+        1. fetch_entities (Airflow worker) calls get_temp_aws_key(api_key) directly. One exchange up front.
+
+        2. aws_to_gcs_transfer (a @task.kubernetes pod) can run long enough that credentials could expire mid-sync.
+        setup_transfer_environment() instead writes an AWS credential_process config:
+
+            credential_process = curl -sf -X POST "<url>?api_key=<key>"
+
+        rclone/the AWS SDK re-invokes this automatically as credentials near expiry. Self-refreshing.
+
+        GCS auth (the sync destination) is unrelated. Auth via GOOGLE_APPLICATION_CREDENTIALS, picked up by rclone's
+        env_auth=true.
+
+        Testing: OPENALEX_CREDENTIALS_URL redirects both callers to a mock server,
+        but needs a different value for each, since they run in different network
+        contexts:
+        - fetch_entities (outside any pod): http://$(minikube ip):5080/...
+        - aws_to_gcs_transfer (inside a pod): http://host.minikube.internal:5080/...
+        Don't reuse one value for both.
         """
 
         self.dag_id = dag_id
