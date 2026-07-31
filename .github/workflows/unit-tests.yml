@@ -53,6 +53,13 @@ jobs:
           echo $(minikube ssh grep host.minikube.internal /etc/hosts | cut -f1) host.minikube.internal >> /etc/hosts
           eval $(minikube docker-env)
 
+          # Connect http-server/ftp-server to minikube's Docker network so pod->minikube-ip
+          # reachability works (setup-minikube doesn't use the literal "bridge" network)
+          MINIKUBE_NETWORK=$(docker inspect minikube --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}')
+          echo "minikube network: $MINIKUBE_NETWORK"
+          docker network connect "$MINIKUBE_NETWORK" academic-observatory-workflows-http-server-1
+          docker network connect "$MINIKUBE_NETWORK" academic-observatory-workflows-ftp-server-1
+
       - name: Debug Minikube status and context
         run: |
           echo "\nMinikube Status:"
