@@ -257,12 +257,11 @@ class TestOpenAlexTelescope(SandboxTestCase):
             "subfields",
             "topics",
         ]
-        aws_conn_id = "aws_openalex"
-        conn_aws = Connection(
-            conn_id=aws_conn_id,
+        openalex_conn_id = "openalex-api-key"
+        conn_oa = Connection(
+            conn_id=openalex_conn_id,
             conn_type="aws",
-            login=self.aws_access_key_id,
-            password=self.aws_secret_access_key,
+            password="secret",  # Used to access the creds from the http server
         )
         conn_slack = Connection(
             conn_id=AirflowConns.SLACK,
@@ -279,19 +278,20 @@ class TestOpenAlexTelescope(SandboxTestCase):
             prefix=self.dag_id, region_name=self.aws_region_name
         ) as bucket_name:
             # Add Airflow Connections
-            env.add_connection(conn_aws)
+            env.add_connection(conn_oa)
             env.add_connection(conn_slack)
             env.add_connection(conn_gke)
 
             # Upload test dataset
             create_openalex_dataset(
-                pathlib.Path(os.path.join(FIXTURES_FOLDER, "2023-04-16")),
+                pathlib.Path(os.path.join(FIXTURES_FOLDER, "2026-06-26")),
                 bucket_name,
             )
 
             # Build DAG
-            snapshot_date = pendulum.datetime(2023, 4, 16)
+            snapshot_date = pendulum.datetime(2026, 6, 26)
             container_resources = {
+                "transfer": {"container_resources": k8s.V1ResourceRequirements(requests={"memory": "1G", "cpu": "1"})},
                 "download": {"container_resources": k8s.V1ResourceRequirements(requests={"memory": "1G", "cpu": "1"})},
                 "transform": {"container_resources": k8s.V1ResourceRequirements(requests={"memory": "1G", "cpu": "1"})},
                 "upload_schema": {
@@ -315,6 +315,8 @@ class TestOpenAlexTelescope(SandboxTestCase):
                 aws_openalex_bucket=bucket_name,
                 entity_names=entity_names,
                 schema_folder=schema_folder,
+                # Set this variable so tasks.get_temp_aws_key() hits the http-server endpoint
+                openalex_credentials_url=f"http://{TestConfig.http_host_url}:{TestConfig.http_port}/openalex_aws/credentials",
                 gke_image=TestConfig.gke_image,
                 gke_namespace=TestConfig.gke_namespace,
                 gke_resource_map=resource_map,
@@ -322,6 +324,9 @@ class TestOpenAlexTelescope(SandboxTestCase):
                 retries=0,
             )
             dag = create_dag(dag_params)
+
+            # Set env so that the aws credentials endpoint hits our http server
+            os.environ["OPENALEX_CREDENTIALS_URL"] = "http://localhost:5080/openalex_aws/credentials"
 
             # Run DAG
             dag_run: DagRun = dag.test(execution_date=snapshot_date, session=env.session)
@@ -353,7 +358,7 @@ class TestOpenAlexTelescope(SandboxTestCase):
 
                 # Assert content
                 expected_data = load_and_parse_json(
-                    os.path.join(FIXTURES_FOLDER, "2023-04-16", "expected", f"{entity_name}.json"),
+                    os.path.join(FIXTURES_FOLDER, "2026-06-26", "expected", f"{entity_name}.json"),
                     date_fields={"publication_date"},
                     timestamp_fields={"updated_date", "created_date"},
                 )
@@ -425,10 +430,10 @@ def create_openalex_dataset(input_path: pathlib.Path, bucket_name: str) -> Dict:
                 record_count=record_count,
                 entity=entity_name,
                 format="jsonl",
-                date="2023-04-16",
+                date="2026-06-26",
             )
             manifest_index[entity_name] = manifest
-            output_path = pathlib.Path(temp_dir) / "data" / "jsonl" / entity_name / "manifest.json"
+            output_path = pathlib.Path(temp_dir) / "full" / "2026-06-26" / "jsonl" / entity_name / "manifest.json"
             with open(output_path, mode="w") as f:
                 json.dump(manifest.to_dict(), f, indent=2)
 

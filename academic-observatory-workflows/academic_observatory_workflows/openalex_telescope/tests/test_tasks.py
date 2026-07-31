@@ -52,7 +52,10 @@ class TestOpenAlexUtils(SandboxTestCase):
     def __init__(self, *args, **kwargs):
         super(TestOpenAlexUtils, self).__init__(*args, **kwargs)
         self.dag_id = "openalex"
-        self.aws_key = (os.getenv("AWS_ACCESS_KEY_ID"), os.getenv("AWS_SECRET_ACCESS_KEY"))
+        self.aws_key = {
+            "aws_access_key_id": os.getenv("AWS_ACCESS_KEY_ID"),
+            "aws_secret_access_key": os.getenv("AWS_SECRET_ACCESS_KEY"),
+        }
         self.aws_region_name = os.getenv("AWS_DEFAULT_REGION")
 
     def test_s3_uri_parts(self):
@@ -281,11 +284,13 @@ class TestOpenAlexUtils(SandboxTestCase):
         manifest_path = os.path.join(FIXTURES_FOLDER, "manifest.json")
         with aws_bucket_test_env(prefix=self.dag_id, region_name=self.aws_region_name) as bucket_name:
             s3 = boto3.client("s3")
-            s3_object_key = "data/jsonl/publishers/manifest.json"
+            s3_object_key = "full/2026-06-26/jsonl/publishers/manifest.json"
             with open(manifest_path, "rb") as f:
                 s3.upload_fileobj(f, bucket_name, s3_object_key)
 
-            actual = fetch_manifest(bucket=bucket_name, aws_key=self.aws_key, entity_name="publishers")
+            actual = fetch_manifest(
+                bucket=bucket_name, aws_key=self.aws_key, entity_name="publishers", snapshot_date="2026-06-26"
+            )
             with open(manifest_path, "r") as f:
                 expected = Manifest.from_dict(json.load(f))
             self.assertEqual(expected, actual)

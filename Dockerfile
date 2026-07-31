@@ -14,21 +14,21 @@ FROM quay.io/astronomer/astro-runtime:13.6.0
 # Install custom dependencies for DAGs that are not available via apt by default
 USER root
 
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 # To connect to GKE with KubernetesPodOperator install google-cloud-cli and google-cloud-cli-gke-gcloud-auth-plugin
 RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.asc] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
 RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | tee /usr/share/keyrings/cloud.google.asc
-RUN apt-get update && \
-    apt-get install -y google-cloud-cli google-cloud-cli-gke-gcloud-auth-plugin
+RUN apt-get update && apt-get install -y google-cloud-cli google-cloud-cli-gke-gcloud-auth-plugin rclone
 
 # ORCID install s5cmd
 RUN curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_linux_amd64.deb && \
     dpkg -i s5cmd_2.1.0_linux_amd64.deb
 
-USER astro
 
 # Install Observatory Platform
-RUN git clone https://github.com/The-Academic-Observatory/observatory-platform.git && \
-    pip install ./observatory-platform[tests] --constraint  https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-3.10.txt
+RUN git clone --depth 1 https://github.com/The-Academic-Observatory/observatory-platform.git && \
+    uv pip install --system ./observatory-platform[tests] --constraint  https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-3.10.txt
 
 # Set working directory for subsequent commands
 WORKDIR /app
@@ -41,4 +41,6 @@ ENV PYTHONPATH="${PYTHONPATH}:/app/academic-observatory-workflows"
 
 # Install Academic Observatory Workflows
 # Now that we're in /app, the path to the package is academic-observatory-workflows
-RUN pip install ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-3.10.txt
+RUN uv pip install --system ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-3.10.txt
+
+USER astro

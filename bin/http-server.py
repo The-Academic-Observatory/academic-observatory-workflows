@@ -54,6 +54,22 @@ def unpaywall_changefiles_get(_: str, filename: str):
     return send_file(filepath, as_attachment=True)
 
 
+@app.route("/openalex_aws/credentials", methods=["POST"])
+def openalex_aws_credentials():
+    # Returns credentials for accessing our test AWS bucket.
+    # The crednetials should be set in the container environment.
+    print("Serving aws credentials")
+    api_key = request.args.get("api_key")
+    if api_key != "secret":
+        abort(403)
+    return {
+        "Version": 1,
+        "AccessKeyId": os.environ["AWS_ACCESS_KEY_ID"],
+        "SecretAccessKey": os.environ["AWS_SECRET_ACCESS_KEY"],
+        **({"SessionToken": os.environ["AWS_SESSION_TOKEN"]} if os.environ.get("AWS_SESSION_TOKEN") else {}),
+    }
+
+
 @app.route("/")
 def site_map():
     ret = []

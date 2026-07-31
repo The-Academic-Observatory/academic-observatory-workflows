@@ -18,14 +18,15 @@
 from __future__ import annotations
 
 import copy
-import datetime
 import gzip
 import json
 import logging
 import os
+import requests
 from collections import OrderedDict
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from json.encoder import JSONEncoder
+import subprocess
 from typing import Any, List, Optional, Tuple, Dict, Literal
 
 import boto3
@@ -68,7 +69,7 @@ def fetch_entities(
     schema_folder: str,
     bq_dataset_id: str,
     api_bq_dataset_id: str,
-    aws_conn_id: str,
+    aws_key: str,
     aws_openalex_bucket: str,
     entity_id=DATASET_API_ENTITY_ID,
     format: Literal["jsonl", "parquet"] = "jsonl",
@@ -84,25 +85,25 @@ def fetch_entities(
     # Fetch manifests, calculate snapshot date and store manifests
     # Snapshot is the date of the latest file across all entities
     entity_index = {}
-    aws_key = get_aws_key(aws_conn_id)
-    snapshot_date = pendulum.instance(datetime.datetime.min)
+    latest_date = get_latest_snapshot_date(aws_openalex_bucket, aws_key)
     for entity_name in entity_names:
-        manifest = fetch_manifest(bucket=aws_openalex_bucket, aws_key=aws_key, entity_name=entity_name, format=format)
-
-        manifest_snapshot_date = max([file.updated_date for file in manifest.files])
-        if snapshot_date < manifest_snapshot_date:
-            snapshot_date = manifest_snapshot_date
-
+        manifest = fetch_manifest(
+            bucket=aws_openalex_bucket,
+            aws_key=aws_key,
+            entity_name=entity_name,
+            format=format,
+            snapshot_date=latest_date.to_date_string(),
+        )
         entity_index[entity_name] = manifest
 
     # Return if there is no new snapshot
-    if prev_release is not None and prev_release.snapshot_date >= snapshot_date:
+    if prev_release is not None and prev_release.snapshot_date >= latest_date:
         logging.info("fetch_entities: no new snapshot found")
         return {}
 
     # Build and return entities
     for entity_name, manifest in entity_index.items():
-        logging.info(f"fetch_releases: adding OpenAlexEntity({entity_name}), snapshot_date={snapshot_date})")
+        logging.info(f"fetch_releases: adding OpenAlexEntity({entity_name}), snapshot_date={latest_date})")
 
         # Save metadata
         entity = OpenAlexEntity(
@@ -112,7 +113,7 @@ def fetch_entities(
             entity_name=entity_name,
             bq_dataset_id=bq_dataset_id,
             schema_folder=schema_folder,
-            snapshot_date=snapshot_date,
+            snapshot_date=latest_date,
             manifest=manifest,
             is_first_run=is_first_run,
             format=format,
@@ -130,77 +131,87 @@ def fetch_entities(
     return entity_index
 
 
+def get_temp_aws_creds(openalex_api_key: str) -> dict:
+    """Fetch temporary AWS credentials from OpenAlex's enterprise credentials endpoint.
+    Will check OPENALEX_CREDENTIALS_URL env variable for an alternative endpoint for credentials. If none found, will
+    use the default endpoint - "https://api.openalex.org/snapshots/credentials"
+
+    :param openalex_api_key: The API key to get credentials for openalex's AWS bucket.
+    :return: The access credentials as a dictionary.
+    """
+    url = os.environ.get("OPENALEX_CREDENTIALS_URL", "https://api.openalex.org/snapshots/credentials")
+    resp = requests.post(url, params={"api_key": openalex_api_key}, timeout=10)
+    resp.raise_for_status()
+    creds = resp.json()
+    return {
+        "aws_access_key_id": creds["AccessKeyId"],
+        "aws_secret_access_key": creds["SecretAccessKey"],
+        "aws_session_token": creds.get("SessionToken"),
+    }
+
+
+def get_latest_snapshot_date(bucket: str, aws_key: dict) -> pendulum.DateTime:
+    """List the full/ prefix and return the most recent dated snapshot folder.
+    :param bucket: The name of the bucket
+    :param aws_key: The full AWS key
+    """
+    s3 = boto3.client("s3", **aws_key)
+    resp = s3.list_objects_v2(Bucket=bucket, Prefix="full/", Delimiter="/")
+    dates = [p["Prefix"].split("/")[1] for p in resp.get("CommonPrefixes", [])]
+    latest = max(dates)  # ISO-format dated folders sort correctly as strings
+    return pendulum.parse(latest)
+
+
+def setup_transfer_environment(api_key: str) -> dict:
+    """Writes the API key to the proper credentials file that AWS expects and returns the env variable to hand to rclone
+    Will check OPENALEX_CREDENTIALS_URL env variable for an alternative endpoint for credentials. If none found, will
+    use the default endpoint - "https://api.openalex.org/snapshots/credentials"
+
+    :param api_key: The api key to write to credentials
+    :return: The env variable containing the current environment
+    """
+    url = os.environ.get("OPENALEX_CREDENTIALS_URL", "https://api.openalex.org/snapshots/credentials")
+    aws_config_dir = os.path.expanduser("~/.aws")
+    os.makedirs(aws_config_dir, exist_ok=True)
+    with open(f"{aws_config_dir}/config", "w") as f:
+        f.write("[profile openalex]\n" f'credential_process = curl -sf -X POST "{url}?api_key={api_key}"\n')
+
+    return {**os.environ, "AWS_SDK_LOAD_CONFIG": "1", "AWS_PROFILE": "openalex"}
+
+
 def aws_to_gcs_transfer(
-    *,
     entity: OpenAlexEntity,
-    gc_project_id: str,
-    aws_conn_id: str,
-    transfer_attempts: int,
+    openalex_api_key: str,
     aws_openalex_bucket: str,
-    transfer_prefixes: Optional[list] = None,
 ):
-    if not transfer_prefixes:
-        transfer_prefixes = []
-
-    # Make GCS Transfer Manifest for files that we need for this release
-    object_paths = []
-    for entry in entity.files:
-        object_paths.append(entry.object_key)
-    gcs_upload_transfer_manifest(object_paths, entity.transfer_manifest_uri)
-
-    # Transfer files
-    count = 0
-    success = False
-    aws_key = get_aws_key(aws_conn_id)
-    for i in range(transfer_attempts):
-        success, objects_count = gcs_create_aws_transfer(
-            aws_key=aws_key,
-            aws_bucket=aws_openalex_bucket,
-            include_prefixes=transfer_prefixes,
-            gc_project_id=gc_project_id,  # ,
-            gc_bucket_dst_uri=entity.gcs_openalex_data_uri,
-            description=f"Transfer OpenAlex {entity.entity_name} from AWS to GCS",
-            transfer_manifest=entity.transfer_manifest_uri,
-        )
-        logging.info(
-            f"gcs_create_aws_transfer: try={i + 1}/{transfer_attempts}, success={success}, objects_count={objects_count}"
-        )
-        count += objects_count
-        if success:
-            break
-
-    logging.info(f"gcs_create_aws_transfer: success={success}, total_object_count={count}")
-    if not success:
-        raise AirflowException("Google Storage Transfer unsuccessful")
-
-    # After the transfer, verify the manifests and merged_ids are the same as when we fetched them during
-    # the fetch_releases task. If they are the same, the data did not change during transfer. If the
-    # manifests do not match then the data has changed, and we need to restart the DAG run manually.
-    # See step 3 : https://docs.openalex.org/download-all-data/snapshot-data-format#the-manifest-file
-    current_manifest = fetch_manifest(bucket=aws_openalex_bucket, aws_key=aws_key, entity_name=entity.entity_name)
-
-    msgs = []
-    manifest_changed = entity.manifest != current_manifest
-
-    if manifest_changed:
-        msg = f"OpenAlexEntity({entity.entity_name}) manifests have changed"
-        logging.error(f"aws_to_gcs_transfer: {msg}")
-        msgs.append(msg)
+    env = setup_transfer_environment(openalex_api_key)
+    subprocess.run(
+        [
+            "rclone",
+            "sync",
+            f":s3,provider=AWS,env_auth=true:{aws_openalex_bucket}/full/{entity.snapshot_date.to_date_string()}/jsonl/",
+            f"{entity.gcs_openalex_data_uri.replace('gs://', ':gcs,env_auth=true:')}",  # :gcs,env_auth=true:my_bucket/path
+            "--transfers=16",
+            "--checkers=8",
+            "-v",
+        ],
+        env=env,
+        check=True,
+    )
 
 
 def download(*, entity: OpenAlexEntity, **context):
-    output_folder = f"{entity.download_folder}/data/{entity.format}/{entity.entity_name}/"
-    bucket_path = f"{entity.gcs_openalex_data_uri}data/{entity.format}/{entity.entity_name}/*"
+    bucket_path = f"{entity.gcs_openalex_data_uri}{entity.entity_name}/*"
 
     # Build command
     cmds = [
-        "mkdir -p " + output_folder,
+        "mkdir -p " + entity.download_data_uri,
     ]
     if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
         # This command is not necessary in GKE, but needed in minikube. Only run when GOOGLE_APPLICATION_CREDENTIALS is
         # set, which is not set in GKE but set in our testing environment
         cmds.append("gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}")
-    cmds.append("gsutil -m -q cp -L {entity.log_path} -r " + bucket_path + " " + output_folder)
+    cmds.append(f"gsutil -m -q cp -L {entity.log_path} -r " + bucket_path + " " + entity.download_data_uri)
 
     op = BashOperator(
         task_id="process_entity.download",
@@ -212,7 +223,7 @@ def download(*, entity: OpenAlexEntity, **context):
 
 def transform(*, entity: OpenAlexEntity):
     # Cleanup in case we re-run task
-    output_folder = os.path.join(entity.transform_folder, "data", entity.entity_name)
+    output_folder = os.path.join(entity.transform_folder, "data", entity.format, entity.entity_name)
     if os.path.exists(output_folder):
         clean_dir(output_folder)
 
@@ -222,9 +233,13 @@ def transform(*, entity: OpenAlexEntity):
     with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
         futures = []
         for entry in entity.files:
-            input_path = os.path.join(entity.download_folder, entry.object_key)
-            output_path = os.path.join(entity.transform_folder, entry.object_key)
-            futures.append(executor.submit(transform_file, input_path, output_path))
+            futures.append(
+                executor.submit(
+                    transform_file,
+                    entity.download_path_for(entry.object_key),
+                    entity.transform_path_for(entry.object_key),
+                )
+            )
         for future in as_completed(futures):
             input_path, schema_map, schema_error = future.result()
 
@@ -267,7 +282,7 @@ def compare_schemas(*, entity: OpenAlexEntity, transform_bucket: str, slack_conn
 
     try:
         match = bq_compare_schemas(expected_schema, merged_schema, check_types_match=False)
-    except:
+    except Exception:
         match = False
 
     if not match:
@@ -280,10 +295,7 @@ def compare_schemas(*, entity: OpenAlexEntity, transform_bucket: str, slack_conn
 
 def upload_files(*, entity: OpenAlexEntity, transform_bucket: str):
     # Make files to upload
-    file_paths = []
-    for entry in entity.files:
-        file_path = os.path.join(entity.transform_folder, entry.object_key)
-        file_paths.append(file_path)
+    file_paths = [entity.transform_path_for(entry.object_key) for entry in entity.files]
 
     # Upload files
     success = gcs_upload_files(bucket_name=transform_bucket, file_paths=file_paths)  # cloud_workspace.transform_bucket
@@ -406,22 +418,19 @@ def get_aws_key(aws_conn_id: str) -> Tuple[str, str]:
 
 
 def fetch_manifest(
-    *, bucket: str, aws_key: Tuple[str, str], entity_name: str, format: Literal["jsonl", "parquet"] = "jsonl"
+    *, bucket: str, aws_key: dict, entity_name: str, snapshot_date: str, format: Literal["jsonl", "parquet"] = "jsonl"
 ) -> Manifest:
     """Fetch OpenAlex manifests for a range of entity types.
 
     :param bucket: the OpenAlex AWS bucket.
     :param aws_key: the aws_access_key_id and aws_secret_key as a tuple.
     :param entity_name: the entity type.
+    :param snapshot_date: the date of this openalex snapshot. Should be formatted as "YYYY-MM-dd".
     :return: The Manifest Object
     """
 
-    aws_access_key_id, aws_secret_key = aws_key
-    client = boto3.Session(
-        aws_access_key_id=aws_access_key_id,
-        aws_secret_access_key=aws_secret_key,
-    ).client("s3")
-    obj = client.get_object(Bucket=bucket, Key=f"data/{format}/{entity_name}/manifest.json")
+    client = boto3.Session(**aws_key).client("s3")
+    obj = client.get_object(Bucket=bucket, Key=f"full/{snapshot_date}/{format}/{entity_name}/manifest.json")
     data = json.loads(obj["Body"].read().decode())
 
     # Add s3:// as necessary

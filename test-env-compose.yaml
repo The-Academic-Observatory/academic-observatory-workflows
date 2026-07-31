@@ -6,6 +6,8 @@ services:
     image: ao-tests-http-server
     ports:
       - "5080:5080"
+    env_file: # Used for AWS bucket access
+      - .env
     network_mode: bridge
 
   ftp-server:

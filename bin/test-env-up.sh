@@ -8,6 +8,7 @@ usage() {
     echo "       $0 [--help]"
     echo
     echo "--no-build  Will not build the AO workflows Docker image."
+    echo "--no-cache  Will use the --no-cache flag when building"
     echo "--remote    Will run as if in Github Actions"
     echo "--help      Display this help message"
     exit 1
@@ -28,7 +29,11 @@ get_args() {
             usage
             ;;
         --no-build)
-            nobuild=true
+            no_build=true
+            shift
+            ;;
+        --no-cache)
+            no_cache=true
             shift
             ;;
         --remote)
@@ -47,7 +52,8 @@ get_args() {
     done
 }
 
-nobuild=false
+no_build=false
+no_cache=false
 remote=false
 get_args "$@"
 
@@ -130,6 +136,9 @@ if [ "${remote}" = "false" ]; then
     minikube addons enable gcp-auth
 fi
 
+# Make sure we're on the host daemon
+eval "$(minikube docker-env --unset --shell bash)"
+
 # Run the compose commands to spin up the servers
 docker compose -f test-env-compose.yaml build
 docker compose -f test-env-compose.yaml down
@@ -137,8 +146,12 @@ docker compose -f test-env-compose.yaml up -d
 
 # Use the minikube Docker daemon
 eval "$(minikube docker-env --shell bash)"
-if [ "${nobuild}" = "false" ]; then
-    docker build --no-cache -t academic-observatory:test .
+if [ "${no_build}" = "false" ]; then
+    if [ "${no_cache}" = "false" ]; then
+        docker build -t academic-observatory:test .
+    else
+        docker build --no-cache -t academic-observatory:test .
+    fi
 fi
 
 # (Re)Deploy kubernetes config items
