@@ -23,7 +23,6 @@ import pathlib
 import tempfile
 from typing import Dict
 from unittest.mock import patch
-import subprocess
 
 import boto3
 import pendulum
@@ -44,11 +43,6 @@ from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
 from observatory_platform.sandbox.test_utils import aws_bucket_test_env, load_and_parse_json, SandboxTestCase
 
 FIXTURES_FOLDER = project_path("openalex_telescope", "tests", "fixtures")
-
-
-def _get_minikube_ip() -> str:
-    result = subprocess.run(["minikube", "ip"], capture_output=True, text=True, check=True)
-    return result.stdout.strip()
 
 
 class TestOpenAlexTelescope(SandboxTestCase):
@@ -322,7 +316,7 @@ class TestOpenAlexTelescope(SandboxTestCase):
                 entity_names=entity_names,
                 schema_folder=schema_folder,
                 # Set this variable so tasks.get_temp_aws_key() hits the http-server endpoint
-                openalex_credentials_url=f"http://{_get_minikube_ip()}:{TestConfig.http_port}/openalex_aws/credentials",
+                openalex_credentials_url=f"http://{TestConfig.http_host_url}:{TestConfig.http_port}/openalex_aws/credentials",
                 gke_image=TestConfig.gke_image,
                 gke_namespace=TestConfig.gke_namespace,
                 gke_resource_map=resource_map,
@@ -332,7 +326,7 @@ class TestOpenAlexTelescope(SandboxTestCase):
             dag = create_dag(dag_params)
 
             # Set env so that the aws credentials endpoint hits our http server
-            os.environ["OPENALEX_CREDENTIALS_URL"] = f"http://{_get_minikube_ip()}:5080/openalex_aws/credentials"
+            os.environ["OPENALEX_CREDENTIALS_URL"] = "http://localhost:5080/openalex_aws/credentials"
 
             # Run DAG
             dag_run: DagRun = dag.test(execution_date=snapshot_date, session=env.session)

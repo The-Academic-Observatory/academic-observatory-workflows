@@ -136,8 +136,8 @@ if [ "${remote}" = "false" ]; then
     minikube addons enable gcp-auth
 fi
 
-# Make sure we're in the minikube daemon
-eval "$(minikube docker-env --shell bash)"
+# Make sure we're on the host daemon
+eval "$(minikube docker-env --unset --shell bash)"
 
 # Run the compose commands to spin up the servers
 docker compose -f test-env-compose.yaml build
