@@ -98,12 +98,6 @@ jobs:
           # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-      - name: Debug minikube/http-server reachability
-        run: |
-          minikube ip
-          docker ps
-          curl -v -X POST "http://$(minikube ip):5080/openalex_aws/credentials?api_key=secret" || true
-
       - name: Run unit tests with coverage
         env:
           TEST_GCP_DATA_LOCATION: ${{ secrets.TEST_GCP_DATA_LOCATION }}
