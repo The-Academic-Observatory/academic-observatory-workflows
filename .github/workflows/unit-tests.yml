@@ -69,10 +69,10 @@ jobs:
 
           cd ..
           git clone -b airflow_3 https://github.com/The-Academic-Observatory/observatory-platform.git
-          uv pip install --system --break-system-packages -e ./observatory-platform[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.2.2/constraints-${{ matrix.python-version }}.txt
+          uv pip install --python ${{ matrix.python-version }} -e ./observatory-platform[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.2.2/constraints-${{ matrix.python-version }}.txt
 
           cd academic-observatory-workflows
-          uv pip install --system --break-system-packages -e ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.2.2/constraints-${{ matrix.python-version }}.txt
+          uv pip install --python ${{ matrix.python-version }} -e ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.2.2/constraints-${{ matrix.python-version }}.txt
 
           cd ..
           curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_linux_amd64.deb
