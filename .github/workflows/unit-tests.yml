@@ -82,7 +82,6 @@ jobs:
           sudo dpkg -i s5cmd_2.1.0_linux_amd64.deb
 
           uv pip freeze --system # for debugging
-          airflow db init
 
       - name: Check licenses
         run: |
