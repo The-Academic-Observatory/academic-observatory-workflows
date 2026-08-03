@@ -492,11 +492,11 @@ class TestOaDashboardWorkflow(SandboxTestCase):
             # Setup and run fake DOI workflow to test sensor
             ##########
 
+            # Run Dummy Dag so prev dagrun sensor passes
             dag = make_dummy_dag("doi", snapshot_date)
-            with env.create_dag_run(dag, snapshot_date):
-                # Running all of a DAGs tasks sets the DAG to finished
-                ti = env.run_task("dummy_task")
-                self.assertEqual(State.SUCCESS, ti.state)
+            env.serialize_dag(dag)
+            dummy_dagrun = dag.test(logical_date=snapshot_date)
+            self.assertEqual(dummy_dagrun.state, "success")
 
             # Setup dependencies
             # Upload fake data to BigQuery
@@ -550,7 +550,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
             ##########
 
             # Run DAG
-            dag_run = dag.test(execution_date=snapshot_date, session=env.session)
+            dag_run = dag.test(logical_date=snapshot_date)
             self.assertEqual(State.SUCCESS, dag_run.state)
 
             ##########

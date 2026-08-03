@@ -771,8 +771,7 @@ def cleanup_workflow(release: dict) -> None:
     """
 
     release = PubMedRelease.from_dict(release)
-    logging.info(f"Deleting local files from - {release.workflow_folder}")
-    cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
+    cleanup(workflow_folder=release.workflow_folder)
 
 
 def login_to_ftp(host: str, port: int) -> FTP:
@@ -888,16 +887,12 @@ def download_datafiles(
             if md5hash_from_download in md5_from_pubmed_ftp:
                 download_success = True
             else:
-                logging.info(
-                    f"MD5 hash does not match the given checksum from server: {datafile.download_file_path}\
-                            - Retrying download ..."
-                )
+                logging.info(f"MD5 hash does not match the given checksum from server: {datafile.download_file_path}\
+                            - Retrying download ...")
 
             download_attempt_count += 1
 
-        assert (
-            download_success
-        ), f"Unable to download {datafile.download_file_path} from PubMed's FTP server \
+        assert download_success, f"Unable to download {datafile.download_file_path} from PubMed's FTP server \
                     {ftp_server_url} after {max_download_attempt} tries."
 
     # Close the FTP connection after downloading the required files.

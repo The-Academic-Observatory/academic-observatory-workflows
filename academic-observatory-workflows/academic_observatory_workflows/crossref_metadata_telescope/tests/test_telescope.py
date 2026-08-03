@@ -18,11 +18,11 @@ import os
 from unittest.mock import patch
 
 import pendulum
+from airflow.sdk import Connection
 
 from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.crossref_metadata_telescope.telescope import create_dag, DagParams
 from observatory_platform.airflow.workflow import Workflow
-from observatory_platform.airflow.airflow import upsert_airflow_connection, clear_airflow_connections
 from observatory_platform.dataset_api import DatasetAPI
 from observatory_platform.google.bigquery import bq_sharded_table_id
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
@@ -106,9 +106,8 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
         ) as mock_cre:
 
             mock_cre.return_value = True
-            clear_airflow_connections()
-            upsert_airflow_connection(conn_id="crossref_metadata", conn_type="http")
-            upsert_airflow_connection(**TestConfig.gke_cluster_connection)
+            env.add_connection(Connection(conn_id="crossref_metadata", conn_type="http"))
+            env.add_connection(Connection(**TestConfig.gke_cluster_connection))
 
             task_resources = {
                 "download": {"memory": "2G", "cpu": "2"},
@@ -131,9 +130,7 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
                 test_run=True,
             )
 
-            dagrun = create_dag(dag_params=test_params).test(
-                execution_date=pendulum.datetime(year=2023, month=1, day=7)
-            )
+            dagrun = create_dag(dag_params=test_params).test(logical=pendulum.datetime(year=2023, month=1, day=7))
             if not dagrun.state == "success":
                 raise RuntimeError("Dagrun did not complete successfully")
 

@@ -526,7 +526,7 @@ def cleanup_workflow(release: dict) -> None:
     """Delete all files, folders and XComs associated with this release."""
 
     orcid_release = OrcidRelease.from_dict(release)
-    cleanup(dag_id=orcid_release.dag_id, workflow_folder=orcid_release.workflow_folder)
+    cleanup(workflow_folder=orcid_release.workflow_folder)
 
 
 def aws_orcid_key(conn_id: str) -> Tuple[str, str]:

@@ -22,8 +22,6 @@ from typing import Dict, List
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from airflow.models import DagModel
-from airflow.utils.session import provide_session
 from airflow.utils.state import State
 import pendulum
 import vcr
@@ -34,6 +32,7 @@ from academic_observatory_workflows.doi_workflow.queries import (
     make_sql_queries,
 )
 from academic_observatory_workflows.doi_workflow.workflow import create_dag, DagParams, SENSOR_DAG_IDS
+from academic_observatory_workflows.doi_workflow.tasks import ror_to_ror_hierarchy_index
 from academic_observatory_workflows.model import (
     bq_load_observatory_dataset,
     Institution,

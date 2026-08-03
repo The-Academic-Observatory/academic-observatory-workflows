@@ -28,8 +28,7 @@ RUN curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_
 
 # Install Observatory Platform
 # TODO: remove airflow 3 branch when merged
-RUN git clone --depth 1 -b airflow_3 https://github.com/The-Academic-Observatory/observatory-platform.git && \
-    pip install ./observatory-platform[tests] --constraint  https://raw.githubusercontent.com/apache/airflow/constraints-3.2.2/constraints-3.13.txt
+RUN git clone --depth 1 -b airflow_3 https://github.com/The-Academic-Observatory/observatory-platform.git && uv pip install --system ./observatory-platform[tests] 
 
 # Set working directory for subsequent commands
 WORKDIR /app
@@ -41,5 +40,6 @@ COPY --chown=astro:astro academic-observatory-workflows ./academic-observatory-w
 ENV PYTHONPATH="${PYTHONPATH}:/app/academic-observatory-workflows"
 
 # Install Academic Observatory Workflows
+RUN uv pip install --system ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.2.2/constraints-3.13.txt
+
 USER astro
-RUN uv pip install ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.2.2/constraints-3.13.txt

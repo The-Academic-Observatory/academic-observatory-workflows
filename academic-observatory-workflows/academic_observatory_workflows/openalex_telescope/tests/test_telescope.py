@@ -329,7 +329,7 @@ class TestOpenAlexTelescope(SandboxTestCase):
             os.environ["OPENALEX_CREDENTIALS_URL"] = "http://localhost:5080/openalex_aws/credentials"
 
             # Run DAG
-            dag_run: DagRun = dag.test(execution_date=snapshot_date, session=env.session)
+            dag_run: DagRun = dag.test(logical_date=snapshot_date)
             self.assertEqual(State.SUCCESS, dag_run.state)
 
             # Make assertions

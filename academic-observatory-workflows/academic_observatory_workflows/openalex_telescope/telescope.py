@@ -611,8 +611,8 @@ def create_dag(dag_params: DagParams) -> DAG:
         def cleanup_workflow(dag_params: DagParams, **context) -> None:
             """Delete all files, folders and XComs associated with this release."""
 
-            workflow_folder = make_workflow_folder(dag_params.dag_id, context["run_id"])
-            cleanup(dag_id=dag_params.dag_id, workflow_folder=workflow_folder)
+            workflow_folder = make_workflow_folder(dag_params.dag_id, context["run_id"], make_dir=False)
+            cleanup(workflow_folder=workflow_folder)
 
         task_check_dependencies = check_dependencies(
             airflow_conns=[dag_params.gke_conn_id, dag_params.openalex_conn_id, dag_params.slack_conn_id]

@@ -407,10 +407,10 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.repository_dispatch(token=token)
 
         @task
-        def cleanup_workflow(release: dict, dag_params, **context):
+        def cleanup_workflow(release: dict, **context):
             """Cleanup old Xcoms."""
 
-            cleanup(dag_id=dag_params.dag_id)
+            cleanup(workflow_folder=release.workflow_folder)
 
         # Define task connections
         task_doi_sensor = ExternalTaskSensor(
@@ -451,7 +451,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             volume_name=dag_params.gke_params.gke_volume_name,
             kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
         )
-        task_cleanup_workflow = cleanup_workflow(xcom_release, dag_params)
+        task_cleanup_workflow = cleanup_workflow(xcom_release)
 
         chain(
             task_doi_sensor,

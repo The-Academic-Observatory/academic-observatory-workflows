@@ -476,7 +476,7 @@ def cleanup_workflow(release_id: str, cloud_workspace: CloudWorkspace):
     """Cleans up the workflow, deleting folders and xcoms"""
     release = release_from_bucket(cloud_workspace.download_bucket, release_id)
     release = UnpaywallRelease.from_dict(release)
-    cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
+    cleanup(workflow_folder=release.workflow_folder)
 
 
 def unpaywall_transform_file(input_file: str, output_file: str) -> None:

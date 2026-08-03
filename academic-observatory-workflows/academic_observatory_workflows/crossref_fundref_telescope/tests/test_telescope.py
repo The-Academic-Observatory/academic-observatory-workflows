@@ -109,6 +109,6 @@ class TestCrossrefFundrefTelescope(SandboxTestCase):
                 match_on=["uri", "method"],
             )
             with cassette:
-                dagrun = create_dag(dag_params=test_params).test(execution_date=logical_date)
+                dagrun = create_dag(dag_params=test_params).test(logical_date=logical_date)
             if not dagrun.state == "success":
                 raise RuntimeError("Dagrun did not complete successfully")

@@ -253,7 +253,7 @@ def cleanup_workflow(release: Dict) -> None:
     """Task to clean up the workflow"""
 
     release = CrossrefFundrefRelease.from_dict(release)
-    cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
+    cleanup(workflow_folder=release.workflow_folder)
 
 
 def list_releases(start_date: pendulum.DateTime, end_date: pendulum.DateTime) -> List[dict]:

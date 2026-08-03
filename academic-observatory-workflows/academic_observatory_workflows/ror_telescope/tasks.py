@@ -215,7 +215,7 @@ def cleanup_workflow(release: dict) -> None:
     """Delete all files, folders and XComs associated with this release."""
 
     release = RorRelease.from_dict(release)
-    cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
+    cleanup(workflow_folder=release.workflow_folder)
 
 
 def list_ror_records(
