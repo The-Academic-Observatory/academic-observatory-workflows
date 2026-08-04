@@ -85,9 +85,9 @@ jobs:
 
       - name: Check licenses
         run: |
-          # stop the build if there are licensing issues
           uv venv /tmp/licensecheck-env --python ${{ matrix.python-version }}
           uv pip install --python /tmp/licensecheck-env/bin/python "pip<24.1" licensecheck
+          cd academic-observatory-workflows
           /tmp/licensecheck-env/bin/licensecheck
 
       - name: Lint with flake8

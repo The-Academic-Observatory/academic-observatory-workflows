@@ -53,7 +53,7 @@ tests = [
     "toml>=0.10.0"
 ]
 
-licences = [
+licenses = [
     "licensecheck==2026.0.8"
 ]
 
