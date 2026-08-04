@@ -22,8 +22,7 @@ from typing import Optional
 
 import pendulum
 from airflow import DAG
-from airflow.decorators import dag, task
-from airflow.utils.trigger_rule import TriggerRule
+from airflow.sdk import dag, task, TriggerRule
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.orcid_telescope import tasks

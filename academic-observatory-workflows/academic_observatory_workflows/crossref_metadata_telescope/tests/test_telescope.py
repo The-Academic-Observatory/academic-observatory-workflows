@@ -129,8 +129,10 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
                 gke_startup_timeout_seconds=120,
                 test_run=True,
             )
-
-            dagrun = create_dag(dag_params=test_params).test(logical=pendulum.datetime(year=2023, month=1, day=7))
+            dag = create_dag(dag_params=test_params)
+            dag.
+            env.serialize_dag(dag)
+            dagrun = dag.test(logical=pendulum.datetime(year=2023, month=1, day=7))
             if not dagrun.state == "success":
                 raise RuntimeError("Dagrun did not complete successfully")
 

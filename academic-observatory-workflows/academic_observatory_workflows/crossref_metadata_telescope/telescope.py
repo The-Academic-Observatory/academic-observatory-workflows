@@ -22,7 +22,7 @@ from typing import Optional
 
 import pendulum
 from airflow import DAG
-from airflow.decorators import dag, task
+from airflow.sdk import dag, task
 from airflow.providers.cncf.kubernetes.secret import Secret
 
 from academic_observatory_workflows.config import project_path

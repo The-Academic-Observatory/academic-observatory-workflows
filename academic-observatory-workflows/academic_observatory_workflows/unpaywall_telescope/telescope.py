@@ -15,15 +15,12 @@
 # Author: Tuan Chien, James Diprose
 
 from __future__ import annotations
-from datetime import datetime
-from dateutil import relativedelta
 
 
 import pendulum
 from airflow import DAG
-from airflow.decorators import dag, task, task_group
+from airflow.sdk import dag, task, task_group, TriggerRule
 from airflow.operators.empty import EmptyOperator
-from airflow.utils.trigger_rule import TriggerRule
 from airflow.providers.cncf.kubernetes.secret import Secret
 
 from academic_observatory_workflows.config import project_path

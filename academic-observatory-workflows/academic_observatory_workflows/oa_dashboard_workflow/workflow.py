@@ -19,9 +19,8 @@ from __future__ import annotations
 from typing import List, Optional
 
 from airflow import DAG
-from airflow.decorators import dag, task
+from airflow.sdk import dag, task, chain
 from airflow.providers.cncf.kubernetes.secret import Secret
-from airflow.models.baseoperator import chain
 from airflow.sensors.external_task import ExternalTaskSensor
 import pendulum
 

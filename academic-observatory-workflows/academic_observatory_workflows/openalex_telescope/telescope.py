@@ -21,7 +21,7 @@ from typing import List, Optional
 
 import pendulum
 from airflow import DAG
-from airflow.decorators import dag, task, task_group
+from airflow.sdk import dag, task, task_group
 from kubernetes.client import models as k8s
 from airflow.providers.cncf.kubernetes.secret import Secret
 from airflow.hooks.base import BaseHook

@@ -291,6 +291,7 @@ class TestPubMedTelescope(SandboxTestCase):
             ftp_conn.close()
 
             dag = create_dag(dag_params=test_params)
+            env.serialize_dag(dag)
             dagrun = dag.test(logical_date=PubMedTest.first_run["logical_date"])
 
             # Make assertions
@@ -322,6 +323,7 @@ class TestPubMedTelescope(SandboxTestCase):
             ftp_conn.close()
 
             dag = create_dag(dag_params=test_params)
+            env.serialize_dag(dag)
             dagrun = dag.test(logical_date=PubMedTest.second_run["logical_date"])
 
             # Second run asssertions
@@ -359,6 +361,7 @@ class TestPubMedTelescope(SandboxTestCase):
             ftp_conn.close()
 
             dag = create_dag(dag_params=test_params)
+            env.serialize_dag(dag)
             dagrun = dag.test(logical_date=PubMedTest.third_run["logical_date"])
 
             if not dagrun.state == "success":

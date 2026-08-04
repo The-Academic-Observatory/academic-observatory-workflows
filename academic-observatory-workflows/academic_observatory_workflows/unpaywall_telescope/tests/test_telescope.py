@@ -166,7 +166,9 @@ class TestUnpaywallTelescope(SandboxTestCase):
                     "list": [{"filename": "changed_dois_with_versions_2023-04-25T080001.jsonl.gz", "filetype": "jsonl"}]
                 }
                 ss.return_value = f"unpaywall_snapshot_{snapshot_date.format('YYYY-MM-DDTHHmmss')}.jsonl.gz"
-                dagrun = create_dag(dag_params=test_params).test(logical_date=data_interval_end)
+                dag = create_dag(dag_params=test_params)
+                env.serialize_dag(dag)
+                dagrun = dag.test(logical_date=data_interval_end)
 
             # Make assertions
             if not dagrun.state == "success":
@@ -190,7 +192,9 @@ class TestUnpaywallTelescope(SandboxTestCase):
             ) as ss:
                 cfs.return_value = {"list": []}
                 ss.return_value = "filename"
-                dagrun = create_dag(dag_params=test_params).test(logical_date=data_interval_end)
+                dag = create_dag(dag_params=test_params)
+                env.serialize_dag(dag)
+                dagrun = dag.test(logical_date=data_interval_end)
             # Make assertions
 
             if not dagrun.state == "success":
@@ -213,7 +217,9 @@ class TestUnpaywallTelescope(SandboxTestCase):
                     ]
                 }
                 ss.return_value = f"unpaywall_snapshot_{snapshot_date.format('YYYY-MM-DDTHHmmss')}.jsonl.gz"
-                dagrun = create_dag(dag_params=test_params).test(logical_date=data_interval_end)
+                dag = create_dag(dag_params=test_params)
+                env.serialize_dag(dag)
+                dagrun = dag.test(logical_date=data_interval_end)
 
             # Make assertions
             if not dagrun.state == "success":

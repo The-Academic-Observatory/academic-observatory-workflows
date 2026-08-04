@@ -222,7 +222,9 @@ class TestOrcidTelescope(SandboxTestCase):
             first_execution_date = pendulum.datetime(year=2023, month=6, day=1)
             with patch("academic_observatory_workflows.orcid_telescope.tasks.gcs_create_aws_transfer") as mock_transfer:
                 mock_transfer.return_value = (True, 1)  # Fake transfer success
-                dagrun = create_dag(dag_params=test_params).test(logical_date=first_execution_date)
+                dag = create_dag(dag_params=test_params)
+                env.serialize_dag(dag)
+                dagrun = dag.test(logical_date=first_execution_date)
 
             # Make assertions
             if not dagrun.state == "success":
@@ -258,7 +260,9 @@ class TestOrcidTelescope(SandboxTestCase):
             second_execution_date = pendulum.datetime(year=2023, month=6, day=8)
             with patch("academic_observatory_workflows.orcid_telescope.tasks.gcs_create_aws_transfer") as mock_transfer:
                 mock_transfer.return_value = (True, 1)  # Fake transfer success
-                dagrun = create_dag(dag_params=test_params).test(logical_date=second_execution_date)
+                dag = create_dag(dag_params=test_params)
+                env.serialize_dag(dag)
+                dagrun = dag.test(logical_date=second_execution_date)
 
             # Make assertions
             if not dagrun.state == "success":

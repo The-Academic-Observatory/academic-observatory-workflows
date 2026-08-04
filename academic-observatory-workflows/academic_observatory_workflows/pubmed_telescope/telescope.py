@@ -21,9 +21,8 @@ from dateutil import relativedelta
 
 import pendulum
 from airflow import DAG
-from airflow.decorators import dag, task, task_group
+from airflow.sdk import dag, task, task_group, TriggerRule
 from airflow.operators.empty import EmptyOperator
-from airflow.utils.trigger_rule import TriggerRule
 
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage

@@ -20,8 +20,7 @@ from typing import List, Optional
 
 import pendulum
 from airflow import DAG
-from airflow.decorators import dag, task, task_group
-from airflow.sdk import chain
+from airflow.sdk import chain, dag, task, task_group
 from airflow.providers.standard.operators.empty import EmptyOperator
 
 import academic_observatory_workflows.doi_workflow.tasks as tasks

@@ -126,6 +126,7 @@ class TestRorTelescope(SandboxTestCase):
                 api_bq_dataset_id=api_bq_dataset_id,
             )
             dag = create_dag(test_params)
+            env.serialize_dag(dag)
             dagrun = dag.test(logical_date=logical_date)
 
             # Make assertions
