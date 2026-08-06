@@ -144,8 +144,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             return tasks.fetch_release(
                 dag_id=dag_params.dag_id,
-                run_id=context["run_id"],
-                dag_run=context["dag_run"],
+                context=context,
                 cloud_workspace=dag_params.cloud_workspace,
                 bq_dataset_id=dag_params.bq_dataset_id,
                 bq_table_name=dag_params.bq_table_name,

@@ -19,7 +19,7 @@ import unittest
 from unittest.mock import patch
 import tempfile
 
-from airflow import AirflowException
+from airflow.sdk.exceptions import AirflowException
 import jsonlines
 import pendulum
 import vcr
@@ -38,7 +38,6 @@ from academic_observatory_workflows.unpaywall_telescope.tasks import (
     unpaywall_transform_row,
     UNPAYWALL_BASE_URL,
 )
-
 
 FIXTURES_FOLDER = project_path("unpaywall_telescope", "tests", "fixtures")
 

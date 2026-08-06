@@ -277,8 +277,9 @@ class TestOrcidTelescope(SandboxTestCase):
                 project_id=TestConfig.gcp_project_id,
                 dataset_id=test_params.bq_dataset_id,
                 table_name="orcid_snapshot",
-                date=pendulum.date(2023, 5, 28),
+                date=pendulum.date(2023, 6, 1),
             )
+            breakpoint()
             self.assert_table_content(snapshot_table_id, expected, primary_key="path")
 
             # Main table

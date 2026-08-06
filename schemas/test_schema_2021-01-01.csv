@@ -1,0 +1,2 @@
+name,type,mode,description
+TestField,INTEGER,NULLABLE,Some description

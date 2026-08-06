@@ -104,7 +104,13 @@ class TestCrossrefFundrefTelescope(SandboxTestCase):
 
             cassette = vcr.use_cassette(
                 os.path.join(FIXTURES_FOLDER, "fundref_e2e.yaml"),
-                ignore_hosts=["oauth2.googleapis.com", "bigquery.googleapis.com", "storage.googleapis.com"],
+                ignore_hosts=[
+                    "oauth2.googleapis.com",
+                    "bigquery.googleapis.com",
+                    "storage.googleapis.com",
+                    "in-process.invalid",
+                    "in-process.invalid.",
+                ],
                 ignore_localhost=True,
                 match_on=["uri", "method"],
             )

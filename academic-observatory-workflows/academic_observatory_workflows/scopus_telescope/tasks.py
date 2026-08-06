@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Tuple, Union, Literal
 from urllib.parse import quote_plus
 
 import pendulum
-from airflow import AirflowException
+from airflow.sdk.exceptions import AirflowException
 from google.cloud.bigquery import SourceFormat, WriteDisposition
 from ratelimit import limits, sleep_and_retry
 

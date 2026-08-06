@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
 import pendulum
-from airflow.exceptions import AirflowException, AirflowSkipException
+from airflow.sdk.exceptions import AirflowException, AirflowSkipException
 from airflow.sdk import Connection
 
 from academic_observatory_workflows.config import project_path, TestConfig
@@ -138,8 +138,7 @@ class TestTasks(SandboxTestCase):
                 mock_ifdr.return_value = True
                 actual_release = tasks.fetch_release(
                     dag_id=dag_id,
-                    run_id=run_id,
-                    dag_run=MagicMock(),
+                    context={"run_id": run_id},
                     data_interval_start=data_interval_start,
                     data_interval_end=data_interval_end,
                     cloud_workspace=env.cloud_workspace,
@@ -188,8 +187,7 @@ class TestTasks(SandboxTestCase):
                 mock_ifdr.return_value = False
                 actual_release = tasks.fetch_release(
                     dag_id=dag_id,
-                    run_id=run_id,
-                    dag_run=MagicMock(),
+                    context={"run_id": run_id},
                     data_interval_start=data_interval_start,
                     data_interval_end=data_interval_end,
                     cloud_workspace=env.cloud_workspace,
@@ -521,7 +519,7 @@ class TestTransferOrcid(unittest.TestCase):
             )
             self.assertEqual(mock_transfer.call_count, 3)
             mock_transfer.assert_called_with(
-                aws_key=("", None),  # matches the empty login/password from upsert_airflow_connection
+                aws_key=("", ""),  # matches the empty login/password from upsert_airflow_connection
                 aws_bucket="aws_orcid_bucket",
                 include_prefixes=[],
                 gc_project_id=dummy_release().cloud_workspace.project_id,

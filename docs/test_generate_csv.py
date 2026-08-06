@@ -16,8 +16,7 @@ import os
 import tempfile
 import unittest
 
-import docs.generate_schema_csv as gsc
-
+import generate_schema_csv as gsc
 
 # Author: Tuan Chien
 

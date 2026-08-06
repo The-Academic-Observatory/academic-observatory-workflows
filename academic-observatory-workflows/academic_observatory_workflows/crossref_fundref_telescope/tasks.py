@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from typing import Dict, List, Tuple, Union
 
 import pendulum
-from airflow.exceptions import AirflowException, AirflowSkipException
+from airflow.sdk.exceptions import AirflowException, AirflowSkipException
 from google.cloud.bigquery import SourceFormat
 
 from academic_observatory_workflows.crossref_fundref_telescope.release import CrossrefFundrefRelease

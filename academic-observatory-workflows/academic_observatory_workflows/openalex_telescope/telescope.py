@@ -344,7 +344,6 @@ def create_dag(dag_params: DagParams) -> DAG:
             "owner": "airflow",
             "on_failure_callback": on_failure_callback,
             "retries": dag_params.retries,
-            "depends_on_past": True,
         },
     )
     def openalex():
@@ -357,8 +356,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             import academic_observatory_workflows.openalex_telescope.tasks as tasks
 
-            dag_run = context["dag_run"]
-            is_first_run = is_first_dag_run(dag_run)
+            is_first_run = is_first_dag_run(context)
             entity_index = tasks.fetch_entities(
                 dag_id=dag_params.dag_id,
                 run_id=context["run_id"],
@@ -526,7 +524,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 tasks.upload_files(entity=entity, transform_bucket=dag_params.cloud_workspace.transform_bucket)
 
             @task()
-            def bq_load_table(entity_index: dict, entity_name: str, dag_params: DagParams, **context):
+            def bq_load_table(entity_index: dict, entity_name: str, **context):
                 """Load the main or upsert table for an entity."""
 
                 import academic_observatory_workflows.openalex_telescope.tasks as tasks
@@ -540,10 +538,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
                 import academic_observatory_workflows.openalex_telescope.tasks as tasks
 
-                dag_run = context["dag_run"]
-                is_first_run = is_first_dag_run(dag_run)
-
-                if is_first_run:
+                if is_first_dag_run(context):
                     logging.info(
                         "expire_previous_version: there are no previous versions to expire as it is the first run"
                     )
@@ -572,7 +567,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             task_upload_schema = upload_schema(entity_index_id, entity_name, dag_params)
             task_compare_schemas = compare_schemas(entity_index, entity_name, dag_params)
             task_upload_files = upload_files(entity_index_id, entity_name, dag_params)
-            task_bq_load_table = bq_load_table(entity_index, entity_name, dag_params)
+            task_bq_load_table = bq_load_table(entity_index, entity_name)
             task_expire_previous_version = expire_previous_version(entity_index, entity_name, dag_params)
             task_delete_storage = gke_delete_storage(
                 volume_name=gke_params.gke_volume_name,

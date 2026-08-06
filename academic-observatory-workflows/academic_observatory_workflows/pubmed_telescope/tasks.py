@@ -16,8 +16,8 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 import jsonlines
 import pendulum
 import time
-from airflow import AirflowException
-from airflow.models import DagRun
+from airflow.sdk.exceptions import AirflowException
+from airflow.sdk.definitions.context import Context
 from Bio import Entrez
 from Bio.Entrez.Parser import (
     DictionaryElement,
@@ -105,8 +105,7 @@ class PubmedUpdatefile:
 def fetch_release(
     dag_id: str,
     cloud_workspace: CloudWorkspace,
-    run_id: str,
-    dag_run: DagRun,
+    context: Context,
     data_interval_end: pendulum.DateTime,
     bq_dataset_id: str,
     api_bq_dataset_id: str,
@@ -120,8 +119,7 @@ def fetch_release(
 
     :param dag_id: The ID of the dag
     :param cloud_workspace: The cloud workspace object
-    :param run_id: The run ID of this dagrun
-    :param dag_run: The DagRun object
+    :param context: This dag run's context
     :param data_interval_end: The end of the data interval for this run
     :param bq_dataset_id: The bigquery datset ID
     :param api_bq_dataset_id: The dataset ID of the bigquery API.
@@ -147,7 +145,7 @@ def fetch_release(
     api = DatasetAPI(bq_project_id=cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
 
     # Make workflow re-download the baseline yearly data if the upload date does not match the date from the last release.
-    is_first_run = is_first_dag_run(dag_run)
+    is_first_run = is_first_dag_run(context)
     if is_first_run:
         year_first_run = True
     else:
@@ -298,7 +296,7 @@ def fetch_release(
     id = release_to_bucket(
         PubMedRelease(
             dag_id=dag_id,
-            run_id=run_id,
+            run_id=context["run_id"],
             cloud_workspace=cloud_workspace,
             bq_dataset_id=bq_dataset_id,
             start_date=release_interval_start,

@@ -270,10 +270,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
                     name="Open Access Website Workflow",
                     class_name="academic_observatory_workflows.oa_dashboard_workflow.workflow",
                     cloud_workspace=self.fake_cloud_workspace,
-                    kwargs=dict(
-                        data_bucket=self.data_bucket_name,
-                        conceptrecid=self.conceptrecid,
-                    ),
+                    kwargs=dict(data_bucket=self.data_bucket_name, conceptrecid=self.conceptrecid),
                 )
             ]
         )
@@ -550,6 +547,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
             ##########
 
             # Run DAG
+            env.serialize_dag(dag)
             dag_run = dag.test(logical_date=snapshot_date)
             self.assertEqual(State.SUCCESS, dag_run.state)
 

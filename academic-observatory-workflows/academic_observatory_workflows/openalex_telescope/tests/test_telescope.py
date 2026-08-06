@@ -324,7 +324,6 @@ class TestOpenAlexTelescope(SandboxTestCase):
                 retries=0,
             )
             dag = create_dag(dag_params)
-            dag.default_args = {}
             env.serialize_dag(dag)
 
             # Set env so that the aws credentials endpoint hits our http server

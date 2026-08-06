@@ -26,8 +26,8 @@ from typing import List, Any, Optional
 from urllib.parse import urlparse
 
 from airflow.exceptions import AirflowException
-from airflow.models import DagRun
-from airflow.operators.bash import BashOperator
+from airflow.sdk.definitions.context import Context
+from airflow.providers.standard.operators.bash import BashOperator
 from google.cloud import bigquery
 from google.cloud.bigquery import SourceFormat
 import jsonlines
@@ -71,8 +71,7 @@ def changefile_download_url(base_url: str, changefile: str, api_key: str):
 
 def fetch_release(
     dag_id: str,
-    run_id: str,
-    dag_run: DagRun,
+    context: Context,
     cloud_workspace: CloudWorkspace,
     bq_dataset_id: str,
     bq_table_name: str,
@@ -88,7 +87,7 @@ def fetch_release(
 
     :param dag_id: The ID of the dag running
     :param run_id: The ID of the dag run
-    :param dag_run: The DagRun object
+    :param context: This dag run's context
     :param cloud_workspace: The CloudWorkspace Object
     :param bq_dataset_id: The bigquery dataset id
     :param bq_table_name: The bigquery table name
@@ -109,7 +108,7 @@ def fetch_release(
 
     logging.info(f"fetch_release: {len(all_changefiles)} JSONL changefiles discovered")
     changefiles = []
-    is_first_run = is_first_dag_run(dag_run)
+    is_first_run = is_first_dag_run(context)
     prev_end_date = pendulum.instance(datetime.datetime.min)
 
     if is_first_run:
@@ -161,7 +160,7 @@ def fetch_release(
     id = release_to_bucket(
         UnpaywallRelease(
             dag_id=dag_id,
-            run_id=run_id,
+            run_id=context["run_id"],
             cloud_workspace=cloud_workspace,
             bq_dataset_id=bq_dataset_id,
             bq_table_name=bq_table_name,

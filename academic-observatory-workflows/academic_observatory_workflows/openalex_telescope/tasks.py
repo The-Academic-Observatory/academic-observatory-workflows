@@ -289,8 +289,8 @@ def compare_schemas(*, entity: OpenAlexEntity, transform_bucket: str, slack_conn
         logging.info("Generated schema and expected do not match! - Sending a notification via Slack")
         slack_msg = f"Found differences in the OpenAlex entity {entity.entity_name} data structure for the data dump vs pre-defined Bigquery schema. Please investigate."
         ti: TaskInstance = context["ti"]
-        execution_date = context["execution_date"]
-        send_slack_msg(ti=ti, logical_date=execution_date, comments=slack_msg, slack_conn_id=slack_conn_id)
+        logical_date = context["logical_date"]
+        send_slack_msg(ti=ti, logical_date=logical_date, comments=slack_msg, slack_conn_id=slack_conn_id)
 
 
 def upload_files(*, entity: OpenAlexEntity, transform_bucket: str):

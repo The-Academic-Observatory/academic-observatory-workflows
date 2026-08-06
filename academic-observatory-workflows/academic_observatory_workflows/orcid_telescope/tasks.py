@@ -29,10 +29,9 @@ from typing import Dict, Optional, Tuple, Union
 
 import pendulum
 import xmltodict
-from airflow import AirflowException
-from airflow.exceptions import AirflowSkipException
+from airflow.sdk.exceptions import AirflowSkipException, AirflowException
+from airflow.sdk.definitions.context import Context
 from airflow.hooks.base import BaseHook
-from airflow.models import DagRun
 from google import auth
 from google.auth.compute_engine import Credentials as ComputeEngineCredentials
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
@@ -64,8 +63,7 @@ ORCID_REGEX = r"\d{4}-\d{4}-\d{4}-\d{3}(\d|X)\b"
 
 def fetch_release(
     dag_id: str,
-    run_id: str,
-    dag_run: DagRun,
+    context: Context,
     data_interval_start: pendulum.DateTime,
     data_interval_end: pendulum.DateTime,
     cloud_workspace: CloudWorkspace,
@@ -79,7 +77,7 @@ def fetch_release(
 
     :param dag_id: The ID of the dag
     :param run_id: The ID of this dag run
-    :param dag_run: This dag run's DagRun object
+    :param context: This dag run's context
     :param data_interval_start: The start of the data interval
     :param data_interval_end: The end of the data interval
     :param cloud_workspace: The CloudWorkspace object
@@ -92,7 +90,7 @@ def fetch_release(
 
     api = DatasetAPI(bq_project_id=cloud_workspace.project_id, bq_dataset_id=api_bq_dataset_id)
     releases = api.get_dataset_releases(dag_id=dag_id, entity_id="orcid", date_key="changefile_end_date")
-    is_first_run = is_first_dag_run(dag_run)
+    is_first_run = is_first_dag_run(context)
 
     # Determine the modification cutoff for the new release
     if is_first_run:
@@ -114,7 +112,7 @@ def fetch_release(
 
     return OrcidRelease(
         dag_id=dag_id,
-        run_id=run_id,
+        run_id=context["run_id"],
         cloud_workspace=cloud_workspace,
         bq_dataset_id=bq_dataset_id,
         bq_main_table_name=bq_main_table_name,

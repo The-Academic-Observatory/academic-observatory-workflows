@@ -118,7 +118,7 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
             test_params = DagParams(
                 dag_id="test_crossref_metadata",
                 cloud_workspace=env.cloud_workspace,
-                crossref_base_url=f"http://{TestConfig.http_host_url}:{TestConfig.http_port}/crossref_metadata/",
+                crossref_base_url=f"http://{TestConfig.http_host_url}:{TestConfig.http_port}/crossref_metadata",
                 retries=0,
                 bq_dataset_id=bq_dataset_id,
                 api_bq_dataset_id=api_bq_dataset_id,
@@ -130,9 +130,8 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
                 test_run=True,
             )
             dag = create_dag(dag_params=test_params)
-            dag.
             env.serialize_dag(dag)
-            dagrun = dag.test(logical=pendulum.datetime(year=2023, month=1, day=7))
+            dagrun = dag.test(logical_date=pendulum.datetime(2022, 12, 31))
             if not dagrun.state == "success":
                 raise RuntimeError("Dagrun did not complete successfully")
 

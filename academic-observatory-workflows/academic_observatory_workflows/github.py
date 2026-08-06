@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 
 import requests
-from airflow import AirflowException
+from airflow.sdk.exceptions import AirflowException
 
 
 def trigger_repository_dispatch(*, org: str, repo_name: str, token: str, event_type: str):

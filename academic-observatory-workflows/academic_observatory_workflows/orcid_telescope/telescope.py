@@ -148,8 +148,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             return tasks.fetch_release(
                 dag_id=dag_params.dag_id,
-                run_id=context["run_id"],
-                dag_run=context["dag_run"],
+                context=context,
                 data_interval_start=context["data_interval_start"],
                 data_interval_end=context["data_interval_end"],
                 cloud_workspace=dag_params.cloud_workspace,
