@@ -21,9 +21,10 @@ from typing import List, Optional
 from airflow import DAG
 from airflow.sdk import dag, task, chain
 from airflow.providers.cncf.kubernetes.secret import Secret
-from airflow.sensors.external_task import ExternalTaskSensor
+from airflow.providers.standard.sensors.external_task import ExternalTaskSensor
 import pendulum
 
+from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 from observatory_platform.airflow.airflow import on_failure_callback, get_airflow_connection_password
 from observatory_platform.airflow.release import make_snapshot_date
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
@@ -409,6 +410,7 @@ def create_dag(dag_params: DagParams) -> DAG:
         def cleanup_workflow(release: dict, **context):
             """Cleanup old Xcoms."""
 
+            release = OaDashboardRelease.from_dict(release)
             cleanup(workflow_folder=release.workflow_folder)
 
         # Define task connections
