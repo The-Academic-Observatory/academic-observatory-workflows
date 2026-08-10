@@ -1,4 +1,4 @@
-# Copyright 2021 Curtin University
+# Cojjright 2021 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ import json
 import os
 import tempfile
 from typing import List
-import unittest
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -488,7 +487,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
         github_token = "github-token"
         zenodo_token = "zenodo-token"
 
-        with env.create() as t:
+        with env.create():
             ##########
             # Setup and run fake DOI workflow to test sensor
             ##########
@@ -547,7 +546,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
             env.add_connection(Connection(**TestConfig.gke_cluster_connection))
 
             ##########
-            # Run DAG
+            # Setup and run fake DOI workflow to test sensor
             ##########
 
             # Run DAG
