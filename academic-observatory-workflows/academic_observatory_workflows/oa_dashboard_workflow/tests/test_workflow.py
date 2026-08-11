@@ -21,10 +21,11 @@ from typing import List
 from unittest import TestCase
 from unittest.mock import patch
 
-import pendulum
 from airflow.models.connection import Connection
 from airflow.utils.state import State
 from deepdiff import DeepDiff
+import numpy as np
+import pendulum
 
 import academic_observatory_workflows.oa_dashboard_workflow.workflow
 from academic_observatory_workflows.config import project_path, TestConfig
@@ -157,7 +158,18 @@ class TestFunctions(TestCase):
                 ),
             ),
         )
-        self.assertEqual(expected_stats, stats)
+        self.assertEqual(stats.n_items, expected_stats.n_items)
+        self.assertEqual(stats.min, expected_stats.min)
+        self.assertEqual(stats.max, expected_stats.max)
+        self.assertEqual(stats.median, expected_stats.median)
+
+        # histograms: compare structure with tolerance instead of exact floats
+        np.testing.assert_allclose(stats.histograms.p_outputs_open.bins, expected_stats.histograms.p_outputs_open.bins)
+        np.testing.assert_allclose(stats.histograms.n_outputs.bins, expected_stats.histograms.n_outputs.bins, rtol=1e-9)
+        np.testing.assert_allclose(
+            stats.histograms.n_outputs_open.bins, expected_stats.histograms.n_outputs_open.bins, rtol=1e-9
+        )
+        self.assertEqual(stats.histograms.n_outputs.data, expected_stats.histograms.n_outputs.data)
 
     def test_load_data_glob(self):
         with tempfile.TemporaryDirectory() as t:
