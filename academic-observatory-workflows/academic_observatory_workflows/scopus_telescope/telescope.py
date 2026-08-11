@@ -45,6 +45,9 @@ class DagParams:
     :param schedule: the schedule interval of the DAG.
     :param max_active_runs: the maximum number of DAG runs that can be run at once.
     :param retries: the number of times to retry a task.
+
+
+    Expects a list of airflow connections - the scopus_conn_ids. Each should have an access token in their password field
     """
 
     def __init__(

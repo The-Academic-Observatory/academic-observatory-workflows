@@ -130,6 +130,11 @@ class DagParams:
                         ├── 05ykr0121.jpg
                         ├── 05ym42410.jpg
                         └── 05ynxx418.jpg
+
+
+
+        Expects an airlfow connection with ID github_conn_id with the access token in the password field
+        Expects an airlfow connection with ID zenodo_conn_id with the access token in the password field
         """
 
         self.dag_id = dag_id

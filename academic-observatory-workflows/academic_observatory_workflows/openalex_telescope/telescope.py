@@ -154,8 +154,10 @@ class DagParams:
         This happens in two places, differently, because of where each caller runs:
 
         1. fetch_entities (Airflow worker) calls get_temp_aws_key(api_key) directly. One exchange up front.
+        Expects the airflow connection ID 'openalex-api-key' with the password field as the key
 
         2. aws_to_gcs_transfer (a @task.kubernetes pod) can run long enough that credentials could expire mid-sync.
+        Expects the K8s secret 'openalex-api-key' with the 'api-key' field as the key
         setup_transfer_environment() instead writes an AWS credential_process config:
 
             credential_process = curl -sf -X POST "<url>?api_key=<key>"
