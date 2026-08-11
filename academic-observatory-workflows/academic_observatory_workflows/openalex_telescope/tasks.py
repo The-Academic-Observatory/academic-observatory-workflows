@@ -190,7 +190,7 @@ def aws_to_gcs_transfer(
             "rclone",
             "sync",
             f":s3,provider=AWS,env_auth=true:{aws_openalex_bucket}/full/{entity.snapshot_date.to_date_string()}/jsonl/",
-            f"{entity.gcs_openalex_data_uri.replace('gs://', ':gcs,env_auth=true:')}",  # :gcs,env_auth=true:my_bucket/path
+            f"{entity.gcs_openalex_data_uri.replace('gs://', ':gcs,env_auth=true,bucket_policy_only=true:')}",  # :gcs,env_auth=true:my_bucket/path
             "--transfers=16",
             "--checkers=8",
             "-v",
