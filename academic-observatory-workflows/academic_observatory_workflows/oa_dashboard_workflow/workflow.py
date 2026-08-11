@@ -414,7 +414,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
         # Define task connections
         task_doi_sensor = ExternalTaskSensor(
-            task_id=f"{dag_params.doi_dag_id}_sensor", external_dag_id=dag_params.doi_dag_id, mode="reschedule"
+            task_id=f"{dag_params.doi_dag_id}_sensor", external_dag_id=dag_params.doi_dag_id
         )
         task_check_dependencies = check_dependencies(
             airflow_conns=[dag_params.github_conn_id, dag_params.zenodo_conn_id, dag_params.gke_params.gke_conn_id]

@@ -1,4 +1,4 @@
-# Copyright 2021 Curtin University
+# Cojjright 2021 Curtin University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ import json
 import os
 import tempfile
 from typing import List
-import unittest
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -56,7 +55,6 @@ academic_observatory_workflows.oa_dashboard_workflow.tasks.INCLUSION_THRESHOLD =
 }
 from academic_observatory_workflows.oa_dashboard_workflow.workflow import create_dag, DagParams
 
-
 FIXTURES_FOLDER = project_path("oa_dashboard_workflow", "tests", "fixtures")
 DOI_FIXTURES_FOLDER = project_path("doi_workflow", "tests", "fixtures")
 DOI_SCHEMA_FOLDER = project_path("doi_workflow", "schema")
@@ -64,6 +62,8 @@ ROR_SCHEMA_FOLDER = project_path("ror_telescope", "schema")
 
 
 class TestFunctions(TestCase):
+    maxDiff = None
+
     def test_clean_url(self):
         url = "https://www.auckland.ac.nz/en.html"
         expected = "www.auckland.ac.nz"
@@ -487,7 +487,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
         github_token = "github-token"
         zenodo_token = "zenodo-token"
 
-        with env.create() as t:
+        with env.create():
             ##########
             # Setup and run fake DOI workflow to test sensor
             ##########
@@ -546,7 +546,7 @@ class TestOaDashboardWorkflow(SandboxTestCase):
             env.add_connection(Connection(**TestConfig.gke_cluster_connection))
 
             ##########
-            # Run DAG
+            # Setup and run fake DOI workflow to test sensor
             ##########
 
             # Run DAG

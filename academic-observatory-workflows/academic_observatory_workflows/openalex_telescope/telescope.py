@@ -416,12 +416,14 @@ def create_dag(dag_params: DagParams) -> DAG:
                 ],
                 **transfer_params,
             )
-            def aws_to_gcs_transfer(entity_index: dict, entity_name: str, dag_params: DagParams, **context):
+            def aws_to_gcs_transfer(entity_index_id: dict, entity_name: str, dag_params: DagParams, **context):
                 """Transfer files from AWS bucket to Google Cloud bucket"""
 
                 import academic_observatory_workflows.openalex_telescope.tasks as tasks
+                from observatory_platform.airflow.release import release_from_bucket
                 import os
 
+                entity_index = release_from_bucket(dag_params.cloud_workspace.transform_bucket, entity_index_id)
                 entity = tasks.get_entity(entity_index, entity_name)
                 tasks.aws_to_gcs_transfer(
                     entity=entity,
@@ -564,7 +566,7 @@ def create_dag(dag_params: DagParams) -> DAG:
                 storage_class=gke_params.gke_volume_storage_class,
                 kubernetes_conn_id=gke_params.gke_conn_id,
             )
-            task_aws_to_gcs_transfer = aws_to_gcs_transfer(entity_index, entity_name, dag_params)
+            task_aws_to_gcs_transfer = aws_to_gcs_transfer(entity_index_id, entity_name, dag_params)
             task_download = download(entity_index_id, entity_name, dag_params)
             task_transform = transform(entity_index_id, entity_name, dag_params)
             task_upload_schema = upload_schema(entity_index_id, entity_name, dag_params)
