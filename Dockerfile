@@ -27,8 +27,7 @@ RUN curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_
 
 
 # Install Observatory Platform
-# TODO: remove airflow 3 branch when merged
-RUN git clone --depth 1 -b airflow_3 https://github.com/The-Academic-Observatory/observatory-platform.git && uv pip install --system ./observatory-platform[tests] 
+RUN git clone --depth 1 https://github.com/The-Academic-Observatory/observatory-platform.git && uv pip install --system ./observatory-platform[tests] 
 
 # Set working directory for subsequent commands
 WORKDIR /app

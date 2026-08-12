@@ -71,7 +71,7 @@ jobs:
           source /tmp/venv/bin/activate
 
           cd ..
-          git clone -b airflow_3 https://github.com/The-Academic-Observatory/observatory-platform.git
+          git clone https://github.com/The-Academic-Observatory/observatory-platform.git
           uv pip install -e ./observatory-platform[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.2.2/constraints-${{ matrix.python-version }}.txt
 
           cd academic-observatory-workflows
