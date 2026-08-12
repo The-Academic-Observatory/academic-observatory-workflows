@@ -4,7 +4,7 @@ Academic Observatory Workflows provides Apache Airflow workflows for fetching, p
 data about academic institutions.
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python Version](https://img.shields.io/badge/python-3.10-blue)](https://img.shields.io/badge/python-3.10-blue)
+[![Python Version](https://img.shields.io/badge/python-3.13-blue)](https://img.shields.io/badge/python-3.13-blue)
 ![Python package](https://github.com/The-Academic-Observatory/academic-observatory-workflows/workflows/Unit%20Tests/badge.svg)
 [![Documentation Status](https://readthedocs.org/projects/academic-observatory-workflows/badge/?version=latest)](https://academic-observatory-workflows.readthedocs.io/en/latest/?badge=latest)
 [![codecov](https://codecov.io/gh/The-Academic-Observatory/academic-observatory-workflows/branch/develop/graph/badge.svg?token=V4WUZG74ZQ)](https://codecov.io/gh/The-Academic-Observatory/academic-observatory-workflows)
@@ -37,7 +37,7 @@ For detailed documentation about the Academic Observatory see the Read the Docs 
 Install using pip. From the root directory:
 
 ```bash
-pip install -e ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-3.10.txt
+pip install -e ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.2.2/constraints-3.13.txt
 ```
 
 ## Deployment
@@ -52,8 +52,8 @@ You should have set up the following resources already:
 - A Google Cloud Shell instance, which pre-installs gsutil, gcloud and kubectl.
 - A GKE Autopilot Cluster.
 - An Astonomer.io Airflow deployment, using Google Cloud.
-- Installed the Astronomer.io CLI: https://www.astronomer.io/docs/astro/cli/install-cli
-- Installed yq: https://github.com/mikefarah/yq (don't use sudo apt install yq, it installs the wrong tool)
+- Installed the Astronomer.io CLI: <https://www.astronomer.io/docs/astro/cli/install-cli>
+- Installed yq: <https://github.com/mikefarah/yq> (don't use sudo apt install yq, it installs the wrong tool)
 
 The GKE Autopilot Cluster, Astonomer.io deployment and the Google Cloud buckets (that you create with the below script),
 should all be in the same region. The Cloud Storage buckets should be in a single region, not a dual or multi region,
@@ -82,7 +82,7 @@ If you are using additional buckets, then you can enable GKE and or Astro to acc
 
 The AO Astro Service Account needs to be attached to the Astronomer.io deployment as a "Customer Managed Identity".
 
-Please follow these steps to set it up: https://www.astronomer.io/docs/astro/authorize-deployments-to-your-cloud/?tab=gcp#setup
+Please follow these steps to set it up: <https://www.astronomer.io/docs/astro/authorize-deployments-to-your-cloud/?tab=gcp#setup>
 
 Step 6 is not necessary.
 
