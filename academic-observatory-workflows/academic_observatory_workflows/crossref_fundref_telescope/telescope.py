@@ -17,11 +17,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 import pendulum
 from airflow import DAG
 from airflow.sdk import dag, task, task_group
-from airflow.models import Pool
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.crossref_fundref_telescope import tasks
@@ -65,9 +65,7 @@ class DagParams:
         start_date: pendulum.DateTime = pendulum.datetime(2014, 2, 23),
         schedule: str = "@weekly",
         catchup: bool = True,
-        gitlab_pool_name: str = "gitlab_pool",
-        gitlab_pool_slots: int = 2,
-        gitlab_pool_description: str = "A pool to limit the connections to Gitlab",
+        gitlab_pool_name: Optional[str] = "gitlab_pool",
         retries: int = 3,
     ):
         self.dag_id = dag_id
@@ -82,22 +80,11 @@ class DagParams:
         self.schedule = schedule
         self.catchup = catchup
         self.gitlab_pool_name = gitlab_pool_name
-        self.gitlab_pool_slots = gitlab_pool_slots
-        self.gitlab_pool_description = gitlab_pool_description
         self.retries = retries
 
 
 def create_dag(dag_params: DagParams) -> DAG:
     """Construct a CrossrefFundrefTelescope instance."""
-
-    # Create Gitlab pool to limit the number of connections to Gitlab, which is very quick to block requests if
-    # there are too many at once.
-    Pool.create_or_update_pool(
-        name=dag_params.gitlab_pool_name,
-        slots=dag_params.gitlab_pool_slots,
-        description=dag_params.gitlab_pool_description,
-        include_deferred=False,
-    )
 
     @dag(
         dag_id=dag_params.dag_id,

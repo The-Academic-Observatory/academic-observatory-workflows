@@ -46,26 +46,25 @@ class TestCrossrefFundrefTelescope(SandboxTestCase):
         """Test that the DAG has the correct structure."""
 
         # Mock create_pool to prevent querying non-existing airflow db
-        with patch("academic_observatory_workflows.crossref_fundref_telescope.telescope.Pool"):
-            dag = create_dag(DagParams(dag_id=self.dag_id, cloud_workspace=self.fake_cloud_workspace))
-            self.assert_dag_structure(
-                {
-                    # fetch_release passes an XCom to all of these tasks
-                    "fetch_releases": [
-                        "process_release.download",
-                        "process_release.extract_transform",
-                        "process_release.bq_load",
-                        "process_release.add_dataset_releases",
-                        "process_release.cleanup_workflow",
-                    ],
-                    "process_release.download": ["process_release.extract_transform"],
-                    "process_release.extract_transform": ["process_release.bq_load"],
-                    "process_release.bq_load": ["process_release.add_dataset_releases"],
-                    "process_release.add_dataset_releases": ["process_release.cleanup_workflow"],
-                    "process_release.cleanup_workflow": [],
-                },
-                dag,
-            )
+        dag = create_dag(DagParams(dag_id=self.dag_id, cloud_workspace=self.fake_cloud_workspace))
+        self.assert_dag_structure(
+            {
+                # fetch_release passes an XCom to all of these tasks
+                "fetch_releases": [
+                    "process_release.download",
+                    "process_release.extract_transform",
+                    "process_release.bq_load",
+                    "process_release.add_dataset_releases",
+                    "process_release.cleanup_workflow",
+                ],
+                "process_release.download": ["process_release.extract_transform"],
+                "process_release.extract_transform": ["process_release.bq_load"],
+                "process_release.bq_load": ["process_release.add_dataset_releases"],
+                "process_release.add_dataset_releases": ["process_release.cleanup_workflow"],
+                "process_release.cleanup_workflow": [],
+            },
+            dag,
+        )
 
     def test_dag_load(self):
         """Test that workflow can be loaded from a DAG bag."""
@@ -100,6 +99,7 @@ class TestCrossrefFundrefTelescope(SandboxTestCase):
                 retries=0,
                 bq_dataset_id=bq_dataset_id,
                 api_bq_dataset_id=api_bq_dataset_id,
+                gitlab_pool_name=None,
             )
 
             cassette = vcr.use_cassette(
