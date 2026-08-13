@@ -68,7 +68,12 @@ licenses = [
 include = ["academic_observatory_workflows*"]
 
 [tool.setuptools.package-data]
-"academic_observatory_workflows" = ["**/schema/*.json"]
+"academic_observatory_workflows" = [
+    "**/schema/*.json",
+    "**/sql/*.sql",
+    "**/sql/*.jinja2",
+    "**/sql/*.sql.jinja2",
+]
 
 [tool.pyright]
 typeCheckingMode = "off"
