@@ -168,7 +168,7 @@ def create_intermediate_table(*, release: DOIRelease, sql_query: SQLQuery, outpu
     print(f"create_intermediate_table: {task_id}")
 
     input_tables = []
-    for k, table in sql_query.inputs.items():
+    for _, table in sql_query.inputs.items():
         # Add release_date so that table_id can be computed
         if table.sharded:
             table.snapshot_date = get_snapshot_date(

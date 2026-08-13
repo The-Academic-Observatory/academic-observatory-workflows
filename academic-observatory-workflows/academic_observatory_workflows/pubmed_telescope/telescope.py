@@ -21,9 +21,8 @@ from dateutil import relativedelta
 
 import pendulum
 from airflow import DAG
-from airflow.decorators import dag, task, task_group
-from airflow.operators.empty import EmptyOperator
-from airflow.utils.trigger_rule import TriggerRule
+from airflow.sdk import dag, task, task_group, TriggerRule
+from airflow.providers.standard.operators.empty import EmptyOperator
 
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
@@ -151,8 +150,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             return tasks.fetch_release(
                 dag_id=dag_params.dag_id,
                 cloud_workspace=dag_params.cloud_workspace,
-                run_id=context["run_id"],
-                dag_run=context["dag_run"],
+                context=context,
                 data_interval_end=context["data_interval_end"],
                 bq_dataset_id=dag_params.bq_dataset_id,
                 api_bq_dataset_id=dag_params.api_bq_dataset_id,

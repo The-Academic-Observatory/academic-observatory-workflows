@@ -18,7 +18,7 @@ import unittest
 from unittest.mock import patch
 
 import requests
-from airflow import AirflowException
+from airflow.sdk.exceptions import AirflowException
 
 from academic_observatory_workflows.github import trigger_repository_dispatch
 
@@ -31,7 +31,7 @@ class TestGithub(unittest.TestCase):
         mock_requests_post.return_value = response
 
         trigger_repository_dispatch(org="org", repo_name="my-repo", token="my-token", event_type="my-event-type")
-        mock_requests_post.called_once()
+        mock_requests_post.assert_called_once()
 
         response.status_code = 401
         with self.assertRaises(AirflowException):

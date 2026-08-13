@@ -265,7 +265,7 @@ def cleanup_workflow(release: dict) -> None:
     """Task to delete all files, folders and XComs associated with this release."""
 
     release = CrossrefMetadataRelease.from_dict(release)
-    cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
+    cleanup(workflow_folder=release.workflow_folder)
 
 
 def make_snapshot_url(snapshot_date: pendulum.DateTime, base_url: str = "https://api.crossref.org") -> str:

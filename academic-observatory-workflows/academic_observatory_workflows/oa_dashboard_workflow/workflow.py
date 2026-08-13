@@ -19,12 +19,12 @@ from __future__ import annotations
 from typing import List, Optional
 
 from airflow import DAG
-from airflow.decorators import dag, task
+from airflow.sdk import dag, task, chain
 from airflow.providers.cncf.kubernetes.secret import Secret
-from airflow.models.baseoperator import chain
-from airflow.sensors.external_task import ExternalTaskSensor
+from airflow.providers.standard.sensors.external_task import ExternalTaskSensor
 import pendulum
 
+from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
 from observatory_platform.airflow.airflow import on_failure_callback, get_airflow_connection_password
 from observatory_platform.airflow.release import make_snapshot_date
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
@@ -130,6 +130,11 @@ class DagParams:
                         ├── 05ykr0121.jpg
                         ├── 05ym42410.jpg
                         └── 05ynxx418.jpg
+
+
+
+        Expects an airlfow connection with ID github_conn_id with the access token in the password field
+        Expects an airlfow connection with ID zenodo_conn_id with the access token in the password field
         """
 
         self.dag_id = dag_id
@@ -407,10 +412,11 @@ def create_dag(dag_params: DagParams) -> DAG:
             tasks.repository_dispatch(token=token)
 
         @task
-        def cleanup_workflow(release: dict, dag_params, **context):
+        def cleanup_workflow(release: dict, **context):
             """Cleanup old Xcoms."""
 
-            cleanup(dag_id=dag_params.dag_id)
+            release = OaDashboardRelease.from_dict(release)
+            cleanup(workflow_folder=release.workflow_folder)
 
         # Define task connections
         task_doi_sensor = ExternalTaskSensor(
@@ -451,7 +457,7 @@ def create_dag(dag_params: DagParams) -> DAG:
             volume_name=dag_params.gke_params.gke_volume_name,
             kubernetes_conn_id=dag_params.gke_params.gke_conn_id,
         )
-        task_cleanup_workflow = cleanup_workflow(xcom_release, dag_params)
+        task_cleanup_workflow = cleanup_workflow(xcom_release)
 
         chain(
             task_doi_sensor,

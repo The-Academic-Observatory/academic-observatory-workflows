@@ -15,15 +15,12 @@
 # Author: Tuan Chien, James Diprose
 
 from __future__ import annotations
-from datetime import datetime
-from dateutil import relativedelta
 
 
 import pendulum
 from airflow import DAG
-from airflow.decorators import dag, task, task_group
-from airflow.operators.empty import EmptyOperator
-from airflow.utils.trigger_rule import TriggerRule
+from airflow.sdk import dag, task, task_group, TriggerRule
+from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
 
 from academic_observatory_workflows.config import project_path
@@ -62,6 +59,10 @@ class DagParams:
     :param gke_volume_name: The name of the persistent volume to create
     :param gke_volume_size: The amount of storage to request for the persistent volume in GiB
     :param kwargs: Takes kwargs for building a GkeParams object.
+
+
+    For the fetch_release task, expects an airflow connection with ID "unpawyall" with the password field as the api key
+    For the load_snapshot task, expects a K8s secret named 'unpaywall'. The api key is in the field named 'api-key'
     """
 
     def __init__(
@@ -147,8 +148,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             return tasks.fetch_release(
                 dag_id=dag_params.dag_id,
-                run_id=context["run_id"],
-                dag_run=context["dag_run"],
+                context=context,
                 cloud_workspace=dag_params.cloud_workspace,
                 bq_dataset_id=dag_params.bq_dataset_id,
                 bq_table_name=dag_params.bq_table_name,

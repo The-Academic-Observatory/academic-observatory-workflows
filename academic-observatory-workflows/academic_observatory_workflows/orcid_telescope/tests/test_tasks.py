@@ -12,13 +12,13 @@ from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
 import pendulum
-from airflow.exceptions import AirflowException, AirflowSkipException
+from airflow.sdk.exceptions import AirflowException, AirflowSkipException
+from airflow.sdk import Connection
 
 from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.orcid_telescope import tasks
 from academic_observatory_workflows.orcid_telescope.batch import BATCH_REGEX, OrcidBatch
 from academic_observatory_workflows.orcid_telescope.release import orcid_batch_names, OrcidRelease
-from observatory_platform.airflow.airflow import clear_airflow_connections, upsert_airflow_connection
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.dataset_api import DatasetAPI, DatasetRelease
 from observatory_platform.date_utils import datetime_normalise
@@ -138,8 +138,7 @@ class TestTasks(SandboxTestCase):
                 mock_ifdr.return_value = True
                 actual_release = tasks.fetch_release(
                     dag_id=dag_id,
-                    run_id=run_id,
-                    dag_run=MagicMock(),
+                    context={"run_id": run_id},
                     data_interval_start=data_interval_start,
                     data_interval_end=data_interval_end,
                     cloud_workspace=env.cloud_workspace,
@@ -188,8 +187,7 @@ class TestTasks(SandboxTestCase):
                 mock_ifdr.return_value = False
                 actual_release = tasks.fetch_release(
                     dag_id=dag_id,
-                    run_id=run_id,
-                    dag_run=MagicMock(),
+                    context={"run_id": run_id},
                     data_interval_start=data_interval_start,
                     data_interval_end=data_interval_end,
                     cloud_workspace=env.cloud_workspace,
@@ -504,11 +502,11 @@ class TestTransferOrcid(unittest.TestCase):
 
     def test_transfer_orcid(self):
         """Test that the transfer_orcid_function succeeds when a successful return is handed back"""
-        with SandboxEnvironment().create(), patch(
+        env = SandboxEnvironment()
+        with env.create(), patch(
             "academic_observatory_workflows.orcid_telescope.tasks.gcs_create_aws_transfer"
         ) as mock_transfer:
-            clear_airflow_connections()
-            upsert_airflow_connection(conn_id=self.aws_conn_id, conn_type="http", login="", password="")
+            env.add_connection(Connection(conn_id=self.aws_conn_id, conn_type="http", login="", password=""))
             # two failures, but 3 total attempts so it should pass
             mock_transfer.side_effect = [(False, 0), (False, 0), (True, 1)]
             tasks.transfer_orcid(
@@ -521,7 +519,7 @@ class TestTransferOrcid(unittest.TestCase):
             )
             self.assertEqual(mock_transfer.call_count, 3)
             mock_transfer.assert_called_with(
-                aws_key=("", None),  # matches the empty login/password from upsert_airflow_connection
+                aws_key=("", ""),  # matches the empty login/password from upsert_airflow_connection
                 aws_bucket="aws_orcid_bucket",
                 include_prefixes=[],
                 gc_project_id=dummy_release().cloud_workspace.project_id,
@@ -531,11 +529,11 @@ class TestTransferOrcid(unittest.TestCase):
 
     def test_transfer_orcid_fails(self):
         """Test that the transfer_orcid_function fails when an unsuccessful return is handed back"""
-        with SandboxEnvironment().create(), patch(
+        env = SandboxEnvironment()
+        with env.create(), patch(
             "academic_observatory_workflows.orcid_telescope.tasks.gcs_create_aws_transfer"
         ) as mock_transfer:
-            clear_airflow_connections()
-            upsert_airflow_connection(conn_id=self.aws_conn_id, conn_type="http", login="", password="")
+            env.add_connection(Connection(conn_id=self.aws_conn_id, conn_type="http", login="", password=""))
             # Transfer failures should raise an error
             mock_transfer.side_effect = [(False, 0)] * self.transfer_attempts
             with self.assertRaises(AirflowException):

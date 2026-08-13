@@ -22,8 +22,7 @@ from typing import Optional
 
 import pendulum
 from airflow import DAG
-from airflow.decorators import dag, task
-from airflow.utils.trigger_rule import TriggerRule
+from airflow.sdk import dag, task, TriggerRule
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.orcid_telescope import tasks
@@ -149,8 +148,7 @@ def create_dag(dag_params: DagParams) -> DAG:
 
             return tasks.fetch_release(
                 dag_id=dag_params.dag_id,
-                run_id=context["run_id"],
-                dag_run=context["dag_run"],
+                context=context,
                 data_interval_start=context["data_interval_start"],
                 data_interval_end=context["data_interval_end"],
                 cloud_workspace=dag_params.cloud_workspace,

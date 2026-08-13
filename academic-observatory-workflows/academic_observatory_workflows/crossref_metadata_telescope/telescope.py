@@ -22,7 +22,7 @@ from typing import Optional
 
 import pendulum
 from airflow import DAG
-from airflow.decorators import dag, task
+from airflow.sdk import dag, task
 from airflow.providers.cncf.kubernetes.secret import Secret
 
 from academic_observatory_workflows.config import project_path
@@ -60,6 +60,9 @@ class DagParams:
     :param gke_volume_name: The name of the persistent volume to create
     :param gke_volume_size: The amount of storage to request for the persistent volume
     :param kwargs: Takes kwargs for building a GkeParams object.
+
+
+    For the download task, expects a K8s secret named 'crossref-metadata', the api key is in a field named 'api-key'
     """
 
     def __init__(

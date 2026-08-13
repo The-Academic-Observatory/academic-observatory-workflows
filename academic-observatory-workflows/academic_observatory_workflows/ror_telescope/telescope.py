@@ -20,7 +20,7 @@ from typing import List
 
 import pendulum
 from airflow import DAG
-from airflow.decorators import dag, task, task_group
+from airflow.sdk import dag, task, task_group
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.ror_telescope import tasks

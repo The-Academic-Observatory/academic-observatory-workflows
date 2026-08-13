@@ -104,11 +104,19 @@ class TestCrossrefFundrefTelescope(SandboxTestCase):
 
             cassette = vcr.use_cassette(
                 os.path.join(FIXTURES_FOLDER, "fundref_e2e.yaml"),
-                ignore_hosts=["oauth2.googleapis.com", "bigquery.googleapis.com", "storage.googleapis.com"],
+                ignore_hosts=[
+                    "oauth2.googleapis.com",
+                    "bigquery.googleapis.com",
+                    "storage.googleapis.com",
+                    "in-process.invalid",
+                    "in-process.invalid.",
+                ],
                 ignore_localhost=True,
                 match_on=["uri", "method"],
             )
             with cassette:
-                dagrun = create_dag(dag_params=test_params).test(execution_date=logical_date)
+                dag = create_dag(dag_params=test_params)
+                env.serialize_dag(dag)
+                dagrun = dag.test(logical_date=logical_date)
             if not dagrun.state == "success":
                 raise RuntimeError("Dagrun did not complete successfully")

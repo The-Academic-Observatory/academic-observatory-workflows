@@ -1,4 +1,4 @@
-FROM quay.io/astronomer/astro-runtime:13.6.0
+FROM astrocrpublic.azurecr.io/runtime:3.2-6
 
 # The following describes what various dependencies are used for. Some dependencies are specified in packages.txt
 # and some are installed in this Dockerfile if not available in apt by default.
@@ -27,8 +27,7 @@ RUN curl -LO https://github.com/peak/s5cmd/releases/download/v2.1.0/s5cmd_2.1.0_
 
 
 # Install Observatory Platform
-RUN git clone --depth 1 https://github.com/The-Academic-Observatory/observatory-platform.git && \
-    uv pip install --system ./observatory-platform[tests] --constraint  https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-3.10.txt
+RUN git clone --depth 1 https://github.com/The-Academic-Observatory/observatory-platform.git && uv pip install --system ./observatory-platform[tests] 
 
 # Set working directory for subsequent commands
 WORKDIR /app
@@ -40,7 +39,6 @@ COPY --chown=astro:astro academic-observatory-workflows ./academic-observatory-w
 ENV PYTHONPATH="${PYTHONPATH}:/app/academic-observatory-workflows"
 
 # Install Academic Observatory Workflows
-# Now that we're in /app, the path to the package is academic-observatory-workflows
-RUN uv pip install --system ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-3.10.txt
+RUN uv pip install --system ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.2.2/constraints-3.13.txt
 
 USER astro

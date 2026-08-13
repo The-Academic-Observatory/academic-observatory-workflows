@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from typing import Dict, List, Tuple, Union
 
 import pendulum
-from airflow.exceptions import AirflowException, AirflowSkipException
+from airflow.sdk.exceptions import AirflowException, AirflowSkipException
 from google.cloud.bigquery import SourceFormat
 
 from academic_observatory_workflows.crossref_fundref_telescope.release import CrossrefFundrefRelease
@@ -253,7 +253,7 @@ def cleanup_workflow(release: Dict) -> None:
     """Task to clean up the workflow"""
 
     release = CrossrefFundrefRelease.from_dict(release)
-    cleanup(dag_id=release.dag_id, workflow_folder=release.workflow_folder)
+    cleanup(workflow_folder=release.workflow_folder)
 
 
 def list_releases(start_date: pendulum.DateTime, end_date: pendulum.DateTime) -> List[dict]:

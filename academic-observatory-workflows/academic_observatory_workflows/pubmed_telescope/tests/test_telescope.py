@@ -19,13 +19,12 @@ from ftplib import FTP
 from typing import Dict, List
 
 import pendulum
+from airflow.sdk import Connection
 
 from observatory_platform.google.bigquery import bq_run_query, bq_table_id
 from observatory_platform.airflow.workflow import Workflow
-
 from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.pubmed_telescope.telescope import create_dag, DagParams
-from observatory_platform.airflow.airflow import clear_airflow_connections, upsert_airflow_connection
 from observatory_platform.dataset_api import DatasetAPI
 from observatory_platform.google.bigquery import bq_sharded_table_id
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
@@ -228,12 +227,11 @@ class TestPubMedTelescope(SandboxTestCase):
     def test_telescope(self):
         """Test the PubMed Telescope end to end"""
         env = SandboxEnvironment(project_id=TestConfig.gcp_project_id, data_location=TestConfig.gcp_data_location)
+        env.add_connection(Connection(**TestConfig.gke_cluster_connection))
         api_bq_dataset_id = env.add_dataset("pubmed_api")
         bq_dataset_id = env.add_dataset("pubmed")
 
         with env.create(task_logging=True):
-            clear_airflow_connections()
-            upsert_airflow_connection(**TestConfig.gke_cluster_connection)
 
             # Make an http server to serve the test files
             task_resources = {
@@ -293,7 +291,8 @@ class TestPubMedTelescope(SandboxTestCase):
             ftp_conn.close()
 
             dag = create_dag(dag_params=test_params)
-            dagrun = dag.test(execution_date=PubMedTest.first_run["logical_date"])
+            env.serialize_dag(dag)
+            dagrun = dag.test(logical_date=PubMedTest.first_run["logical_date"])
 
             # Make assertions
             if not dagrun.state == "success":
@@ -324,7 +323,8 @@ class TestPubMedTelescope(SandboxTestCase):
             ftp_conn.close()
 
             dag = create_dag(dag_params=test_params)
-            dagrun = dag.test(execution_date=PubMedTest.second_run["logical_date"])
+            env.serialize_dag(dag)
+            dagrun = dag.test(logical_date=PubMedTest.second_run["logical_date"])
 
             # Second run asssertions
             if not dagrun.state == "success":
@@ -361,7 +361,8 @@ class TestPubMedTelescope(SandboxTestCase):
             ftp_conn.close()
 
             dag = create_dag(dag_params=test_params)
-            dagrun = dag.test(execution_date=PubMedTest.third_run["logical_date"])
+            env.serialize_dag(dag)
+            dagrun = dag.test(logical_date=PubMedTest.third_run["logical_date"])
 
             if not dagrun.state == "success":
                 raise RuntimeError("Second Dagrun did not complete successfully")

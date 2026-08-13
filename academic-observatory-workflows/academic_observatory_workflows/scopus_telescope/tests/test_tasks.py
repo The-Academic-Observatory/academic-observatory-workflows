@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pendulum
 import time_machine
-from airflow import AirflowException
+from airflow.sdk.exceptions import AirflowException
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.scopus_telescope.tasks import (

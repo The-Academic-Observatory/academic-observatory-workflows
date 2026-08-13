@@ -22,8 +22,6 @@ from typing import Dict, List
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from airflow.models import DagModel
-from airflow.utils.session import provide_session
 from airflow.utils.state import State
 import pendulum
 import vcr
@@ -34,6 +32,7 @@ from academic_observatory_workflows.doi_workflow.queries import (
     make_sql_queries,
 )
 from academic_observatory_workflows.doi_workflow.workflow import create_dag, DagParams, SENSOR_DAG_IDS
+from academic_observatory_workflows.doi_workflow.tasks import ror_to_ror_hierarchy_index
 from academic_observatory_workflows.model import (
     bq_load_observatory_dataset,
     Institution,
@@ -270,18 +269,21 @@ class TestDoiWorkflow(SandboxTestCase):
             dag_file = os.path.join(project_path(), "..", "..", "dags", "load_dags.py")
             self.assert_dag_load(self.dag_id, dag_file)
 
-    @provide_session
-    def update_db(self, *, session, object):
-        session.merge(object)
-        session.commit()
+    def test_ror_to_ror_hierarchy_index(self):
+        """Test ror_to_ror_hierarchy_index. Check that correct ancestor relationships created."""
 
-    def add_dummy_dag_model(self, *, tmp_dir: str, dag_id: str, schedule: str):
-        model = DagModel()
-        model.dag_id = dag_id
-        model.schedule = schedule
-        model.fileloc = os.path.join(tmp_dir, "dummy_dag.py")
-        open(model.fileloc, mode="a").close()
-        self.update_db(object=model)
+        ror = load_jsonl(os.path.join(FIXTURES_FOLDER, "ror.jsonl"))
+        index = ror_to_ror_hierarchy_index(ror)
+        self.assertEqual(289, len(index))
+
+        # Auckland
+        self.assertEqual(0, len(index["https://ror.org/03b94tp07"]))
+
+        # Curtin
+        self.assertEqual(0, len(index["https://ror.org/02n415q13"]))
+
+        # International Centre for Radio Astronomy Research
+        self.assertEqual({"https://ror.org/02n415q13", "https://ror.org/047272k79"}, index["https://ror.org/05sd1pp77"])
 
     def test_workflow(self):
         """Test the DOI telescope end to end."""
@@ -336,18 +338,19 @@ class TestDoiWorkflow(SandboxTestCase):
                 retries=0,
             )
             doi_dag = create_dag(dag_params)
+            for task in doi_dag.tasks:
+                task.on_failure_callback = None
+            env.serialize_dag(doi_dag)
 
             # Run Dummy Dags
             logical_date = pendulum.datetime(year=2023, month=6, day=18)
             snapshot_date = pendulum.datetime(year=2023, month=6, day=25)
-            expected_state = "success"
+            # Running all sensor dags
             for dag_id in SENSOR_DAG_IDS:
                 dag = make_dummy_dag(dag_id, logical_date)
-                with env.create_dag_run(dag, logical_date):
-                    # Running all of a DAGs tasks sets the DAG to finished
-                    self.add_dummy_dag_model(tmp_dir=env.temp_dir, dag_id=dag.dag_id, schedule=dag.schedule_interval)
-                    ti = env.run_task("dummy_task")
-                    self.assertEqual(expected_state, ti.state)
+                env.serialize_dag(dag)
+                dagrun = dag.test(logical_date=logical_date)
+                self.assertEqual("success", dagrun.state)
 
             # Generate fake dataset
             repository = load_jsonl(os.path.join(FIXTURES_FOLDER, "repository.jsonl"))
@@ -374,12 +377,18 @@ class TestDoiWorkflow(SandboxTestCase):
             ##########
 
             doi_vcr = vcr.VCR(
-                ignore_hosts=["google.com", "oauth2.googleapis.com", "bigquery.googleapis.com"],
+                ignore_hosts=[
+                    "google.com",
+                    "oauth2.googleapis.com",
+                    "bigquery.googleapis.com",
+                    "in-process.invalid",
+                    "in-process.invalid.",
+                ],
                 ignore_localhost=True,
                 record_mode="none",
             )
             with doi_vcr.use_cassette(os.path.join(FIXTURES_FOLDER, "cassette_test_workflow_ror_affiliations.yaml")):
-                dag_run = doi_dag.test(execution_date=snapshot_date, session=env.session)
+                dag_run = doi_dag.test(logical_date=snapshot_date)
             self.assertEqual(State.SUCCESS, dag_run.state)
 
             ##########

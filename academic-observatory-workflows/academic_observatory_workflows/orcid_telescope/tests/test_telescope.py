@@ -21,10 +21,10 @@ import os
 from unittest.mock import patch
 
 import pendulum
+from airflow.sdk import Connection
 
 from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.orcid_telescope.telescope import create_dag, DagParams
-from observatory_platform.airflow.airflow import clear_airflow_connections, upsert_airflow_connection
 from observatory_platform.airflow.workflow import Workflow
 from observatory_platform.dataset_api import DatasetAPI
 from observatory_platform.google.bigquery import bq_table_id, bq_sharded_table_id
@@ -180,10 +180,8 @@ class TestOrcidTelescope(SandboxTestCase):
         orcid_bucket = env.add_bucket(prefix="orcid")
 
         with env.create(task_logging=True):
-
-            clear_airflow_connections()
-            upsert_airflow_connection(conn_id="aws_orcid", conn_type="http")
-            upsert_airflow_connection(**TestConfig.gke_cluster_connection)
+            env.add_connection(Connection(conn_id="aws_orcid", conn_type="http"))
+            env.add_connection(Connection(**TestConfig.gke_cluster_connection))
 
             # Make an http server to serve the test files
             task_resources = {
@@ -224,7 +222,9 @@ class TestOrcidTelescope(SandboxTestCase):
             first_execution_date = pendulum.datetime(year=2023, month=6, day=1)
             with patch("academic_observatory_workflows.orcid_telescope.tasks.gcs_create_aws_transfer") as mock_transfer:
                 mock_transfer.return_value = (True, 1)  # Fake transfer success
-                dagrun = create_dag(dag_params=test_params).test(execution_date=first_execution_date)
+                dag = create_dag(dag_params=test_params)
+                env.serialize_dag(dag)
+                dagrun = dag.test(logical_date=first_execution_date)
 
             # Make assertions
             if not dagrun.state == "success":
@@ -260,7 +260,9 @@ class TestOrcidTelescope(SandboxTestCase):
             second_execution_date = pendulum.datetime(year=2023, month=6, day=8)
             with patch("academic_observatory_workflows.orcid_telescope.tasks.gcs_create_aws_transfer") as mock_transfer:
                 mock_transfer.return_value = (True, 1)  # Fake transfer success
-                dagrun = create_dag(dag_params=test_params).test(execution_date=second_execution_date)
+                dag = create_dag(dag_params=test_params)
+                env.serialize_dag(dag)
+                dagrun = dag.test(logical_date=second_execution_date)
 
             # Make assertions
             if not dagrun.state == "success":
@@ -275,7 +277,7 @@ class TestOrcidTelescope(SandboxTestCase):
                 project_id=TestConfig.gcp_project_id,
                 dataset_id=test_params.bq_dataset_id,
                 table_name="orcid_snapshot",
-                date=pendulum.date(2023, 5, 28),
+                date=pendulum.date(2023, 6, 1),
             )
             self.assert_table_content(snapshot_table_id, expected, primary_key="path")
 

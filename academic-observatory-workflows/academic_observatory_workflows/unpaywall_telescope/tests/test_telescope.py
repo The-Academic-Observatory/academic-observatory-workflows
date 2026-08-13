@@ -18,17 +18,15 @@ import os
 from unittest.mock import patch
 
 import pendulum
+from airflow.sdk import Connection
 
 from observatory_platform.dataset_api import DatasetAPI
-from observatory_platform.airflow.airflow import clear_airflow_connections, upsert_airflow_connection
 from academic_observatory_workflows.unpaywall_telescope.telescope import create_dag, DagParams
-
 from academic_observatory_workflows.config import project_path, TestConfig
 from observatory_platform.google.bigquery import bq_table_id, bq_sharded_table_id
 from observatory_platform.airflow.workflow import Workflow
 from observatory_platform.sandbox.test_utils import load_and_parse_json, SandboxTestCase
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
-
 
 FIXTURES_FOLDER = project_path("unpaywall_telescope", "tests", "fixtures")
 
@@ -159,9 +157,8 @@ class TestUnpaywallTelescope(SandboxTestCase):
             data_interval_end = data_interval_start.end_of("day")
             snapshot_date = pendulum.datetime(2023, 4, 25, 8, 30, 2)
 
-            clear_airflow_connections()
-            upsert_airflow_connection(conn_id="unpaywall", conn_type="http", password="secret")
-            upsert_airflow_connection(**TestConfig.gke_cluster_connection)
+            env.add_connection(Connection(conn_id="unpaywall", conn_type="http", password="secret"))
+            env.add_connection(Connection(**TestConfig.gke_cluster_connection))
             with patch("academic_observatory_workflows.unpaywall_telescope.tasks.get_http_response_json") as cfs, patch(
                 "academic_observatory_workflows.unpaywall_telescope.tasks.get_snapshot_file_name"
             ) as ss:
@@ -169,7 +166,9 @@ class TestUnpaywallTelescope(SandboxTestCase):
                     "list": [{"filename": "changed_dois_with_versions_2023-04-25T080001.jsonl.gz", "filetype": "jsonl"}]
                 }
                 ss.return_value = f"unpaywall_snapshot_{snapshot_date.format('YYYY-MM-DDTHHmmss')}.jsonl.gz"
-                dagrun = create_dag(dag_params=test_params).test(execution_date=data_interval_end)
+                dag = create_dag(dag_params=test_params)
+                env.serialize_dag(dag)
+                dagrun = dag.test(logical_date=data_interval_end)
 
             # Make assertions
             if not dagrun.state == "success":
@@ -193,7 +192,9 @@ class TestUnpaywallTelescope(SandboxTestCase):
             ) as ss:
                 cfs.return_value = {"list": []}
                 ss.return_value = "filename"
-                dagrun = create_dag(dag_params=test_params).test(execution_date=data_interval_end)
+                dag = create_dag(dag_params=test_params)
+                env.serialize_dag(dag)
+                dagrun = dag.test(logical_date=data_interval_end)
             # Make assertions
 
             if not dagrun.state == "success":
@@ -216,7 +217,9 @@ class TestUnpaywallTelescope(SandboxTestCase):
                     ]
                 }
                 ss.return_value = f"unpaywall_snapshot_{snapshot_date.format('YYYY-MM-DDTHHmmss')}.jsonl.gz"
-                dagrun = create_dag(dag_params=test_params).test(execution_date=data_interval_end)
+                dag = create_dag(dag_params=test_params)
+                env.serialize_dag(dag)
+                dagrun = dag.test(logical_date=data_interval_end)
 
             # Make assertions
             if not dagrun.state == "success":

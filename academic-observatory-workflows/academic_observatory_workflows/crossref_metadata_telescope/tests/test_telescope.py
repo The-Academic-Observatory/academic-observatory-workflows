@@ -18,11 +18,11 @@ import os
 from unittest.mock import patch
 
 import pendulum
+from airflow.sdk import Connection
 
 from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.crossref_metadata_telescope.telescope import create_dag, DagParams
 from observatory_platform.airflow.workflow import Workflow
-from observatory_platform.airflow.airflow import upsert_airflow_connection, clear_airflow_connections
 from observatory_platform.dataset_api import DatasetAPI
 from observatory_platform.google.bigquery import bq_sharded_table_id
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
@@ -106,9 +106,8 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
         ) as mock_cre:
 
             mock_cre.return_value = True
-            clear_airflow_connections()
-            upsert_airflow_connection(conn_id="crossref_metadata", conn_type="http")
-            upsert_airflow_connection(**TestConfig.gke_cluster_connection)
+            env.add_connection(Connection(conn_id="crossref_metadata", conn_type="http"))
+            env.add_connection(Connection(**TestConfig.gke_cluster_connection))
 
             task_resources = {
                 "download": {"memory": "2G", "cpu": "2"},
@@ -119,7 +118,7 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
             test_params = DagParams(
                 dag_id="test_crossref_metadata",
                 cloud_workspace=env.cloud_workspace,
-                crossref_base_url=f"http://{TestConfig.http_host_url}:{TestConfig.http_port}/crossref_metadata/",
+                crossref_base_url=f"http://{TestConfig.http_host_url}:{TestConfig.http_port}/crossref_metadata",
                 retries=0,
                 bq_dataset_id=bq_dataset_id,
                 api_bq_dataset_id=api_bq_dataset_id,
@@ -130,10 +129,9 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
                 gke_startup_timeout_seconds=120,
                 test_run=True,
             )
-
-            dagrun = create_dag(dag_params=test_params).test(
-                execution_date=pendulum.datetime(year=2023, month=1, day=7)
-            )
+            dag = create_dag(dag_params=test_params)
+            env.serialize_dag(dag)
+            dagrun = dag.test(logical_date=pendulum.datetime(2022, 12, 31))
             if not dagrun.state == "success":
                 raise RuntimeError("Dagrun did not complete successfully")
 

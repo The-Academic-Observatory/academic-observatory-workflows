@@ -23,6 +23,7 @@ from unittest.mock import patch
 import uuid
 
 from airflow.exceptions import AirflowException
+from airflow.sdk import Connection
 import httpretty
 import pendulum
 from tempfile import TemporaryDirectory
@@ -30,16 +31,13 @@ from tempfile import TemporaryDirectory
 from academic_observatory_workflows.config import project_path, TestConfig
 from academic_observatory_workflows.crossref_metadata_telescope.release import CrossrefMetadataRelease
 from academic_observatory_workflows.crossref_metadata_telescope import tasks
-from observatory_platform.airflow.airflow import upsert_airflow_connection, clear_airflow_connections
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.dataset_api import DatasetAPI
-from observatory_platform.date_utils import datetime_normalise
 from observatory_platform.google.bigquery import bq_sharded_table_id
 from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_upload_files
 from observatory_platform.files import load_jsonl, is_gzip
 from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
 from observatory_platform.sandbox.test_utils import SandboxTestCase
-
 
 FIXTURES_FOLDER = project_path("crossref_metadata_telescope", "tests", "fixtures")
 SCHEMA_FOLDER = project_path("crossref_metadata_telescope", "schema")
@@ -50,63 +48,21 @@ class TestTasks(SandboxTestCase):
 
     def test_fetch_release(self):
         """Tests the fetch_release function"""
-        SandboxEnvironment().init_airflow_db()
-        clear_airflow_connections()
-        upsert_airflow_connection(conn_id="crossref_metadata", conn_type="http")
+        env = SandboxEnvironment()
+        with env.create():
+            env.add_connection(Connection(conn_id="crossref_metadata", conn_type="http"))
 
-        cloud_workspace = CloudWorkspace(
-            project_id="my_project",
-            download_bucket="download_bucket",
-            transform_bucket="transform_bucket",
-            data_location="us",
-        )
-        data_interval_start = pendulum.datetime(2024, 1, 1)
-        url = tasks.make_snapshot_url(data_interval_start)
-        with httpretty.enabled():
-            httpretty.register_uri(httpretty.HEAD, uri=url, responses=[httpretty.Response(body="", status=302)])
-            release = tasks.fetch_release(
-                cloud_workspace=cloud_workspace,
-                crossref_metadata_conn_id="crossref_metadata",
-                dag_id="dag_id",
-                run_id="run_id",
-                data_interval_start=data_interval_start,
-                data_interval_end=pendulum.datetime(2024, 1, 31),
+            cloud_workspace = CloudWorkspace(
+                project_id="my_project",
+                download_bucket="download_bucket",
+                transform_bucket="transform_bucket",
+                data_location="us",
             )
-        expected_release = {
-            "cloud_workspace": {
-                "data_location": "us",
-                "download_bucket": "download_bucket",
-                "output_project_id": "my_project",
-                "project_id": "my_project",
-                "transform_bucket": "transform_bucket",
-            },
-            "dag_id": "dag_id",
-            "data_interval_end": "2024-01-31 00:00:00",
-            "data_interval_start": "2024-01-01 00:00:00",
-            "run_id": "run_id",
-            "snapshot_date": "2024-01-31 23:59:59",
-        }
-        self.assertEqual(release, expected_release)
-
-    def test_fetch_release_400(self):
-        """Tests the fetch_release function fails appropriately"""
-
-        SandboxEnvironment().init_airflow_db()
-        clear_airflow_connections()
-        upsert_airflow_connection(conn_id="crossref_metadata", conn_type="http")
-
-        cloud_workspace = CloudWorkspace(
-            project_id="my_project",
-            download_bucket="download_bucket",
-            transform_bucket="transform_bucket",
-            data_location="us",
-        )
-        data_interval_start = pendulum.datetime(2024, 1, 1)
-        url = tasks.make_snapshot_url(data_interval_start)
-        with httpretty.enabled():
-            httpretty.register_uri(httpretty.HEAD, uri=url, responses=[httpretty.Response(body="", status=400)])
-            with self.assertRaisesRegex(AirflowException, "Release doesn't exist"):
-                tasks.fetch_release(
+            data_interval_start = pendulum.datetime(2024, 1, 1)
+            url = tasks.make_snapshot_url(data_interval_start)
+            with httpretty.enabled():
+                httpretty.register_uri(httpretty.HEAD, uri=url, responses=[httpretty.Response(body="", status=302)])
+                release = tasks.fetch_release(
                     cloud_workspace=cloud_workspace,
                     crossref_metadata_conn_id="crossref_metadata",
                     dag_id="dag_id",
@@ -114,6 +70,48 @@ class TestTasks(SandboxTestCase):
                     data_interval_start=data_interval_start,
                     data_interval_end=pendulum.datetime(2024, 1, 31),
                 )
+            expected_release = {
+                "cloud_workspace": {
+                    "data_location": "us",
+                    "download_bucket": "download_bucket",
+                    "output_project_id": "my_project",
+                    "project_id": "my_project",
+                    "transform_bucket": "transform_bucket",
+                },
+                "dag_id": "dag_id",
+                "data_interval_end": "2024-01-31 00:00:00",
+                "data_interval_start": "2024-01-01 00:00:00",
+                "run_id": "run_id",
+                "snapshot_date": "2024-01-31 23:59:59",
+            }
+            self.assertEqual(release, expected_release)
+
+    def test_fetch_release_400(self):
+        """Tests the fetch_release function fails appropriately"""
+
+        env = SandboxEnvironment()
+        with env.create():
+            env.add_connection(Connection(conn_id="crossref_metadata", conn_type="http"))
+
+            cloud_workspace = CloudWorkspace(
+                project_id="my_project",
+                download_bucket="download_bucket",
+                transform_bucket="transform_bucket",
+                data_location="us",
+            )
+            data_interval_start = pendulum.datetime(2024, 1, 1)
+            url = tasks.make_snapshot_url(data_interval_start)
+            with httpretty.enabled():
+                httpretty.register_uri(httpretty.HEAD, uri=url, responses=[httpretty.Response(body="", status=400)])
+                with self.assertRaisesRegex(AirflowException, "Release doesn't exist"):
+                    tasks.fetch_release(
+                        cloud_workspace=cloud_workspace,
+                        crossref_metadata_conn_id="crossref_metadata",
+                        dag_id="dag_id",
+                        run_id="run_id",
+                        data_interval_start=data_interval_start,
+                        data_interval_end=pendulum.datetime(2024, 1, 31),
+                    )
 
     def test_check_release_exists(self):
         """Test the 'check_release_exists' task with different responses."""
