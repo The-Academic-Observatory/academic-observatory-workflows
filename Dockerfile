@@ -35,9 +35,6 @@ WORKDIR /app
 # Copy the entire academic-observatory-workflows directory into the /app directory in the container
 COPY --chown=astro:astro academic-observatory-workflows ./academic-observatory-workflows
 
-# Explicitly add the directory containing the top-level package to PYTHONPATH
-ENV PYTHONPATH="${PYTHONPATH}:/app/academic-observatory-workflows"
-
 # Install Academic Observatory Workflows
 RUN uv pip install --system ./academic-observatory-workflows[tests] --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.2.2/constraints-3.13.txt
 
