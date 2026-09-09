@@ -61,7 +61,7 @@ class TestTasks(SandboxTestCase):
             data_interval_start = pendulum.datetime(2024, 1, 1)
             url = tasks.make_snapshot_url(data_interval_start)
             with httpretty.enabled():
-                httpretty.register_uri(httpretty.HEAD, uri=url, responses=[httpretty.Response(body="", status=302)])
+                httpretty.register_uri(httpretty.HEAD, uri=url, responses=[httpretty.Response(body="", status=200)])
                 release = tasks.fetch_release(
                     cloud_workspace=cloud_workspace,
                     crossref_metadata_conn_id="crossref_metadata",
@@ -128,17 +128,21 @@ class TestTasks(SandboxTestCase):
                     httpretty.Response(body="", status=302),
                     httpretty.Response(body="", status=404, adding_headers={"reason": "Not Found"}),
                     httpretty.Response(body="", status=400),
+                    httpretty.Response(body="", status=200),
                 ],
             )
 
             exists = tasks.check_release_exists(data_interval_start, mock_api_key)
+            self.assertFalse(exists)
+
+            exists = tasks.check_release_exists(data_interval_start, mock_api_key)
+            self.assertFalse(exists)
+
+            exists = tasks.check_release_exists(data_interval_start, mock_api_key)
+            self.assertFalse(exists)
+
+            exists = tasks.check_release_exists(data_interval_start, mock_api_key)
             self.assertTrue(exists)
-
-            exists = tasks.check_release_exists(data_interval_start, mock_api_key)
-            self.assertFalse(exists)
-
-            exists = tasks.check_release_exists(data_interval_start, mock_api_key)
-            self.assertFalse(exists)
 
     def test_upload_downloaded(self):
         """Tests that the upload_downloaded function uploads to the GCS download bucket"""
