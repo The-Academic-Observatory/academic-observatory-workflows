@@ -20,8 +20,9 @@ from typing import List, Optional
 
 import pendulum
 from airflow import DAG
-from airflow.sdk import chain, dag, task, task_group
 from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.sdk import chain, dag, task, task_group
+from airflow.timetables.interval import CronDataIntervalTimetable
 
 import academic_observatory_workflows.doi_workflow.tasks as tasks
 from academic_observatory_workflows.doi_workflow.queries import Aggregation, make_sql_queries, SQLQuery
@@ -182,6 +183,9 @@ class DagParams:
         self.sensor_dag_ids = sensor_dag_ids if sensor_dag_ids is not None else SENSOR_DAG_IDS
         self.max_active_runs = max_active_runs
         self.retries = retries
+
+        if isinstance(schedule, str):
+            self.schedule = CronDataIntervalTimetable(schedule, timezone="UTC")
 
         input_table_task_ids = []
         for batch in self.sql_queries:

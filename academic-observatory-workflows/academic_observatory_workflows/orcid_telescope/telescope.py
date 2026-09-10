@@ -23,6 +23,7 @@ from typing import Optional
 import pendulum
 from airflow import DAG
 from airflow.sdk import dag, task, TriggerRule
+from airflow.timetables.interval import CronDataIntervalTimetable
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.orcid_telescope import tasks
@@ -120,6 +121,9 @@ class DagParams:
         self.gke_params = GkeParams(
             gke_volume_size=gke_volume_size, gke_namespace=gke_namespace, gke_volume_name=gke_volume_name, **kwargs
         )
+
+        if isinstance(schedule, str):
+            self.schedule = CronDataIntervalTimetable(schedule, timezone="UTC")
 
 
 def create_dag(dag_params: DagParams) -> DAG:

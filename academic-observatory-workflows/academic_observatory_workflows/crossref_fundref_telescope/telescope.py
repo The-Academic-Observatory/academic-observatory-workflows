@@ -22,6 +22,7 @@ from typing import Optional
 import pendulum
 from airflow import DAG
 from airflow.sdk import dag, task, task_group
+from airflow.timetables.interval import CronDataIntervalTimetable
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.crossref_fundref_telescope import tasks
@@ -81,6 +82,9 @@ class DagParams:
         self.catchup = catchup
         self.gitlab_pool_name = gitlab_pool_name
         self.retries = retries
+
+        if isinstance(schedule, str):
+            self.schedule = CronDataIntervalTimetable(schedule, timezone="UTC")
 
 
 def create_dag(dag_params: DagParams) -> DAG:

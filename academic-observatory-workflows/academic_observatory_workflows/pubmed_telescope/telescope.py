@@ -21,8 +21,9 @@ from dateutil import relativedelta
 
 import pendulum
 from airflow import DAG
-from airflow.sdk import dag, task, task_group, TriggerRule
 from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.sdk import dag, task, task_group, TriggerRule
+from airflow.timetables.interval import CronDataIntervalTimetable
 
 from observatory_platform.airflow.airflow import on_failure_callback
 from observatory_platform.airflow.tasks import check_dependencies, gke_create_storage, gke_delete_storage
@@ -115,6 +116,9 @@ class DagParams:
         self.gke_params = GkeParams(
             gke_volume_size=gke_volume_size, gke_namespace=gke_namespace, gke_volume_name=gke_volume_name, **kwargs
         )
+
+        if isinstance(schedule, str):
+            self.schedule = CronDataIntervalTimetable(schedule, timezone="UTC")
 
 
 def create_dag(dag_params: DagParams) -> DAG:
