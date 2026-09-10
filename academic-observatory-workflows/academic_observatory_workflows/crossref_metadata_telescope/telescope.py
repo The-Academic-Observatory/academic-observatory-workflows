@@ -24,6 +24,7 @@ import pendulum
 from airflow import DAG
 from airflow.sdk import dag, task
 from airflow.providers.cncf.kubernetes.secret import Secret
+from airflow.timetables.interval import CronDataIntervalTimetable
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.crossref_metadata_telescope import tasks
@@ -84,8 +85,8 @@ class DagParams:
         max_processes: Optional[int] = None,
         batch_size: int = 20,
         start_date: pendulum.DateTime = pendulum.datetime(2020, 6, 7),
-        schedule: str = "0 0 7 * *",
         catchup: bool = True,
+        schedule: str | CronDataIntervalTimetable = CronDataIntervalTimetable("0 0 7 * *", timezone="UTC"),
         max_active_runs: int = 1,
         retries: int = 3,
         test_run: bool = False,

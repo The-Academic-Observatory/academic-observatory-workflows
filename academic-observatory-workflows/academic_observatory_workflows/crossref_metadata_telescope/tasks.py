@@ -89,7 +89,7 @@ def download(release: dict, base_url: str = "https://api.crossref.org") -> None:
     :param base_url: The base url of the crossref metadata api
     """
 
-    release = CrossrefMetadataRelease.from_dict(release)
+    release: CrossrefMetadataRelease = CrossrefMetadataRelease.from_dict(release)
     clean_dir(release.download_folder)
 
     url = make_snapshot_url(release.snapshot_date, base_url=base_url)
@@ -304,8 +304,12 @@ def check_release_exists(month: pendulum.DateTime, api_key: str) -> bool:
     logging.info(f"Checking if available release exists for {month.year}-{month.month}")
 
     # Get API key: it is required to check the head now
-    response = retry_session().head(url, headers={"Crossref-Plus-API-Token": f"Bearer {api_key}"})
-    if response.status_code == 302:
+    response = retry_session().head(
+        url,
+        headers={"Crossref-Plus-API-Token": f"Bearer {api_key}"},
+        allow_redirects=True,
+    )
+    if response.status_code == 200:
         logging.info(f"Snapshot exists at url: {url}, response code: {response.status_code}")
         return True
     else:

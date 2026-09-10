@@ -76,7 +76,8 @@ if [ "${remote}" = "false" ]; then
         --wait-timeout=2m0s \
         --force \
         --driver=docker \
-        --network=bridge
+        --network=bridge \
+        --container-runtime=docker
     minikube update-context
 
     # Manually add the minikube host alias because it sometimes doesn't work and Google won't fix it

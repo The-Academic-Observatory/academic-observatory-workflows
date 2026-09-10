@@ -32,6 +32,7 @@ jobs:
         with:
           kubernetes-version: v1.33.1
           driver: docker
+          container-runtime: docker
           addons: gcp-auth
 
       - name: Run test environment setup
