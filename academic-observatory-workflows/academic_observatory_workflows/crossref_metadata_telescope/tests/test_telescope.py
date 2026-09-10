@@ -131,7 +131,7 @@ class TestCrossrefMetadataTelescope(SandboxTestCase):
             )
             dag = create_dag(dag_params=test_params)
             env.serialize_dag(dag)
-            dagrun = dag.test(logical_date=pendulum.datetime(2022, 12, 31))
+            dagrun = dag.test(logical_date=pendulum.datetime(2023, 1, 7))
             if not dagrun.state == "success":
                 raise RuntimeError("Dagrun did not complete successfully")
 
