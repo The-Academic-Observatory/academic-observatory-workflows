@@ -19,9 +19,10 @@ from __future__ import annotations
 from typing import List, Optional
 
 from airflow import DAG
-from airflow.sdk import dag, task, chain
 from airflow.providers.cncf.kubernetes.secret import Secret
 from airflow.providers.standard.sensors.external_task import ExternalTaskSensor
+from airflow.sdk import dag, task, chain
+from airflow.timetables.interval import CronDataIntervalTimetable
 import pendulum
 
 from academic_observatory_workflows.oa_dashboard_workflow.release import OaDashboardRelease
@@ -162,6 +163,9 @@ class DagParams:
         self.gke_params = GkeParams(
             gke_volume_size=gke_volume_size, gke_namespace=gke_namespace, gke_volume_name=gke_volume_name, **kwargs
         )
+
+        if isinstance(schedule, str):
+            self.schedule = CronDataIntervalTimetable(schedule, timezone="UTC")
 
 
 def create_dag(dag_params: DagParams) -> DAG:

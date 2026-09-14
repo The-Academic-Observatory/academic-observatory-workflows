@@ -18,6 +18,7 @@ from typing import List
 
 import pendulum
 from airflow.sdk import dag, task
+from airflow.timetables.interval import CronDataIntervalTimetable
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.scopus_telescope import tasks
@@ -86,6 +87,9 @@ class DagParams:
         self.schedule = schedule
         self.max_active_runs = max_active_runs
         self.retries = retries
+
+        if isinstance(schedule, str):
+            self.schedule = CronDataIntervalTimetable(schedule, timezone="UTC")
 
 
 def create_dag(dag_params: DagParams):

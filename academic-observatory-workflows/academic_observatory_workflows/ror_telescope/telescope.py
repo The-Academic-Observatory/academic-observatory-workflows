@@ -21,6 +21,7 @@ from typing import List
 import pendulum
 from airflow import DAG
 from airflow.sdk import dag, task, task_group
+from airflow.timetables.interval import CronDataIntervalTimetable
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.ror_telescope import tasks
@@ -60,7 +61,7 @@ class DagParams:
         table_description: str = "The Research Organization Registry (ROR) database: https://ror.org/",
         ror_conceptrecid: int = 6347574,
         start_date: pendulum.DateTime = pendulum.datetime(2021, 9, 1),
-        schedule: str = "@weekly",
+        schedule: str | CronDataIntervalTimetable = CronDataIntervalTimetable("@weekly", timezone="UTC"),
         catchup: bool = True,
         max_active_runs: int = 1,
         retries: int = 3,
@@ -80,6 +81,9 @@ class DagParams:
         self.catchup = catchup
         self.max_active_runs = max_active_runs
         self.retries = retries
+
+        if isinstance(schedule, str):
+            self.schedule = CronDataIntervalTimetable(schedule, timezone="UTC")
 
 
 def create_dag(dag_params: DagParams) -> DAG:
