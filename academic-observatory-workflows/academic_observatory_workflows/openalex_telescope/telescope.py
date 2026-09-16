@@ -21,10 +21,11 @@ from typing import List, Optional
 
 import pendulum
 from airflow import DAG
-from airflow.sdk import dag, task, task_group
 from kubernetes.client import models as k8s
-from airflow.providers.cncf.kubernetes.secret import Secret
 from airflow.hooks.base import BaseHook
+from airflow.providers.cncf.kubernetes.secret import Secret
+from airflow.sdk import dag, task, task_group
+from airflow.timetables.interval import CronDataIntervalTimetable
 
 from academic_observatory_workflows.config import project_path
 from academic_observatory_workflows.openalex_telescope.release import OpenAlexEntity
@@ -209,6 +210,9 @@ class DagParams:
         self.max_active_runs = max_active_runs
         self.retries = retries
         self.gke_conn_id = gke_conn_id
+
+        if isinstance(schedule, str):
+            self.schedule = CronDataIntervalTimetable(schedule, timezone="UTC")
 
         # Construct GKE parameters
         # TODO: assert that resource map correct schema

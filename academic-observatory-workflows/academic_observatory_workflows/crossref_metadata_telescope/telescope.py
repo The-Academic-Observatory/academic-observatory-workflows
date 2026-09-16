@@ -109,14 +109,17 @@ class DagParams:
         self.max_processes = max_processes
         self.batch_size = batch_size
         self.start_date = start_date
-        self.schedule = schedule
         self.catchup = catchup
+        self.schedule = schedule
         self.max_active_runs = max_active_runs
         self.retries = retries
         self.test_run = test_run
         self.gke_params = GkeParams(
             gke_volume_size=gke_volume_size, gke_namespace=gke_namespace, gke_volume_name=gke_volume_name, **kwargs
         )
+
+        if isinstance(schedule, str):
+            self.schedule = CronDataIntervalTimetable(schedule, timezone="UTC")
 
 
 def create_dag(dag_params: DagParams) -> DAG:
