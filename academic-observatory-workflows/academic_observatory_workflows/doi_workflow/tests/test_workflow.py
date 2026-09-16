@@ -23,6 +23,7 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from airflow.utils.state import State
+from airflow.models import Connection
 import pendulum
 import vcr
 
@@ -50,6 +51,19 @@ from observatory_platform.sandbox.sandbox_environment import SandboxEnvironment
 from observatory_platform.sandbox.test_utils import make_dummy_dag, SandboxTestCase
 
 FIXTURES_FOLDER = project_path("doi_workflow", "tests", "fixtures")
+
+_real_get = requests.get
+
+
+def _fake_airflow_api_get(url, *args, **kwargs):
+    if "/api/v2/dags/" in url:
+        resp = Mock()
+        resp.json.return_value = {"dag_runs": [{"logical_date": "2023-06-18T00:00:00+00:00", "state": "success"}]}
+        resp.raise_for_status.side_effect = None
+        return resp
+    # anything else (BigQuery, Google auth, etc.) goes through untouched --
+    # VCR still sees and replays these via the cassette as normal
+    return _real_get(url, *args, **kwargs)
 
 
 def query_table(table_id: str, order_by_field: str) -> List[Dict]:
@@ -316,6 +330,10 @@ class TestDoiWorkflow(SandboxTestCase):
         )
 
         with env.create(task_logging=True):
+            # Just needs to exist. Values are unused since requests.get is mocked below
+            env.add_connection(
+                Connection(conn_id="airflow_api", conn_type="http", host="http://localhost", password="test-token")
+            )
             ##########
             # Prepare previous DAG runs and setup DOI DAG
             ##########
@@ -339,20 +357,11 @@ class TestDoiWorkflow(SandboxTestCase):
             )
             doi_dag = create_dag(dag_params)
             for task in doi_dag.tasks:
-                task.on_failure_callback = None
+                task.on_failure_callback = []
             env.serialize_dag(doi_dag)
 
-            # Run Dummy Dags
-            logical_date = pendulum.datetime(year=2023, month=6, day=18)
-            snapshot_date = pendulum.datetime(year=2023, month=6, day=25)
-            # Running all sensor dags
-            for dag_id in SENSOR_DAG_IDS:
-                dag = make_dummy_dag(dag_id, logical_date)
-                env.serialize_dag(dag)
-                dagrun = dag.test(logical_date=logical_date)
-                self.assertEqual("success", dagrun.state)
-
             # Generate fake dataset
+            snapshot_date = pendulum.datetime(year=2023, month=6, day=25)
             repository = load_jsonl(os.path.join(FIXTURES_FOLDER, "repository.jsonl"))
             observatory_dataset = make_observatory_dataset(self.institutions, self.repositories)
             bq_load_observatory_dataset(
@@ -387,8 +396,19 @@ class TestDoiWorkflow(SandboxTestCase):
                 ignore_localhost=True,
                 record_mode="none",
             )
-            with doi_vcr.use_cassette(os.path.join(FIXTURES_FOLDER, "cassette_test_workflow_ror_affiliations.yaml")):
-                dag_run = doi_dag.test(logical_date=snapshot_date)
+
+            # Mock for sensors
+            with patch(
+                "observatory_platform.airflow.sensors.requests.get", side_effect=_fake_airflow_api_get
+            ) as mock_get:
+                mock_get.return_value.json.return_value = {
+                    "dag_runs": [{"logical_date": "2023-06-18T00:00:00+00:00", "state": "success"}]
+                }
+                mock_get.return_value.raise_for_status.side_effect = None
+                with doi_vcr.use_cassette(
+                    os.path.join(FIXTURES_FOLDER, "cassette_test_workflow_ror_affiliations.yaml")
+                ):
+                    dag_run = doi_dag.test(logical_date=snapshot_date)
             self.assertEqual(State.SUCCESS, dag_run.state)
 
             ##########
