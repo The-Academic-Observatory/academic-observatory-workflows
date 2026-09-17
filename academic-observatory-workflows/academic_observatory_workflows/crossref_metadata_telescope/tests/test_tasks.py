@@ -61,7 +61,7 @@ class TestTasks(SandboxTestCase):
             data_interval_start = pendulum.datetime(2024, 1, 1)
             url = tasks.make_snapshot_url(data_interval_start)
             with httpretty.enabled():
-                httpretty.register_uri(httpretty.HEAD, uri=url, responses=[httpretty.Response(body="", status=200)])
+                httpretty.register_uri(httpretty.GET, uri=url, responses=[httpretty.Response(body="", status=200)])
                 release = tasks.fetch_release(
                     cloud_workspace=cloud_workspace,
                     crossref_metadata_conn_id="crossref_metadata",
@@ -102,7 +102,7 @@ class TestTasks(SandboxTestCase):
             data_interval_start = pendulum.datetime(2024, 1, 1)
             url = tasks.make_snapshot_url(data_interval_start)
             with httpretty.enabled():
-                httpretty.register_uri(httpretty.HEAD, uri=url, responses=[httpretty.Response(body="", status=400)])
+                httpretty.register_uri(httpretty.GET, uri=url, responses=[httpretty.Response(body="", status=400)])
                 with self.assertRaisesRegex(AirflowException, "Release doesn't exist"):
                     tasks.fetch_release(
                         cloud_workspace=cloud_workspace,
@@ -122,7 +122,7 @@ class TestTasks(SandboxTestCase):
         with httpretty.enabled():
             # Register 3 responses, successful, release not found and 'other'
             httpretty.register_uri(
-                httpretty.HEAD,
+                httpretty.GET,
                 uri=url,
                 responses=[
                     httpretty.Response(body="", status=302),
