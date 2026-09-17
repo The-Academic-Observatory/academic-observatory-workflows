@@ -303,12 +303,11 @@ def check_release_exists(month: pendulum.DateTime, api_key: str) -> bool:
     url = make_snapshot_url(month)
     logging.info(f"Checking if available release exists for {month.year}-{month.month}")
 
-    # Get API key: it is required to check the head now
-    response = retry_session().head(
-        url,
-        headers={"Crossref-Plus-API-Token": f"Bearer {api_key}"},
-        allow_redirects=True,
+    # Crossref does not allow .head() so we .get() with stream and immediately close it. This gives us the head info.
+    response = retry_session().get(
+        url, headers={"Crossref-Plus-API-Token": f"Bearer {api_key}"}, allow_redirects=True, stream=True
     )
+    response.close()
     if response.status_code == 200:
         logging.info(f"Snapshot exists at url: {url}, response code: {response.status_code}")
         return True
