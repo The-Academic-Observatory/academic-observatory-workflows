@@ -77,8 +77,13 @@
   },
   {
     "name": "keywords",
-    "type": "STRING",
-    "mode": "REPEATED"
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      { "name": "id", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "display_name", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "score", "type": "FLOAT", "mode": "NULLABLE" }
+    ]
   },
   {
     "name": "siblings",
@@ -130,4 +135,3 @@
     "mode": "NULLABLE"
   }
 ]
-
