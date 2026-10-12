@@ -17,17 +17,20 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from concurrent.futures import as_completed, ProcessPoolExecutor
 import copy
 import gzip
+import hashlib
 import json
+from json.encoder import JSONEncoder
 import logging
 import os
 import requests
-from collections import OrderedDict
-from concurrent.futures import as_completed, ProcessPoolExecutor
-from json.encoder import JSONEncoder
+import shutil
 import subprocess
 from typing import Any, List, Optional, Tuple, Dict, Literal
+import uuid
 
 import boto3
 import jsonlines
@@ -47,16 +50,11 @@ from observatory_platform.airflow.airflow import send_slack_msg
 from observatory_platform.airflow.workflow import CloudWorkspace
 from observatory_platform.dataset_api import DatasetAPI, DatasetRelease
 from observatory_platform.files import clean_dir
-from observatory_platform.google.gcs import (
-    gcs_blob_name_from_path,
-    gcs_create_aws_transfer,
-    gcs_download_blob,
-    gcs_upload_files,
-    gcs_upload_transfer_manifest,
-)
+from observatory_platform.google.gcs import gcs_blob_name_from_path, gcs_download_blob, gcs_upload_files
 from observatory_platform.sandbox.test_utils import log_diff
 
 DATASET_API_ENTITY_ID = "openalex"
+RESUME_FOLDER_NAME = "_resume"  # lives in entity.transform_folder, so it is never uploaded by upload_files
 
 
 def fetch_entities(
@@ -221,33 +219,113 @@ def download(*, entity: OpenAlexEntity, **context):
     op.execute(context)
 
 
-def transform(*, entity: OpenAlexEntity):
-    # Cleanup in case we re-run task
+# def transform(*, entity: OpenAlexEntity):
+#     # Cleanup in case we re-run task
+#     output_folder = os.path.join(entity.transform_folder, "data", entity.format, entity.entity_name)
+#     if os.path.exists(output_folder):
+#         clean_dir(output_folder)
+#
+#     # Initialise schema generator
+#     merged_schema_map = OrderedDict()
+#
+#     with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
+#         futures = []
+#         for entry in entity.files:
+#             futures.append(
+#                 executor.submit(
+#                     transform_file,
+#                     entity.download_path_for(entry.object_key),
+#                     entity.transform_path_for(entry.object_key),
+#                 )
+#             )
+#         for future in as_completed(futures):
+#             input_path, schema_map, schema_error = future.result()
+#
+#             if schema_error:
+#                 logging.info(f"Error generating schema for file {input_path}: {schema_error}")
+#
+#             # Merge the schemas from each process. Each data file could have more fields than others.
+#             merged_schema_map = merge_schema_maps(to_add=schema_map, old=merged_schema_map)
+#
+#     # Flatten schema from nested OrderedDicts to a regular Bigquery schema.
+#     merged_schema = flatten_schema(schema_map=merged_schema_map)
+#
+#     # Save schema to file
+#     with open(entity.generated_schema_path, mode="w") as f_out:
+#         json.dump(merged_schema, f_out, indent=2)
+
+
+def transform(*, entity: OpenAlexEntity, resume: bool = True):
+    """Transform all files for an entity and generate a merged BigQuery schema. Transforms one file per process.
+
+    This step also scans through each file and generates a Bigquery style schema from the incoming data.
+
+    The step is resumable: files that were fully transformed by an earlier, interrupted attempt are skipped and
+    their saved schema maps are merged in instead. See the notes at the top of this block.
+
+    :param entity: the OpenAlex entity to transform.
+    :param resume: set to False to discard any earlier work and transform everything from scratch.
+    """
+
     output_folder = os.path.join(entity.transform_folder, "data", entity.format, entity.entity_name)
-    if os.path.exists(output_folder):
-        clean_dir(output_folder)
+    resume_folder = os.path.join(entity.transform_folder, RESUME_FOLDER_NAME, entity.entity_name)
 
-    # Initialise schema generator
+    # Start from scratch only when asked to
+    if not resume:
+        if os.path.exists(output_folder):
+            clean_dir(output_folder)
+        if os.path.exists(resume_folder):
+            shutil.rmtree(resume_folder)
+    os.makedirs(resume_folder, exist_ok=True)
+
+    # Remove half-written files left behind by a killed run
+    for folder in (output_folder, resume_folder):
+        for root, _, names in os.walk(folder):
+            for name in names:
+                if name.endswith(".tmp"):
+                    os.remove(os.path.join(root, name))
+
+    # Work out what is already done. Finished files contribute their saved schema map.
+    fingerprint = _transform_fingerprint()
     merged_schema_map = OrderedDict()
+    to_do = []
+    for entry in entity.files:
+        download_path = entity.download_path_for(entry.object_key)
+        transform_path = entity.transform_path_for(entry.object_key)
+        record_path = _resume_record_path(resume_folder, entry.object_key)
 
-    with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
-        futures = []
-        for entry in entity.files:
-            futures.append(
-                executor.submit(
-                    transform_file,
-                    entity.download_path_for(entry.object_key),
-                    entity.transform_path_for(entry.object_key),
-                )
-            )
-        for future in as_completed(futures):
-            input_path, schema_map, schema_error = future.result()
+        record = _load_resume_record(record_path, download_path, transform_path, fingerprint) if resume else None
+        if record is None:
+            to_do.append((download_path, transform_path, record_path))
+        else:
+            merged_schema_map = merge_schema_maps(to_add=record["schema_map"], old=merged_schema_map)
 
-            if schema_error:
-                logging.info(f"Error generating schema for file {input_path}: {schema_error}")
+    n_total = len(entity.files)
+    logging.info(f"transform: {n_total - len(to_do)} of {n_total} files already transformed, {len(to_do)} to do")
 
-            # Merge the schemas from each process. Each data file could have more fields than others.
-            merged_schema_map = merge_schema_maps(to_add=schema_map, old=merged_schema_map)
+    if to_do:
+        with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
+            futures = [
+                executor.submit(transform_file_resumable, download_path, transform_path, record_path, fingerprint)
+                for download_path, transform_path, record_path in to_do
+            ]
+            try:
+                for n_done, future in enumerate(as_completed(futures), start=1):
+                    input_path, schema_map, schema_error = future.result()
+
+                    if schema_error:
+                        logging.info(f"Error generating schema for file {input_path}: {schema_error}")
+
+                    # Merge the schemas from each process. Each data file could have more fields than others.
+                    merged_schema_map = merge_schema_maps(to_add=schema_map, old=merged_schema_map)
+
+                    if n_done % 50 == 0 or n_done == len(futures):
+                        logging.info(f"transform: {n_done}/{len(futures)} files transformed in this attempt")
+            except BaseException:
+                # Don't keep burning hours on queued files once something has failed. Files that finished are
+                # safe on disk and will be skipped next time.
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
 
     # Flatten schema from nested OrderedDicts to a regular Bigquery schema.
     merged_schema = flatten_schema(schema_map=merged_schema_map)
@@ -255,6 +333,19 @@ def transform(*, entity: OpenAlexEntity):
     # Save schema to file
     with open(entity.generated_schema_path, mode="w") as f_out:
         json.dump(merged_schema, f_out, indent=2)
+
+
+def _transform_fingerprint() -> str:
+    """Identify the transform code, so output made by different code is never reused.
+
+    This hashes the whole tasks.py, so any deploy that changes the file starts a clean transform. That is
+    deliberate: correctness over speed.
+    """
+    try:
+        with open(__file__, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()[:16]
+    except OSError:
+        return uuid.uuid4().hex  # can't identify the code, so never match
 
 
 def upload_schema(*, entity: OpenAlexEntity, transform_bucket: str):
@@ -438,16 +529,84 @@ def fetch_manifest(
     return Manifest.from_dict(data)
 
 
-def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict, list]:
+def _fsync_path(path: str) -> None:
+    with open(path, "rb") as f:
+        os.fsync(f.fileno())
+
+
+def _write_json_atomic(path: str, data: Any) -> None:
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(data, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, path)
+
+
+def _resume_record_path(resume_folder: str, object_key: str) -> str:
+    return os.path.join(resume_folder, object_key.replace("/", "__") + ".json")
+
+
+def _load_resume_record(
+    record_path: str, download_path: str, transform_path: str, fingerprint: str
+) -> Optional[OrderedDict]:
+    """Return the saved record for a finished file, or None if the file has to be (re)transformed."""
+    try:
+        with open(record_path) as f:
+            record = json.load(f, object_pairs_hook=OrderedDict)
+        if (
+            record["fingerprint"] == fingerprint
+            and record["input_size"] == os.path.getsize(download_path)
+            and record["output_size"] == os.path.getsize(transform_path)
+        ):
+            return record
+    except (OSError, ValueError, KeyError):
+        pass
+    return None
+
+
+def transform_file_resumable(
+    download_path: str, transform_path: str, record_path: str, fingerprint: str
+) -> Tuple[str, OrderedDict, list]:
+    """Transform one file, then write its record. The record is written last, so it is the 'done' marker.
+
+    Runs in a worker process. Returns the same tuple as transform_file.
+    """
+    # Drop any stale record first, so a crash part-way through can never leave a record that vouches for new output
+    try:
+        os.remove(record_path)
+    except FileNotFoundError:
+        pass
+
+    download_path, schema_map, schema_errors = transform_file(download_path, transform_path)
+
+    _write_json_atomic(
+        record_path,
+        {
+            "fingerprint": fingerprint,
+            "input_size": os.path.getsize(download_path),
+            "output_size": os.path.getsize(transform_path),
+            "schema_map": schema_map,
+            "schema_errors": schema_errors,
+        },
+    )
+    return download_path, schema_map, schema_errors
+
+
+def transform_file(download_path: str, transform_path: str) -> Tuple[str, OrderedDict, list]:
     """Transforms a single file.
     Each entry/object in the gzip input file is transformed and the transformed object is immediately written out to
     a gzip file. For each entity only one field has to be transformed.
+
+    The output is written to "<transform_path>.tmp" and renamed when complete, so a killed process never leaves a
+    half-written file under the real name.
 
     This function generates and returns a Bigquery style schema from the transformed object,
     using the SchemaGenerator from the 'bigquery_schema_generator' package.
 
     :param download_path: The path to the file with the OpenAlex files.
     :param transform_path: The path where transformed data will be saved.
+    :return: download_path.
     :return: schema_map. A nested OrderedDict object produced by the SchemaGenerator.
     :return: schema_generator.error_logs: Possible error logs produced by the SchemaGenerator.
     """
@@ -460,8 +619,10 @@ def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict
     schema_map = OrderedDict()
     schema_generator = SchemaGenerator(input_format="dict")
 
+    tmp_transform_path = transform_path + ".tmp"
+
     logging.info(f"Transforming {download_path}")
-    with gzip.open(download_path, "rb") as f_in, gzip.open(transform_path, "wt", encoding="ascii") as f_out:
+    with gzip.open(download_path, "rb") as f_in, gzip.open(tmp_transform_path, "wt", encoding="ascii") as f_out:
         reader = jsonlines.Reader(f_in)
         for obj in reader.iter(skip_empty=True):
             transform_object(obj)
@@ -507,9 +668,88 @@ def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict
             json.dump(obj, f_out)
             f_out.write("\n")
 
+    # Both files are now closed. Flush to disk, then move into place atomically.
+    _fsync_path(tmp_transform_path)
+    os.replace(tmp_transform_path, transform_path)
+
     logging.info(f"Finished transform, saved to {transform_path}")
 
     return download_path, schema_map, schema_generator.error_logs
+
+
+# def transform_file(download_path: str, transform_path: str) -> Tuple[OrderedDict, list]:
+#     """Transforms a single file.
+#     Each entry/object in the gzip input file is transformed and the transformed object is immediately written out to
+#     a gzip file. For each entity only one field has to be transformed.
+#
+#     This function generates and returns a Bigquery style schema from the transformed object,
+#     using the SchemaGenerator from the 'bigquery_schema_generator' package.
+#
+#     :param download_path: The path to the file with the OpenAlex files.
+#     :param transform_path: The path where transformed data will be saved.
+#     :return: schema_map. A nested OrderedDict object produced by the SchemaGenerator.
+#     :return: schema_generator.error_logs: Possible error logs produced by the SchemaGenerator.
+#     """
+#
+#     # Make base folder, e.g. authors/updated_date=2023-09-17
+#     base_folder = os.path.dirname(transform_path)
+#     os.makedirs(base_folder, exist_ok=True)
+#
+#     # Initialise the schema generator.
+#     schema_map = OrderedDict()
+#     schema_generator = SchemaGenerator(input_format="dict")
+#
+#     logging.info(f"Transforming {download_path}")
+#     with gzip.open(download_path, "rb") as f_in, gzip.open(transform_path, "wt", encoding="ascii") as f_out:
+#         reader = jsonlines.Reader(f_in)
+#         for obj in reader.iter(skip_empty=True):
+#             transform_object(obj)
+#
+#             # Wrap this in a try and pass so that it doesn't
+#             # cause the transform step to fail unexpectedly.
+#             try:
+#                 obj_for_schema = copy.deepcopy(obj)
+#
+#                 # Use a copy with empty arrays removed purely for schema inference.
+#                 # The original obj (with empty arrays) is written to the output file so BigQuery sees all fields present.
+#                 remove_empty_arrays(
+#                     obj_for_schema,
+#                     [
+#                         "affiliations",
+#                         "last_known_institutions",
+#                         "sources",
+#                         "topics",
+#                         "topic_share",
+#                         "x_concepts",
+#                         "counts_by_year",
+#                         "display_name_alternatives",
+#                         "merged_ids",
+#                     ],
+#                 )
+#
+#                 if "ids" in obj_for_schema and isinstance(obj_for_schema["ids"], dict):
+#                     remove_empty_arrays(obj_for_schema["ids"], ["merged_ids"])
+#                     # If the entire ids sub-dictionary became empty, drop it to save the generator
+#                     if not obj_for_schema["ids"]:
+#                         del obj_for_schema["ids"]
+#
+#                 schema_generator.deduce_schema_for_record(obj_for_schema, schema_map)
+#
+#             except Exception as e:
+#                 # Find which fields in this record are empty arrays/null
+#                 offending = [k for k, v in obj_for_schema.items() if isinstance(v, list) and len(v) == 0]
+#                 logging.warning(
+#                     f"  Schema deduction error: {e}\n"
+#                     f"    record id      : {obj.get('id', '?')}\n"
+#                     f"    empty arrays   : {offending}"
+#                 )
+#             json.dump(obj, f_out)
+#             f_out.write("\n")
+#
+#     logging.info(f"Finished transform, saved to {transform_path}")
+#
+#     return download_path, schema_map, schema_generator.error_logs
+#
 
 
 def remove_none_from_array(obj: dict, field: str):
